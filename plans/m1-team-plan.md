@@ -25,6 +25,6 @@ Round D survey (answers in its database, collection `answers`, doc `round-d`): h
 
 | D | D1 | Office panels and HUD (Contracts, Market, Ledger, Trains, Timetable; telegram tape, alerts, Look/inspect) | waits for the round D survey |
 | D | D2 | Tutorial: the investor telegrams for days 1 and 2 | waits for the round D survey |
-| D | D3 | M1 acceptance check with a "reasonable player" bot playing a week; report gaps | started |
+| D | D3 | M1 acceptance check with a "reasonable player" bot playing a week; report gaps. Merged, npm test passed (25 checks) |
 
 Proposed in the plan (not decided until the designer answers): hand-building pace (tie 0.5, rail pair 1, spike 1.3 game minutes; a 20u siding about 5 real minutes at 1x), one tap keeps working, 4 spikes per tie, no helpers before M3, no earthwork in M1, cancelled jobs return all materials, platform 20u x 2.4u, track crossable on foot anywhere in M1, review once per round.

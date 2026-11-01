@@ -191,8 +191,14 @@ module.exports = async function checkHandbuildLook() {
         await page.waitForTimeout(200);
         const t1 = await R(() => ({ text: document.querySelector('.jobSign .jobCancel').textContent, jobs: window.__railhead.state.jobs.list.length }));
         if (t1.text !== 'Tap again to cancel' || t1.jobs !== 1) problems.push('cancel: the first tap should only ask again: ' + JSON.stringify(t1));
-        bb = await box();
         await page.screenshot({ path: screenshotPath('handbuild-look-cancel-ask-portrait') });
+        // The offer to cancel lasts 4 seconds; a screenshot on a busy test machine can take longer. So after the
+        // screenshot, let it lapse and do the two taps back to back, as a player would.
+        await page.waitForFunction(() => document.querySelector('.jobSign .jobCancel').textContent === 'Cancel job', null, { timeout: 8000 });
+        bb = await box();
+        await page.touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2);
+        await page.waitForFunction(() => document.querySelector('.jobSign .jobCancel').textContent === 'Tap again to cancel', null, { timeout: 3000 });
+        bb = await box();
         await page.touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2);
         await page.waitForTimeout(400);
         const t2 = await R(() => {

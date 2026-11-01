@@ -112,17 +112,12 @@
   .jobSign[data-k="need"] { border-left-color: var(--accent); }
   .jobSign[data-k="ready"] { border-left-color: var(--green); }
   .jobSign[data-k="work"] { border-left-color: #c69a2c; }
-  /* Passengers (C4): the staffing readout, the departure boards and the ticket window's button. */
+  /* Passengers (C4): the staffing readout and the ticket window's button. */
   #paxDesk { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 122px); max-width: min(78vw, 340px);
     box-sizing: border-box; display: flex; gap: 8px; align-items: center; background: var(--paper); border: 2px solid var(--edge);
     border-left: 7px solid var(--green); border-radius: 8px; padding: 3px 3px 3px 10px; font-size: 15px; color: var(--ink); }
   #paxDeskText { flex: 1; min-width: 0; line-height: 1.25; }
   #paxLeave { flex: none; }
-  .paxBoard { left: 0; top: 0; z-index: 1; width: max-content; max-width: 220px; box-sizing: border-box; pointer-events: none;
-    background: #2f2a24; color: #f3ead2; border: 2px solid var(--edge); border-radius: 6px; padding: 4px 8px; font-size: 13px; line-height: 1.3;
-    font-variant-numeric: tabular-nums; }
-  .paxBoard b { display: block; font-size: 13px; letter-spacing: 0.02em; }
-  .paxBoard .none { color: #cbbf9f; font-style: italic; }
   .paxWin { left: 0; top: 0; z-index: 1; font-size: 14px; padding: 0 10px; white-space: nowrap; border-left-width: 6px; border-left-color: var(--green); }
   @media (orientation: landscape) and (max-height: 500px) {
     #carPanel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: 76vh; }
@@ -1803,7 +1798,7 @@ function ttBoard(S, stId) {
     rows.push({ time: ttClock(p.dep), sod: p.dep, name: svc.name, to: to ? to.name : '?', state });
   });
   rows.sort((a, b) => a.sod - b.sod || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  out.lines = rows.slice(0, 3).map(({ time, name, to, state }) => ({ time, name, to, state }));
+  out.lines = rows.slice(0, 4).map(({ time, name, to, state }) => ({ time, name, to, state }));
   return out;
 }
 
@@ -7327,17 +7322,16 @@ function jobSignHud() {
   }
   for (const id of Object.keys(jobSigns)) if (!live[id]) { jobSigns[id].el.remove(); delete jobSigns[id]; }
 }
-// ---- Passengers (M1 package 5, builder C4): the ticket window, the staffing readout and the departure boards ----
+// ---- Passengers (M1 package 5, builder C4): the ticket window and the staffing readout ----
 // The readout (bottom left, above the carry readout) shows while the player walks to or staffs a ticket window,
-// with a Leave button. Each station's departure board is a small dark card above its depot, listing the next 4
-// departures (stationDepartures), shown from zoom 1x in. While travellers queue and nobody staffs the window, a
-// "Tickets" button stands at the window; tapping it (or the window itself) walks there and staffs it.
+// with a Leave button. While travellers queue and nobody staffs the window, a "Tickets (n)" button stands at the
+// window; tapping it (or the window itself) walks there and staffs it. The station's departures are on C3's one
+// station card (ttCardHud, near the order board), which lists the next 4.
 const PAX_NAMES = { hub: 'Hub', willow: 'Willow Ford' };
 const paxName = id => PAX_NAMES[id] || id;
 const PAX_AVOID = JOB_SIGN_AVOID.concat(['paxDesk']);
 const paxCards = {};
 let paxDeskSig = '';
-function paxClock(t) { const sec = ((t + CFG.DAY_START_S) % 86400 + 86400) % 86400; return String(Math.floor(sec / 3600)).padStart(2, '0') + ':' + String(Math.floor(sec % 3600 / 60)).padStart(2, '0'); }
 function paxOnEvent(e) {
   if (e.t === 'deskStaffed') toast('You staff the ticket window. Tickets sell while you stay here.');
   else if (e.t === 'deskLeft') toast(e.why ? e.why + '.' : 'You leave the ticket window.');
@@ -7365,35 +7359,9 @@ function paxHud() {
   for (const K of paxStations(S.track)) {
     let C = paxCards[K.id];
     if (!C) {
-      const board = document.createElement('div'); board.className = 'hud paxBoard'; board.dataset.st = K.id; document.body.appendChild(board);
       const win = document.createElement('button'); win.className = 'hud paxWin'; win.dataset.st = K.id; document.body.appendChild(win);
       win.addEventListener('click', () => send({ t: 'staffWindow', st: K.id }));
-      C = paxCards[K.id] = { board, win, bsig: '', wsig: '', bw: 0, bh: 0, ww: 0, wh: 0, bkey: '', wkey: '', age: 0 };
-    }
-    // The departure board.
-    const deps = stationDepartures(S, K.id).slice(0, 4);
-    const bsig = deps.map(d => d.time + d.train + d.to + d.platform + d.state).join('|');
-    if (bsig !== C.bsig || !C.bw) {
-      C.bsig = bsig;
-      C.board.innerHTML = '';
-      const h = document.createElement('b'); h.textContent = `Departures, ${paxName(K.id)}`; C.board.appendChild(h);
-      if (!deps.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No trains timetabled yet'; C.board.appendChild(n); }
-      for (const d of deps) {
-        const r = document.createElement('div');
-        r.textContent = `${paxClock(d.time)} to ${paxName(d.to)}, platform ${d.platform || 1}` + (d.state && d.state !== 'On time' ? ` (${d.state.toLowerCase()})` : '');
-        C.board.appendChild(r);
-      }
-      C.bw = C.board.offsetWidth; C.bh = C.board.offsetHeight;
-    }
-    const at = K.depot || K.plat, bp = toScreen(at.x, 3.0, at.z);
-    const br = { l: bp.x - C.bw / 2, r: bp.x + C.bw / 2, t: bp.y - C.bh, b: bp.y };
-    // The page is only touched when the card moves or every 20 frames (buttons and panels open and close).
-    const bkey = Math.round(br.l) + ',' + Math.round(br.t) + ',' + (cam.zoom >= 1);
-    if (bkey !== C.bkey || ++C.age > 20) {
-      C.bkey = bkey; C.age = 0;
-      const showB = cam.zoom >= 1 && paxClear(br);
-      C.board.style.transform = `translate(${Math.round(br.l)}px, ${Math.round(br.t)}px)`;
-      C.board.style.visibility = showB ? 'visible' : 'hidden';
+      C = paxCards[K.id] = { win, wsig: '', ww: 0, wh: 0, wkey: '', age: 0 };
     }
     // The ticket window's button: while travellers queue and the player is not staffing this window.
     const n = queued(K.id), wsig = String(n);
@@ -7403,8 +7371,9 @@ function paxHud() {
     const wp = toScreen(K.window.x, 1.9, K.window.z);
     const wr = { l: wp.x - C.ww / 2, r: wp.x + C.ww / 2, t: wp.y - C.wh, b: wp.y };
     const wkey = showW0 ? Math.round(wr.l) + ',' + Math.round(wr.t) + ',' + C.ww : '-';
-    if (wkey !== C.wkey || (showW0 && C.age === 0)) {
-      C.wkey = wkey;
+    // The page is only touched when the button moves, or every 20 frames (buttons and panels open and close).
+    if (wkey !== C.wkey || (showW0 && ++C.age > 20)) {
+      C.wkey = wkey; C.age = 0;
       const showW = showW0 && paxClear(wr);
       C.win.hidden = !showW;
       if (showW) { C.win.style.transform = `translate(${Math.round(wr.l)}px, ${Math.round(wr.t)}px)`; C.win.style.visibility = 'visible'; }

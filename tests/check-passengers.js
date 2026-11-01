@@ -123,14 +123,15 @@ module.exports = async function checkPassengers() {
     if (!/Ticket window, Hub: \d+ in line, \d+ sold/.test(deskText || '')) problems.push('staffing readout: "' + deskText + '"');
     const leaveBox = await page.$eval('#paxLeave', b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; });
     if (leaveBox[0] < 48 || leaveBox[1] < 48) problems.push('the Leave button is smaller than 48 px: ' + leaveBox);
-    const boardText = await page.$$eval('.paxBoard', els => els.map(e => e.textContent));
+    // The one departure board is C3's station card (near the order board, while the player is within 12u of it).
+    const boardText = await R(() => { const c = document.getElementById('ttCard'); return c && !c.hidden ? c.textContent : ''; });
     // The departure board lists the timetable's next departures (C3's services: Willow Ford Mixed at 08:00 and 13:30).
     const deps = await R(() => { const R = window.__railhead, S = R.state; return R.pax.stationDepartures(S, 'hub'); });
     const hasTT = await R(() => !!window.__railhead.state.tt);
     if (hasTT) {
       if (!deps.length || deps.some(d => d.to !== 'willow') || deps.some((d, i) => i && d.time < deps[i - 1].time) || deps.length > 4)
         problems.push('stationDepartures(hub) should list the next departures to Willow Ford, soonest first: ' + JSON.stringify(deps));
-      if (!boardText.some(t => /Departures, Hub/.test(t) && /\d\d:\d\d to Willow Ford, platform 1/.test(t))) problems.push('departure board: ' + JSON.stringify(boardText));
+      if (!/\d\d:\d\d to Willow Ford/.test(boardText)) problems.push('the station card (departure board) near the window: ' + JSON.stringify(boardText));
       // A train on the timetable takes travellers only for a station its run calls at later; off the timetable, always.
       const serves = await R(() => {
         const R = window.__railhead, S = JSON.parse(JSON.stringify(R.state)), tr = S.trains[0];
@@ -142,7 +143,7 @@ module.exports = async function checkPassengers() {
       });
       if (!serves.free || serves.noRun || !serves.run || serves.wrongWay || serves.elsewhere) problems.push('which trains take travellers: ' + JSON.stringify(serves));
       console.log(`  departure board: ${deps.map(d => Math.floor(((d.time + 18000) % 86400) / 3600) + ':' + String(Math.floor(((d.time + 18000) % 3600) / 60)).padStart(2, '0') + ' ' + d.state).join(', ')}`);
-    } else if (!boardText.some(t => /Departures, Hub/.test(t) && /No trains timetabled yet/.test(t))) problems.push('departure board: ' + JSON.stringify(boardText));
+    }
     const dcQueue = await R(() => window.__railhead.drawCalls);
     // Walking away stops the sales.
     await R(() => { const R = window.__railhead, P = R.state.player; R.send({ t: 'walkTo', x: Math.round(P.x * 100) - 400, z: Math.round(P.z * 100) }); R.step(1); });

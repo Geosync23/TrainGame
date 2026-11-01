@@ -3,7 +3,7 @@
 //   outside those hours) plus 1 to 3 off each Overland visit, and every arrival wants to go to Willow Ford.
 // - Staffing the ticket window by real touch (a tap on the window walks the player there): tickets sell at
 //   0.5 game minutes each, the fare is 4 cents a mile with a 10 cent minimum (40 cents for the 10-mile spur),
-//   every fare goes through passengerFarePaid once; walking away stops the sales.
+//   every fare goes into the ledger once (C1's econPost, category 'fares') and the money rule holds; walking away stops the sales.
 // - A traveller without a ticket gives up after exactly 60 game minutes and the station's count goes up.
 // - Boarding and stepping off with the combine standing at the platform: 0.1 game minutes each per door,
 //   stepping off first, never more than the combine's 12 seats; a train that moves off stops the boarding;
@@ -108,13 +108,16 @@ module.exports = async function checkPassengers() {
       console.log(`  ticket window: ${sales.length} tickets, on average every ${avg.toFixed(2)} game seconds`);
     }
     if (st3.cents !== 40 * st3.sold) problems.push(`fares taken: ${st3.cents} cents for ${st3.sold} tickets (40 cents each)`);
-    // Every fare comes through the economy hook once (farePaid events).
+    // Every fare goes into the ledger once (econPost, category 'fares'), and the money rule holds.
     const hook = await R(() => { const R = window.__railhead, S = R.pax.paxDebugScenario(R.newState(1866), 5, 0); let n = 0, c = 0, sold = 0;
       S.player.x = R.pax.paxStation('hub').staff.x; S.player.z = R.pax.paxStation('hub').staff.z;
       R.simTick(S, [{ t: 'staffWindow', st: 'hub' }]);
-      for (let i = 0; i < 40; i++) for (const e of R.simTick(S, [])) { if (e.t === 'farePaid') { n++; c += e.cents; } if (e.t === 'ticketSold') sold++; }
-      return { n, c, sold }; });
-    if (hook.n !== hook.sold || hook.c !== 40 * hook.sold || !hook.sold) problems.push('passengerFarePaid should be called once per ticket with its fare: ' + JSON.stringify(hook));
+      const cash0 = S.econ.cash, led0 = S.econ.ledger.length;
+      for (let i = 0; i < 40; i++) for (const e of R.simTick(S, [])) { if (e.t === 'money' && e.category === 'fares') { n++; c += e.amount; } if (e.t === 'ticketSold') sold++; }
+      const fares = S.econ.ledger.slice(led0).filter(L => L.category === 'fares');
+      return { n, c, sold, cash: S.econ.cash - cash0, ledger: fares.length, ledgerSum: fares.reduce((a, L) => a + L.amount, 0), check: R.econ.econCheckMoney(S) }; });
+    if (hook.n !== hook.sold || hook.c !== 40 * hook.sold || !hook.sold || hook.cash !== hook.c || hook.ledger !== hook.sold || hook.ledgerSum !== hook.c || hook.check.length)
+      problems.push('each fare should go into the ledger once (econPost, category fares) and the cash: ' + JSON.stringify(hook));
     await page.waitForTimeout(800);
     const deskText = await page.textContent('#paxDeskText');
     if (!/Ticket window, Hub: \d+ in line, \d+ sold/.test(deskText || '')) problems.push('staffing readout: "' + deskText + '"');

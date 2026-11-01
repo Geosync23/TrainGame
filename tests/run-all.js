@@ -23,6 +23,7 @@ const checks = {
   'interchange (the Overland, loading cars by hand)': require('./check-interchange'),
   'hand-building track (construction jobs)': require('./check-handbuild'),
   'hand-building drawn (stakes, sign, pieces, work poses)': require('./check-handbuild-look'),
+  'economy (cash, orders by telegraph, contracts, ledger)': require('./check-economy'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
 };
 

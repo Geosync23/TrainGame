@@ -1,40 +1,22 @@
-# Handover (written 2026-11-01 by the first lead session)
+# Handover (updated 2026-11-01 by the second lead session)
 
-Read this, then CLAUDE.md, DEV_NOTES.md and design-doc.md section 0 (decisions D1 to D10).
+Read this, then CLAUDE.md (note the two new house rules at the end of "My rules": questions always as an interactive survey with answers saved on the page; workers stay inside the lead session), DEV_NOTES.md, design-doc.md section 0 (D1 to D12) and plans/m1-team-plan.md.
 
 ## Where things stand
-- All of M0 is built and merged on `ccr-59cb4c1f-rnscv9`; all 13 checks pass (`npm install` once, then `npm test`, about 12 minutes).
-- Playable build: https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc (how to republish: strip doctype, html, head, body tags and the viewport meta from index.html, keep the title "Railhead Piece 1", publish to the same URL).
-- End-of-M0 review: done. The answers are recorded as D11 (art signed off, smooth on the phone, everything provisional kept as built, and one change: a larger platform). Review page: https://claude.ai/artifact/2BKv74G9z2oFJSfWRchyU9.
+- M1 round A is merged and pushed on `ccr-59cb4c1f-rnscv9`, 16 checks pass: instant build parked behind ?debug=1 (gate at `send()`), cargo items and waybills (SCHEMA 2), carrying with hand truck and handcart (SCHEMA 3), walk grid and A* path-finding (handcart paths avoid platform and dock).
+- The designer approved the M1 plan through the survey (D12): all suggestions taken; M1 is reviewed ONCE AT THE END of M1 (do not stop for reviews between rounds; still report progress in short plain messages).
+- Plan page: https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu. Survey: https://claude.ai/artifact/VaTAWnL2ycb8JqzZJSJyfA (answers in its database: collection `answers`, doc `m1-plan`; source `plans/m1-plan-survey.html`).
+- Round B is being built by helpers inside the lead session (see the team plan): B1 hand-building game rules (SCHEMA 4), B2 hand-building drawing (starts from B1's early commit), B3 larger platform 20u x 2.4u, B4 interchange and the Overland and car loading (SCHEMA 5 after B1). Then rounds C and D.
 
-## The designer's go-ahead (2026-11-01)
-The designer said: "Hire 5 workers and start M1." So the next lead runs a team of 5 workers for M1.
+## How merging works now
+- Builders work in worktrees under `.claude/worktrees/`, each on branch `worktree-agent-<id>`. They do not push.
+- The lead (or an integrator helper) merges into `ccr-59cb4c1f-rnscv9` with `git merge --no-ff`, runs `npm test` in the background (16+ checks, about 12 minutes), and pushes only when all pass.
+- Gotcha: a worktree builder once committed its `node_modules` link; merged, it replaced the real folder with a link to itself (ELOOP errors, test runner exits at once). `.gitignore` now ignores `node_modules` as a link too. If it happens again: `git rm --cached node_modules; rm node_modules; npm install`.
+- `node tests/run-one.js check-<name>` runs a single check.
 
-## The designer's newest decision (D10)
-Laying track instantly must never be the real mechanic. Planning is fine, but a main mechanic is watching the line get built spike by spike. Chosen: this goes into M1.
-- The build tool only plans. A confirmed plan becomes a construction job shown with stakes and string.
-- Building is physical: ties carried and set one at a time, rails dropped on them, spikes driven one by one with a hammer swing. The player does it first; crews come later (M3/M4).
-- Materials (tie bundles, rail bundles, spike kegs) are real items delivered by the interchange trains, like other freight.
-- The M0 instant build is CUT, parked not deleted: keep its code, but make it work only with ?debug=1. Taking it out is its own reviewed step.
-
-## Next job
-Write the M1 plan for the designer's review (CLAUDE.md: plan before building, and leave room on the page for their answers).
-- M1 is design-doc section 22 "M1. The whistle-stop", plus D10 hand-building.
-- Propose answers to the open question "How hand-building feels".
-- Ask again how they want to review M1: piece by piece, or once at the end (they chose "once at the end" for M0 only).
-- Include the larger platform (D11) in the plan, with a proposed size.
-- Work the design doc already fully specifies may start at once, because the designer said "start M1". That covers M1 packages: player carrying, cargo items and waybills, path-finding round buildings and trains, parking the instant build behind ?debug=1, and fixing the two checks that use it. Anything new, such as D10 hand-building feel or panel gestures, waits for plan approval.
-- Do not build until the plan is approved.
-
-## Team mode
-The designer allowed a team of up to 6 workers and handing over to new lead sessions. How it worked for M0 is in DEV_NOTES "Team mode":
-- one owned section of index.html per builder, each on its own worktree branch;
-- one integrator merging, running `npm test`, and pushing.
-
-Watch out: worktrees can start from the empty first commit. Every builder must first move its branch to the current `ccr-59cb4c1f-rnscv9` head. The M0 builders did this themselves.
-
-## Gotchas
-- The cloud test machine draws without a graphics chip (up to about 0.7 s a frame). Frame times there say nothing about phones; checks must not depend on frame timing.
-- cdnjs is blocked on the test machine; tests serve the identical three.js r128 from node_modules.
-- Draw calls are counted over both passes (shadows included): about 31 busy, 62 with 200 walkers. Budget under 100.
-- Known gaps: crossover and ladder presets not built. (Path-finding round buildings and trains was added in M1 package 1; see DEV_NOTES "Player".)
+## Gotchas (still true)
+- The cloud test machine draws without a graphics chip; frame times there mean nothing for phones.
+- cdnjs is blocked on the test machine; tests serve three.js r128 from node_modules.
+- Draw calls: busy scenes 44 to 63 (budget under 100).
+- The playable link (https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc) still shows the end-of-M0 build; the designer has not asked for it to be updated.
+- GitHub says the repository moved to https://github.com/Geosync23/TrainGame.git; pushes to the old address still work.

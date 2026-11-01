@@ -1025,10 +1025,23 @@ const WALK = { CELL: 0.5, HALF: 60, N: 240, R: 0.25, GRASS: 14, PLATFORM: 10, LO
 const WALK_NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]; // fixed order
 const walkGridCache = new WeakMap();
 function walkGridSig(T) { return T.edges.length + '/' + T.nodes.length + '/' + T.switches.length; }
-function walkGrid(T) {
+// cart: the grid for pushing the handcart, where the platform and the freight shed with its dock
+// (carryNoCartRects, they have steps) are blocked too. Made from the plain grid on first use, cached with it.
+function walkGrid(T, cart) {
   let G = walkGridCache.get(T);
   if (!G || G.sig !== walkGridSig(T)) { G = walkGridBuild(T); walkGridCache.set(T, G); }
-  return G;
+  if (!cart) return G;
+  if (!G.cart) {
+    const cost = G.cost.slice();
+    for (const [x0, x1, z0, z1] of carryNoCartRects()) walkStampRect({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, yaw: 0 }, 0, i => { cost[i] = 0; });
+    G.cart = walkGridLayer(G.sig, cost, G.solid);
+  }
+  return G.cart;
+}
+// The grid the player's walk uses now: the handcart one while pushing the handcart.
+function walkGridFor(S) {
+  const t = S.player.tool, cart = t !== null && t !== undefined && S.tools && S.tools[t] && S.tools[t].k === 'cart';
+  return walkGrid(S.track, cart);
 }
 const walkCellOf = v => Math.max(0, Math.min(WALK.N - 1, Math.floor((v + WALK.HALF) / WALK.CELL)));
 function walkCell(x, z) { return walkCellOf(z) * WALK.N + walkCellOf(x); }
@@ -1066,6 +1079,11 @@ function walkGridBuild(T) {
   const fps = buildingFootprints(), solid = fps.filter(f => !f.flush);
   for (const f of fps) if (f.flush) walkStampRect(f, 0, i => { if (cost[i]) cost[i] = WALK.PLATFORM; });
   for (const f of solid) walkStampRect(f, WALK.R, i => { cost[i] = 0; });
+  return walkGridLayer(walkGridSig(T), cost, solid);
+}
+// A grid from its costs: connected areas, and the scratch arrays for the searches.
+function walkGridLayer(sig, cost, solid) {
+  const N = WALK.N;
   // Connected areas over open cells (4 neighbours; a diagonal step needs both side cells open, so this
   // matches what A* can reach). Used to pick a reachable goal without searching the whole map.
   const comp = new Int32Array(N * N).fill(-1), q = new Int32Array(N * N);
@@ -1080,7 +1098,7 @@ function walkGridBuild(T) {
     }
     nc++;
   }
-  return { sig: walkGridSig(T), cost, comp, solid, g: new Int32Array(N * N), from: new Int32Array(N * N),
+  return { sig, cost, comp, solid, g: new Int32Array(N * N), from: new Int32Array(N * N),
     seen: new Uint32Array(N * N), q: 0, dyn: new Uint32Array(N * N), dq: 0, memo: null };
 }
 // Stamps the cells under the trains (vehicle footprint as insideTrain() sees it, which already includes
@@ -1156,7 +1174,7 @@ function walkAStar(G, s, goal) {
 // A target in a blocked cell, or in an area the player cannot reach, is moved to the nearest cell that can be.
 // exact: the path ends in the target's own cell. Depends only on the state and the trains' poses.
 function walkPlan(S, poses) {
-  const P = S.player, G = walkGrid(S.track), dyn = walkTrainStamp(G, poses);
+  const P = S.player, G = walkGridFor(S), dyn = walkTrainStamp(G, poses);
   const s0 = walkCell(P.x, P.z), g0 = walkCell(P.tx, P.tz), key = s0 + '|' + g0 + '|' + dyn.join(',');
   if (G.memo && G.memo.key === key) return G.memo;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -1190,7 +1208,7 @@ function walkClear(G, x0, z0, x1, z1) {
 // cell path in a clear straight line, then the farthest from there, and so on, until the points cover
 // upTo units. done: the points reach the end of the path. exact: that end is the target itself.
 function walkPoints(S, poses, upTo) {
-  const P = S.player, plan = walkPlan(S, poses), G = walkGrid(S.track);
+  const P = S.player, plan = walkPlan(S, poses), G = walkGridFor(S);
   const pts = plan.cells.slice(plan.escape ? 0 : 1).map(walkCentre);
   if (plan.exact) { if (pts.length) pts[pts.length - 1] = [P.tx, P.tz]; else pts.push([P.tx, P.tz]); }
   const out = [];
@@ -1472,7 +1490,12 @@ function carryActorTick(S, ev, poseCache) {
   const walking = P.mode === 'to' || P.mode === 'dir';
   playerTick(S, ev, poseCache);
   let stopped = false;
-  if (walking && P.tool !== null && S.tools[P.tool].k === 'cart' && carryNoCartAt(P.x, P.z) && !carryNoCartAt(x0, z0)) {
+  const cart = P.tool !== null && S.tools[P.tool].k === 'cart';
+  // The handcart's path goes round the platform and the dock; a walk to a spot on them ends at their edge
+  // ("blocked" from playerTick), which gets the handcart's own message instead.
+  const bi = ev.findIndex((e, i) => i >= evFrom && e.t === 'blocked');
+  if (walking && cart && bi >= 0 && carryNoCartAt(P.tx, P.tz)) { ev.splice(bi, 1); carryRefuse(ev, 'A handcart cannot go on the platform or the dock: they have steps'); }
+  if (walking && cart && carryNoCartAt(P.x, P.z) && !carryNoCartAt(x0, z0)) {
     P.x = x0; P.z = z0; stopped = true;
     if (!use) P.use = null;
     P.mode = 'idle';

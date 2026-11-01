@@ -5,7 +5,10 @@ Read this, then CLAUDE.md, DEV_NOTES.md and design-doc.md section 0 (decisions D
 ## Where things stand
 - All of M0 is built and merged on `ccr-59cb4c1f-rnscv9`; all 13 checks pass (`npm install` once, then `npm test`, about 12 minutes).
 - Playable build: https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc (how to republish: strip doctype, html, head, body tags and the viewport meta from index.html, keep the title "Railhead Piece 1", publish to the same URL).
-- End-of-M0 review page, answers saved by the designer: https://claude.ai/artifact/2BKv74G9z2oFJSfWRchyU9. Read the answers with ArtifactData (collection `review`, document `answers`). At handover time the designer had not saved answers yet. Ask them, record the answers in design-doc section 0, and turn the provisional items (D9 build gestures, night brightness, 05:00 start, zoom-out, crowd on/off, buildings) into decisions.
+- End-of-M0 review: done. The answers are recorded as D11 (art signed off, smooth on the phone, everything provisional kept as built, and one change: a larger platform). Review page: https://claude.ai/artifact/2BKv74G9z2oFJSfWRchyU9.
+
+## The designer's go-ahead (2026-11-01)
+The designer said: "Hire 5 workers and start M1." So the next lead runs a team of 5 workers for M1.
 
 ## The designer's newest decision (D10)
 Laying track instantly must never be the real mechanic. Planning is fine, but a main mechanic is watching the line get built spike by spike. Chosen: this goes into M1.
@@ -19,6 +22,8 @@ Write the M1 plan for the designer's review (CLAUDE.md: plan before building, an
 - M1 is design-doc section 22 "M1. The whistle-stop", plus D10 hand-building.
 - Propose answers to the open question "How hand-building feels".
 - Ask again how they want to review M1: piece by piece, or once at the end (they chose "once at the end" for M0 only).
+- Include the larger platform (D11) in the plan, with a proposed size.
+- Work the design doc already fully specifies may start at once, because the designer said "start M1". That covers M1 packages: player carrying, cargo items and waybills, path-finding round buildings and trains, parking the instant build behind ?debug=1, and fixing the two checks that use it. Anything new, such as D10 hand-building feel or panel gestures, waits for plan approval.
 - Do not build until the plan is approved.
 
 ## Team mode

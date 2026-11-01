@@ -11,7 +11,7 @@ The full design is in `design-doc.md`. The original PDF it was converted from is
 
 ## Platform decisions (2026-11-01)
 
-These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D10).
+These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D11).
 
 - Phones first, touch first, portrait and landscape. A computer with mouse and keyboard comes second.
 - One HTML file, three.js r128 from cdnjs. There is no build step, no TypeScript and no Preact.
@@ -115,4 +115,4 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-Start from `plans/handover.md`. M0 is built and waiting for the designer's review answers. The newest decision is D10: track is built by hand, spike by spike, in M1, and the instant build is parked behind ?debug=1. Next job: the M1 plan, for review before building.
+Start from `plans/handover.md`. M0 is built and reviewed (D11). The newest decision is D10: track is built by hand, spike by spike, in M1, and the instant build is parked behind ?debug=1. Next job: the M1 plan, for review before building.

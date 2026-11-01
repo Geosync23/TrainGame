@@ -69,6 +69,17 @@
   #carInfo, #carHeld { font-size: 14px; color: #5a4a3a; }
   #carItems { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
   #carItems button { font-size: 14px; padding: 0 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jobSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
+    background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-left-width: 7px; border-radius: 8px;
+    padding: 3px 3px 3px 9px; font-size: 14px; line-height: 1.25; display: flex; gap: 8px; align-items: center; }
+  .jobSign .txt { flex: 1 1 auto; min-width: 0; max-width: 150px; }
+  .jobSign b { display: block; font-size: 14px; }
+  .jobSign span:empty { display: none; }
+  .jobSign button { pointer-events: auto; flex: none; font-size: 14px; padding: 0 8px; min-width: 48px; min-height: 48px; max-width: 86px; line-height: 1.1; }
+  .jobSign button[data-armed] { background: var(--accent); color: #fff; }
+  .jobSign[data-k="need"] { border-left-color: var(--accent); }
+  .jobSign[data-k="ready"] { border-left-color: var(--green); }
+  .jobSign[data-k="work"] { border-left-color: #c69a2c; }
   @media (orientation: landscape) and (max-height: 500px) {
     #carPanel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: 76vh; }
     #buildLabel { top: calc(env(safe-area-inset-top) + 10px); max-width: 340px; }
@@ -2504,6 +2515,82 @@ const ITEM_PROP_OF = { crate: ['crate', 1, 1], sack: ['sack', 1, 1], keg: ['keg'
 // Tints for long bundles (rails grey, ties dark, lumber pale, cordwood and poles bark brown).
 const ITEM_TINT = { rails: '#6a6a70', ties: '#6b4a2c', lumber: '#d2b07a', cordwood: '#7a5634', poles: '#8a6a44', bricks: '#c07050', stone: '#b0aaa0' };
 
+// --- Hand-building (D10, D12): the pieces of a construction job and the work tools. Drawn by "world rendering"
+// (jobDraw). The tie matches the laid track's tie (0.22 x 0.08 x 1.2, PAL.tie); the rail piece is a unit length
+// of the laid track's rail (0.08 wide, from 0.11 to RAIL_TOP), stretched along z per instance; the spike is a tiny
+// iron head. All are vertex-coloured so their InstancedMeshes share KIT_MAT.
+const JOB_LOOK = {
+  STAKE_OFF: 0.8,      // stakes stand this far either side of the centre line, just outside the ties (0.6) and bed (0.75)
+  STRING_Y: 0.14,      // the string runs this high between the stakes
+  SIGN_OFF: 1.7,       // the sign stands this far to the work side of the job's start, 0.6u back along it
+  SPIKE_COL: '#7d7b76',// fresh iron: lighter than PAL.rail so the heads read on a dark tie
+  FLAG_COL: '#c4502e', // surveyor's flag on each stake
+  STRING_COL: '#e4d6b6',
+};
+function jobPieceGeos() {
+  const geo = k => k.mesh().geometry;
+  return {
+    tie: geo(new Kit().add(box(0.22, 0.08, 1.2), PAL.tie, 0, 0, 0)),
+    rail: geo(new Kit().add(box(0.08, 0.1, 1), PAL.rail, 0, 0, 0)),
+    spike: geo(new Kit().add(box(0.055, 0.035, 0.055), JOB_LOOK.SPIKE_COL, 0, 0, 0).add(box(0.02, 0.05, 0.02), JOB_LOOK.SPIKE_COL, 0, -0.035, 0)),
+  };
+}
+// A spike maul for the player's right hand, in the arm group's frame (the hand is at y = -0.31; the handle
+// points forward and down, so an overhead swing lands its head in front of the feet).
+function modelMaul() {
+  const k = new Kit(), a = 0.6, L = 0.58, cx = Math.sin(a), cy = -Math.cos(a);
+  k.add(box(0.035, L, 0.035), PAL.trunk, -0.04, -0.29 + cy * L / 2, cx * L / 2, a);
+  k.add(box(0.07, 0.07, 0.2), PAL.loco, -0.04, -0.29 + cy * L, cx * L, a);
+  const m = k.mesh(false); m.name = 'maul'; m.visible = false;
+  return m;
+}
+// The fixed parts of every staked job, merged into ONE mesh (rebuilt only when a job is staked, done or
+// cancelled): a dirt bed along the centre line (2 cm up, under the laid track's ballast height of 3 cm, so
+// nothing lies on the same plane), a stake pair every 2.5u with a flag at the tip, string along both rail lines,
+// and the job's sign board beside its start. hAt(x, z) gives the ground height.
+function jobStaticKit(jobs, hAt) {
+  const k = new Kit(), L = JOB_LOOK;
+  for (const job of jobs) {
+    const n = Math.max(2, Math.ceil(job.len / 0.4)), bed = [];
+    const edge = (p, o) => { const x = p.x - p.tz * o, z = p.z + p.tx * o; return [x, hAt(x, z) + 0.02, z]; };
+    for (let i = 0; i < n; i++) {            // the bed: one ribbon of quads along the job, like the laid ballast
+      const p = jobPoint(job, job.len * i / n), q = jobPoint(job, job.len * (i + 1) / n);
+      const a = edge(p, -0.75), b = edge(q, -0.75), c = edge(q, 0.75), d = edge(p, 0.75);
+      bed.push(...a, ...c, ...b, ...a, ...d, ...c);
+    }
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bed, 3));
+    k.add(bg, PAL.dirt, 0, 0, 0);
+    // Stakes at job.stakes (every 2.5u and the end), a pair across the line; string between neighbours.
+    // Tangents at the stakes come from the job's own geometry: they lie on it every 2.5u, and the last at its end.
+    const pts = job.stakes.map(([x, z], i) => ({ x: x / 100, z: z / 100, q: jobPoint(job, i === job.stakes.length - 1 ? job.len : i * JOB.STAKE) }));
+    const side = (p, sd) => ({ x: p.x - p.q.tz * sd * L.STAKE_OFF, z: p.z + p.q.tx * sd * L.STAKE_OFF });
+    for (const p of pts) for (const sd of [-1, 1]) {
+      const a = side(p, sd), y = hAt(a.x, a.z), yaw = Math.atan2(p.q.tx, p.q.tz);
+      k.add(box(0.05, 0.34, 0.05), PAL.trim, a.x, y + 0.17, a.z, 0, yaw, 0);
+      k.add(box(0.012, 0.07, 0.12), L.FLAG_COL, a.x + p.q.tx * 0.07, y + 0.3, a.z + p.q.tz * 0.07, 0, yaw, 0);
+    }
+    for (let i = 0; i + 1 < pts.length; i++) for (const sd of [-1, 1]) {
+      const a = side(pts[i], sd), b = side(pts[i + 1], sd), len = Math.hypot(b.x - a.x, b.z - a.z);
+      const y = (hAt(a.x, a.z) + hAt(b.x, b.z)) / 2 + L.STRING_Y;
+      k.add(box(0.03, 0.03, len), L.STRING_COL, (a.x + b.x) / 2, y, (a.z + b.z) / 2, 0, Math.atan2(b.x - a.x, b.z - a.z), 0);
+    }
+    // The sign: a board on two posts, its face towards the work side, with dark lines standing for lettering.
+    const sp = jobSignSpot(job), y = hAt(sp.x, sp.z), yaw = Math.atan2(sp.tx, sp.tz) + Math.PI / 2;
+    const ax = Math.sin(yaw + Math.PI / 2), az = Math.cos(yaw + Math.PI / 2); // along the board
+    for (const s of [-1, 1]) k.add(box(0.06, 0.62, 0.06), PAL.trim, sp.x + ax * s * 0.26, y + 0.31, sp.z + az * s * 0.26, 0, yaw, 0);
+    k.add(box(0.7, 0.36, 0.04), PAL.wall, sp.x, y + 0.5, sp.z, 0, yaw, 0);
+    const fx = -Math.sin(yaw) * job.side, fz = -Math.cos(yaw) * job.side; // the face looks to the work side
+    for (const [dy, w] of [[0.08, 0.5], [0, 0.42], [-0.08, 0.46]]) k.add(box(w, 0.035, 0.01), PAL.vest, sp.x + fx * 0.024, y + 0.5 + dy, sp.z + fz * 0.024, 0, yaw, 0);
+  }
+  const m = k.mesh(true); m.name = 'jobStatic';
+  return m;
+}
+// Where a job's sign stands (and its label is anchored): beside the start, on the work side, a little back.
+function jobSignSpot(job) {
+  const q = jobPoint(job, 0), o = JOB_LOOK.SIGN_OFF * job.side;
+  return { x: q.x - q.tz * o - q.tx * 0.6, z: q.z + q.tx * o - q.tz * 0.6, tx: q.tx, tz: q.tz };
+}
+
 // ==== Section: renderer and camera ====
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -2804,9 +2891,12 @@ function cargoPoses(S) {
     const w = I.where[i];
     if (!w) continue;
     if (w.kind === 'BAY') (byBay[w.buildingId + ':' + w.bay] = byBay[w.buildingId + ':' + w.bay] || []).push(i);
-    else if (w.kind === 'GROUND') {
-      const x = w.x / 100, z = w.z / 100, ty = typeof terrainHeight === 'function' ? terrainHeight(x, z) : 0;
-      put(i, 'G' + w.x + ',' + w.z, x, ty + 0.004, z, ((i * 2654435761) >>> 0) % 16 * Math.PI / 8);
+    else if (w.kind === 'GROUND' || w.kind === 'STOCKPILE') {
+      // A job's stockpile items stand where they were put down (job.site, hand-building), like ground items.
+      const at = w.kind === 'GROUND' ? [w.x, w.z] : jobSiteAt(S, w.jobId, i);
+      if (!at) continue;
+      const x = at[0] / 100, z = at[1] / 100, ty = typeof terrainHeight === 'function' ? terrainHeight(x, z) : 0;
+      put(i, 'G' + at[0] + ',' + at[1], x, ty + 0.004, z, cargoGroundYaw(i));
     }
   }
   for (const key of Object.keys(byBay).sort()) {
@@ -2890,6 +2980,8 @@ function cargoDraw(S) {
     const t = ITEM_PROP_OF[itemType(S, i)][0];
     need[t] = (need[t] || 0) + 1; total++;
   }
+  const extras = jobView.extras; // props that are not items: an opened spike keg at a construction job (jobDraw)
+  for (const x of extras) need[x.shape] = (need[x.shape] || 0) + 1;
   for (const t of Object.keys(cargoView.shapes)) { const m = need[t] ? cargoEnsure(t, need[t]) : cargoView.meshes[t]; if (m) m.userData.k = 0; }
   cargoEnsureTag(total).userData.k = 0;
   const actorOf = id => (id === 'player' ? view.player : null);
@@ -2899,6 +2991,12 @@ function cargoDraw(S) {
     const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId)) : w.kind === 'CAR' ? flat[i] : poses[i];
     if (p) cargoSetItem(S, i, p);
   }
+  for (const x of extras) {
+    const m = cargoView.meshes[x.shape], k = m.userData.k++;
+    cargoQ.setFromAxisAngle(cargoUp, x.yaw);
+    m.setMatrixAt(k, cargoM.compose(cargoV.set(x.x, x.y, x.z), cargoQ, cargoS.set(1, 1, 1)));
+    m.setColorAt(k, cargoCol.setRGB(1, 1, 1));
+  }
   for (const m of Object.values(cargoView.meshes).concat(cargoView.tag)) {
     m.count = m.userData.k; m.visible = m.count > 0;
     m.instanceMatrix.needsUpdate = true;
@@ -2906,6 +3004,239 @@ function cargoDraw(S) {
   }
   cargoView.tag.geometry.attributes.aCell.needsUpdate = true;
   cargoView.count = cargoView.tag.count;
+}
+// The turn of an item lying on the ground (or at a job's stockpile): a fixed pattern from its id.
+function cargoGroundYaw(id) { return ((id * 2654435761) >>> 0) % 16 * Math.PI / 8; }
+
+// --- Hand-building drawing (D10, D12; builder B2): staked jobs, their materials and the work on them. ---
+// Reads S.jobs and S.player only; it never changes the sim state.
+// Draw calls: the fixed parts of every job (bed, stakes, string, sign boards) are ONE merged mesh (2 with its
+// shadow); placed and loose ties, rails and spikes are one InstancedMesh each over all jobs, with fixed maximum
+// counts and KIT_MAT (ties and rails receive shadows but do not cast them, like the laid track, and spikes are
+// too small to: 1 call each); the maul in the player's hand is 1 more while it shows. Items at a job's
+// stockpile are drawn by the cargo instanced meshes (cargoPoses), and an opened spike keg as an extra cargo keg
+// (jobView.extras): no extra calls. So a job in progress adds about 6.
+// Instances are rebuilt only when a job's done or loose counts, its site or the job list change. The piece in
+// the player's hands (a tie on the shoulder or being set down, the rail pair being dropped, the spike being
+// driven) is the last instance of its mesh and is the only one moved each frame (a partial upload).
+// When a job finishes, the same tick removes it and lays the track (trackBuilt rebuilds the world), so the
+// next frame draws the laid track and no job pieces: nothing is drawn twice.
+const jobView = { group: null, statics: null, staticSig: null, sig: null, geos: null, meshes: {}, n: { tie: 0, rail: 0, spike: 0 },
+  cache: {}, seen: {}, piles: {}, extras: [], extrasSig: '', maul: null, S: null, work: null, full: false };
+const JOB_CAP = { tie: 512, rail: 1024, spike: 2048 };   // starting maximum counts; doubled only if ever exceeded
+const jobM = new THREE.Matrix4(), jobQ = new THREE.Quaternion(), jobQ2 = new THREE.Quaternion(), jobQ3 = new THREE.Quaternion(), jobV = new THREE.Vector3(),
+  jobSc = new THREE.Vector3(1, 1, 1), jobUp = new THREE.Vector3(0, 1, 0);
+const jobH = (x, z) => (typeof terrainHeight === 'function' ? terrainHeight(x, z) : 0);
+const jobEase = t => t * t * (3 - 2 * t);
+// Where a stockpile item stands (job.site, hundredths), or null.
+function jobSiteAt(S, jobId, itemId) { const j = jobGet(S, jobId); return (j && j.site[itemId]) || null; }
+// Each job's piece positions, worked out once per job: ties (as the laid track's, at 0.07 up, the switch's
+// diverging leg 4 mm higher as buildWorld lifts it), 4 spikes per tie (2 each side of each rail, staggered),
+// and per 5u stretch the rail pieces of both rails (about 0.5u each, end to end along the curve).
+function jobGeom(job) {
+  const key = job.id + ':' + job.len;
+  if (jobView.cache[key]) return jobView.cache[key];
+  const lift = s => (job.sw && s < job.geo.edges[0].len - 1e-9 ? 0.004 : 0), G = CFG.GAUGE_HALF;
+  const ties = [], spikes = [], rails = [];
+  for (let i = 0; i < job.count.ties; i++) {
+    const s = jobTieAt(job, i), p = jobPoint(job, s), y = jobH(p.x, p.z) + lift(s);
+    const jit = ((i * 7) % 11 - 5) / 5 * Math.PI / 180; // up to 1 degree, a fixed pattern (the laid track's is seeded)
+    ties.push({ x: p.x, y: y + 0.07, z: p.z, yaw: Math.atan2(-p.tz, p.tx) + jit });
+    for (let q = 0; q < JOB.SPIKES_PER_TIE; q++) {
+      const r = q < 2 ? -1 : 1, o = q % 2 ? 1 : -1, n = r * G + o * 0.075, a = o * r > 0 ? 0.045 : -0.045;
+      spikes.push({ x: p.x - p.tz * n + p.tx * a, y: y + 0.1225, z: p.z + p.tx * n + p.tz * a, yaw: Math.atan2(p.tx, p.tz) });
+    }
+  }
+  for (let k = 0; k < job.count.rails; k++) {
+    const a = k * JOB.RAIL_LEN, b = Math.min(job.len, a + JOB.RAIL_LEN), m = Math.max(1, Math.ceil((b - a) / 0.5)), segs = [];
+    for (let j = 0; j < m; j++) {
+      const s0 = a + (b - a) * j / m, s1 = a + (b - a) * (j + 1) / m, p = jobPoint(job, s0), q = jobPoint(job, s1);
+      for (const o of [-G, G]) {
+        const x0 = p.x - p.tz * o, z0 = p.z + p.tx * o, x1 = q.x - q.tz * o, z1 = q.z + q.tx * o, x = (x0 + x1) / 2, z = (z0 + z1) / 2;
+        segs.push({ x, y: jobH(x, z) + lift((s0 + s1) / 2) + 0.161, z, yaw: Math.atan2(x1 - x0, z1 - z0), len: Math.hypot(x1 - x0, z1 - z0) });
+      }
+    }
+    rails.push(segs);
+  }
+  return (jobView.cache[key] = { ties, spikes, rails });
+}
+// Where a material's loose pieces lie: where the last bundle (or keg) of it was opened, which the drawing
+// remembers from the site it saw before; for a job loaded from a save, a spot beside the job's start.
+// (Loose rails do not use it: they lie beside the stretch they are for.)
+function jobPile(job, m) {
+  const P = (jobView.piles[job.id] = jobView.piles[job.id] || {});
+  if (!P[m]) {
+    const q = jobPoint(job, Math.min(job.len, 0.6 + 1.3 * JOB_MATS.indexOf(m))), o = job.side * 2.6;
+    P[m] = jobPileAt(q.x - q.tz * o, q.z + q.tx * o, Math.atan2(q.tx, q.tz));
+  }
+  return P[m];
+}
+function jobPileAt(x, z, yaw) { return { x, z, yaw, y: jobH(x, z) }; }
+// The player's work now: { job, step, i, t (0 to 1 through the step), acting } or null. Walking between spots
+// (P.use) gives the next step with acting false.
+function jobWorkNow(S, alpha) {
+  const P = S.player;
+  if (P.act && P.act.k === 'job') {
+    const job = jobGet(S, P.act.id);
+    if (!job) return null;
+    const t = Math.max(0, Math.min(1, (P.act.total - P.act.left + (speed > 0 ? alpha : 0) * CFG.TICK_GAME_S) / P.act.total));
+    return { job, step: P.act.step, i: P.act.i, t, acting: true };
+  }
+  if (P.use && P.use.k === 'job') {
+    const job = jobGet(S, P.use.id), st = job && jobStepAt(job);
+    return st ? { job, step: st.k, i: st.i, t: 0, acting: false } : null;
+  }
+  return null;
+}
+function jobEnsure(kind, need) {
+  let m = jobView.meshes[kind];
+  if (m && m.userData.cap >= need) return m;
+  const cap = m ? Math.max(need, m.userData.cap * 2) : Math.max(need, JOB_CAP[kind]), old = m;
+  m = new THREE.InstancedMesh(jobView.geos[kind], KIT_MAT, cap);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // All white instance colours: three.js r128 shares one KIT_MAT program between instanced meshes, and the cargo
+  // meshes use instance colours, so these must have them too.
+  m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+  if (old) { m.instanceMatrix.array.set(old.instanceMatrix.array); jobView.group.remove(old); old.dispose(); }
+  m.castShadow = false; m.receiveShadow = true; m.frustumCulled = false; m.count = 0; m.visible = false; m.name = 'job-' + kind + 's';
+  m.userData.cap = cap; jobView.meshes[kind] = m; jobView.group.add(m); jobView.full = true;
+  return m;
+}
+function jobPut(kind, x, y, z, yaw, len, q) {
+  const k = jobView.n[kind]++, m = jobEnsure(kind, k + 1);
+  if (q) jobQ.copy(q); else jobQ.setFromAxisAngle(jobUp, yaw);
+  m.setMatrixAt(k, jobM.compose(jobV.set(x, y, z), jobQ, jobSc.set(1, 1, len || 1)));
+}
+// Every placed and loose piece (not the one in the player's hands). Runs only when something changed.
+function jobFill(S, work) {
+  const n = jobView.n, extras = [], placed = {};
+  n.tie = 0; n.rail = 0; n.spike = 0;
+  for (const job of S.jobs.list) {
+    const g = jobGeom(job), d = job.done, L = job.loose, mine = work && work.job === job;
+    // Bundles opened since last time: their loose pieces lie where the bundle stood.
+    const seen = jobView.seen[job.id] || {};
+    for (const id of Object.keys(seen)) if (!job.site[id] && !S.items.alive[id]) {
+      const c = S.items.waybill[id].commodity, P = (jobView.piles[job.id] = jobView.piles[job.id] || {});
+      P[c] = jobPileAt(seen[id][0] / 100, seen[id][1] / 100, cargoGroundYaw(+id));
+    }
+    jobView.seen[job.id] = { ...job.site };
+    const n0 = { ...n };
+    for (let i = 0; i < d.ties; i++) { const t = g.ties[i]; jobPut('tie', t.x, t.y, t.z, t.yaw); }
+    for (let k = 0; k < d.rails; k++) for (const r of g.rails[k]) jobPut('rail', r.x, r.y, r.z, r.yaw, r.len);
+    for (let j = 0; j < d.spikes; j++) { const p = g.spikes[j]; jobPut('spike', p.x, p.y, p.z, p.yaw); }
+    // For the checks: the placed pieces drawn (instances from 'from' on are this job's placed ones).
+    placed[job.id] = { from: n0, ties: n.tie - n0.tie, railPieces: n.rail - n0.rail, spikes: n.spike - n0.spike,
+      railPiecesPerPair: g.rails.map(r => r.length) };
+    // Loose ties: a small stack, 3 to a layer, 4 mm between layers.
+    const nt = Math.max(0, L.ties - (mine && work.step === 'tie' ? 1 : 0));
+    if (nt) {
+      const p = jobPile(job, 'ties'), cx = Math.cos(p.yaw), sx = -Math.sin(p.yaw);
+      for (let j = 0; j < nt; j++) { const lx = (j % 3 - 1) * 0.25; jobPut('tie', p.x + cx * lx, p.y + 0.044 + Math.floor(j / 3) * 0.084, p.z + sx * lx, p.yaw); }
+    }
+    // Loose rails: laid out on the ground in pairs beside the stretches they are for, on the work side
+    // (the next pair beside the next stretch to rail, any more beside the one after).
+    const nr = Math.max(0, L.rails - (mine && work.acting && work.step === 'rail' ? 2 : 0));
+    for (let j = 0; j < nr; j++) {
+      const want = d.rails + (mine && work.acting && work.step === 'rail' ? 1 : 0) + Math.floor(j / 2), k = Math.min(job.count.rails - 1, want);
+      const a = jobPoint(job, k * JOB.RAIL_LEN), b = jobPoint(job, Math.min(job.len, (k + 1) * JOB.RAIL_LEN));
+      const o = job.side * (1.3 + 0.17 * (j % 2) + 0.4 * (want - k)); // spare pairs past the end lie further out
+      const x0 = a.x - a.tz * o, z0 = a.z + a.tx * o, x1 = b.x - b.tz * o, z1 = b.z + b.tx * o, x = (x0 + x1) / 2, z = (z0 + z1) / 2;
+      jobPut('rail', x, jobH(x, z) + 0.053, z, Math.atan2(x1 - x0, z1 - z0), Math.hypot(x1 - x0, z1 - z0) - 0.1);
+    }
+    // An opened spike keg (a cargo keg, no lid drawn) with spike heads showing on top.
+    if (L.spikes > 0) {
+      const p = jobPile(job, 'spikes'), ns = Math.min(7, L.spikes - (mine && work.acting && work.step === 'spike' ? 1 : 0));
+      extras.push({ shape: 'keg', x: p.x, y: p.y + 0.004, z: p.z, yaw: p.yaw });
+      for (let j = 0; j < ns; j++) {
+        const a = j * Math.PI * 2 / 6, r = j === 6 ? 0 : 0.065;
+        jobPut('spike', p.x + Math.cos(a) * r, p.y + 0.004 + 0.28 + 0.02, p.z + Math.sin(a) * r, a);
+      }
+    }
+  }
+  const sig = extras.map(e => [e.x, e.z].map(v => v.toFixed(3)).join(',')).join(';');
+  if (sig !== jobView.extrasSig) { jobView.extrasSig = sig; cargoView.dirty = true; }
+  jobView.extras = extras;
+  jobView.placed = placed;
+  jobView.nStatic = { ...n };
+}
+// The piece in the player's hands, each frame: a tie carried on the shoulder and then set down in its place;
+// the rail pair held up and dropped onto the ties; the spike sinking with each of the 3 hammer blows.
+function jobAnimate(work, pl) {
+  const n = jobView.n, s0 = jobView.nStatic;
+  n.tie = s0.tie; n.rail = s0.rail; n.spike = s0.spike;
+  if (!work) return;
+  const g = jobGeom(work.job), t = work.t;
+  if (work.step === 'tie') {
+    const f = pl.rotation.y, sx = pl.position.x + Math.cos(f) * 0.26, sz = pl.position.z - Math.sin(f) * 0.26;
+    jobQ2.setFromAxisAngle(jobUp, f);
+    if (!work.acting || t < 0.55) jobPut('tie', sx, 0.78, sz, 0, 1, jobQ2);
+    else {
+      const T = g.ties[work.i], k = jobEase((t - 0.55) / 0.45);
+      let yaw = T.yaw; while (yaw - f > Math.PI / 2) yaw -= Math.PI; while (f - yaw > Math.PI / 2) yaw += Math.PI; // a tie looks the same turned round
+      jobPut('tie', lerp(sx, T.x, k), lerp(0.78, T.y, k), lerp(sz, T.z, k), 0, 1, jobQ2.slerp(jobQ3.setFromAxisAngle(jobUp, yaw), k));
+    }
+  } else if (work.acting && work.step === 'rail') {
+    const lift = t < 0.55 ? 0.32 : t < 0.75 ? 0.32 * (1 - ((t - 0.55) / 0.2) ** 2) : 0;
+    for (const r of g.rails[work.i]) jobPut('rail', r.x, r.y + lift, r.z, r.yaw, r.len);
+  } else if (work.acting && work.step === 'spike') {
+    const p = g.spikes[work.i], c = t * 3 - Math.floor(t * 3), struck = Math.min(3, Math.floor(t * 3) + (c >= 0.72 ? 1 : 0));
+    jobPut('spike', p.x, p.y + 0.06 * (1 - struck / 3), p.z, p.yaw);
+  }
+}
+// The player's work poses (design-doc 17 "Work"), on top of the walk and carry poses: right arm up holding the tie
+// on the shoulder, then both arms setting it down; both arms holding the rail pair up, then letting it drop; and
+// for a spike 3 overhead maul blows (raise over 60% of each blow, strike fast, small lean into it).
+function jobPose(work, pl) {
+  const u = pl.userData;
+  if (!jobView.maul) { jobView.maul = modelMaul(); u.armR.add(jobView.maul); pl.rotation.order = 'YXZ'; }
+  jobView.maul.visible = !!work && work.step === 'spike';
+  let lean = 0;
+  if (work) {
+    const t = work.t, arms = (l, r) => { u.armL.rotation.x = l; u.armR.rotation.x = r; u.armL.rotation.z = -0.05; u.armR.rotation.z = 0.05; };
+    if (work.step === 'tie') {
+      if (!work.acting || t < 0.55) { u.armR.rotation.x = -2.75; u.armR.rotation.z = 0.2; }
+      else { const k = jobEase((t - 0.55) / 0.45); arms(lerp(-0.3, -0.9, k), lerp(-2.75, -0.9, k)); lean = 0.3 * Math.sin(k * Math.PI); }
+    } else if (work.step === 'rail' && work.acting) {
+      const k = t < 0.55 ? 0 : Math.min(1, (t - 0.55) / 0.2);
+      arms(lerp(-1.1, -0.4, k), lerp(-1.1, -0.4, k)); lean = 0.25 * (1 - k);
+    } else if (work.step === 'spike') {
+      if (!work.acting) u.armR.rotation.x = -0.35;
+      else {
+        const c = t * 3 - Math.floor(t * 3);
+        const a = c < 0.6 ? lerp(-0.6, -2.7, jobEase(c / 0.6)) : c < 0.72 ? lerp(-2.7, -0.55, (c - 0.6) / 0.12) : lerp(-0.55, -0.6, (c - 0.72) / 0.28);
+        arms(a, a); lean = c < 0.6 ? -0.06 * jobEase(c / 0.6) : c < 0.72 ? lerp(-0.06, 0.18, (c - 0.6) / 0.12) : lerp(0.18, 0, (c - 0.72) / 0.28);
+      }
+    }
+  }
+  pl.rotation.x = lean;
+}
+// Called each frame from render(), after the walk and carry poses and before cargoDraw (which draws the extras).
+function jobDraw(S, alpha) {
+  if (!jobView.group) { jobView.group = new THREE.Group(); jobView.group.name = 'jobs'; scene.add(jobView.group); jobView.geos = jobPieceGeos(); }
+  if (jobView.S !== S) { jobView.S = S; jobView.cache = {}; jobView.seen = {}; jobView.piles = {}; jobView.staticSig = null; jobView.sig = null; }
+  const jobs = S.jobs ? S.jobs.list : [], work = jobs.length ? jobWorkNow(S, alpha) : null;
+  jobView.work = work;
+  const ssig = jobs.map(j => j.id + ':' + j.len).join(',');
+  if (ssig !== jobView.staticSig) {
+    jobView.staticSig = ssig;
+    if (jobView.statics) { jobView.group.remove(jobView.statics); jobView.statics.geometry.dispose(); jobView.statics = null; }
+    if (jobs.length) { jobView.statics = jobStaticKit(jobs, jobH); jobView.group.add(jobView.statics); }
+  }
+  const held = work ? work.job.id + work.step + (work.step === 'tie' || work.acting ? 'h' : '') : '';
+  const sig = jobs.map(j => [j.id, j.done.ties, j.done.rails, j.done.spikes, j.loose.ties, j.loose.rails, j.loose.spikes, Object.keys(j.site).join('.')].join(',')).join(';') + '|' + held;
+  const full = sig !== jobView.sig;
+  if (full) { jobView.sig = sig; jobFill(S, work); }
+  jobAnimate(work, view.player);
+  jobPose(work, view.player);
+  for (const kind of ['tie', 'rail', 'spike']) {
+    const m = jobView.meshes[kind], cnt = jobView.n[kind], s0 = jobView.nStatic ? jobView.nStatic[kind] : 0;
+    if (!m) continue;
+    const tail = cnt - s0;
+    if (full || jobView.full) { m.instanceMatrix.updateRange.offset = 0; m.instanceMatrix.updateRange.count = -1; m.instanceMatrix.needsUpdate = true; }
+    else if (tail > 0) { m.instanceMatrix.updateRange.offset = s0 * 16; m.instanceMatrix.updateRange.count = tail * 16; m.instanceMatrix.needsUpdate = true; }
+    m.count = cnt; m.visible = cnt > 0;
+  }
+  jobView.full = false;
 }
 
 // ==== Section: terrain ====
@@ -4722,6 +5053,76 @@ $('carItems').addEventListener('click', e => { const b = e.target.closest('butto
 $('carPutIn').addEventListener('click', () => { if (carUi.stock !== null) send({ t: 'carryPut', stock: carUi.stock }); });
 $('carClose').addEventListener('click', closeCarPanel);
 function openPanel(trId) { closeCarPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
+// The job signs' labels (hand-building, builder B2): one small card per staked job, standing on its sign board,
+// saying what the job still needs ("Bring 2 tie bundles and 1 spike keg"), or that it is ready or being built.
+// Words from jobNeeds through jobNeedsText (build tool section). Below the buttons (z-index 1, no taps), and
+// hidden while it would overlap a button or panel, so it never covers them.
+const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel'];
+const jobSigns = {};
+function jobSignText(S, job) {
+  const P = S.player, needs = jobNeedsText(jobNeeds(S, job)), c = job.count, d = job.done;
+  const working = (P.act && P.act.k === 'job' && P.act.id === job.id) || (P.use && P.use.k === 'job' && P.use.id === job.id);
+  const k = working ? 'work' : needs ? 'need' : 'ready';
+  // Done so far, weighted by the work time of each piece (D12), in whole per cent.
+  const W = JOB_STEP_S, all = c.ties * W.tie + c.rails * W.rail + c.spikes * W.spike;
+  const pct = Math.floor(100 * (d.ties * W.tie + d.rails * W.rail + d.spikes * W.spike) / all);
+  const title = `Job ${job.id + 1}` + (working ? ': building' : needs ? ' needs' : ': ready to build') + (pct ? ` (${pct}%)` : '');
+  const body = needs ? (working ? 'Still to bring: ' : '') + needs : working ? '' : 'Tap the stakes to work';
+  return { k, title, body, needs, pct };
+}
+function jobSignHud() {
+  const jobs = S.jobs ? S.jobs.list : [], live = {};
+  for (const job of jobs) {
+    live[job.id] = true;
+    let L = jobSigns[job.id];
+    if (!L) {
+      const el = document.createElement('div');
+      el.className = 'hud jobSign'; el.dataset.job = job.id;
+      el.innerHTML = '<div class="txt"><b></b><span></span></div><button type="button" class="jobCancel">Cancel job</button>';
+      document.body.appendChild(el);
+      L = jobSigns[job.id] = { el, sig: '', x: -1e9, y: -1e9, w: 0, h: 0, b: el.querySelector('b'), s: el.querySelector('span'), btn: el.querySelector('button'), timer: 0 };
+      // Cancelling pulls up work, so it takes a second tap within 4 seconds (confirm() does not work in every viewer).
+      const L2 = L, id = job.id;
+      L.btn.addEventListener('click', () => {
+        if (L2.btn.dataset.armed !== undefined) {
+          clearTimeout(L2.timer); send({ t: 'jobCancel', id });
+          if (speed === 0) doTick(); // paused: cancel at once, as Lay track does
+          return;
+        }
+        L2.btn.dataset.armed = ''; L2.btn.textContent = 'Tap again to cancel'; L2.w = 0;
+        L2.timer = setTimeout(() => { delete L2.btn.dataset.armed; L2.btn.textContent = 'Cancel job'; L2.w = 0; }, 4000);
+      });
+    }
+    const tx = jobSignText(S, job), sig = tx.k + tx.title + tx.body;
+    if (sig !== L.sig) {
+      L.sig = sig; L.el.dataset.k = tx.k; L.el.dataset.needs = tx.needs;
+      L.b.textContent = tx.title; L.s.textContent = tx.body;
+      L.w = 0;
+    }
+    // Above the sign; while the player works this job, below the sign's foot instead, so it covers less of the
+    // work. Kept inside the screen sideways; hidden when the sign is off screen.
+    const below = tx.k === 'work', sp = jobSignSpot(job), W = window.innerWidth;
+    const p = toScreen(sp.x, jobH(sp.x, sp.z) + (below ? 0 : 0.8), sp.z), y = below ? p.y + 8 : p.y;
+    if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; L.x = -1e9; }
+    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x));
+    if (Math.abs(x - L.x) >= 0.5 || Math.abs(y - L.y) >= 0.5 || below !== L.below) {
+      L.x = x; L.y = y; L.below = below;
+      L.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, ${below ? '0' : '-100%'})`;
+    }
+    // Hidden where it would overlap a button or panel.
+    const r = below ? { l: x - L.w / 2, r: x + L.w / 2, t: y, b: y + L.h } : { l: x - L.w / 2, r: x + L.w / 2, t: y - L.h, b: y };
+    let show = p.x > 0 && p.x < W && r.t > 0 && r.b < window.innerHeight;
+    for (const id of JOB_SIGN_AVOID) {
+      if (!show) break;
+      const e = $(id);
+      if (!e || e.hidden || !e.getClientRects().length) continue;
+      const q = e.getBoundingClientRect();
+      if (r.l < q.right + 4 && r.r > q.left - 4 && r.t < q.bottom + 4 && r.b > q.top - 4) show = false;
+    }
+    L.el.style.visibility = show ? 'visible' : 'hidden';
+  }
+  for (const id of Object.keys(jobSigns)) if (!live[id]) { jobSigns[id].el.remove(); delete jobSigns[id]; }
+}
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
 function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
@@ -4731,6 +5132,7 @@ function updateHud() {
   $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
   carPanelUpdate();
   carryHud();
+  jobSignHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -4985,6 +5387,7 @@ function render(alpha, dt) {
   u.armL.rotation.x = -sw * 20 * Math.PI / 180; u.armR.rotation.x = sw * 20 * Math.PI / 180;
   if (P.act && P.act.k === 'throw') { u.armR.rotation.x = -1.2 + Math.sin(animT * 4) * 0.25; u.armL.rotation.x = -1.0; }
   carryDraw(alpha, dt);
+  jobDraw(S, alpha);      // construction jobs and the work poses (hand-building, after the carry poses)
   u.body.position.y = Math.abs(Math.sin(u.phase)) * 0.02 * u.swing;
   pl.scale.y = 1 + Math.sin(animT * 0.35 * Math.PI * 2) * 0.015 * (1 - u.swing);
   // The tap marker shows until the walk it started ends.
@@ -5061,6 +5464,9 @@ window.__railhead = {
   carry: { TOOL_KINDS, TOOL_PARK, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
   interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
+  get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
+  jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,
+  trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.isInstancedMesh && o.geometry.parameters && o.geometry.parameters.depth === 1.2 ? o.count : 0), 0),
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),

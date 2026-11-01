@@ -17,6 +17,7 @@ const checks = {
   'people (crowd of 200 walkers)': require('./check-people'),
   'build tool (laying track and switches)': require('./check-build'),
   'M0 acceptance criteria': require('./check-m0'),
+  'carrying (by hand, hand truck, handcart)': require('./check-carry'),
 };
 
 (async () => {

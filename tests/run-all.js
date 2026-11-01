@@ -27,6 +27,7 @@ const checks = {
   'towns (businesses, contracts offered, delivery at the door)': require('./check-town'),
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
+  'passengers (tickets, boarding, departure board)': require('./check-passengers'),
 };
 
 (async () => {

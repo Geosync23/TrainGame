@@ -39,6 +39,14 @@ const { openGame, stopServer } = require('./browser');
     ] : []).concat([
       { tick: 300, cmd: { t: 'walkTo', x: -500, z: 800 } },
     ]), 400);
+    // With passengers (S.pax): one traveller in line at the hub's window and one with a ticket on the platform,
+    // walking there, then 20 more ticks so their walks are saved part way.
+    if (S.pax && R.pax) {
+      const K = R.pax.paxStation('hub', S.track), slot = R.pax.paxQueueSlots(S, K)[0], mk = (s, x, z, tx, tz, fare) => ({ id: S.pax.next++, from: 'hub', st: 'hub', to: 'willow', s,
+        x, z, tx: null, tz: null, path: [], t0: S.time, f: 0, wait: 0, fare, car: null, door: 0 });
+      S.pax.list.push(mk('queue', slot[0] + 600, slot[1], 0, 0, 0), mk('wait', Math.round(K.exits[0][0] * 100), Math.round(K.exits[0][1] * 100), 0, 0, 40));
+      R.simRun(S, [], 20);
+    }
     return { save: JSON.stringify({ state: S, ui: { yawIdx: 1, zoom: 1.5, speed: 1 } }), hash: R.stateHash(S), schemaVersion: S.schemaVersion };
   });
   const dir = path.join(__dirname, 'fixtures');

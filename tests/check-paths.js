@@ -238,8 +238,10 @@ module.exports = async function checkPaths() {
         const pts = walkPoints(rh.state, [].concat(...rh.state.trains.map(tr => window.__railhead.trainPoses(rh.state.track, tr))), Infinity).pts;
         return { n: pts.length, mode: rh.state.player.mode };
       });
-      await page.waitForTimeout(400);
-      const ov = await page.evaluate(() => rh.overlays.path);
+      // The overlays are checked every 3 frames; on a busy test machine (software drawing) a frame can take
+      // 400 ms, so wait up to 6 s for the overlay rather than a fixed 0.4 s.
+      await page.waitForFunction(() => rh.overlays.path && rh.overlays.path.built, null, { timeout: 6000 }).catch(() => {});
+      const ov =await page.evaluate(() => rh.overlays.path);
       if (!(r.n >= 2) || r.mode !== 'to') problems.push(`overlay: expected a path with corners round the depot, got ${r.n} points (mode ${r.mode})`);
       if (!ov.built) problems.push('overlay: the Path overlay was not drawn');
       await page.screenshot({ path: screenshotPath('paths-overlay-portrait') });

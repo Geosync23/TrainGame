@@ -14,7 +14,7 @@
 // - The town's buildings keep the section 6 clearances from every track edge and do not overlap any footprint;
 //   the walk grid blocks them; every business door is reached on foot (useBiz, reachedBiz) from the platform
 //   without entering a building.
-// - Determinism: 7 game days with a delivery, twice, give the same hash. The v8 sample save loads with the
+// - Determinism: 7 game days with a delivery, twice, give the same hash. The v9 sample save loads with the
 //   towns' opening stock.
 // Part 2, the page by real touch (portrait and landscape): the door label shows the business name and what it
 // wants, covers no button; a tap on the store's door delivers the flour (cash on screen goes up by the price);
@@ -27,7 +27,7 @@ const { openGame, waitReady, screenshotPath } = require('./browser');
 
 module.exports = async function checkTown() {
   const problems = [];
-  const vPrev = fs.readFileSync(path.join(__dirname, 'fixtures', 'save-v8.json'), 'utf8');
+  const vPrev = fs.readFileSync(path.join(__dirname, 'fixtures', 'save-v9.json'), 'utf8');
   // ---- Part 1: the sim ----
   {
     const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
@@ -156,7 +156,7 @@ module.exports = async function checkTown() {
         const sc = [{ tick: 5, cmd: { t: 'carryPut', biz: 0 } }, { tick: 400, cmd: { t: 'useBiz', biz: 3 } }];
         const a = R.simRun(script(R.newState(1866)), sc, 7 * 10800), b = R.simRun(script(R.newState(1866)), sc, 7 * 10800);
         out.det = { a: R.stateHash(a), b: R.stateHash(b), offers: a.econ.contracts.length, used: a.items.used.length, money: E.econCheckMoney(a), cons: C.itemCheckConservation(a) };
-        // 10. The v8 sample save loads with the towns' opening stock.
+        // 10. The v9 sample save loads with the towns' opening stock.
         const fx = JSON.parse(vPrev), sv = R.migrate(JSON.parse(fx.save));
         out.old = { schema: sv.state.schemaVersion, town: JSON.stringify(sv.state.town) === JSON.stringify(T.townNewState()) };
         return out;
@@ -189,7 +189,7 @@ module.exports = async function checkTown() {
       if (r.open.length) problems.push('walk grid cells open inside town buildings: ' + [...new Set(r.open)].join(', '));
       for (const x of r.doors) if (x.reached < 0 || x.entered || x.dist > 1.5) problems.push('door of business ' + x.biz + ' not reached on foot: ' + JSON.stringify(x));
       if (r.det.a !== r.det.b || r.det.money.length || r.det.cons.length) problems.push('7 days twice: ' + JSON.stringify(r.det));
-      if (!r.old.town) problems.push('the v8 sample save did not load with the towns\' opening stock: ' + JSON.stringify(r.old));
+      if (!r.old.town) problems.push('the v9 sample save did not load with the towns\' opening stock: ' + JSON.stringify(r.old));
       console.log(`  7 days: ${r.weekUsed} units used, offers ${r.weekOffers.join(' ') || 'none'}; low coffee offer ${o.q} at ${o.price} cents (base ${o.base}); delivery paid ${d.paid} cents; doors reached in ${r.doors.map(x => x.reached).join('/')} ticks; 7 days twice ${r.det.a}; sim part ${((Date.now() - t0) / 1000).toFixed(1)} s`);
       if (errors.length) problems.push('console errors (sim part): ' + errors.join(' | '));
     } finally { await browser.close(); }

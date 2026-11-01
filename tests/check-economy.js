@@ -48,7 +48,7 @@ module.exports = async function checkEconomy() {
           offers: s0.econ.contracts.map(k => k.status + ':' + k.commodity + ':' + k.quantity + ':' + k.pricePerUnit), check: E.econCheckMoney(s0), schema: s0.schemaVersion };
 
         // 2. Orders.
-        const s1 = R.newState(1866);
+        const s1 = R.newState(1866), kf = E.econTelegraphKey(); s1.player.x = kf.x + 8; s1.player.z = kf.z - 4; // away from the key
         let ev = R.simTick(s1, [{ t: 'econOrder', lines: [{ c: 'flour', n: 3 }] }]);
         out.farRefused = ev.some(e => e.t === 'econRefused' && /telegraph key/.test(e.why)) && s1.econ.ledger.length === 0;
         atKey(s1);
@@ -270,7 +270,7 @@ module.exports = async function checkEconomy() {
     const R = (fn, arg) => page.evaluate(fn, arg);
     const settle = () => page.waitForTimeout(150);
     try {
-      await R(() => { const R = window.__railhead; R.state.player.x = -5; R.state.player.z = 12.4; R.step(1); });
+      await R(() => { const R = window.__railhead; const k0 = R.econ.econTelegraphKey(); R.state.player.x = k0.x - 3; R.state.player.z = k0.z + 0.8; R.step(1); });
       await page.waitForTimeout(1200); // the camera follows the player
       const sp = await R(() => { const R = window.__railhead, k = R.econ.econTelegraphKey(); return R.toScreen(k.wx, k.wz, k.wy); });
       await page.touchscreen.tap(sp.x, sp.y); await settle();
@@ -346,7 +346,7 @@ module.exports = async function checkEconomy() {
     const { browser, page, errors } = await openGame('landscape', { query: '?paused' });
     const R = (fn, arg) => page.evaluate(fn, arg);
     try {
-      await R(() => { const R = window.__railhead; R.state.player.x = -5; R.state.player.z = 12.4; R.send({ t: 'useTelegraph' }); for (let i = 0; i < 300 && !R.econ.panel.open; i++) R.step(1); });
+      await R(() => { const R = window.__railhead; const k0 = R.econ.econTelegraphKey(); R.state.player.x = k0.x - 3; R.state.player.z = k0.z + 0.8; R.send({ t: 'useTelegraph' }); for (let i = 0; i < 300 && !R.econ.panel.open; i++) R.step(1); });
       await page.waitForTimeout(1200);
       if (!(await page.isVisible('#telPanel'))) problems.push('landscape: the telegraph panel did not open');
       await page.locator('#telTabs button[data-tab="contracts"]').tap(); await page.waitForTimeout(300);

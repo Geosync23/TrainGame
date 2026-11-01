@@ -28,6 +28,7 @@
     background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.3;
     pointer-events: none; opacity: 0; transition: opacity .25s; text-align: center; }
   #toast.show { opacity: 1; }
+  #toast.below { top: calc(env(safe-area-inset-top) + 184px); } /* under the Send-to banner */
   #panel { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); width: min(94vw, 380px);
     box-sizing: border-box; background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
   #panel .row { display: flex; gap: 6px; align-items: center; }
@@ -43,6 +44,7 @@
   @media (orientation: landscape) and (max-height: 500px) {
     #panel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 66px); width: 340px; }
     #toast, #banner { top: calc(env(safe-area-inset-top) + 10px); }
+    #toast.below { top: calc(env(safe-area-inset-top) + 82px); }
   }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
@@ -471,12 +473,14 @@ function leadPos(T, tr, m) {
   if (m > 0) return tr.front;
   return trackWalk(T, reversePos(tr.front), trainLength(tr)).pos; // rear end, facing outwards
 }
-function releaseRoute(S, tr, onlyFree) {
+// Frees every route lock the train holds. Switches still under the train stay locked anyway,
+// because switchLockReason also refuses any switch occupiedSwitches finds a train on.
+// (The second argument is kept for callers written before this change; it no longer matters.)
+function releaseRoute(S, tr) {
   if (!tr.route) return;
-  const occ = onlyFree ? occupiedSwitches(S) : {};
   for (const L of tr.route.locks) {
     const W = S.track.switches[L.sw];
-    if (W.lockedBy === tr.id && occ[L.sw] === undefined) W.lockedBy = null;
+    if (W && W.lockedBy === tr.id) W.lockedBy = null;
   }
   tr.route = null;
 }
@@ -488,11 +492,12 @@ function applyCommand(S, c, ev) {
   const tr = c.tr !== undefined ? S.trains[c.tr] : null;
   switch (c.t) {
     case 'walkTo':
-      P.mode = 'to'; P.tx = c.x / 100; P.tz = c.z / 100; P.use = null; P.act = null; P.run = !!c.run; break;
+      // Targets beyond the map edge are pulled back onto the map, so the walk can end.
+      P.mode = 'to'; P.tx = clampMap(c.x / 100); P.tz = clampMap(c.z / 100); P.use = null; P.act = null; P.run = !!c.run; break;
     case 'walkDir':
-      P.use = null; P.act = null;
-      if (c.a === null) { if (P.mode === 'dir') P.mode = 'idle'; }
-      else { P.mode = 'dir'; P.a = c.a; P.run = !!c.run; }
+      // Letting go (a = null) only ends a walk by direction; a switch throw in progress carries on.
+      if (c.a === null) { if (P.mode === 'dir') { P.mode = 'idle'; P.use = null; P.act = null; } }
+      else { P.mode = 'dir'; P.a = c.a; P.run = !!c.run; P.use = null; P.act = null; }
       break;
     case 'useSwitch': {
       const W = T.switches[c.sw];
@@ -501,27 +506,38 @@ function applyCommand(S, c, ev) {
       break;
     }
     case 'useTrain':
+      // c.view (optional): direction from the scene towards the camera as a 0-255 angle code, so the
+      // player prefers the side of the train the camera sees. The sim itself knows nothing of the camera.
       if (!tr) return;
       P.mode = 'to'; P.use = { k: 'tr', id: c.tr }; P.act = null; P.run = false;
+      if (Number.isInteger(c.view)) P.use.view = ((c.view % 256) + 256) % 256;
       break;
     case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
-    case 'trainRun':
+    case 'trainRun': {
       if (!tr) return;
-      releaseRoute(S, tr, true);
-      tr.mode = 'run'; tr.m = c.dir > 0 ? 1 : -1;
+      releaseRoute(S, tr);
+      const want = c.dir > 0 ? 1 : -1;
+      // A moving train never flips direction at once: mode 'turn' brakes to a stop first,
+      // then trainTick sets m = -m and runs the new way.
+      if (want !== tr.m && tr.v > 0.01) tr.mode = 'turn';
+      else { tr.mode = 'run'; tr.m = want; }
       break;
+    }
     case 'trainStop':
       if (!tr) return;
-      releaseRoute(S, tr, true);
+      releaseRoute(S, tr);
       tr.mode = 'stop';
       break;
     case 'trainSendTo': {
       if (!tr) return;
-      if (tr.v > 0.01 && tr.mode !== 'route') { ev.push({ t: 'noRoute', tr: tr.id, why: 'Stop the train first.' }); return; }
+      const tE = Number.isInteger(c.e) ? T.edges[c.e] : null;
+      if (!tE || !Number.isFinite(c.s) || c.s < 0 || c.s / 1000 > tE.len) { ev.push({ t: 'noRoute', tr: tr.id, why: 'That is not a place on the track.' }); return; }
       const target = { e: c.e, s: c.s / 1000 };
       const occ = occupiedSwitches(S);
-      let best = null;
-      for (const m of [1, -1]) {
+      // A moving train may only take a route in the direction it is already going.
+      const moving = tr.v > 0.01;
+      let best = null, otherWay = false;
+      for (const m of (moving ? [tr.m, -tr.m] : [1, -1])) {
         const r = findRoute(T, leadPos(T, tr, m), target);
         if (!r) continue;
         const clash = r.needs.find(n => {
@@ -530,10 +546,13 @@ function applyCommand(S, c, ev) {
           return occ[n.sw] !== undefined || (W.lockedBy !== null && W.lockedBy !== tr.id);
         });
         if (clash) continue;
-        if (!best || r.cost < best.r.cost) best = { r, m };
+        if (moving && m !== tr.m) { otherWay = true; continue; }
+        // Compare by estimated time: tender-first running is capped at 60% speed.
+        const time = r.cost / (CFG.LOCO_MAX * (m < 0 ? CFG.TENDER_FIRST : 1));
+        if (!best || time < best.time) best = { r, m, time };
       }
-      if (!best) { ev.push({ t: 'noRoute', tr: tr.id, why: 'There is no way there without reversing.' }); return; }
-      releaseRoute(S, tr, true);
+      if (!best) { ev.push({ t: 'noRoute', tr: tr.id, why: otherWay ? 'Stop the train first.' : 'There is no way there without reversing.' }); return; }
+      releaseRoute(S, tr);
       const locks = [];
       for (const n of best.r.needs) {
         const W = T.switches[n.sw];
@@ -547,6 +566,7 @@ function applyCommand(S, c, ev) {
     }
   }
 }
+function clampMap(v) { return Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, v)); }
 function throwSwitch(S, swId, ev) {
   const W = S.track.switches[swId];
   if (!W) return;
@@ -563,12 +583,17 @@ function trainTick(S, tr, ev) {
   const mass = tr.consist.reduce((s, c) => s + c.mass, 0);
   const power = tr.consist.reduce((s, c) => s + (c.power || 0), 0);
   const accel = CFG.ACCEL_K * power / mass;
-  let vTarget = 0, stop = 0, reason = null, sw = null;
-  if (tr.mode === 'run' || tr.mode === 'route') {
+  let vTarget = 0, stop = 0, reason = null, sw = null, sc = null;
+  const driving = tr.mode === 'run' || tr.mode === 'route';
+  // Look ahead whenever the train moves, also while it brakes ('stop', 'turn'), so it never rolls
+  // onto a switch set against it or past the gap at a dead end.
+  if (driving || tr.v > 0) {
     const lead = leadPos(T, tr, tr.m);
     const look = (tr.v * tr.v) / (2 * CFG.BRAKE) + 4;
-    const sc = trackScan(T, lead, look);
+    sc = trackScan(T, lead, look);
     stop = sc.stop; reason = sc.reason; sw = sc.sw;
+  }
+  if (driving) {
     if (tr.mode === 'route' && tr.route.left < stop) { stop = tr.route.left; reason = 'target'; }
     vTarget = CFG.LOCO_MAX * (tr.m < 0 ? CFG.TENDER_FIRST : 1);
     // Speed limits on the track under the train and ahead of it.
@@ -576,11 +601,16 @@ function trainTick(S, tr, ev) {
     for (const l of sc.limits) vTarget = Math.min(vTarget, Math.sqrt(l.lim * l.lim + 2 * CFG.BRAKE * l.at));
     vTarget = Math.min(vTarget, Math.sqrt(2 * CFG.BRAKE * stop));
   }
-  if (tr.mode === 'stop' || tr.mode === 'idle') tr.v = Math.max(0, tr.v - CFG.BRAKE * DT_MIN); // ordinary braking
+  if (!driving) {
+    // Ordinary braking ('stop', 'turn', 'idle'), but never faster than the curve that ends at the stopping point.
+    tr.v = Math.max(0, tr.v - CFG.BRAKE * DT_MIN);
+    if (tr.v > 0) tr.v = Math.min(tr.v, Math.sqrt(2 * CFG.BRAKE * stop));
+  }
   else if (tr.v < vTarget) tr.v = Math.min(vTarget, tr.v + accel * DT_MIN);
   else tr.v = vTarget; // vTarget already follows the braking curve to the stopping point
   let ds = tr.v * DT_MIN;
-  if (tr.mode === 'run' || tr.mode === 'route') ds = Math.min(ds, stop);
+  ds = Math.min(ds, stop);
+  if (!driving && tr.v > 0 && stop - ds < 1e-3) tr.v = 0; // reached the stopping point while braking
   if (ds > 0) {
     if (tr.m > 0) tr.front = trackWalk(T, tr.front, ds).pos;
     else {
@@ -599,14 +629,18 @@ function trainTick(S, tr, ev) {
   }
   // Status line for the panel.
   if (tr.mode === 'route' && tr.route && tr.route.left < 1e-3) {
-    tr.v = 0; releaseRoute(S, tr, true); tr.mode = 'idle'; tr.status = 'Arrived';
+    tr.v = 0; releaseRoute(S, tr); tr.mode = 'idle'; tr.status = 'Arrived';
     ev.push({ t: 'trainArrived', tr: tr.id });
   } else if (tr.mode === 'stop') {
     if (tr.v < 1e-3) { tr.v = 0; tr.mode = 'idle'; }
     tr.status = 'Stopped';
+  } else if (tr.mode === 'turn') {
+    // Braked to a stop: now go the other way.
+    if (tr.v < 1e-3) { tr.v = 0; tr.m = -tr.m; tr.mode = 'run'; }
+    tr.status = 'Stopping to change direction';
   } else if ((tr.mode === 'run' || tr.mode === 'route') && stop < 1e-3) {
     tr.v = 0;
-    tr.status = reason === 'against' ? `Waiting: switch ${sw + 1} is set against us` : reason === 'end' ? 'At the end of the track' : 'Waiting';
+    tr.status = reason === 'against' ? 'Waiting: the switch ahead is set against us' : reason === 'end' ? 'At the end of the track' : 'Waiting';
   } else if (tr.mode === 'run' || tr.mode === 'route') {
     const dir = tr.m > 0 ? 'forward' : 'back (tender first)';
     tr.status = (tr.mode === 'route' ? 'On its way, ' : 'Running ') + dir;
@@ -622,8 +656,17 @@ function insideTrain(poses, x, z) {
   }
   return false;
 }
+// Can the player walk in a straight line from (x0, z0) to (x1, z1) without running into a train?
+function pathClear(poses, x0, z0, x1, z1) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.25));
+  for (let i = 1; i <= n; i++) if (insideTrain(poses, x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n)) return false;
+  return true;
+}
 // Nearest point on the train's centre line, and the spot beside it where the player stands.
-function trainApproach(poses, x, z) {
+// view (optional, 0-255 angle code): direction towards the camera. When the spots on both sides
+// can be walked to, the one on the camera's side wins, so the player is not hidden behind the train.
+// allPoses: every vehicle on the map, used to check the way is clear.
+function trainApproach(poses, x, z, view, allPoses) {
   let best = null;
   for (const p of poses) {
     const fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
@@ -632,7 +675,16 @@ function trainApproach(poses, x, z) {
     const cx = p.x + fx * t, cz = p.z + fz * t, dd = Math.hypot(x - cx, z - cz);
     if (!best || dd < best.dist) {
       const side = ((x - p.x) * fz - (z - p.z) * fx) >= 0 ? 1 : -1;
-      best = { dist: dd, x: cx + fz * 1.15 * side, z: cz - fx * 1.15 * side };
+      best = { dist: dd, x: clampMap(cx + fz * 1.15 * side), z: clampMap(cz - fx * 1.15 * side), cx, cz, fx, fz, side };
+    }
+  }
+  if (best && view !== undefined && view !== null) {
+    const ang = view / 256 * Math.PI * 2, vx = Math.cos(ang), vz = Math.sin(ang);
+    const want = (best.fz * vx - best.fx * vz) >= 0 ? 1 : -1; // side whose outward normal faces the camera
+    if (want !== best.side) {
+      const ox = clampMap(best.cx + best.fz * 1.15 * want), oz = clampMap(best.cz - best.fx * 1.15 * want);
+      const all = allPoses || poses;
+      if (pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; }
     }
   }
   return best;
@@ -653,7 +705,7 @@ function playerTick(S, ev, poseCache) {
     dx = Math.cos(ang); dz = Math.sin(ang); dist = step;
   } else {
     if (P.use && P.use.k === 'tr') {
-      const ap = trainApproach(poseCache[P.use.id], P.x, P.z);
+      const ap = trainApproach(poseCache[P.use.id], P.x, P.z, P.use.view, poses);
       if (ap.dist <= CFG.REACH) { P.mode = 'idle'; P.f = Math.atan2(ap.x - P.x, ap.z - P.z) + Math.PI; ev.push({ t: 'reachedTrain', tr: P.use.id }); P.use = null; return; }
       P.tx = ap.x; P.tz = ap.z;
     }
@@ -667,14 +719,20 @@ function playerTick(S, ev, poseCache) {
   if (!blocked && go > 0) { P.x = nx; P.z = nz; P.f = Math.atan2(dx, dz); }
   if (P.mode === 'to' && (dist <= step || blocked)) {
     P.mode = 'idle';
+    // A blocked walk only counts as arriving if the player is within reach of what they were going to use.
+    let reached = !blocked;
     if (P.use && P.use.k === 'sw') {
       const W = S.track.switches[P.use.id];
-      P.f = Math.atan2(W.stand.x - P.x, W.stand.z - P.z);
-      P.act = { k: 'throw', sw: P.use.id, left: CFG.THROW_S };
+      if (blocked) reached = Math.hypot(W.stand.x - P.x, W.stand.z - P.z) <= CFG.REACH;
+      if (reached) {
+        P.f = Math.atan2(W.stand.x - P.x, W.stand.z - P.z);
+        P.act = { k: 'throw', sw: P.use.id, left: CFG.THROW_S };
+      }
     } else if (P.use && P.use.k === 'tr') {
-      ev.push({ t: 'reachedTrain', tr: P.use.id });
+      if (blocked) reached = trainApproach(poseCache[P.use.id], P.x, P.z).dist <= CFG.REACH;
+      if (reached) ev.push({ t: 'reachedTrain', tr: P.use.id });
     }
-    if (blocked && !P.use) ev.push({ t: 'blocked' });
+    if (!reached) ev.push({ t: 'blocked' });
     P.use = null;
   }
 }
@@ -715,12 +773,38 @@ function clockText(S) {
 
 // ==== Section: saving ====
 // The whole state as JSON with a schema version, gzipped, in IndexedDB. Old saves pass through migrate().
-const SAVE_KEY = 'auto';
+// A second, uncompressed copy goes to localStorage when the page is hidden or closed, because that
+// write finishes at once, while the gzip + IndexedDB save may not finish before the page goes away.
+const SAVE_KEY = 'auto', QUICK_KEY = 'railhead-quicksave';
 function migrate(save) {
-  if (!save || !save.state) throw new Error('not a Railhead save');
+  if (!save || typeof save !== 'object' || !save.state || typeof save.state !== 'object') throw new Error('not a Railhead save');
   // schemaVersion 1 is the first version; future versions add their migration steps here.
   if (save.state.schemaVersion !== 1) throw new Error('unknown save version ' + save.state.schemaVersion);
+  checkSaveShape(save.state);
   return save;
+}
+// Throws if the saved state is not shaped like a game: track, trains and player.
+function checkSaveShape(st) {
+  const bad = why => { throw new Error('damaged save: ' + why); };
+  const num = v => typeof v === 'number' && Number.isFinite(v);
+  const arr = Array.isArray;
+  if (!Number.isInteger(st.tick) || !num(st.time)) bad('clock');
+  if (!arr(st.rng) || st.rng.length !== 4) bad('random numbers');
+  const T = st.track;
+  if (!T || !arr(T.nodes) || !arr(T.edges) || !arr(T.switches)) bad('track');
+  for (const N of T.nodes) if (!N || !num(N.x) || !num(N.z)) bad('track node');
+  const nodeOk = i => Number.isInteger(i) && i >= 0 && i < T.nodes.length;
+  const edgeOk = i => Number.isInteger(i) && i >= 0 && i < T.edges.length;
+  for (const E of T.edges) if (!E || !nodeOk(E.a) || !nodeOk(E.b) || !num(E.len) || !(E.len > 0) || (E.k !== 'S' && E.k !== 'A') || !num(E.lim)) bad('track edge');
+  for (const W of T.switches) if (!W || !nodeOk(W.node) || !edgeOk(W.trunk) || !edgeOk(W.normal) || !edgeOk(W.reverse) || (W.state !== 'N' && W.state !== 'R') || !W.stand) bad('switch');
+  if (!arr(st.trains)) bad('trains');
+  for (const tr of st.trains) {
+    if (!tr || !tr.front || !edgeOk(tr.front.e) || !num(tr.front.s) || Math.abs(tr.front.d) !== 1) bad('train position');
+    if (!num(tr.v) || Math.abs(tr.m) !== 1 || typeof tr.mode !== 'string') bad('train motion');
+    if (!arr(tr.consist) || !tr.consist.length || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
+  }
+  const P = st.player;
+  if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -738,7 +822,7 @@ async function idbDo(mode, fn) {
   });
 }
 async function saveWrite(obj) {
-  const json = JSON.stringify(obj);
+  const json = typeof obj === 'string' ? obj : JSON.stringify(obj);
   let rec = { gz: false, data: json };
   if (typeof CompressionStream !== 'undefined') {
     const buf = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
@@ -746,13 +830,27 @@ async function saveWrite(obj) {
   }
   await idbDo('readwrite', st => st.put(rec, SAVE_KEY));
 }
-async function saveRead() {
+// The stored record and its JSON text, not yet checked.
+async function saveReadRaw() {
   const rec = await idbDo('readonly', st => st.get(SAVE_KEY));
   if (!rec) return null;
   const json = rec.gz
     ? await new Response(new Blob([rec.data]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
     : rec.data;
-  return migrate(JSON.parse(json));
+  return { rec, json };
+}
+async function saveRead() {
+  const raw = await saveReadRaw();
+  return raw ? migrate(JSON.parse(raw.json)) : null;
+}
+// A save that could not be loaded is moved to 'broken-<time>' so it is kept, not overwritten.
+async function saveKeepBroken(rec) {
+  const key = 'broken-' + Date.now();
+  await idbDo('readwrite', st => { st.put(rec, key); return st.delete(SAVE_KEY); });
+}
+function quickRead() { try { return localStorage.getItem(QUICK_KEY); } catch (e) { return null; } }
+function quickKeepBroken(json) {
+  try { localStorage.setItem('railhead-broken-' + Date.now(), json); localStorage.removeItem(QUICK_KEY); } catch (e) { /* storage full or blocked */ }
 }
 
 // ==== Section: models (procedural, low-poly) ====
@@ -1031,9 +1129,13 @@ function resetViewsFromState() {
 }
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
-  const ev = simTick(S, pending); pending = [];
+  const ev = simTick(S, pending);
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet');
+  pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
+  if (changed) saveSoon();                 // the world changed: save a couple of seconds later
+  if (S.time % 600 === 0) saveGame();      // and every 10 game minutes
 }
 function send(cmd) { pending.push(cmd); }
 
@@ -1042,17 +1144,16 @@ const $ = id => document.getElementById(id);
 let toastTimer = 0;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
 function handleEvent(e) {
-  if (e.t === 'switchThrown') toast(`Switch ${e.sw + 1} set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
-  else if (e.t === 'switchLocked') toast(`Switch ${e.sw + 1} is locked: ${e.why}.`);
+  if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
+  else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
   else if (e.t === 'reachedTrain') openPanel(e.tr);
   else if (e.t === 'noRoute') toast(e.why);
   else if (e.t === 'trainArrived') toast(`${S.trains[e.tr].name} has arrived.`);
   else if (e.t === 'blocked') toast('Something is in the way.');
-  else if (e.t === 'hour') saveGame();
 }
 function openPanel(trId) { ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
-function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
+function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
 function updateHud() {
   $('clock').textContent = clockText(S);
@@ -1106,7 +1207,11 @@ function onTap(px, py) {
   }
   const hit = pickAt(px, py);
   if (hit && hit.k === 'sw') { send({ t: 'useSwitch', sw: hit.id }); return; }
-  if (hit && hit.k === 'tr') { send({ t: 'useTrain', tr: hit.id }); return; }
+  if (hit && hit.k === 'tr') {
+    // Tell the sim which way the camera looks from, so the player stands on the side we can see.
+    const yw = camYawTarget();
+    send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
+  }
   if (g) {
     send({ t: 'walkTo', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
     view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
@@ -1268,12 +1373,28 @@ function frame(now) {
   window.__railhead.drawCalls = renderer.info.render.calls;
   requestAnimationFrame(frame);
 }
-async function saveGame() {
-  try { await saveWrite({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }); return true; }
-  catch (e) { console.warn('Save failed:', e && e.message); return false; }
+function saveJson() { return JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }); }
+// Saves run one after another; if several are asked for while one is writing, only the newest is written next.
+// The returned promise resolves (true or false) once the newest state asked for is written.
+let saveBusy = null, saveNext = null, saveTimer = 0;
+function saveGame() {
+  saveNext = saveJson();
+  if (!saveBusy) saveBusy = (async () => {
+    let ok = true;
+    while (saveNext !== null) {
+      const json = saveNext; saveNext = null;
+      try { await saveWrite(json); ok = true; } catch (e) { console.warn('Save failed:', e && e.message); ok = false; }
+    }
+    saveBusy = null;
+    return ok;
+  })();
+  return saveBusy;
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveGame(); });
-window.addEventListener('pagehide', () => { saveGame(); });
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveGame, 2000); }
+// Written at once (no gzip, no IndexedDB), so it is complete even if the page closes straight after.
+function quickSave() { try { localStorage.setItem(QUICK_KEY, saveJson()); } catch (e) { console.warn('Quick save failed:', e && e.message); } }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { quickSave(); saveGame(); } });
+window.addEventListener('pagehide', () => { quickSave(); saveGame(); });
 
 // ==== Section: test hooks ====
 // Read by the check scripts in tests/. Also handy in the browser console.
@@ -1292,15 +1413,43 @@ window.__railhead = {
 };
 
 // ==== Section: start ====
+// Both saves are read (IndexedDB and the quick save in localStorage); the one with the higher tick wins.
+// A save that is damaged, or that fails while the world is built from it, is kept under 'broken-<time>'
+// and the next one is tried; if none works the game starts fresh. Only warnings go to the console.
 (async () => {
+  const found = [];
   try {
-    const sv = await saveRead();
-    if (sv) {
-      S = sv.state;
-      if (sv.ui) { cam.yawIdx = sv.ui.yawIdx || 0; cam.yaw = camYawTarget(); cam.zoom = sv.ui.zoom || 1; lastSpeed = sv.ui.speed || 1; }
+    const raw = await saveReadRaw();
+    if (raw) {
+      try { found.push({ sv: migrate(JSON.parse(raw.json)), keep: () => saveKeepBroken(raw.rec) }); }
+      catch (e) { console.warn('The saved game is damaged and was kept as broken-<time>; starting without it:', e && e.message); await saveKeepBroken(raw.rec).catch(() => {}); }
     }
-  } catch (e) { console.warn('Could not load the save, starting fresh:', e && e.message); }
-  buildWorld(S); buildActors(S); resetViewsFromState();
+  } catch (e) { console.warn('Could not read the saved game:', e && e.message); }
+  const quick = quickRead();
+  if (quick) {
+    try { found.push({ sv: migrate(JSON.parse(quick)), keep: async () => quickKeepBroken(quick) }); }
+    catch (e) { console.warn('The quick save is damaged and was kept as railhead-broken-<time>:', e && e.message); quickKeepBroken(quick); }
+  }
+  found.sort((a, b) => b.sv.state.tick - a.sv.state.tick);
+  let loaded = null;
+  for (const f of found) {
+    try {
+      S = f.sv.state;
+      simTick(JSON.parse(JSON.stringify(S)), []); // a trial tick on a copy: throws now rather than in the game loop
+      buildWorld(S); buildActors(S); resetViewsFromState();
+      loaded = f; break;
+    } catch (e) {
+      console.warn('Could not build the game from a save; it was kept as broken-<time>:', e && e.message);
+      await Promise.resolve(f.keep()).catch(() => {});
+    }
+  }
+  if (loaded) {
+    const u = loaded.sv.ui;
+    if (u) { cam.yawIdx = u.yawIdx || 0; cam.yaw = camYawTarget(); cam.zoom = u.zoom || 1; lastSpeed = u.speed || 1; }
+  } else {
+    S = newState(CFG.SEED);
+    buildWorld(S); buildActors(S); resetViewsFromState();
+  }
   buildCrowd(); buildToolInit(); debugInit();
   setSpeed(new URLSearchParams(location.search).has('paused') ? 0 : lastSpeed); // ?paused is used by the checks
   resize();

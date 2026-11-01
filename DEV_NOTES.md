@@ -38,9 +38,9 @@ Current checks:
 - `check-rules.js`: no `Math.random()` in the game.
 - `check-boot.js`: the page loads in both orientations with no errors and three.js r128, and the draw calls are reported. It saves screenshots at start and in a busy moment.
 - `check-track.js`: the test yard passes the track validator, and the validator catches a tight curve, a sharp corner and reverse curves with no straight between them.
-- `check-trains.js`: a train sent to the siding finds the way and stops on the spot. A switch under a train is locked. Switch 3 changes the path. A dead end and a switch set against the train both stop it 0.5u short. The player throws a switch.
+- `check-trains.js`: a train sent to the siding finds the way and stops on the spot. A switch under a train is locked. Switch 3 changes the path. A dead end and a switch set against the train both stop it 0.5u short. The player throws a switch. Plus regression checks from the piece 1 review: locks freed after arrival and Stop, a braking train keeps the 0.5u gap, no instant reversal, throws only within reach, camera-side approach to the train, walks beyond the map edge end.
 - `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
-- `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
+- `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash. Damaged saves fall back to a fresh game with no console errors; the newer of the IndexedDB save and the quick save wins.
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
 
 Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump `SCHEMA_VERSION`, add a step to `migrate()`, and run `node tests/make-fixture.js` to add the new version's sample. Keep the old samples.
@@ -71,7 +71,10 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 - **Speeds:** the main loop is 4.0 u/min, diverging legs 1.5 u/min, and the siding and spur 1.0 u/min (yard speed).
 - **Tender load:** the tender carries cordwood, not coal, because engines start on wood (section 2).
 - **Switch points:** the point rails do not animate yet. The target disc shows the setting.
-- **Send to:** a moving train must be stopped first.
+- **Send to:** a moving train only takes a route in the direction it is already going; otherwise "Stop the train first." Routes are compared by estimated time (tender-first runs at 60%).
+- **Changing direction:** Forward or Back the other way while moving sets mode `turn`: the train brakes to a stop, then runs the new way. A braking train (modes `stop`, `turn`) still looks ahead and stops 0.5u short of a switch set against it or a dead end.
+- **Route locks:** freed on arrival, Stop or a new command. A switch under a train stays locked because it is occupied (`occupiedSwitches`), not by the route.
+- **Saving:** IndexedDB (gzip) a couple of seconds after a world-changing action and every 10 game minutes; on page hide or close also an uncompressed quick save in localStorage (`railhead-quicksave`). On start the save with the higher tick wins. A damaged save is kept as `broken-<time>` (IndexedDB) or `railhead-broken-<time>` (localStorage) and the game starts fresh with a console warning.
 
 ## Team mode (from 2026-11-01)
 

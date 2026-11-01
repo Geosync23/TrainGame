@@ -10,11 +10,22 @@ const { openGame, stopServer } = require('./browser');
   const { browser, page } = await openGame('portrait', { query: '?paused' });
   const out = await page.evaluate(() => {
     const R = window.__railhead;
-    const S = R.simRun(R.newState(1866), [
+    // From schema 3: two freight items, and the player takes the hand truck and loads one.
+    const S0 = R.newState(1866), carry = S0.schemaVersion >= 3;
+    if (carry) {
+      const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
+      R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', x: -1050, z: 1000 }, null);
+      R.cargo.itemCreate(S0, wb('salt'), { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, null);
+    }
+    const S = R.simRun(S0, [
       { tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } },
       { tick: 2, cmd: { t: 'useSwitch', sw: 0 } },
+    ].concat(carry ? [
+      { tick: 100, cmd: { t: 'carryTool', tool: 0 } },
+      { tick: 160, cmd: { t: 'carryPick', id: 0 } },
+    ] : []).concat([
       { tick: 300, cmd: { t: 'walkTo', x: -500, z: 800 } },
-    ], 400);
+    ]), 400);
     return { save: JSON.stringify({ state: S, ui: { yawIdx: 1, zoom: 1.5, speed: 1 } }), hash: R.stateHash(S), schemaVersion: S.schemaVersion };
   });
   const dir = path.join(__dirname, 'fixtures');

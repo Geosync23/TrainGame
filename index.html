@@ -23,6 +23,11 @@
   #speeds button { padding: 0 8px; }
   #bottomleft { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); display: flex; gap: 8px; }
   #bottomleft svg { width: 26px; height: 26px; display: block; }
+  #carry { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 66px); max-width: min(78vw, 340px);
+    box-sizing: border-box; display: flex; gap: 8px; align-items: center; background: var(--paper); border: 2px solid var(--edge);
+    border-radius: 8px; padding: 3px 3px 3px 10px; font-size: 15px; color: var(--ink); }
+  #carryText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #carryPut { flex: none; }
   #centre { right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); }
   #toast { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 112px); max-width: min(92vw, 420px);
     background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.3;
@@ -85,6 +90,7 @@
 <div id="buildLabel" class="hud" role="status" aria-live="polite" hidden></div>
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
+<div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
 <div id="banner" class="hud" hidden><span id="bannerText">Tap a track to send the train there</span><button id="bannerCancel">Cancel</button></div>
 <div id="panel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="panelTitle">No. 1</h2><button id="panelClose" aria-label="Close">X</button></div>
@@ -99,7 +105,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 2,
+  SCHEMA_VERSION: 3,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -112,6 +118,7 @@ const CFG = {
   LIM: { main: 4.0, yard: 1.0, diverge: 1.5 },
   STOP_GAP: 0.5,             // trains stop 0.5u before a block they may not enter
   THROW_S: 30,               // throwing a switch takes 0.5 game minutes
+  CARRY_S: 12,               // picking up or putting down an item takes 0.2 game minutes (section 9)
   DIVERGE_PENALTY: 20,       // route cost per diverging switch
   REACH: 1.5,                // interactables are in reach within 1.5u
   GEOM: { main: { minR: 12, revStraight: 3 }, yard: { minR: 8, revStraight: 2 } },
@@ -403,9 +410,10 @@ function newState(seed) {
     track: T,
     trains: [{ id: 0, name: 'No. 1', front: { e: 2, s: 12, d: 1 }, v: 0, mode: 'idle', m: 1,
       route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }],
-    player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null },
+    player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null },
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
+    tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
   };
 }
 function trainLength(tr) { return tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1); }
@@ -534,6 +542,9 @@ function applyCommand(S, c, ev) {
       if (Number.isInteger(c.view)) P.use.view = ((c.view % 256) + 256) % 256;
       break;
     case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
+    case 'carryPick': carryPickCmd(S, c, ev); break;
+    case 'carryPut': carryPutCmd(S, c, ev); break;
+    case 'carryTool': carryToolCmd(S, c, ev); break;
     case 'buildTrack': buildTrackCmd(S, c, ev); break;
     case 'setBayTag': setBayTag(S, c.b, c.bay, c.tag, ev); break;
     case 'trainRun': {
@@ -1310,6 +1321,172 @@ function playerTick(S, ev, poseCache) {
   }
 }
 
+// ---- Carrying (M1 package 1): pick up and put down, hand truck and handcart (design-doc 5 and 9) ----
+// Pure simulation (no three.js, no page elements). Items live in the cargo section's store; carried items
+// are at { kind: 'CARRIED', actorId: 'player', carrier, slot }, with carrier 'HAND' (1 slot), 'HANDTRUCK' (3)
+// or 'HANDCART' (6). The tool being pushed decides the carrier; slot 0 is filled first, the top slot goes first.
+// Commands (whole numbers only, positions in hundredths of a u):
+//   { t: 'carryPick', id }        walk to a freight item on the ground or in a bay and pick it up (0.2 min)
+//   { t: 'carryPut', x, z }       walk there and put the top carried item on the ground (0.2 min)
+//   { t: 'carryPut', b, bay }     walk to that freight shed bay and put the top item in it (0.2 min)
+//   { t: 'carryTool', tool }      walk to a tool's parking spot; take the tool there, or leave it there
+// Refusals come back as { t: 'carryRefused', why } events. Moving cancels an action in progress (section 5).
+// The walking itself is playerTick's; carryActorTick runs the carry actions around it.
+const TOOL_KINDS = {
+  truck: { name: 'Hand truck', carrier: 'HANDTRUCK' },
+  cart: { name: 'Handcart', carrier: 'HANDCART' },
+};
+// Parking spots east of the freight shed, on the side away from the track (hundredths of a u). yaw: the way the tool faces (0-255 code).
+const TOOL_PARK = [
+  { id: 0, k: 'truck', x: -1190, z: 900, yaw: 192 },
+  { id: 1, k: 'cart', x: -1010, z: 860, yaw: 192 },
+];
+const CARRY_APPROACH = 0.5; // the player stops this far short of the spot being used
+function carryNewTools() { return TOOL_PARK.map(t => ({ id: t.id, k: t.k, x: t.x, z: t.z, yaw: t.yaw })); }
+// Plan rectangles [x0, x1, z0, z1] with steps up to them, where a handcart may not go: the platform, and the
+// freight shed on its dock. Worked out from the building layout's numbers (tests/check-carry.js compares them
+// with buildingFootprints()), widened by the player's radius. Worked out on first use, as the buildings
+// section (BLD_LAYOUT) comes later in the file.
+let carryNoCartCache = null;
+function carryNoCartRects() {
+  if (carryNoCartCache) return carryNoCartCache;
+  const out = [], r = 0.2;
+  for (const at of BLD_LAYOUT) {
+    if (at.id === 'platform') out.push([at.x - 6 - r, at.x + 6 + r, at.z - 0.8 - r, at.z + 0.8 + r]);
+    if (at.id === 'freightshed') out.push([at.x - 2.35 - r, at.x + 2.35 + r, at.z - 1.95 - r, at.z + 1.7 + r]);
+  }
+  return (carryNoCartCache = out);
+}
+const carryNoCartAt = (x, z) => carryNoCartRects().some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
+// What the player carries with: 'HAND', or the carrier of the tool being pushed.
+function carryCarrier(S) { const t = S.player.tool; return t === null || t === undefined ? 'HAND' : TOOL_KINDS[S.tools[t].k].carrier; }
+// Ids of the items the player carries, lowest slot first.
+function carryHeld(S) {
+  return itemsAt(S, { kind: 'CARRIED', actorId: 'player' }).sort((a, b) => S.items.where[a].slot - S.items.where[b].slot || a - b);
+}
+function carryFreeSlot(S) {
+  const used = carryHeld(S).map(id => S.items.where[id].slot), cap = CARGO_CARRY_CAP[carryCarrier(S)];
+  for (let i = 0; i < cap; i++) if (!used.includes(i)) return i;
+  return -1;
+}
+// Where a place is on the map (in u), for walking to it; null for places that are not on the map.
+function carrySpot(w) {
+  if (!w) return null;
+  if (w.kind === 'GROUND') return { x: w.x / 100, z: w.z / 100 };
+  if (w.kind === 'BAY') { const B = BLD_BAYS[w.buildingId], p = B && B.bays[w.bay]; return p ? { x: p.x, z: p.z } : null; }
+  return null;
+}
+function carryRefuse(ev, why) { ev.push({ t: 'carryRefused', why }); }
+// Start walking towards (x, z), stopping CARRY_APPROACH short of it, to use it on arrival.
+function carryWalkTo(S, x, z, use) {
+  const P = S.player, dx = x - P.x, dz = z - P.z, d = Math.hypot(dx, dz), k = d > CARRY_APPROACH ? (d - CARRY_APPROACH) / d : 0;
+  P.mode = 'to'; P.tx = clampMap(P.x + dx * k); P.tz = clampMap(P.z + dz * k); P.use = use; P.act = null; P.run = false;
+}
+// Section 9 wording for the common refusals; the cargo section's reason otherwise.
+function carryWhy(why) {
+  if (/long bundle/.test(why)) return 'A long bundle is carried by hand only, never on a hand truck or handcart';
+  return why.charAt(0).toUpperCase() + why.slice(1);
+}
+function carryToolName(S) { return TOOL_KINDS[S.tools[S.player.tool].k].name.toLowerCase(); }
+function carryPickCmd(S, c, ev) {
+  const I = S.items, id = c.id;
+  if (!Number.isInteger(id) || id < 0 || id >= I.next || !I.alive[id]) return carryRefuse(ev, 'There is no such item');
+  const w = I.where[id];
+  if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY')) return carryRefuse(ev, 'That item cannot be picked up from there');
+  const slot = carryFreeSlot(S), carrier = carryCarrier(S);
+  if (slot < 0) return carryRefuse(ev, carrier === 'HAND' ? 'Your hands are full: put that down first' : `The ${carryToolName(S)} is full (${CARGO_CARRY_CAP[carrier]} items)`);
+  const why = itemCanMove(S, id, { kind: 'CARRIED', actorId: 'player', carrier, slot });
+  if (why) return carryRefuse(ev, carryWhy(why));
+  const p = carrySpot(w);
+  carryWalkTo(S, p.x, p.z, { k: 'pick', id });
+}
+function carryPutCmd(S, c, ev) {
+  const held = carryHeld(S);
+  if (!held.length) return carryRefuse(ev, 'You are not carrying anything');
+  let dest;
+  if (c.b !== undefined) dest = { kind: 'BAY', buildingId: c.b, bay: c.bay };
+  else if (Number.isInteger(c.x) && Number.isInteger(c.z)) dest = { kind: 'GROUND', x: c.x, z: c.z };
+  else return carryRefuse(ev, 'That is not a place to put things');
+  const why = itemCanMove(S, held[held.length - 1], dest);
+  if (why) return carryRefuse(ev, carryWhy(why));
+  const p = carrySpot(dest);
+  carryWalkTo(S, p.x, p.z, { k: 'put', dest });
+}
+function carryToolCmd(S, c, ev) {
+  const T = Number.isInteger(c.tool) ? S.tools[c.tool] : null;
+  if (!T) return carryRefuse(ev, 'There is no such hand truck or handcart');
+  carryWalkTo(S, T.x / 100, T.z / 100, { k: 'tool', id: T.id });
+}
+// Take a parked tool, or leave the one being pushed at its spot.
+function carryToggleTool(S, id, ev) {
+  const P = S.player, T = S.tools[id], held = carryHeld(S);
+  if (P.tool === id) {
+    if (held.length) return carryRefuse(ev, `Unload the ${carryToolName(S)} before leaving it`);
+    P.tool = null; ev.push({ t: 'toolLeft', tool: id }); return;
+  }
+  if (P.tool !== null) return carryRefuse(ev, `Leave the ${carryToolName(S)} at its spot first`);
+  // An item carried by hand goes onto the tool, if it may.
+  const to = { kind: 'CARRIED', actorId: 'player', carrier: TOOL_KINDS[T.k].carrier, slot: 0 };
+  for (const it of held) { const why = itemCanMove(S, it, to); if (why) return carryRefuse(ev, 'Put it down first. ' + carryWhy(why)); }
+  for (const it of held) itemMove(S, it, to, ev);
+  P.tool = id; ev.push({ t: 'toolTaken', tool: id });
+}
+// Arrived (or stopped) next to what a carry command walked to: start the action if it is within reach.
+function carryArrive(S, ev, use, evFrom) {
+  const P = S.player;
+  const spot = use.k === 'pick' ? carrySpot(S.items.where[use.id]) : use.k === 'put' ? carrySpot(use.dest) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
+  P.mode = 'idle'; P.use = null;
+  if (!spot || Math.hypot(spot.x - P.x, spot.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
+  for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1); // in reach: not blocked after all
+  if (Math.hypot(spot.x - P.x, spot.z - P.z) > 1e-6) P.f = Math.atan2(spot.x - P.x, spot.z - P.z);
+  if (use.k === 'tool') { carryToggleTool(S, use.id, ev); return; }
+  P.act = use.k === 'pick' ? { k: 'pick', id: use.id, left: CFG.CARRY_S } : { k: 'put', dest: use.dest, left: CFG.CARRY_S };
+}
+// The end of a pick-up or put-down: the item moves (or the move is refused, if something changed meanwhile).
+function carryFinish(S, a, ev) {
+  if (a.k === 'pick') {
+    const slot = carryFreeSlot(S);
+    if (slot < 0) return carryRefuse(ev, 'Your hands are full');
+    const r = itemMove(S, a.id, { kind: 'CARRIED', actorId: 'player', carrier: carryCarrier(S), slot }, ev);
+    if (!r.ok) return carryRefuse(ev, carryWhy(r.why));
+    ev.push({ t: 'carryPicked', id: a.id });
+  } else {
+    const held = carryHeld(S);
+    if (!held.length) return;
+    const id = held[held.length - 1], r = itemMove(S, id, a.dest, ev);
+    if (!r.ok) return carryRefuse(ev, carryWhy(r.why));
+    ev.push({ t: 'carryPut', id });
+  }
+}
+const CARRY_USES = { pick: 1, put: 1, tool: 1 };
+// Step 7 for the player: a carry action in progress, or walking (playerTick), then what carrying adds:
+// arriving to use an item, a bay or a tool, and keeping a handcart off the platform and the dock.
+function carryActorTick(S, ev, poseCache) {
+  const P = S.player;
+  if (P.act && (P.act.k === 'pick' || P.act.k === 'put')) {
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; carryFinish(S, a, ev); }
+    return;
+  }
+  const use = P.use && CARRY_USES[P.use.k] ? P.use : null, x0 = P.x, z0 = P.z, evFrom = ev.length;
+  const walking = P.mode === 'to' || P.mode === 'dir';
+  playerTick(S, ev, poseCache);
+  let stopped = false;
+  if (walking && P.tool !== null && S.tools[P.tool].k === 'cart' && carryNoCartAt(P.x, P.z) && !carryNoCartAt(x0, z0)) {
+    P.x = x0; P.z = z0; stopped = true;
+    if (!use) P.use = null;
+    P.mode = 'idle';
+    carryRefuse(ev, 'A handcart cannot go on the platform or the dock: they have steps');
+  }
+  if (use && (stopped || (P.use === null && P.mode === 'idle'))) carryArrive(S, ev, use, evFrom);
+}
+// Shape check for the saved tools (used when a save is loaded). Throws on damage.
+function carryCheckSaveShape(st) {
+  const P = st.player;
+  if (!Array.isArray(st.tools) || st.tools.some((t, i) => !t || t.id !== i || !TOOL_KINDS[t.k] || !Number.isInteger(t.x) || !Number.isInteger(t.z))) throw new Error('damaged save: hand trucks and handcarts');
+  if (P.tool !== null && !(Number.isInteger(P.tool) && st.tools[P.tool])) throw new Error('damaged save: the tool the player pushes');
+}
+
 // ==== Section: sim tick ====
 // One fixed step of 8 game seconds, in the system order of section 19 (the parts built so far).
 function simTick(S, cmds) {
@@ -1319,7 +1496,7 @@ function simTick(S, cmds) {
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
-  playerTick(S, ev, poseCache);                         // 7. actors
+  carryActorTick(S, ev, poseCache);                     // 7. actors (the player: walking in playerTick, carrying around it)
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
 }
@@ -1361,6 +1538,12 @@ function migrate(save) {
     st.bayTags = cargoDefaultBayTags();
     st.schemaVersion = 2;
   }
+  if (st.schemaVersion === 2) {
+    // 2 -> 3 (carrying): the hand truck and handcart at their parking spots, and the player pushes neither.
+    st.tools = carryNewTools();
+    if (st.player && typeof st.player === 'object') st.player.tool = null;
+    st.schemaVersion = 3;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -1388,6 +1571,7 @@ function checkSaveShape(st) {
   const P = st.player;
   if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
   cargoCheckSaveShape(st);
+  carryCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -1538,6 +1722,44 @@ function modelChunky() {
   }
   root.userData = { body: bodyMesh, ...limbs, phase: 0 };
   return root;
+}
+// Hand truck (section 9, 3 items): an upright iron frame on two wheels with a nose plate at the foot.
+// Local frame: the wheels' axle at x = z = 0, the handles towards -z (the pusher), the load leans on the frame.
+// TOOL_STACK gives where stacked items sit on each tool, in the same local frame.
+const TOOL_STACK = {
+  truck: { x: 0, z: 0.2, y: 0.12, dy: 0.32, tilt: -0.35 },        // items stand on the nose plate, up the frame
+  cart: { x: 0, z: 0.35, y: 0.5, cols: 2, rows: 3, dx: 0.34, dz: 0.34, dy: 0.32 }, // two by three on the bed
+};
+function modelHandTruck() {
+  const k = new Kit(), H = Math.PI / 2, tilt = -0.35; // the frame leans back towards the handles
+  const up = (dy, dz) => [dz + Math.sin(tilt) * dy, Math.cos(tilt) * dy]; // [z, y] of a point dy up the frame
+  for (const s of [-1, 1]) {
+    const [z0, y0] = up(0.5, 0.05);
+    k.add(box(0.04, 1.05, 0.04), PAL.loco, s * 0.2, 0.08 + y0, z0, tilt);              // side rails
+    const [z1, y1] = up(1.05, 0.05);
+    k.add(box(0.05, 0.05, 0.16), PAL.trunk, s * 0.2, 0.08 + y1, z1 - 0.06, tilt);       // wooden grips
+    k.add(cyl(0.12, 0.12, 0.05, SEG), PAL.loco, s * 0.27, 0.12, 0, 0, 0, H);            // wheels
+  }
+  for (const dy of [0.35, 0.7]) { const [z, y] = up(dy, 0.05); k.add(box(0.4, 0.04, 0.04), PAL.loco, 0, 0.08 + y, z, tilt); }
+  k.add(cyl(0.025, 0.025, 0.58, 5), PAL.loco, 0, 0.12, 0, 0, 0, H);                    // axle
+  k.add(box(0.42, 0.03, 0.2), PAL.loco, 0, 0.035, 0.14);                               // nose plate
+  return k.mesh();
+}
+// Handcart (6 items): a wooden bed on two big wheels, with two long handles towards -z.
+function modelHandcart() {
+  const k = new Kit(), H = Math.PI / 2;
+  k.add(box(0.8, 0.06, 1.1), PAL.trim, 0, 0.45, 0.35);                                 // bed
+  for (const s of [-1, 1]) {
+    k.add(box(0.04, 0.16, 1.1), PAL.trunk, s * 0.42, 0.55, 0.35);                      // side boards
+    k.add(box(0.05, 0.05, 0.9), PAL.trunk, s * 0.3, 0.47, -0.55, -0.12);               // handles
+    k.add(cyl(0.3, 0.3, 0.05, 9), PAL.trunk, s * 0.47, 0.3, 0.3, 0, 0, H);             // wheels
+    k.add(cyl(0.08, 0.08, 0.07, 6), PAL.loco, s * 0.47, 0.3, 0.3, 0, 0, H);            // hubs
+    k.add(box(0.05, 0.4, 0.05), PAL.trunk, s * 0.3, 0.25, 0.85);                       // front legs
+  }
+  k.add(box(0.8, 0.16, 0.04), PAL.trunk, 0, 0.55, 0.9);                                // front board
+  k.add(box(0.66, 0.04, 0.04), PAL.trunk, 0, 0.42, -0.98);                             // handle bar
+  k.add(cyl(0.03, 0.03, 0.98, 5), PAL.loco, 0, 0.3, 0.3, 0, 0, H);                     // axle
+  return k.mesh();
 }
 
 // --- Item props (cargo): one small low-poly shape per item type, origin at the bottom centre. ---
@@ -1716,6 +1938,92 @@ function buildActors(S) {
   if (!view.player) { view.player = modelChunky(); scene.add(view.player); }
 }
 
+// --- Carrying drawing (M1 package 1): the hand truck and handcart, their parking spots, the carry and push
+// poses, and the progress ring over the player's head during an action. Draw calls: each tool is one mesh
+// (2 with its shadow), the spot marks are one merged mesh, the ring one more while an action runs.
+const carryView = { tools: [], marks: null, ring: null };
+const CARRY_PUSH = { truck: { d: 1.0, tilt: -0.6 }, cart: { d: 1.28, tilt: 0 } }; // tool origin ahead of the player
+function carryBuildViews() {
+  for (const v of carryView.tools) scene.remove(v.g);
+  carryView.tools = S.tools.map(T => {
+    const g = new THREE.Group(), lean = new THREE.Group(), m = T.k === 'truck' ? modelHandTruck() : modelHandcart();
+    // The truck leans back round its axle when pushed: 'lean' pivots at the axle height.
+    const axle = T.k === 'truck' ? 0.12 : 0.3;
+    lean.position.y = axle; m.position.y = -axle;
+    lean.add(m); g.add(lean); g.name = 'tool-' + T.k; scene.add(g);
+    return { g, lean, k: T.k, id: T.id };
+  });
+  if (!carryView.marks) {
+    // Worn boards marking each parking spot, 1 cm off the ground (never on the same plane as it).
+    const k = new Kit();
+    // Spots face along z (the layout's tools do); a board on each side and one across each end.
+    for (const P of TOOL_PARK) {
+      const w = P.k === 'truck' ? 0.8 : 1.3, d = P.k === 'truck' ? 0.8 : 2.1, x = P.x / 100, z = P.z / 100;
+      for (const s of [-1, 1]) k.add(box(0.1, 0.02, d), PAL.tie, x + s * w / 2, 0.012, z);
+      for (const s of [-1, 1]) k.add(box(w - 0.12, 0.02, 0.1), PAL.tie, x, 0.016, z + s * (d / 2 - 0.05));
+    }
+    carryView.marks = k.mesh(false); carryView.marks.name = 'toolSpots'; scene.add(carryView.marks);
+  }
+  if (!carryView.ring) {
+    const g = new THREE.RingGeometry(0.15, 0.23, 24, 1, Math.PI / 2, Math.PI * 2);
+    carryView.ring = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: PAL.brass, depthTest: false, side: THREE.DoubleSide }));
+    carryView.ring.renderOrder = 10; carryView.ring.visible = false; carryView.ring.name = 'actionRing'; scene.add(carryView.ring);
+  }
+}
+const carryYaw = code => { const a = code / 256 * Math.PI * 2; return Math.atan2(Math.cos(a), Math.sin(a)); };
+const carryV = new THREE.Vector3();
+// Called each frame from render(), after the player's walk animation.
+function carryDraw(alpha, dt) {
+  if (carryView.tools.length !== S.tools.length || carryView.S !== S) { carryBuildViews(); carryView.S = S; }
+  const P = S.player, pl = view.player, u = pl.userData, carrier = carryCarrier(S), held = carryHeld(S);
+  for (const v of carryView.tools) {
+    const T = S.tools[v.id];
+    if (P.tool === v.id) {
+      const f = pl.rotation.y, d = CARRY_PUSH[v.k].d;
+      v.g.position.set(pl.position.x + Math.sin(f) * d, 0, pl.position.z + Math.cos(f) * d);
+      v.g.rotation.y = f; v.lean.rotation.x = CARRY_PUSH[v.k].tilt;
+    } else {
+      v.g.position.set(T.x / 100, 0, T.z / 100); v.g.rotation.y = carryYaw(T.yaw); v.lean.rotation.x = 0;
+    }
+    v.g.updateMatrixWorld(true);
+  }
+  // Poses (design-doc 17): carry with arms forward at 70 degrees, push with arms forward at 45 degrees.
+  const act = P.act && (P.act.k === 'pick' || P.act.k === 'put') ? P.act : null;
+  let arm = null;
+  if (carrier !== 'HAND') arm = 45; else if (held.length) arm = 70;
+  if (act) {
+    // Bending to lift or set down: the arms reach low and come back up as the action runs.
+    const t = Math.min(1, (CFG.CARRY_S - act.left + alpha * CFG.TICK_GAME_S) / CFG.CARRY_S);
+    arm = 30 + 40 * Math.abs(Math.cos(t * Math.PI));
+  }
+  if (arm !== null) {
+    const r = -arm * Math.PI / 180;
+    u.armL.rotation.x = r; u.armR.rotation.x = r;
+    u.armL.rotation.z = -0.05; u.armR.rotation.z = 0.05;
+  } else { u.armL.rotation.z = -0.15; u.armR.rotation.z = 0.15; }
+  // Progress ring over the head for any timed action (switch throw, pick up, put down).
+  const ring = carryView.ring;
+  if (P.act) {
+    const total = P.act.k === 'throw' ? CFG.THROW_S : CFG.CARRY_S;
+    const f = Math.max(0, Math.min(1, (total - P.act.left + (speed > 0 ? alpha : 0) * CFG.TICK_GAME_S) / total));
+    ring.geometry.setDrawRange(0, 6 * Math.max(1, Math.ceil(f * 24)));
+    ring.position.set(pl.position.x, 1.45, pl.position.z); ring.quaternion.copy(camera.quaternion);
+    ring.visible = true;
+  } else ring.visible = false;
+}
+// Where an item on the hand truck or handcart is drawn: {x, y, z, yaw}, stacked on the tool (TOOL_STACK).
+// null for items carried by hand (the cargo section's default pose holds them in front of the player).
+function carryItemPose(S, w) {
+  if (w.carrier === 'HAND' || S.player.tool === null) return null;
+  const v = carryView.tools[S.player.tool];
+  if (!v) return null;
+  const st = TOOL_STACK[v.k];
+  if (v.k === 'truck') carryV.set(st.x, st.y + Math.cos(st.tilt) * w.slot * st.dy, st.z + Math.sin(st.tilt) * w.slot * st.dy);
+  else carryV.set(st.x + ((w.slot % st.cols) - 0.5) * st.dx, st.y, st.z + (Math.floor(w.slot / st.cols) - 1) * st.dz);
+  v.lean.children[0].localToWorld(carryV);
+  return { x: carryV.x, y: carryV.y, z: carryV.z, yaw: v.g.rotation.y };
+}
+
 // --- Cargo drawing: item props and their destination tags. ---
 // One InstancedMesh per prop shape (shared KIT_MAT) plus ONE InstancedMesh for every tag card, so the
 // draw calls do not grow with the number of items: at most 7 shapes x 2 (shadow pass) + 1 tag mesh.
@@ -1812,10 +2120,11 @@ function cargoPoses(S) {
 // handcart until the carrying code draws those. Builder W3 may replace this function.
 function cargoCarriedPose(S, w, actor) {
   if (!actor) return null;
-  const f = actor.rotation.y, fx = -Math.sin(f), fz = -Math.cos(f); // the character model faces local -z
-  if (w.carrier === 'HAND') return { x: actor.position.x + fx * 0.32, y: 0.42, z: actor.position.z + fz * 0.32, yaw: f };
-  const n = w.slot, d = 0.55, side = (n % 3 - 1) * 0.3;
-  return { x: actor.position.x + fx * d + fz * side, y: 0.25 + Math.floor(n / 3) * 0.36, z: actor.position.z + fz * d - fx * side, yaw: f };
+  // Replaced by the carrying code (W3): items on the hand truck or handcart stack on it (carryItemPose);
+  // by hand the item is held in front of the chest. The character model faces local +z (its cap visor and nose).
+  if (actor === view.player) { const p = carryItemPose(S, w); if (p) return p; }
+  const f = actor.rotation.y, fx = Math.sin(f), fz = Math.cos(f);
+  return { x: actor.position.x + fx * 0.34, y: 0.36, z: actor.position.z + fz * 0.34, yaw: f };
 }
 const cargoM = new THREE.Matrix4(), cargoQ = new THREE.Quaternion(), cargoQ2 = new THREE.Quaternion(), cargoV = new THREE.Vector3(),
   cargoS = new THREE.Vector3(), cargoUp = new THREE.Vector3(0, 1, 0), cargoX = new THREE.Vector3(1, 0, 0), cargoCol = new THREE.Color();
@@ -3379,7 +3688,7 @@ function dbgRoutes(o) {
 }
 function dbgPlayerTarget() {
   const P = S.player;
-  if (P.act) { const W = S.track.switches[P.act.sw]; return { x: W.stand.x, z: W.stand.z }; }
+  if (P.act && P.act.sw !== undefined) { const W = S.track.switches[P.act.sw]; return { x: W.stand.x, z: W.stand.z }; }
   if (P.mode === 'to') return { x: P.tx, z: P.tz };
   if (P.mode === 'dir') { const ang = P.a / 256 * Math.PI * 2; return { x: P.x + Math.cos(ang) * 2, z: P.z + Math.sin(ang) * 2, dir: true }; }
   return null;
@@ -3554,7 +3863,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$/.test(e.t));
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -3578,7 +3887,31 @@ function handleEvent(e) {
   else if (e.t === 'blocked') toast('Something is in the way.');
   else if (e.t === 'trackBuilt') buildOnBuilt(e);
   else if (e.t === 'buildRefused') toast(`Cannot lay that track: ${e.why}.`);
+  else if (e.t === 'carryRefused') toast(e.why + '.');
+  else if (e.t === 'toolTaken') toast(`You take the ${TOOL_KINDS[S.tools[e.tool].k].name.toLowerCase()}.`);
+  else if (e.t === 'toolLeft') toast(`${TOOL_KINDS[S.tools[e.tool].k].name} left at its spot.`);
 }
+// The carry readout (bottom left, above the turn buttons): what the player carries, and a Put down button.
+// Hidden while the train panel or the build tool use that part of the screen.
+let carryHudSig = '';
+function carryHud() {
+  const held = carryHeld(S), carrier = carryCarrier(S), P = S.player;
+  const label = id => { const wb = S.items.waybill[id], C = COMMODITIES[wb.commodity], T = CARGO_TAGS[itemTag(wb)]; return `${C ? C.name : wb.commodity} (${T ? T.letter : '?'})`; };
+  let text = '';
+  if (carrier === 'HAND') text = held.length ? 'Carrying: ' + held.map(label).join(', ') : '';
+  else text = `${TOOL_KINDS[S.tools[P.tool].k].name} ${held.length}/${CARGO_CARRY_CAP[carrier]}` + (held.length ? ': ' + held.map(label).join(', ') : '');
+  const hide = !text || ui.panelTrain !== null || (typeof bt !== 'undefined' && bt.on);
+  const sig = (hide ? '-' : text) + '|' + held.length;
+  if (sig === carryHudSig) return;
+  carryHudSig = sig;
+  $('carry').hidden = hide; $('carryText').textContent = text; $('carryPut').hidden = !held.length;
+}
+$('carryPut').addEventListener('click', () => {
+  // On the spot: just in front when carrying by hand, beside the hand truck or handcart otherwise.
+  const P = S.player, fx = Math.sin(P.f), fz = Math.cos(P.f), hand = carryCarrier(S) === 'HAND';
+  const x = hand ? P.x + fx * 0.6 : P.x - fz * 0.8, z = hand ? P.z + fz * 0.6 : P.z + fx * 0.8;
+  send({ t: 'carryPut', x: Math.round(x * 100), z: Math.round(z * 100) });
+});
 function openPanel(trId) { ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
 function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
@@ -3587,6 +3920,7 @@ function updateHud() {
   $('clock').textContent = clockText(S);
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
   $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
+  carryHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -3640,10 +3974,63 @@ function onTap(px, py) {
     const yw = camYawTarget();
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
+  if (carryTap(px, py, g)) return;
   if (g) {
     send({ t: 'walkTo', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
     view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
   }
+}
+// Carrying taps (M1 package 1). A tap on a hand truck or handcart's parking spot takes or leaves that tool.
+// A tap on a freight item (on the ground or in a bay) picks it up when there is room. While carrying, a tap
+// on a bay or on the freight shed's dock puts the top item in that bay (the dock taps go to the nearest bay);
+// while carrying by hand, a tap on the ground puts the item down there. With a hand truck or handcart, a tap on
+// the ground just walks (pushing it); the Put down button in the carry readout puts an item down on the spot.
+// Returns true when the tap was used.
+function carryTap(px, py, g) {
+  const near = (x, y, z, r) => { const p = toScreen(x, y, z), d = Math.hypot(p.x - px, p.y - py); return d < r ? d : null; };
+  for (const T of S.tools) if (near(T.x / 100, 0.4, T.z / 100, 30) !== null) { send({ t: 'carryTool', tool: T.id }); return true; }
+  const held = carryHeld(S), cap = CARGO_CARRY_CAP[carryCarrier(S)], I = S.items;
+  let item = null;
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i];
+    if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY')) continue;
+    const pose = typeof cargoView !== 'undefined' && cargoView.poses && cargoView.poses[i];
+    const sp = carrySpot(w), y = pose ? (pose.y + pose.top) / 2 : w.kind === 'BAY' ? 0.45 : 0.15;
+    const d = near(pose ? pose.x : sp.x, y, pose ? pose.z : sp.z, 30);
+    if (d !== null && (!item || d < item.d)) item = { id: i, d, bay: w.kind === 'BAY' };
+  }
+  if (item && held.length < cap) { send({ t: 'carryPick', id: item.id }); return true; }
+  if (held.length) {
+    let bay = null;
+    for (const b of Object.keys(BLD_BAYS).sort()) BLD_BAYS[b].bays.forEach((at, n) => {
+      const d = near(at.x, BLD_BAYS[b].y + 0.15, at.z, 40);
+      if (d !== null && (!bay || d < bay.d)) bay = { b, bay: n, d };
+    });
+    if (!bay && g) {
+      // A tap on the dock (or the shed on it) means the nearest bay.
+      const g3 = groundAtY(px, py, BLD_PLATFORM_TOP) || g;
+      for (const f of buildingFootprints().filter(f => f.kind === 'freightshed')) {
+        if (Math.abs(g3.x - f.x) > f.w / 2 || Math.abs(g3.z - f.z) > f.d / 2) continue;
+        for (const b of Object.keys(BLD_BAYS).sort()) BLD_BAYS[b].bays.forEach((at, n) => {
+          const d = Math.hypot(at.x - g3.x, at.z - g3.z) * 1000;
+          if (!bay || d < bay.d) bay = { b, bay: n, d };
+        });
+      }
+    }
+    if (bay) { send({ t: 'carryPut', b: bay.b, bay: bay.bay }); return true; }
+  }
+  if (item) { send({ t: 'carryPick', id: item.id }); return true; } // full: the sim says why
+  if (held.length && carryCarrier(S) === 'HAND' && g) {
+    send({ t: 'carryPut', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
+    view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
+    return true;
+  }
+  return false;
+}
+function groundAtY(px, py, y) {
+  raycaster.setFromCamera(ndc(px, py), camera);
+  const out = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), out) ? out : null;
 }
 const ptrs = new Map();
 let hold = null, pinch = null, sentDir = null, keyDir = null;
@@ -3741,6 +4128,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Digit3') setSpeed(4);
   if (e.code === 'Escape') { closePanel(); if (bt.on) { buildClear(); buildHint(); } }
   if (e.code === 'KeyB') setBuildMode(!bt.on);
+  if (e.code === 'KeyF' && !$('carry').hidden && !$('carryPut').hidden) $('carryPut').click(); // put down (section 5)
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
@@ -3773,7 +4161,8 @@ function render(alpha, dt) {
   const sw = Math.sin(u.phase) * u.swing;
   u.legL.rotation.x = sw * 25 * Math.PI / 180; u.legR.rotation.x = -sw * 25 * Math.PI / 180;
   u.armL.rotation.x = -sw * 20 * Math.PI / 180; u.armR.rotation.x = sw * 20 * Math.PI / 180;
-  if (P.act) { u.armR.rotation.x = -1.2 + Math.sin(animT * 4) * 0.25; u.armL.rotation.x = -1.0; }
+  if (P.act && P.act.k === 'throw') { u.armR.rotation.x = -1.2 + Math.sin(animT * 4) * 0.25; u.armL.rotation.x = -1.0; }
+  carryDraw(alpha, dt);
   u.body.position.y = Math.abs(Math.sin(u.phase)) * 0.02 * u.swing;
   pl.scale.y = 1 + Math.sin(animT * 0.35 * Math.PI * 2) * 0.015 * (1 - u.swing);
   // The tap marker shows until the walk it started ends.
@@ -3847,6 +4236,7 @@ window.__railhead = {
   switchLockReason, occupiedSwitches, migrate,
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, BLD_BAYS, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
+  carry: { TOOL_KINDS, TOOL_PARK, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },

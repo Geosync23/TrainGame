@@ -5,7 +5,7 @@ Status: waiting for the designer's answers. Round A started at once because the 
 
 | Round | Worker | Piece | Owned sections of index.html |
 | --- | --- | --- | --- |
-| A | W1 | Park the instant build behind ?debug=1; update check-build.js and check-m0.js | build tool; the command-intake gate |
+| A | W1 | Park the instant build behind ?debug=1; update check-build.js and check-m0.js. Merged (856e52d), npm test passed | build tool; the command-intake gate |
 | A | W2 | Cargo items, waybills, item store, conservation check, item props, shed bay tags; SCHEMA_VERSION 2 | new "cargo (items and waybills)"; item props; bay data in buildings; saving migrate |
 | A | W3 | Carrying by hand, hand truck (3), handcart (6); SCHEMA_VERSION 3 after W2 | carrying parts of player; carry commands; truck and cart models; carry readout |
 | A | W4 | Walk grid and A* path-finding round buildings and trains; no schema change | new "walk grid and path-finding"; movement in player; Path overlay |

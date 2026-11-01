@@ -1037,6 +1037,7 @@ function cargoDebugItems(S) {
 //   geo { nodes, edges }  the planned new track as its own small graph, edges in order from the start, each running
 //                         from its node a to b, so edgeAt(job.geo, E, s) and jobPoint(job, s) work. For a switch job
 //                         the first edge is the switch's diverging leg; the through leg is the existing track.
+//   ends                  the existing track nodes the job starts from or joins (no two jobs share one)
 //   side                  +1 or -1: the side the player works from (jobPoint's normal), the one with more room
 //   stakes [[x, z], ...]  stake positions in hundredths of a u, every 2.5u along the centre line, and the end
 //   count { ties, rails, spikes }               pieces to place: a tie every 0.5u, a rail pair per 5u stretch, 4 spikes per tie
@@ -3834,7 +3835,7 @@ function buildPlan(S, c) {
 
 // ---- Part 2: view and input ----
 // D10 (2026-11-01): the M0 instant build is cut, parked behind ?debug=1. Without it the tool only plans:
-// the Lay track button is hidden (a "Plan only" label shows instead) and buildIntakeRefusal() makes the
+// the button is Stake it (a construction job, D12) instead of Lay track, and buildIntakeRefusal() makes the
 // page's command intake (send, so also __railhead.send) refuse buildTrack. The sim itself is not gated:
 // simTick never reads page flags, so the same commands always give the same result.
 const BUILD_INSTANT = new URLSearchParams(location.search).get('debug') === '1';

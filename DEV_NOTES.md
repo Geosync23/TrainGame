@@ -41,6 +41,7 @@ Current checks:
 - `check-trains.js`: a train sent to the siding finds the way and stops on the spot. A switch under a train is locked. Switch 3 changes the path. A dead end and a switch set against the train both stop it 0.5u short. The player throws a switch.
 - `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
 - `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
+- `check-debug.js`: with `?debug=1` each overlay draws (screenshots `debug-*.png`), the debug bar opens by touch, the siding and spur scenarios load, 32x warp runs far faster than 1x, and the sim gives the same hash with debug on or off. Without it, `window.rh` is undefined and the draw calls are unchanged.
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
 - `check-buildings.js`: every station footprint keeps the section 6 clearance from every track edge (platform and dock flush at 0.9u, others 1.2u from main, 1.0u from yard), the platform top is 0.3u, the buildings are 2 meshes, draw calls stay under 100, and screenshots of the station.
 
@@ -58,6 +59,15 @@ Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump 
 - **Player.** The player walks in a straight line and is blocked by train bodies. A switch throw takes 0.5 game minutes at the stand. A tap on the train walks to within 1.5u of it, then opens its panel.
 - **Models.** Built in code from the style test page shapes. Each vehicle or body part is merged into one mesh with vertex colours and one shared material.
 - **Test hooks.** `window.__railhead` gives access to the state, `step(n)`, `send(cmd)`, `newState`, `simRun`, `stateHash`, `exportSave`/`importSave` and `toScreen`.
+
+## Debug tools (`?debug=1`)
+
+- Off unless the address has `?debug=1`: no extra page elements, meshes or work per frame.
+- A DBG button (bottom right, above Centre) opens a bar: overlay toggles (Blocks, Locks, Routes, Path) and 8x, 16x, 32x, 1x speeds. The train panel covers the bar when open.
+- Overlays: blocks coloured per block (occupied red, reserved by a route orange); switch markers (green free, orange locked by a route, red occupied) with a stub along the set leg; each train's remaining route (cyan); the player's target and path (pink). One merged mesh each (one draw call each), drawn on top without depth test, rebuilt only when what they show changes (checked every 3 frames).
+- Console `window.rh`: `send(cmd)`, `state`, `hash()`, `step(n)`, `setTime(seconds since 05:00 on day 1)`, `warp(0..32)`, `teleport(x, z)`, `scenario('yard' | 'siding' | 'spur')`, `overlay(name, on)`, `drawCalls`, `help()`.
+- `?scenario=<name>` (with `?debug=1`) starts from a named scenario. Note: the autosave will then save the scenario over the player's save.
+- Warp above 4x runs up to 640 ticks of backlog, time-boxed to about 8 ms per frame; the rest carries over. It only runs more ticks, so results stay the same.
 
 ## Sections of index.html
 

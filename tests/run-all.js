@@ -12,6 +12,7 @@ const checks = {
   'saving and loading': require('./check-save'),
   'touch controls': require('./check-touch'),
   'station buildings': require('./check-buildings'),
+  'debug tools (?debug=1)': require('./check-debug'),
 };
 
 (async () => {

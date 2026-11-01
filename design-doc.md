@@ -310,7 +310,7 @@ A **diamond crossing** (two tracks crossing at 30 to 90 degrees) is available in
 
 ### Build tool
 
-> **Changed 2026-11-01:** the build tool plans only; building is physical, spike by spike. The M0 instant build is parked behind ?debug=1. See section 0, decision D10.
+> **Changed 2026-11-01:** the build tool plans only; building is physical, spike by spike. The M0 instant build is parked behind ?debug=1. See section 0, decision D10. In the game now: without ?debug=1 the plan is drawn and labelled as before, but there is no Lay track button (a "Plan only" note shows beside Cancel) and an instant-build command is refused.
 
 1. Start from an existing node (continuing its tangent) or a free point (tangent set by the first drag direction).
 2. Drag to a target. If the target is straight ahead within 1 degree, the tool proposes one straight. Otherwise it proposes an arc tangent to the start followed by a straight to the target, choosing the arc radius as large as possible but at least the minimum. If the end must meet an existing node's tangent, it proposes an S-curve (arc, straight, arc).

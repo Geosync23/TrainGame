@@ -52,6 +52,9 @@
   #buildConfirm button { min-height: 56px; min-width: 128px; font-size: 17px; }
   #buildLay { background: var(--edge); color: var(--paper); }
   #buildLay:disabled { opacity: 0.45; cursor: default; }
+  #buildConfirm.planOnly { width: max-content; }
+  #buildPlanOnly { display: flex; align-items: center; flex: 0 0 auto; width: 200px; min-height: 56px; box-sizing: border-box; padding: 6px 12px;
+    background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-radius: 8px; font-size: 15px; line-height: 1.25; }
   @media (orientation: landscape) and (max-height: 500px) {
     #buildLabel { top: calc(env(safe-area-inset-top) + 10px); max-width: 340px; }
     #buildConfirm { bottom: calc(env(safe-area-inset-bottom) + 10px); }
@@ -2326,11 +2329,31 @@ function buildPlan(S, c) {
 }
 
 // ---- Part 2: view and input ----
-const bt = { on: false, drag: null, plan: null, cmd: null, ghost: null, ends: null, confirm: false };
+// D10 (2026-11-01): the M0 instant build is cut, parked behind ?debug=1. Without it the tool only plans:
+// the Lay track button is hidden (a "Plan only" label shows instead) and buildIntakeRefusal() makes the
+// page's command intake (send, so also __railhead.send) refuse buildTrack. The sim itself is not gated:
+// simTick never reads page flags, so the same commands always give the same result.
+const BUILD_INSTANT = new URLSearchParams(location.search).get('debug') === '1';
+const BUILD_PLAN_ONLY = 'instant track laying is switched off, the build tool only plans (hand-building comes in M1)';
+const bt = { on: false, drag: null, plan: null, cmd: null, ghost: null, ends: null, confirm: false, instant: BUILD_INSTANT, refused: [] };
 const B_COL = { ok: '#3f8a3a', amber: '#d9952b', bad: '#c2402a' };
+// Called by send() for every command from the page. Returns a refusal event, or null to accept the command.
+function buildIntakeRefusal(cmd) {
+  if (BUILD_INSTANT || !cmd || cmd.t !== 'buildTrack') return null;
+  const ev = { t: 'buildRefused', why: BUILD_PLAN_ONLY, debugOnly: true };
+  bt.refused.push(ev);
+  return ev;
+}
 function buildToolInit() {
   $('buildBtn').addEventListener('click', () => setBuildMode(!bt.on));
   $('buildLay').addEventListener('click', buildLay);
+  if (!BUILD_INSTANT) {
+    $('buildLay').hidden = true;
+    const note = document.createElement('div');
+    note.id = 'buildPlanOnly'; note.textContent = 'Plan only: hand-building comes in M1';
+    $('buildConfirm').insertBefore(note, $('buildCancel'));
+    $('buildConfirm').classList.add('planOnly');
+  }
   $('buildCancel').addEventListener('click', () => { buildClear(); buildHint(); });
   Object.assign(window.__railhead, { buildPlan, buildTool: bt, setBuildMode });
 }
@@ -2758,7 +2781,8 @@ function doTick() {
   if (changed) saveSoon();                 // the world changed: save a couple of seconds later
   if (S.time % 600 === 0) saveGame();      // and every 10 game minutes
 }
-function send(cmd) { pending.push(cmd); }
+// The page's command intake. The only gate: buildTrack is refused here without ?debug=1 (D10), never in the sim.
+function send(cmd) { const no = buildIntakeRefusal(cmd); if (no) { handleEvent(no); return; } pending.push(cmd); }
 
 // ==== Section: HUD and panels ====
 const $ = id => document.getElementById(id);

@@ -3,6 +3,10 @@
 //   platform and freight dock flush at 0.9u, other buildings 1.2u from main track, 1.0u from yard track.
 // - Footprints keep clear of the switch stands and the spots where the player stands to throw them.
 // - The platform top is 0.3u (found by a ray straight down onto the buildings mesh).
+// - The platform is 20u long and 2.4u deep (D12), with a canopy over its middle 10u only, the canopy kept
+//   inside the platform's track-side edge.
+// - No two footprints overlap (except the depot's office bay stepping onto the platform's back edge and the
+//   lamps standing on it), and the hand truck and handcart parking spots stay clear of every footprint.
 // - The buildings are 2 meshes (one KIT_MAT, one GLOW_MAT), and a busy scene stays under 100 draw calls.
 // - Screenshots centred on the station, portrait and landscape, go to test-output/.
 
@@ -53,6 +57,30 @@ module.exports = async function checkBuildings() {
             const hit = rc.intersectObject(B.meshes[0], false)[0];
             if (!hit) out.push('the ray down onto the platform hit nothing');
             else if (Math.abs(hit.point.y - 0.3) > 1e-3) out.push(`platform top is at ${hit.point.y.toFixed(3)}u, expected 0.3u`);
+            // Size (D12): 20u along the track, 2.4u deep.
+            if (Math.abs(plat.w - 20) > 1e-6 || Math.abs(plat.d - 2.4) > 1e-6) out.push(`platform is ${plat.w}u x ${plat.d}u, expected 20u x 2.4u`);
+            // Canopy: the first thing a ray down meets, sampled along the platform's middle line.
+            const topAt = (x, z) => { const h = new THREE.Raycaster(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0)).intersectObject(B.meshes[0], false)[0]; return h ? h.point.y : 0; };
+            const zEdge = plat.z + plat.d / 2;
+            for (let dx = -9.5; dx <= 9.5; dx += 0.5) {
+              if (Math.abs(Math.abs(dx) - 5) < 0.3) continue;          // the canopy's own ends
+              const y = topAt(plat.x + dx, zEdge - 0.25), want = Math.abs(dx) < 5;
+              if (want !== y > 1.9) out.push(`canopy: at ${dx}u from the platform's middle the top is at ${y.toFixed(2)}u (${want ? 'expected the canopy' : 'expected no canopy'})`);
+            }
+            if (topAt(plat.x, zEdge + 0.02) > 1) out.push('canopy reaches past the platform\'s track-side edge');
+          }
+          // Footprints do not overlap one another (the depot's office bay may step onto the platform).
+          const overlap = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 1e-6 && Math.abs(a.z - b.z) < (a.d + b.d) / 2 - 1e-6;
+          for (let i = 0; i < fps.length; i++) for (let j = i + 1; j < fps.length; j++) {
+            const a = fps[i], b = fps[j], pair = [a.id, b.id].sort().join('+');
+            if (pair === 'depot+platform' || pair === 'freightdock+freightshed') continue;
+            if ((a.kind === 'lamp' && b.kind === 'platform') || (b.kind === 'lamp' && a.kind === 'platform')) continue; // lamps stand on it
+            if (overlap(a, b)) out.push(`${a.id} overlaps ${b.id}`);
+          }
+          // The hand truck and handcart parking spots (W3) stay at least 0.3u clear of every footprint.
+          for (const t of R.carry.TOOL_PARK) for (const f of fps) {
+            const d = dist(f, t.x / 100, t.z / 100);
+            if (d < 0.3 + (t.k === 'cart' ? 1.05 : 0.4)) out.push(`the ${t.k} parking spot is ${d.toFixed(2)}u from ${f.id}`);
           }
           // Two meshes: one with the shared kit material, one with the glow material.
           const [m, g] = B.meshes;

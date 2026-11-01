@@ -1370,8 +1370,8 @@ function carryNoCartRects() {
   if (carryNoCartCache) return carryNoCartCache;
   const out = [], r = 0.2;
   for (const at of BLD_LAYOUT) {
-    if (at.id === 'platform') out.push([at.x - 6 - r, at.x + 6 + r, at.z - 0.8 - r, at.z + 0.8 + r]);
-    if (at.id === 'freightshed') out.push([at.x - 2.35 - r, at.x + 2.35 + r, at.z - 1.95 - r, at.z + 1.7 + r]);
+    const e = BLD_EXTENTS[at.id];  // the platform and the freight shed (yaw 0), straight from the layout's sizes
+    if (at.id === 'platform' || at.id === 'freightshed') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
   }
   return (carryNoCartCache = out);
 }
@@ -2397,15 +2397,18 @@ const BLD_COL = { plat: '#a39684', tank: '#8a6a48', canvas: '#e4d6b6', tin: '#55
 const BLD_EDGE = 14 - 0.9;            // the platform edge, flush at 0.9u from the main line at z = 14
 const BLD_PLATFORM_TOP = 0.3;
 // Where each building stands: centre x, z and yaw (local +z faces the track); y lifts lamps onto the platform.
+// The platform (D12) is 20u long and 2.4u deep. The depot and shanty stand 1u further back than in M0
+// (a whole number of walk grid cells; the depot's office bay still steps onto the platform's back edge); the water tower moved east along the
+// track past the platform's end and switch 1's stand, so engines can still take water clear of the platform.
 const BLD_LAYOUT = [
-  { id: 'platform', x: 0, z: BLD_EDGE - 0.8, yaw: 0 },
-  { id: 'depot', x: -2.4, z: 10.6, yaw: 0 },
-  { id: 'shanty', x: 2.4, z: 10.4, yaw: 0 },
-  { id: 'watertower', x: 7.6, z: 11.8, yaw: 0 },
+  { id: 'platform', x: 0, z: BLD_EDGE - 1.2, yaw: 0 },
+  { id: 'depot', x: -2.4, z: 9.6, yaw: 0 },
+  { id: 'shanty', x: 2.4, z: 9.4, yaw: 0 },
+  { id: 'watertower', x: 14.6, z: 11.8, yaw: 0 },
   { id: 'freightshed', x: -15.6, z: BLD_EDGE - 1.7, yaw: 0 },
-  { id: 'lamp1', x: -5.5, z: 11.8, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'lamp2', x: 0.2, z: 11.8, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'lamp3', x: 6.4, z: 12.4, yaw: 0 },
+  { id: 'lamp1', x: -7.5, z: 11.4, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp2', x: 7.5, z: 11.4, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp3', x: 16.2, z: 12.4, yaw: 0 },
   { id: 'lamp4', x: -12.9, z: 10.6, yaw: 0 },
 ];
 // Freight shed bays as pure data (no three.js), read by the sim (section "cargo") and the item props.
@@ -2464,7 +2467,7 @@ function bldPlacer(kit, glow, at, vary) {
 // Plan extent of each kind in local coordinates [minX, maxX, minZ, maxZ]. Plain data, so the sim
 // (walk grid) and buildingFootprints() can read it without three.js; each recipe returns its own entry.
 const BLD_EXTENTS = {
-  platform: [-6, 6, -0.8, 0.8],         // 12u long (train No. 1 is 10.8u), 1.6u deep
+  platform: [-10, 10, -1.2, 1.2],       // 20u long (D12; train No. 1 is 10.8u), 2.4u deep
   depot: [-2.3, 2.3, -1.3, 1.48],
   shanty: [-0.85, 1.15, -0.75, 0.75],
   watertower: [-0.95, 0.95, -0.95, 0.95],
@@ -2473,15 +2476,17 @@ const BLD_EXTENTS = {
 };
 // Recipes: each draws its parts and returns its plan extent (its BLD_EXTENTS entry).
 const BLD_RECIPES = {
-  // Platform, 12u long (train No. 1 is 10.8u), with a canopy over its east half and a bench.
+  // Platform, 20u long and 2.4u deep (D12), with a canopy over the middle 10u and a bench under it.
+  // The canopy stops 0.05u short of the track-side edge and clears the depot's office bay roof (0.4u below it, and 0.2u to the side in plan).
   platform(b) {
     const [x0, x1, z0, z1] = BLD_EXTENTS.platform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP;
     b.add(box(len, top + 0.05, dep), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
-    b.add(box(5.2, 0.12, 1.35), PAL.roof, 3.2, 2.05, 0.075);
-    for (const x of [1.0, 3.2, 5.4]) for (const z of [-0.45, 0.45]) b.add(cyl(0.06, 0.06, 1.75), PAL.trim, x, top + 0.875, z);
-    b.add(box(1.2, 0.07, 0.34), PAL.trim, 2.1, top + 0.4, -0.5);
-    b.add(box(1.2, 0.3, 0.05), PAL.trim, 2.1, top + 0.65, -0.66);
-    for (const x of [1.6, 2.6]) b.add(box(0.07, 0.37, 0.3), PAL.loco, x, top + 0.18, -0.5);
+    b.add(box(10, 0.12, 1.75), PAL.roof, 0, 2.05, z1 - 0.05 - 1.75 / 2);
+    for (const x of [-4.6, -1.55, 1.55, 4.6]) for (const z of [-0.3, 0.8]) b.add(cyl(0.06, 0.06, 1.75), PAL.trim, x, top + 0.875, z);
+    const bx = 3.1, bz = -0.55;    // the bench, facing the track
+    b.add(box(1.2, 0.07, 0.34), PAL.trim, bx, top + 0.4, bz);
+    b.add(box(1.2, 0.3, 0.05), PAL.trim, bx, top + 0.65, bz - 0.16);
+    for (const x of [-0.5, 0.5]) b.add(box(0.07, 0.37, 0.3), PAL.loco, bx + x, top + 0.18, bz);
     return BLD_EXTENTS.platform;
   },
   // Small depot (style test page station): ticket window, telegraph, and the agent's office in the bay.

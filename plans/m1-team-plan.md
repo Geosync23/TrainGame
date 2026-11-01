@@ -19,7 +19,7 @@ Status: approved by the designer (survey answers recorded as D12, 2026-11-01). R
 | C | C1 | Money: market prices, import orders by telegraph (the Overland brings what was ordered), contracts, ledger, cash, credit line, money invariant. Merged (schema 6), npm test passed (20 checks) | new "economy"; telegraph panel |
 | C | C2 | The world: a larger map with the real hub (section 15) and Willow Ford at the end of the 160u spur, run-around, interchange joined by a switch; the M0 test yard kept as world 'yard'. Merged (schema 7) | starting world layout, terrain, buildings, walk grid size |
 | C | C3 | Trains: coupling and uncoupling, services with stops and stop actions, single-track reservation, order board, cordwood and water, run-around, tender-first. Merged (schema 8), npm test passed (22 checks) | trains, routes, new "timetable" |
-| C | C4 | Passengers: travellers at fixed rates, ticket queue and window, boarding and alighting, departure board | new "passengers" |
+| C | C4 | Passengers: travellers at fixed rates, ticket queue and window, boarding and alighting, departure board. Merged (schema 9), npm test passed (23 checks) | new "passengers" |
 | C | C5 | Placeholder town (after C1): businesses as stock holders with weekly use, contracts, delivery to business doors | new "town" |
 | D | | Panels and HUD (panel gestures to be proposed), tutorial, M1 acceptance check | after approval |
 

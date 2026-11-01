@@ -115,4 +115,4 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-Start from `plans/handover.md`. M0 is built and reviewed (D11). The newest decision is D10: track is built by hand, spike by spike, in M1, and the instant build is parked behind ?debug=1. Next job: the M1 plan, for review before building.
+M1 has started. The plan is in `plans/m1-team-plan.md` (and on the plan page linked there), waiting for the designer's answers. Round A (park the instant build, cargo items, carrying, path-finding) is being built by a team; rounds B to D wait for approval.

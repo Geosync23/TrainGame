@@ -94,12 +94,12 @@
   #telBody button { font-size: 14px; padding: 0 8px; }
   #telSend { background: var(--edge); color: var(--paper); }
   #telSend:disabled { opacity: 0.45; }
-  .jobSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
+  .jobSign, .townSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
     background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-left-width: 7px; border-radius: 8px;
     padding: 3px 3px 3px 9px; font-size: 14px; line-height: 1.25; display: flex; gap: 8px; align-items: center; }
-  .jobSign .txt { flex: 1 1 auto; min-width: 0; max-width: 150px; }
-  .jobSign b { display: block; font-size: 14px; }
-  .jobSign span:empty { display: none; }
+  .jobSign .txt, .townSign .txt { flex: 1 1 auto; min-width: 0; max-width: 150px; }
+  .jobSign b, .townSign b { display: block; font-size: 14px; }
+  .jobSign span:empty, .townSign span:empty { display: none; }
   .jobSign button { pointer-events: auto; flex: none; font-size: 14px; padding: 0 8px; min-width: 48px; min-height: 48px; max-width: 86px; line-height: 1.1; }
   .jobSign button[data-armed] { background: var(--accent); color: #fff; }
   .jobSign[data-k="need"] { border-left-color: var(--accent); }
@@ -6180,7 +6180,7 @@ function townSignHud() {
     let L = townSigns[B.id];
     if (!L) {
       const el = document.createElement('div');
-      el.className = 'hud jobSign townSign'; el.dataset.biz = B.id;
+      el.className = 'hud townSign'; el.dataset.biz = B.id;
       el.innerHTML = '<div class="txt"><b></b><span></span></div>';
       document.body.appendChild(el);
       L = townSigns[B.id] = { el, sig: '', x: -1e9, y: -1e9, w: 0, h: 0, b: el.querySelector('b'), s: el.querySelector('span') };

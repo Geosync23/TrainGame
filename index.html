@@ -2231,30 +2231,50 @@ function paxNewStore(seed) {
   return { list: [], next: 0, due: {}, sell: {}, door: {}, desk: null, rng: rngSeed(((seed === undefined ? CFG.SEED : seed) ^ PAX.SEED) | 0),
     sold: {}, cents: {}, rep: {}, gone: {}, arrived: {} };
 }
-// The stations, from the building data: [{ id, plat, depot, window, staff, along, out, exits }], sorted by id.
-// window: the ticket window on the depot's track-side wall; staff: where the player stands to sell tickets;
+// The stations, from the station and building data: [{ id, plat, depot, window, staff, along, out, exits }], sorted
+// by id. window: the ticket window on the depot's track-side wall; staff: where the player stands to sell tickets;
 // along, out: the platform's direction and its normal towards the track; exits: the station's edges (just past
-// the platform ends), where travellers come from and go to. All in u.
-let paxStationsCache = null;
-function paxStations() {
-  if (paxStationsCache) return paxStationsCache;
-  const fps = buildingFootprints(), plats = fps.filter(f => f.kind === 'platform');
+// the platform ends), where travellers come from and go to. All in u. With the station table (stationsOf, C2)
+// each station names its platform and depot, and the depot's 'ticket' use spot (buildingSpots) is the staff spot.
+// Without it (the M0 test yard) each platform footprint is a station (the first is the hub) with its nearest depot,
+// and the window is 0.35 of the depot's width from its middle, where the depot recipe draws it.
+const paxStationsCache = {};
+function paxStations(T) {
+  if (typeof worldUse === 'function') worldUse(T);
+  const wid = typeof worldId === 'function' ? worldId(T) : 'yard';
+  if (paxStationsCache[wid]) return paxStationsCache[wid];
+  const fps = buildingFootprints(), table = typeof stationsOf === 'function' ? stationsOf(T) || [] : [];
+  const spots = typeof buildingSpots === 'function' ? buildingSpots() : [];
   const W = (g, lx, lz) => [g.x + lx * Math.cos(g.yaw) + lz * Math.sin(g.yaw), g.z - lx * Math.sin(g.yaw) + lz * Math.cos(g.yaw)];
   const dist = (a, f) => Math.hypot(a.x - f.x, a.z - f.z);
-  const out = plats.map((f, i) => {
-    const id = f.station || (i === 0 ? 'hub' : f.id);
+  const make = (id, f, depot, staffAt) => {
     const along = [Math.cos(f.yaw), -Math.sin(f.yaw)], nrm = [Math.sin(f.yaw), Math.cos(f.yaw)];
-    let depot = fps.find(g => g.kind === 'depot' && g.station && g.station === f.station) || null;
-    if (!depot) depot = fps.filter(g => g.kind === 'depot' && dist(g, f) < 8).sort((a, b) => dist(a, f) - dist(b, f))[0] || null;
-    // The ticket window: a depot footprint may give its place along the wall (window: local x); else 0.35 of the
-    // depot's width from its middle, where the depot recipe draws the window beside the agent's office bay.
-    const win = depot ? W(depot, depot.window !== undefined ? depot.window : 0.35 * depot.w, depot.d / 2) : W(f, 0, -f.d / 2);
+    let win, staff;
+    if (staffAt) { staff = [staffAt.x, staffAt.z]; win = [staff[0] - nrm[0] * PAX.STAFF_OUT, staff[1] - nrm[1] * PAX.STAFF_OUT]; }
+    else {
+      win = depot ? W(depot, 0.35 * depot.w, depot.d / 2) : W(f, 0, -f.d / 2);
+      staff = [win[0] + nrm[0] * PAX.STAFF_OUT, win[1] + nrm[1] * PAX.STAFF_OUT];
+    }
     const exits = [-1, 1].map(k => W(f, k * (f.w / 2 + 0.8), 0));
-    return { id, plat: f, depot, window: { x: win[0], z: win[1] }, staff: { x: win[0] + nrm[0] * PAX.STAFF_OUT, z: win[1] + nrm[1] * PAX.STAFF_OUT }, along, out: nrm, exits };
-  });
-  return (paxStationsCache = out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+    return { id, plat: f, depot, window: { x: win[0], z: win[1] }, staff: { x: staff[0], z: staff[1] }, along, out: nrm, exits };
+  };
+  let out;
+  if (table.length) {
+    out = table.map(st => {
+      const f = fps.find(g => g.id === (st.platforms || [])[0]);
+      if (!f) return null;
+      const depot = fps.find(g => g.id === st.depot) || null, sp = spots.find(b => b.building === st.depot && b.kind === 'ticket') || null;
+      return make(st.id, f, depot, sp);
+    }).filter(Boolean);
+  } else {
+    out = fps.filter(f => f.kind === 'platform' || f.kind === 'wfplatform').map((f, i) => {
+      const depot = fps.filter(g => g.kind === 'depot' && dist(g, f) < 8).sort((a, b) => dist(a, f) - dist(b, f))[0] || null;
+      return make(i === 0 ? 'hub' : f.id, f, depot, null);
+    });
+  }
+  return (paxStationsCache[wid] = out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
 }
-const paxStation = id => paxStations().find(s => s.id === id) || null;
+const paxStation = (T, id) => paxStations(T).find(s => s.id === id) || null;
 // Platform-local coordinates [along, out] of (x, z) from station K's platform centre, and back.
 function paxLocal(K, x, z) { const dx = x - K.plat.x, dz = z - K.plat.z; return [dx * K.along[0] + dz * K.along[1], dx * K.out[0] + dz * K.out[1]]; }
 function paxWorld(K, lx, lz) { return [K.plat.x + K.along[0] * lx + K.out[0] * lz, K.plat.z + K.along[1] * lx + K.out[1] * lz]; }
@@ -2389,10 +2409,15 @@ function paxExit(K, p) {
   return [Math.round(e[0] * 100), Math.round(e[1] * 100)];
 }
 function paxCount(o, k, n) { o[k] = (o[k] || 0) + (n === undefined ? 1 : n); }
+// The staff spot pulled onto the map (C2's worlds clamp x and z to their own bounds).
+function paxStaffAt(K) {
+  return typeof clampX === 'function' ? [clampX(K.staff.x), clampZ(K.staff.z)] : [clampMap(K.staff.x), clampMap(K.staff.z)];
+}
 function paxStaffCmd(S, c, ev) {
-  const K = paxStation(c.st), P = S.player;
+  const K = paxStation(S.track, c.st), P = S.player;
   if (!K) { ev.push({ t: 'deskLeft', why: 'There is no ticket window there' }); return; }
-  P.mode = 'to'; P.tx = clampMap(K.staff.x); P.tz = clampMap(K.staff.z); P.use = null; P.act = null; P.run = false;
+  const [sx, sz] = paxStaffAt(K);
+  P.mode = 'to'; P.tx = sx; P.tz = sz; P.use = null; P.act = null; P.run = false;
   S.pax.desk = { st: K.id, on: 0 };
 }
 function paxLeaveCmd(S, ev) { if (S.pax.desk) { S.pax.desk = null; ev.push({ t: 'deskLeft' }); } }
@@ -2401,11 +2426,12 @@ function paxLeaveCmd(S, ev) { if (S.pax.desk) { S.pax.desk = null; ev.push({ t: 
 function paxDeskTick(S, ev) {
   const X = S.pax, D = X.desk, P = S.player;
   if (!D) return null;
-  const K = paxStation(D.st);
+  const K = paxStation(S.track, D.st);
   if (!K) { X.desk = null; return null; }
   const d = Math.hypot(P.x - K.staff.x, P.z - K.staff.z);
   if (!D.on) {
-    if (P.mode === 'to' && P.tx === clampMap(K.staff.x) && P.tz === clampMap(K.staff.z)) return null; // still walking there
+    const [sx, sz] = paxStaffAt(K);
+    if (P.mode === 'to' && P.tx === sx && P.tz === sz) return null; // still walking there
     if (P.mode === 'idle' && !P.act && d <= 0.5) {
       D.on = 1; P.f = Math.atan2(K.along[0], K.along[1]); // facing the queue
       ev.push({ t: 'deskStaffed', st: K.id });
@@ -2422,7 +2448,7 @@ function paxTick(S, ev, poseCache) {
   const X = S.pax;
   if (!X) return;
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id] || []));
-  const stations = paxStations(), sod = (S.time + CFG.DAY_START_S) % 86400;
+  const stations = paxStations(S.track), sod = (S.time + CFG.DAY_START_S) % 86400;
   const staffed = paxDeskTick(S, ev);
   // 1. New travellers: at each station at its fixed rate, and a few off the Overland when it sets out its cars.
   for (const K of stations) {
@@ -2436,7 +2462,7 @@ function paxTick(S, ev, poseCache) {
     const e = K.exits[Math.floor(paxRand(X) * K.exits.length) % K.exits.length];
     paxAdd(S, K.id, K.id, to, e[0], e[1], ev);
   }
-  const hub = paxStation('hub'), O = overlandTrain(S), lp = O && poseCache[O.id] && poseCache[O.id][0];
+  const hub = paxStation(S.track, 'hub'), O = overlandTrain(S), lp = O && poseCache[O.id] && poseCache[O.id][0];
   if (hub && lp && ev.some(e => e.t === 'overlandSetOut')) {
     const n = PAX.OVERLAND_MIN + Math.floor(paxRand(X) * (PAX.OVERLAND_MAX - PAX.OVERLAND_MIN + 1));
     const fx = Math.cos(lp.yaw), fz = -Math.sin(lp.yaw), side = ((hub.plat.x - lp.x) * fz - (hub.plat.z - lp.z) * fx) >= 0 ? 1 : -1;
@@ -2508,7 +2534,7 @@ function paxTick(S, ev, poseCache) {
   // Door timers of cars nobody is boarding or leaving any more are forgotten.
   for (const key of Object.keys(X.door).sort()) { const sk = Number(key.split(':')[0]); if (!X.list.some(p => p.car === sk)) delete X.door[key]; }
   // 3. Walking. Travellers on their way off the map head for the nearer station edge, and leave the map there.
-  for (const p of X.list) if ((p.s === 'leave' || p.s === 'off') && p.tx === null) { const K = paxStation(p.st), e = K ? paxExit(K, p) : [p.x, p.z]; paxGo(S, p, poses, e[0], e[1]); }
+  for (const p of X.list) if ((p.s === 'leave' || p.s === 'off') && p.tx === null) { const K = paxStation(S.track, p.st), e = K ? paxExit(K, p) : [p.x, p.z]; paxGo(S, p, poses, e[0], e[1]); }
   for (const p of X.list) if (p.s !== 'aboard') paxMove(S, p, poses);
   const keep = [];
   for (const p of X.list) {
@@ -2532,7 +2558,7 @@ function paxCheckSaveShape(st) {
 // nWait ticketed ones on the platform, each at their place; the player stands near the window. The Overland
 // stays away, so the counts are this scenario's own. Not used in normal play.
 function paxDebugScenario(S, nQueue, nWait) {
-  const K = paxStation('hub'), X = S.pax, ev = [], slots = paxQueueSlots(S, K);
+  const K = paxStation(S.track, 'hub'), X = S.pax, ev = [], slots = paxQueueSlots(S, K);
   S.time = 3 * 3600;
   X.due.hub = S.time + 3600;
   for (let i = 0; i < nQueue; i++) { const sl = slots[Math.min(i, slots.length - 1)], p = paxAdd(S, 'hub', 'hub', 'willow', sl[0] / 100, sl[1] / 100, ev); p.tx = sl[0]; p.tz = sl[1]; }
@@ -4510,7 +4536,7 @@ function paxDraw(alpha, dt) {
       const a = paxView.prev && paxView.prev.get(p.id), b = paxView.cur.get(p.id) || [p.x / 100, p.z / 100];
       const x = a ? lerp(a[0], b[0], alpha) : b[0], z = a ? lerp(a[1], b[1], alpha) : b[1], moved = Math.hypot(x - w.x, z - w.z);
       // Standing in line: face the window; waiting on the platform: face the track; walking: the way they go.
-      const K2 = (p.s === 'queue' || p.s === 'wait') && !p.path.length ? paxStation(p.st) : null;
+      const K2 = (p.s === 'queue' || p.s === 'wait') && !p.path.length ? paxStation(S.track, p.st) : null;
       const want = K2 ? (p.s === 'queue' ? Math.atan2(-K2.along[0], -K2.along[1]) : Math.atan2(K2.out[0], K2.out[1])) : p.f / 128 * Math.PI;
       w.yaw = lerpAngle(w.yaw, want, moved > 0.5 ? 1 : turn);
       if (moved < 0.5) w.phase += moved * CROWD.STRIDE * Math.PI * 2; // a jump (a step off a car) is not a stride
@@ -5610,12 +5636,12 @@ function paxClear(r) {
 function paxHud() {
   const X = S.pax;
   if (!X) return;
-  const D = X.desk, KD = D && paxStation(D.st), queued = id => X.list.filter(p => p.st === id && p.s === 'queue').length;
+  const D = X.desk, KD = D && paxStation(S.track, D.st), queued = id => X.list.filter(p => p.st === id && p.s === 'queue').length;
   const hideDesk = !KD || ui.panelTrain !== null || carUi.stock !== null || (typeof bt !== 'undefined' && bt.on);
   const text = !KD ? '' : D.on ? `Ticket window, ${paxName(KD.id)}: ${queued(KD.id)} in line, ${X.sold[KD.id] || 0} sold` : 'Walking to the ticket window';
   const dsig = (hideDesk ? '-' : text);
   if (dsig !== paxDeskSig) { paxDeskSig = dsig; $('paxDesk').hidden = hideDesk; $('paxDeskText').textContent = text; }
-  for (const K of paxStations()) {
+  for (const K of paxStations(S.track)) {
     let C = paxCards[K.id];
     if (!C) {
       const board = document.createElement('div'); board.className = 'hud paxBoard'; board.dataset.st = K.id; document.body.appendChild(board);
@@ -5736,7 +5762,7 @@ function onTap(px, py) {
 }
 // A tap on a station's ticket window walks there and staffs it (passengers, builder C4).
 function paxTap(px, py) {
-  for (const K of paxStations()) {
+  for (const K of paxStations(S.track)) {
     const p = toScreen(K.window.x, 1.0, K.window.z);
     if (Math.hypot(p.x - px, p.y - py) < 34) { send({ t: 'staffWindow', st: K.id }); return true; }
   }
@@ -6011,7 +6037,7 @@ window.__railhead = {
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
   jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,
   trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.isInstancedMesh && o.geometry.parameters && o.geometry.parameters.depth === 1.2 ? o.count : 0), 0),
-  pax: { PAX, paxStations, paxStation, paxQueueSlots, paxFare, paxCarsAt, stationDepartures, paxDebugScenario, paxNewStore, paxLook,
+  pax: { PAX, paxStations: T => paxStations(T || S.track), paxStation: (id, T) => paxStation(T || S.track, id), paxQueueSlots, paxFare, paxCarsAt, stationDepartures, paxDebugScenario, paxNewStore, paxLook,
     get view() { return paxView; }, get kits() { return crowd.kits; } },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),

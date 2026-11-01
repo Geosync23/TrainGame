@@ -24,6 +24,7 @@ const checks = {
   'hand-building track (construction jobs)': require('./check-handbuild'),
   'hand-building drawn (stakes, sign, pieces, work poses)': require('./check-handbuild-look'),
   'economy (cash, orders by telegraph, contracts, ledger)': require('./check-economy'),
+  'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
 };
 
 (async () => {

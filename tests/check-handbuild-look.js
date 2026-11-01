@@ -23,7 +23,7 @@ module.exports = async function checkHandbuildLook() {
   const problems = [];
   const report = [];
   for (const o of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(o, { query: '?paused&debug=1&scenario=handbuild' });
+    const { browser, page, errors } = await openGame(o, { query: '?paused&debug=1&scenario=handbuild&world=yard' });
     const R = (fn, arg) => page.evaluate(fn, arg);
     const P = msg => problems.push(`${o}: ${msg}`);
     const frames = () => page.waitForTimeout(250);
@@ -178,7 +178,7 @@ module.exports = async function checkHandbuildLook() {
   }
   // Cancel job on the sign's label: real touch taps, the first only arms it ("Tap again to cancel").
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&scenario=handbuild' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&scenario=handbuild&world=yard' });
     const R = (fn, arg) => page.evaluate(fn, arg);
     try {
       await R(() => { for (const k of ['blocks', 'locks', 'routes', 'path']) rh.overlay(k, false); window.__railhead.send({ t: 'jobWork', id: 0 }); window.__railhead.step(120); });

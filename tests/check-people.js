@@ -8,7 +8,7 @@ const { openGame, screenshotPath } = require('./browser');
 
 module.exports = async function checkPeople() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?crowd=200' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?crowd=200&world=yard' });
   try {
     const info = await page.evaluate(() => window.__railhead.crowdInfo());
     if (info.count !== 200) problems.push(`expected 200 walkers, got ${info.count}`);

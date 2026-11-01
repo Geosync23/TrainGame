@@ -166,7 +166,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 6,
+  SCHEMA_VERSION: 7,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -188,7 +188,7 @@ const CFG = {
   ISO_EL: Math.atan(1 / Math.SQRT2), // 35.264 degrees
   CAM_LAG_S: 0.2,
   HOLD_MS: 220, TAP_MOVE_PX: 10,
-  MAP_HALF: 60,
+  MAP_HALF: 60,              // the test yard's map (each world's own bounds are in WORLDS, "starting world layout")
 };
 const DT_MIN = CFG.TICK_GAME_S / 60; // one tick in game minutes
 
@@ -420,6 +420,7 @@ function trackValidate(T) {
 // through leg straight 5u, diverging leg radius 10u, 30 degrees.
 function buildTestYard() {
   const T = trackNew(), L = CFG.LIM;
+  T.world = 'yard';
   const n0 = trackNode(T, -20, 14), s1 = trackNode(T, -12, 14), s1t = trackNode(T, -7, 14);
   const s2t = trackNode(T, 7, 14), s2 = trackNode(T, 12, 14), n1 = trackNode(T, 20, 14);
   const n2 = trackNode(T, 20, -14), s3 = trackNode(T, -4, -14), s3t = trackNode(T, -9, -14), n3 = trackNode(T, -20, -14);
@@ -471,6 +472,152 @@ function interchangeAdd(T) {
 }
 function interchangeEdge(T) { const E = T.edges.find(E => E.fixed); return E ? E.id : -1; }
 
+// ==== Section: starting world layout ====
+// M1 package 9: the real start (design-doc 15 "Starting hub", "Satellite station kit", "Hub land").
+// A long, narrow map, 336u x 128u (168 x 64 tiles; x -64 to 272, z -80 to 48): the hub at the west end
+// inside its 60 x 40 tile boundary, the Overland's interchange running off the west edge beside it, and a
+// 160u (10 mile) single-track spur east to Willow Ford. The spur bends north in a gentle S (radius 60u,
+// 30 degrees each way), so the map stays 128u deep and Willow Ford sits clear of the east edge.
+// Track lines in the hub run east-west: the platform track (z = -3.41), the main track (z = 0) and the
+// interchange (z = +3.41, outside the boundary, whose south edge is z = 2). The station buildings stand on
+// the north side (smaller z), facing the tracks and the default camera. Pure data and math: no three.js.
+// Which world a game is in is saved on its track: S.track.world is 'start' or 'yard' (the M0 test yard,
+// kept as a debug scenario and for old saves). Missing means 'yard'.
+const HUB = { x0: -60, x1: 60, z0: -78, z1: 2 };                 // the hub boundary: 60 x 40 tiles
+const WFORD = { x: 192, z: -36, LOOP: 40, HEAD: 16, PLAT: 16 };  // Willow Ford: its west switch (W1) and kit sizes
+const START_ICH = { SW_X: 5, LEN: 138 };
+// How far a track is moved sideways by a switch's diverging leg, 2u of straight and a radius 8u arc back:
+// 10(1 - cos 30) + 2 sin 30 + 8(1 - cos 30) = 3.41u (the test yard's passing siding is the same).
+const TURN_OFF = 18 * (1 - Math.cos(Math.PI / 6)) + 2 * Math.sin(Math.PI / 6);                          // the interchange switch (on the main track) and the interchange's length
+// Builds the real start's track. Switch ids: 0 the interchange switch, 1 the platform switch, 2 and 3 Willow
+// Ford's run-around loop (west, east). The interchange edge keeps B4's shape: node A (s = 0) is its east end,
+// where it meets the connection from switch 0, and it runs west off the map (s = 58 is about the map edge).
+function buildStartWorld() {
+  const T = trackNew(), L = CFG.LIM;
+  T.world = 'start';
+  // From a switch node: a diverging leg (radius 10u, 30 degrees, section 6), 2u of straight, and a radius 8u
+  // arc back to the first heading, so the new track runs parallel 3.41u off. turn: +1 or -1 as trackArc.
+  const turnOut = (node, hx, hz, turn) => {
+    const d = trackArc(T, node, hx, hz, 10, turn, 30, 'switch', L.diverge);
+    const a = trackNode(T, T.nodes[d.node].x + d.hx * 2, T.nodes[d.node].z + d.hz * 2);
+    trackStraight(T, d.node, a, 'yard', L.yard);
+    const b = trackArc(T, a, d.hx, d.hz, 8, -turn, 30, 'yard', L.yard);
+    return { e: d.e, node: b.node };
+  };
+  // Hub main track, west to east: dead end (a headshunt), switch 0 (interchange), switch 1 (platform track).
+  const mW = trackNode(T, -40, 0), s0t = trackNode(T, START_ICH.SW_X - 5, 0), s0 = trackNode(T, START_ICH.SW_X, 0);
+  const s1t = trackNode(T, 35, 0), s1 = trackNode(T, 40, 0);
+  trackStraight(T, s0t, mW, 'yard', L.yard);                       // the headshunt, west of switch 0
+  const e0n = trackStraight(T, s0, s0t, 'switch', L.main);
+  const eMid = trackStraight(T, s1t, s0, 'main', L.main);
+  const e1n = trackStraight(T, s1, s1t, 'switch', L.main);
+  // Switch 0's diverging leg turns south to the interchange (3.41u south of the main track).
+  const c0 = turnOut(s0, -1, 0, 1);
+  const iA = c0.node, iB = trackNode(T, T.nodes[iA].x - START_ICH.LEN, T.nodes[iA].z);
+  const eI = trackStraight(T, iA, iB, 'yard', L.interchange);
+  T.edges[eI].fixed = true;
+  // Switch 1's diverging leg turns north to the platform track, which runs west past the platform to a dead end.
+  const c1 = turnOut(s1, -1, 0, -1);
+  const pW = trackNode(T, -36, T.nodes[c1.node].z);
+  trackStraight(T, c1.node, pW, 'yard', L.yard);
+  // The spur: east from switch 1, a gentle S north (radius 60u, 30 degrees each way), then east into
+  // Willow Ford. The middle straight is chosen so the spur ends on Willow Ford's line (z = WFORD.z).
+  const sp0 = trackNode(T, 56, 0);
+  const eSpur = trackStraight(T, s1, sp0, 'main', L.main);
+  const a1 = trackArc(T, sp0, 1, 0, 60, 1, 30, 'main', L.main);
+  const mid = 2 * (-WFORD.z - 120 * (1 - Math.cos(Math.PI / 6)));
+  const sp1 = trackNode(T, T.nodes[a1.node].x + a1.hx * mid, T.nodes[a1.node].z + a1.hz * mid);
+  trackStraight(T, a1.node, sp1, 'main', L.main);
+  const a2 = trackArc(T, sp1, a1.hx, a1.hz, 60, -1, 30, 'main', L.main);
+  const zW = T.nodes[a2.node].z;
+  const w1 = trackNode(T, WFORD.x, zW);
+  const eToW1 = trackStraight(T, a2.node, w1, 'main', L.main);
+  // Willow Ford (satellite station kit): main track and a run-around loop between switches 2 and 3,
+  // 40u apart; the loop is on the south (far) side, the platform and depot on the north side of the main.
+  const w1t = trackNode(T, WFORD.x + 5, zW), w2 = trackNode(T, WFORD.x + WFORD.LOOP, zW), w2t = trackNode(T, WFORD.x + WFORD.LOOP - 5, zW);
+  const eW1n = trackStraight(T, w1, w1t, 'switch', L.main);
+  trackStraight(T, w1t, w2t, 'main', L.main);
+  const eW2n = trackStraight(T, w2, w2t, 'switch', L.main);
+  const l1 = turnOut(w1, 1, 0, -1), l2 = turnOut(w2, -1, 0, 1);
+  trackStraight(T, l1.node, l2.node, 'yard', L.yard);              // the loop (passing) track
+  const wE = trackNode(T, WFORD.x + WFORD.LOOP + WFORD.HEAD, zW);
+  const eHead = trackStraight(T, w2, wE, 'yard', L.yard);          // headshunt east of switch 3, for running round
+  trackSwitch(T, s0, eMid, e0n, c0.e);
+  trackSwitch(T, s1, eSpur, e1n, c1.e);
+  trackSwitch(T, w1, eToW1, eW1n, l1.e);
+  trackSwitch(T, w2, eHead, eW2n, l2.e);
+  return T;
+}
+
+// The worlds. terrain: the heightmap (2u tiles from x0, z0); walk: the player's walk grid (0.5u cells);
+// bounds: where the player, items and plans may be (and the camera looks); flat: areas held at height 0;
+// hub: the hub boundary (track may be planned only inside it), or null; crowd: where test walkers roam.
+const WORLDS = {
+  yard: {
+    id: 'yard', build: buildTestYard,
+    terrain: { x0: -64, z0: -64, nx: 64, nz: 64, flat: [{ x0: -25, x1: 25, z0: -20, z1: 24 }] },
+    walk: { x0: -60, z0: -60, nx: 240, nz: 240 },
+    bounds: { x0: -60, x1: 60, z0: -60, z1: 60 },
+    hub: null,
+    crowd: { x0: -40, x1: 40, z0: -30, z1: 32 },
+    player: { x: -10.5, z: 11.2 },
+    train: T => ({ e: 2, s: 12, d: 1 }),
+  },
+  start: {
+    id: 'start', build: buildStartWorld,
+    terrain: { x0: -64, z0: -80, nx: 168, nz: 64, flat: [
+      { x0: HUB.x0 - 2, x1: HUB.x1 + 2, z0: HUB.z0 - 2, z1: HUB.z1 + 4 },                     // the hub, and the interchange beside it
+      { x0: WFORD.x - 14, x1: WFORD.x + WFORD.LOOP + WFORD.HEAD + 6, z0: WFORD.z - 22, z1: WFORD.z + 8 }, // Willow Ford
+    ] },
+    walk: { x0: -64, z0: -80, nx: 672, nz: 256 },
+    bounds: { x0: -64, x1: 272, z0: -80, z1: 48 },
+    hub: HUB,
+    crowd: { x0: -30, x1: 40, z0: -30, z1: 2 },
+    player: { x: 7, z: -5.5 },
+    // No. 1 stands at the hub's platform, engine east, ready to run to Willow Ford.
+    train: T => { const E = T.edges.find(E => E.cls === 'yard' && E.k === 'S' && T.nodes[E.b].x === -36); return { e: E.id, s: 12, d: -1 }; },
+  },
+};
+const worldId = T => (T && T.world === 'start' ? 'start' : 'yard');
+const worldOf = T => WORLDS[worldId(T)];
+// The world in use by the code that reads plain layout tables (buildings, bays, tool spots, map bounds,
+// crowd area). Set from a track at every entry point (newState, simTick, walkGrid, buildWorld, each frame),
+// so it always matches the state being worked on. Cheap when nothing changes.
+let WB = WORLDS.yard.bounds, worldCur = null;
+function worldUse(T) {
+  const id = worldId(T);
+  if (id === worldCur) return;
+  worldCur = id; WB = WORLDS[id].bounds;
+  if (typeof bldUseWorld === 'function') bldUseWorld(id);
+}
+function clampX(v) { return Math.max(WB.x0, Math.min(WB.x1, v)); }
+function clampZ(v) { return Math.max(WB.z0, Math.min(WB.z1, v)); }
+
+// Stations as plain data (no three.js), for timetables (stops), passengers (platforms, ticket window) and
+// the telegraph. Track spans are straight stretches of centre line {x0, z0, x1, z1}: a stop is anywhere
+// along its span (use trackNearest to turn an end into an edge and distance). depot names the building
+// in BLD_LAYOUT whose use spots (buildingSpots()) hold the ticket window, telegraph key and office desk.
+const STATIONS = {
+  yard: [],
+  start: [
+    { id: 'hub', name: 'Hub', town: 0, staffed: true, depot: 'depot', platforms: ['platform'],
+      tracks: {
+        platform: { x0: -2, z0: -TURN_OFF, x1: 18, z1: -TURN_OFF },   // beside the 20u platform (D12)
+        main: { x0: 0, z0: 0, x1: 35, z1: 0 },                       // between switches 0 and 1
+        interchange: { x0: START_ICH.SW_X - 10.73 - 46, z0: TURN_OFF, x1: START_ICH.SW_X - 10.73 - 0.5, z1: TURN_OFF }, // where the Overland sets out its cars
+      },
+      stops: ['platform'] },
+    { id: 'willow', name: 'Willow Ford', town: 1, staffed: false, depot: 'wfdepot', platforms: ['wfplatform'],
+      tracks: {
+        main: { x0: WFORD.x + 12, z0: WFORD.z, x1: WFORD.x + 28, z1: WFORD.z },     // beside the 16u platform
+        loop: { x0: WFORD.x + 10.73, z0: WFORD.z + TURN_OFF, x1: WFORD.x + 29.27, z1: WFORD.z + TURN_OFF }, // the run-around loop
+        headshunt: { x0: WFORD.x + 40, z0: WFORD.z, x1: WFORD.x + 56, z1: WFORD.z },
+      },
+      stops: ['main'], runAround: { switches: [2, 3], loop: 'loop', headshunt: 'headshunt' } },
+  ],
+};
+const stationsOf = T => STATIONS[worldId(T)];
+
 // ==== Section: game state ====
 const CONSIST_NO1 = [
   { k: 'loco', len: 5.2, mass: 3, power: 10 },
@@ -478,16 +625,18 @@ const CONSIST_NO1 = [
   { k: 'boxcar', len: 2.6, mass: 0.5 },
 ];
 const COUPLER_GAP = 0.1;
-function newState(seed) {
-  const T = buildTestYard();
+// world: 'start' (the real start, a new game's default) or 'yard' (the M0 test yard, a debug scenario).
+function newState(seed, world) {
+  const Wd = WORLDS[world === 'yard' ? 'yard' : 'start'], T = Wd.build();
+  worldUse(T);
   return {
     schemaVersion: CFG.SCHEMA_VERSION,
     seed, rng: rngSeed(seed), tick: 0, time: 0,
     track: T,
-    trains: [{ id: 0, name: 'No. 1', front: { e: 2, s: 12, d: 1 }, v: 0, mode: 'idle', m: 1,
+    trains: [{ id: 0, name: 'No. 1', front: Wd.train(T), v: 0, mode: 'idle', m: 1,
       route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }].concat(overlandNewTrains(T)),
     overland: overlandNewState(),    // the Overland's visits to the interchange (section "trains")
-    player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null },
+    player: { x: Wd.player.x, z: Wd.player.z, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null },
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
@@ -606,7 +755,7 @@ function applyCommand(S, c, ev) {
   switch (c.t) {
     case 'walkTo':
       // Targets beyond the map edge are pulled back onto the map, so the walk can end.
-      P.mode = 'to'; P.tx = clampMap(c.x / 100); P.tz = clampMap(c.z / 100); P.use = null; P.act = null; P.run = !!c.run; break;
+      P.mode = 'to'; P.tx = clampX(c.x / 100); P.tz = clampZ(c.z / 100); P.use = null; P.act = null; P.run = !!c.run; break;
     case 'walkDir':
       // Letting go (a = null) only ends a walk by direction; a switch throw in progress carries on.
       if (c.a === null) { if (P.mode === 'dir') { P.mode = 'idle'; P.use = null; P.act = null; } }
@@ -695,7 +844,6 @@ function applyCommand(S, c, ev) {
     }
   }
 }
-function clampMap(v) { return Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, v)); }
 // Lay track (M0: instant, debug build). Re-checks the plan from the command's whole numbers, then applies it.
 // Never over a train's track; edges keep their ids (new ones are appended); the derived index is rebuilt.
 function buildTrackCmd(S, c, ev) {
@@ -1084,9 +1232,8 @@ function cargoWhere(S, w) {
       return { kind: 'CARRIED', actorId: w.actorId, carrier: w.carrier || 'HAND', slot };
     }
     case 'GROUND': {
-      const lim = CFG.MAP_HALF * 100;
       if (!cargoInt(w.x) || !cargoInt(w.z)) return 'ground positions are whole hundredths';
-      if (Math.abs(w.x) > lim || Math.abs(w.z) > lim) return 'off the map';
+      if (w.x < WB.x0 * 100 || w.x > WB.x1 * 100 || w.z < WB.z0 * 100 || w.z > WB.z1 * 100) return 'off the map';
       return { kind: 'GROUND', x: w.x, z: w.z };
     }
     case 'STOCKPILE': return cargoInt(w.jobId) && w.jobId >= 0 ? { kind: 'STOCKPILE', jobId: w.jobId } : 'no such job';
@@ -1509,7 +1656,7 @@ function jobContinue(S, job, ev, carry, walk) {
   if (Math.hypot(p.x - P.x, p.z - P.z) > CFG.REACH) {
     if (!walk) { jobStop(S, job, ev, 'Something is in the way of the work'); return; }
     const q = jobPoint(job, Math.min(job.len, st.s + JOB.AHEAD));
-    P.mode = 'to'; P.tx = clampMap(q.x - q.tz * job.side * JOB.STAND); P.tz = clampMap(q.z + q.tx * job.side * JOB.STAND);
+    P.mode = 'to'; P.tx = clampX(q.x - q.tz * job.side * JOB.STAND); P.tz = clampZ(q.z + q.tx * job.side * JOB.STAND);
     P.use = { k: 'job', id: job.id }; P.act = null; P.run = false;
     return;
   }
@@ -1552,7 +1699,7 @@ function jobReturn(S, job, ev, placed) {
   let k = 0, n = 0;
   const spot = () => {
     const s = Math.min(job.len, 0.5 + 0.6 * k++), q = jobPoint(job, s), off = job.side * 1.8;
-    return { kind: 'GROUND', x: Math.round(clampMap(q.x - q.tz * off) * 100), z: Math.round(clampMap(q.z + q.tx * off) * 100) };
+    return { kind: 'GROUND', x: Math.round(clampX(q.x - q.tz * off) * 100), z: Math.round(clampZ(q.z + q.tx * off) * 100) };
   };
   for (const id of itemsAt(S, { kind: 'STOCKPILE', jobId: job.id })) {
     const at = job.site[id], to = at ? { kind: 'GROUND', x: at[0], z: at[1] } : spot();
@@ -2088,8 +2235,10 @@ function econCheckSaveShape(st) {
 }
 
 // ==== Section: walk grid and path-finding ====
-// Design-doc section 11 "Pathfinding", for the player (M1). One grid of 0.5u cells over the whole map
-// (240 x 240 = 57,600 cells): the map is only 120u square, so a finer area near the station is not needed.
+// Design-doc section 11 "Pathfinding", for the player (M1). One grid of 0.5u cells over the whole map of the
+// track's world (WORLDS[..].walk): the test yard 240 x 240 = 57,600 cells (120u square), the real start
+// 672 x 256 = 172,032 cells (336u x 128u). The grid's size is set from the world each time walkGrid() hands
+// out a grid (walkUseDims), so the cell helpers below always match the grid in hand.
 // The static part is cached per track and rebuilt only when the track changes (walkGridSig, and the
 // build command clears it): a cost per cell, 0 = blocked. Blocked: building footprints grown by the
 // player's radius (WALK.R), and every cell that is not flat ground (terrainFlatAt) at its corners, edge
@@ -2100,13 +2249,20 @@ function econCheckSaveShape(st) {
 // order, and ties broken by cell index, so the same state always gives the same path. Nothing about the
 // path is saved: each tick it is worked out again from the saved state (G.memo only skips repeat work).
 // Pure math: no three.js, no DOM.
-const WALK = { CELL: 0.5, HALF: 60, N: 240, R: 0.25, GRASS: 14, PLATFORM: 10, LOOK: 48 };
+// N is the row length (cells along x) and NZ the number of rows; X0, Z0 the map's north-west corner.
+// MAXEXP caps one search: a goal cut off by a train on the large map would otherwise search every cell.
+const WALK = { CELL: 0.5, X0: -60, Z0: -60, N: 240, NZ: 240, R: 0.25, GRASS: 14, PLATFORM: 10, LOOK: 48, MAXEXP: 60000 };
+function walkUseDims(T) {
+  const w = worldOf(T).walk;
+  WALK.X0 = w.x0; WALK.Z0 = w.z0; WALK.N = w.nx; WALK.NZ = w.nz;
+}
 const WALK_NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]; // fixed order
 const walkGridCache = new WeakMap();
 function walkGridSig(T) { return T.edges.length + '/' + T.nodes.length + '/' + T.switches.length; }
 // cart: the grid for pushing the handcart, where the platform and the freight shed with its dock
 // (carryNoCartRects, they have steps) are blocked too. Made from the plain grid on first use, cached with it.
 function walkGrid(T, cart) {
+  walkUseDims(T); worldUse(T);
   let G = walkGridCache.get(T);
   if (!G || G.sig !== walkGridSig(T)) { G = walkGridBuild(T); walkGridCache.set(T, G); }
   if (!cart) return G;
@@ -2122,9 +2278,10 @@ function walkGridFor(S) {
   const t = S.player.tool, cart = t !== null && t !== undefined && S.tools && S.tools[t] && S.tools[t].k === 'cart';
   return walkGrid(S.track, cart);
 }
-const walkCellOf = v => Math.max(0, Math.min(WALK.N - 1, Math.floor((v + WALK.HALF) / WALK.CELL)));
-function walkCell(x, z) { return walkCellOf(z) * WALK.N + walkCellOf(x); }
-function walkCentre(i) { const ci = i % WALK.N; return [-WALK.HALF + (ci + 0.5) * WALK.CELL, -WALK.HALF + ((i - ci) / WALK.N + 0.5) * WALK.CELL]; }
+const walkCellOf = v => Math.max(0, Math.min(WALK.N - 1, Math.floor((v - WALK.X0) / WALK.CELL)));   // column, from x
+const walkRowOf = v => Math.max(0, Math.min(WALK.NZ - 1, Math.floor((v - WALK.Z0) / WALK.CELL)));   // row, from z
+function walkCell(x, z) { return walkRowOf(z) * WALK.N + walkCellOf(x); }
+function walkCentre(i) { const ci = i % WALK.N; return [WALK.X0 + (ci + 0.5) * WALK.CELL, WALK.Z0 + ((i - ci) / WALK.N + 0.5) * WALK.CELL]; }
 // Does the axis-aligned square (centre cx, cz, half size h) overlap rectangle f grown by m on every side?
 // f is {x, z, w, d, yaw}, w along the local x axis (cos yaw, -sin yaw), as buildingFootprints() gives.
 function walkRectHits(f, m, cx, cz, h) {
@@ -2137,19 +2294,19 @@ function walkRectHits(f, m, cx, cz, h) {
 // Calls fn(cell) for every cell that rectangle f grown by m overlaps.
 function walkStampRect(f, m, fn) {
   const r = Math.hypot(f.w / 2 + m, f.d / 2 + m), H = WALK.CELL / 2, N = WALK.N;
-  const i0 = walkCellOf(f.x - r), i1 = walkCellOf(f.x + r), j0 = walkCellOf(f.z - r), j1 = walkCellOf(f.z + r);
+  const i0 = walkCellOf(f.x - r), i1 = walkCellOf(f.x + r), j0 = walkRowOf(f.z - r), j1 = walkRowOf(f.z + r);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const [cx, cz] = walkCentre(j * N + i);
     if (walkRectHits(f, m, cx, cz, H)) fn(j * N + i);
   }
 }
 function walkGridBuild(T) {
-  const N = WALK.N, C = WALK.CELL, H = WALK.HALF, cost = new Uint8Array(N * N).fill(WALK.GRASS);
+  const N = WALK.N, NZ = WALK.NZ, C = WALK.CELL, X0 = WALK.X0, Z0 = WALK.Z0, cost = new Uint8Array(N * NZ).fill(WALK.GRASS);
   // Hills: flat ground sampled every 0.25u (cell corners, edge midpoints, centres), 9 samples per cell.
   terrainFlatAt(T, 0, 0); // works out the heights for this track if needed
-  const M = 2 * N + 1, flat = new Uint8Array(M * M);
-  for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) flat[j * M + i] = terrainHeight(-H + i * C / 2, -H + j * C / 2) === 0 ? 1 : 0;
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+  const M = 2 * N + 1, MZ = 2 * NZ + 1, flat = new Uint8Array(M * MZ);
+  for (let j = 0; j < MZ; j++) for (let i = 0; i < M; i++) flat[j * M + i] = terrainHeight(X0 + i * C / 2, Z0 + j * C / 2) === 0 ? 1 : 0;
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < N; i++) {
     let ok = 1;
     for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) ok &= flat[(2 * j + b) * M + 2 * i + a];
     if (!ok) cost[j * N + i] = 0;
@@ -2162,23 +2319,23 @@ function walkGridBuild(T) {
 }
 // A grid from its costs: connected areas, and the scratch arrays for the searches.
 function walkGridLayer(sig, cost, solid) {
-  const N = WALK.N;
+  const N = WALK.N, NN = N * WALK.NZ;
   // Connected areas over open cells (4 neighbours; a diagonal step needs both side cells open, so this
   // matches what A* can reach). Used to pick a reachable goal without searching the whole map.
-  const comp = new Int32Array(N * N).fill(-1), q = new Int32Array(N * N);
+  const comp = new Int32Array(NN).fill(-1), q = new Int32Array(NN);
   let nc = 0;
-  for (let s0 = 0; s0 < N * N; s0++) {
+  for (let s0 = 0; s0 < NN; s0++) {
     if (!cost[s0] || comp[s0] >= 0) continue;
     let qh = 0, qt = 0; q[qt++] = s0; comp[s0] = nc;
     while (qh < qt) {
       const c = q[qh++], ci = c % N;
-      const nb = [ci < N - 1 ? c + 1 : -1, ci > 0 ? c - 1 : -1, c + N < N * N ? c + N : -1, c - N];
+      const nb = [ci < N - 1 ? c + 1 : -1, ci > 0 ? c - 1 : -1, c + N < NN ? c + N : -1, c - N];
       for (const n of nb) if (n >= 0 && cost[n] && comp[n] < 0) { comp[n] = nc; q[qt++] = n; }
     }
     nc++;
   }
-  return { sig, cost, comp, solid, g: new Int32Array(N * N), from: new Int32Array(N * N),
-    seen: new Uint32Array(N * N), q: 0, dyn: new Uint32Array(N * N), dq: 0, memo: null };
+  return { sig, cost, comp, solid, g: new Int32Array(NN), from: new Int32Array(NN),
+    seen: new Uint32Array(NN), q: 0, dyn: new Uint32Array(NN), dq: 0, memo: null };
 }
 // Stamps the cells under the trains (vehicle footprint as insideTrain() sees it, which already includes
 // the player's radius). Returns them sorted, as part of the memo key.
@@ -2192,17 +2349,17 @@ function walkTrainStamp(G, poses) {
 function walkOpen(G, i) { return G.cost[i] > 0 && G.dyn[i] !== G.dq; }
 // Nearest open cell to cell g (by distance in cells, ties by cell index), in connected area k (or any if k < 0).
 function walkNearest(G, g, k) {
-  const N = WALK.N, gi = g % N, gj = (g - gi) / N;
+  const N = WALK.N, NZ = WALK.NZ, gi = g % N, gj = (g - gi) / N;
   let best = -1, bd = Infinity;
   const tryCell = (i, j) => {
-    if (i < 0 || j < 0 || i >= N || j >= N) return;
+    if (i < 0 || j < 0 || i >= N || j >= NZ) return;
     const c = j * N + i;
     if (!walkOpen(G, c) || (k >= 0 && G.comp[c] !== k)) return;
     const d = (i - gi) * (i - gi) + (j - gj) * (j - gj);
     if (d < bd || (d === bd && c < best)) { bd = d; best = c; }
   };
   tryCell(gi, gj);
-  for (let r = 1; r < N && r * r <= bd; r++) {
+  for (let r = 1; r < Math.max(N, NZ) && r * r <= bd; r++) {
     for (let i = gi - r; i <= gi + r; i++) { tryCell(i, gj - r); tryCell(i, gj + r); }
     for (let j = gj - r + 1; j <= gj + r - 1; j++) { tryCell(gi - r, j); tryCell(gi + r, j); }
   }
@@ -2211,7 +2368,7 @@ function walkNearest(G, g, k) {
 // A* from cell s to cell goal over open cells. If the goal cannot be reached (a train cuts it off), the
 // path ends at the reached cell nearest the goal. Returns { cells (start first), reached, expanded }.
 function walkAStar(G, s, goal) {
-  const N = WALK.N, cost = G.cost, g = G.g, from = G.from, seen = G.seen, q = ++G.q;
+  const N = WALK.N, NZ = WALK.NZ, cost = G.cost, g = G.g, from = G.from, seen = G.seen, q = ++G.q;
   const gi = goal % N, gj = (goal - gi) / N;
   const hOf = i => { const ci = i % N, dx = Math.abs(ci - gi), dz = Math.abs((i - ci) / N - gj); return dx > dz ? 100 * (dx - dz) + 140 * dz : 100 * (dz - dx) + 140 * dx; };
   // Binary heap ordered by (f, cell).
@@ -2231,11 +2388,11 @@ function walkAStar(G, s, goal) {
     if (f > g[c] + h) continue; // a stale entry
     expanded++;
     if (h < bh || (h === bh && c < best)) { bh = h; best = c; }
-    if (c === goal) break;
+    if (c === goal || expanded >= WALK.MAXEXP) break; // the cap: walk towards the nearest cell reached so far
     const ci = c % N, cj = (c - ci) / N;
     for (const [di, dj] of WALK_NB) {
       const ni = ci + di, nj = cj + dj;
-      if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+      if (ni < 0 || nj < 0 || ni >= N || nj >= NZ) continue;
       const n = nj * N + ni;
       if (!walkOpen(G, n)) continue;
       const diag = di !== 0 && dj !== 0;
@@ -2273,9 +2430,9 @@ function walkPlan(S, poses) {
 // and a diagonal move between cells needs both side cells open.)
 function walkClear(G, x0, z0, x1, z1) {
   const N = WALK.N, n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.1));
-  let pi = walkCellOf(x0), pj = walkCellOf(z0);
+  let pi = walkCellOf(x0), pj = walkRowOf(z0);
   for (let k = 1; k <= n; k++) {
-    const i = walkCellOf(x0 + (x1 - x0) * k / n), j = walkCellOf(z0 + (z1 - z0) * k / n);
+    const i = walkCellOf(x0 + (x1 - x0) * k / n), j = walkRowOf(z0 + (z1 - z0) * k / n);
     if (i === pi && j === pj) continue;
     if (!walkOpen(G, j * N + i)) return false;
     if (i !== pi && j !== pj && (!walkOpen(G, pj * N + i) || !walkOpen(G, j * N + pi))) return false;
@@ -2334,20 +2491,20 @@ function trainApproach(poses, x, z, view, allPoses, T) {
     const cx = p.x + fx * t, cz = p.z + fz * t, dd = Math.hypot(x - cx, z - cz);
     if (!best || dd < best.dist) {
       const side = ((x - p.x) * fz - (z - p.z) * fx) >= 0 ? 1 : -1;
-      best = { dist: dd, x: clampMap(cx + fz * 1.15 * side), z: clampMap(cz - fx * 1.15 * side), cx, cz, fx, fz, side };
+      best = { dist: dd, x: clampX(cx + fz * 1.15 * side), z: clampZ(cz - fx * 1.15 * side), cx, cz, fx, fz, side };
     }
   }
   if (best && view !== undefined && view !== null) {
     const ang = view / 256 * Math.PI * 2, vx = Math.cos(ang), vz = Math.sin(ang);
     const want = (best.fz * vx - best.fx * vz) >= 0 ? 1 : -1; // side whose outward normal faces the camera
     if (want !== best.side) {
-      const ox = clampMap(best.cx + best.fz * 1.15 * want), oz = clampMap(best.cz - best.fx * 1.15 * want);
+      const ox = clampX(best.cx + best.fz * 1.15 * want), oz = clampZ(best.cz - best.fx * 1.15 * want);
       const all = allPoses || poses;
       if (pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; best.side = want; }
     }
   }
   if (best && T) {
-    const G = walkGrid(T), sd = -best.side, ox = clampMap(best.cx + best.fz * 1.15 * sd), oz = clampMap(best.cz - best.fx * 1.15 * sd);
+    const G = walkGrid(T), sd = -best.side, ox = clampX(best.cx + best.fz * 1.15 * sd), oz = clampZ(best.cz - best.fx * 1.15 * sd);
     if (!G.cost[walkCell(best.x, best.z)] && G.cost[walkCell(ox, oz)]) { best.x = ox; best.z = oz; best.side = sd; }
   }
   return best;
@@ -2370,7 +2527,7 @@ function playerTick(S, ev, poseCache) {
   if (P.mode === 'dir') {
     // Press and hold: direct steering. A blocked move slides along the wall (its x-only or z-only part).
     const ang = P.a / 256 * Math.PI * 2, dx = Math.cos(ang), dz = Math.sin(ang);
-    const nx = clampMap(P.x + dx * step), nz = clampMap(P.z + dz * step);
+    const nx = clampX(P.x + dx * step), nz = clampZ(P.z + dz * step);
     for (const [x, z] of [[nx, nz], [nx, P.z], [P.x, nz]]) {
       if ((x === P.x && z === P.z) || into(P.x, P.z, x, z, true)) continue;
       P.x = x; P.z = z; P.f = Math.atan2(dx, dz);
@@ -2434,12 +2591,21 @@ const TOOL_KINDS = {
   cart: { name: 'Handcart', carrier: 'HANDCART' },
 };
 // Parking spots east of the freight shed, on the side away from the track (hundredths of a u). yaw: the way the tool faces (0-255 code).
-const TOOL_PARK = [
-  { id: 0, k: 'truck', x: -1190, z: 900, yaw: 192 },
-  { id: 1, k: 'cart', x: -1010, z: 860, yaw: 192 },
-];
+// One list per world (TOOL_PARK is the one in use, see bldUseWorld). The real start's sit beside the hub's
+// freight shed exactly as the test yard's do (8u east, on the platform track 3.41u north of the main line).
+const TOOL_PARKS = {
+  yard: [
+    { id: 0, k: 'truck', x: -1190, z: 900, yaw: 192 },
+    { id: 1, k: 'cart', x: -1010, z: 860, yaw: 192 },
+  ],
+  start: [
+    { id: 0, k: 'truck', x: -390, z: Math.round((-TURN_OFF - 5) * 100), yaw: 192 },
+    { id: 1, k: 'cart', x: -210, z: Math.round((-TURN_OFF - 5.4) * 100), yaw: 192 },
+  ],
+};
+let TOOL_PARK = TOOL_PARKS.yard;
 const CARRY_APPROACH = 0.5; // the player stops this far short of the spot being used
-function carryNewTools() { return TOOL_PARK.map(t => ({ id: t.id, k: t.k, x: t.x, z: t.z, yaw: t.yaw })); }
+function carryNewTools(park) { return (park || TOOL_PARK).map(t => ({ id: t.id, k: t.k, x: t.x, z: t.z, yaw: t.yaw })); }
 // Plan rectangles [x0, x1, z0, z1] with steps up to them, where a handcart may not go: the platform, and the
 // freight shed on its dock. Worked out from the building layout's numbers (tests/check-carry.js compares them
 // with buildingFootprints()), widened by the player's radius. Worked out on first use, as the buildings
@@ -2449,8 +2615,8 @@ function carryNoCartRects() {
   if (carryNoCartCache) return carryNoCartCache;
   const out = [], r = 0.2;
   for (const at of BLD_LAYOUT) {
-    const e = BLD_EXTENTS[at.id];  // the platform and the freight shed (yaw 0), straight from the layout's sizes
-    if (at.id === 'platform' || at.id === 'freightshed') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
+    const k = bldKindOf(at), e = BLD_EXTENTS[k];  // the platforms and the freight shed (yaw 0), straight from the layout's sizes
+    if (k === 'platform' || k === 'wfplatform' || k === 'freightshed') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
   }
   return (carryNoCartCache = out);
 }
@@ -2477,7 +2643,7 @@ function carryRefuse(ev, why) { ev.push({ t: 'carryRefused', why }); }
 // Start walking towards (x, z), stopping CARRY_APPROACH short of it, to use it on arrival.
 function carryWalkTo(S, x, z, use) {
   const P = S.player, dx = x - P.x, dz = z - P.z, d = Math.hypot(dx, dz), k = d > CARRY_APPROACH ? (d - CARRY_APPROACH) / d : 0;
-  P.mode = 'to'; P.tx = clampMap(P.x + dx * k); P.tz = clampMap(P.z + dz * k); P.use = use; P.act = null; P.run = false;
+  P.mode = 'to'; P.tx = clampX(P.x + dx * k); P.tz = clampZ(P.z + dz * k); P.use = use; P.act = null; P.run = false;
 }
 // Section 9 wording for the common refusals; the cargo section's reason otherwise.
 function carryWhy(why) {
@@ -2612,7 +2778,7 @@ function carryCarDoor(S, stockId, px, pz) {
 function carryWalkToCar(S, stockId, use) {
   const P = S.player, d = carryCarDoor(S, stockId, P.x, P.z);
   if (!d) return carryRefuse([], 'There is no such car here');
-  P.mode = 'to'; P.tx = clampMap(d.x + d.ox * CARRY_DOOR.WALK); P.tz = clampMap(d.z + d.oz * CARRY_DOOR.WALK);
+  P.mode = 'to'; P.tx = clampX(d.x + d.ox * CARRY_DOOR.WALK); P.tz = clampZ(d.z + d.oz * CARRY_DOOR.WALK);
   P.use = use; P.act = null; P.run = false;
 }
 // Where a place is for walking to and reach, cars included.
@@ -2659,6 +2825,7 @@ function carryCheckSaveShape(st) {
 // One fixed step of 8 game seconds, in the system order of section 19 (the parts built so far).
 function simTick(S, cmds) {
   const ev = [];
+  worldUse(S.track);                                    // the layout tables of this state's world
   for (const c of cmds) applyCommand(S, c, ev);         // 1. commands
   S.tick += 1; S.time += CFG.TICK_GAME_S;               // 2. time
   overlandTick(S, ev);                                  // 3. dispatch: the Overland's visits (section "trains")
@@ -2711,7 +2878,7 @@ function migrate(save) {
   }
   if (st.schemaVersion === 2) {
     // 2 -> 3 (carrying): the hand truck and handcart at their parking spots, and the player pushes neither.
-    st.tools = carryNewTools();
+    st.tools = carryNewTools(TOOL_PARKS.yard); // saves this old are in the test yard world (see 6 -> 7)
     if (st.player && typeof st.player === 'object') st.player.tool = null;
     st.schemaVersion = 3;
   }
@@ -2731,6 +2898,13 @@ function migrate(save) {
     st.econ = econNewState(Number.isInteger(st.time) ? st.time : 0);
     st.schemaVersion = 6;
   }
+  if (st.schemaVersion === 6) {
+    // 6 -> 7 (the real start, M1 package 9): the world is saved on the track. A save from before it was made
+    // in the M0 test yard, so it is marked 'yard' and keeps the yard's map, ground and buildings beside its
+    // own track, exactly as before (only a new game starts in the real world).
+    if (st.track && typeof st.track === 'object' && !st.track.world) st.track.world = 'yard';
+    st.schemaVersion = 7;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -2744,6 +2918,7 @@ function checkSaveShape(st) {
   if (!arr(st.rng) || st.rng.length !== 4) bad('random numbers');
   const T = st.track;
   if (!T || !arr(T.nodes) || !arr(T.edges) || !arr(T.switches)) bad('track');
+  if (T.world !== 'yard' && T.world !== 'start') bad('track world');
   for (const N of T.nodes) if (!N || !num(N.x) || !num(N.z)) bad('track node');
   const nodeOk = i => Number.isInteger(i) && i >= 0 && i < T.nodes.length;
   const edgeOk = i => Number.isInteger(i) && i >= 0 && i < T.edges.length;
@@ -3118,6 +3293,9 @@ function placeCamera() {
   const half = CFG.VIEW_MIN_U / cam.zoom / 2;
   const hw = w < h ? half : half * w / h, hh = w < h ? half * h / w : half;
   camera.left = -hw; camera.right = hw; camera.top = hh; camera.bottom = -hh;
+  // Camera limits: the point looked at stays on the map (WB, the bounds of the world in use); a pan past the
+  // edge is held there, so panning back answers at once.
+  cam.ox = clampX(cam.fx + cam.ox) - cam.fx; cam.oz = clampZ(cam.fz + cam.oz) - cam.fz;
   const tx = cam.fx + cam.ox, tz = cam.fz + cam.oz, r = 80, el = CFG.ISO_EL;
   camera.position.set(tx + Math.sin(cam.yaw) * Math.cos(el) * r, 0.5 + Math.sin(el) * r, tz + Math.cos(cam.yaw) * Math.cos(el) * r);
   camera.lookAt(tx, 0.5, tz);
@@ -3135,7 +3313,8 @@ function buildWorld(S) {
   if (view.staticGroup) { scene.remove(view.staticGroup); view.staticGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   const G = new THREE.Group(); view.staticGroup = G; scene.add(G);
   const T = S.track;
-  buildTerrain(G);
+  worldUse(T);
+  buildTerrain(G, T);
   // Track: ballast ribbons and rails merged into one mesh each; ties as one instanced mesh.
   // Diverging legs sit 4 mm higher so overlapping surfaces never flicker.
   const ballast = [], rails = [], ties = [];
@@ -3739,17 +3918,20 @@ function jobDraw(S, alpha) {
 }
 
 // ==== Section: terrain ====
-// Owner: piece 3a. The ground, and terrainHeight(x, z) for everything that stands on it.
-// A 64 x 64 tile test heightmap (tile 2u, so 128u square, centred on the yard) with gentle low-poly
-// hills from seeded value noise. The ground is held flat at height 0 near every track edge and over
-// the yard and station area, and blends into the hills further out. Track beds stay at height 0 in M0.
-// The mesh is 2 x 2 chunks of 32 x 32 tiles with vertex colours and the shared kit material, so it
-// costs at most 4 draw calls. terrainHeight() uses the same two triangles per tile as the mesh.
+// Owner: piece 3a; sized per world in M1 package 9. The ground, and terrainHeight(x, z) for everything that
+// stands on it. A heightmap of 2u tiles over the map of the track's world (WORLDS[..].terrain): the test
+// yard 64 x 64 tiles (128u square, centred on the yard), the real start 168 x 64 tiles (336u x 128u), with
+// gentle low-poly hills from seeded value noise. The ground is held flat at height 0 near every track edge
+// and over the world's flat areas (the yard and station; in the real start the hub boundary and Willow Ford),
+// and blends into the hills further out. Track beds stay at height 0.
+// The mesh is one chunk per 32 x 32 tiles (the yard 4, the real start 12) with vertex colours and the shared
+// kit material; each chunk is culled on its own, so only the few in view are drawn. The flat skirt beyond
+// the map edge is one more mesh. terrainHeight() uses the same two triangles per tile as the mesh.
 // The heights are worked out again from the current track each time buildTerrain runs.
 const TERRAIN = {
-  N: 64, TILE: 2, HALF: 64, CHUNK: 32,
+  NX: 64, NZ: 64, TILE: 2, X0: -64, Z0: -64, CHUNK: 32,
   FLAT_R: 7, BLEND_R: 16,        // corners within 7u stay flat, so every drawn point within 4u does too
-  YARD: { x0: -25, x1: 25, z0: -20, z1: 24 },
+  FLAT: [{ x0: -25, x1: 25, z0: -20, z1: 24 }],
   HMAX: 5.5, EDGE_FADE: 8, SKIRT: 120,
   h: null, meshes: [],
 };
@@ -3765,33 +3947,36 @@ function terrainNoise(st, n, cell) {
   };
 }
 const smooth01 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-// Fills TERRAIN.h (one height per tile corner, 65 x 65) for the given track.
+// Fills TERRAIN.h (one height per tile corner, (NX + 1) x (NZ + 1)) for the given track and its world.
 function terrainCompute(T) {
-  const C = TERRAIN, n = C.N, V = n + 1, h = new Float32Array(V * V);
+  const C = TERRAIN, W = worldOf(T).terrain;
+  C.NX = W.nx; C.NZ = W.nz; C.X0 = W.x0; C.Z0 = W.z0; C.FLAT = W.flat;
+  const nx = C.NX, nz = C.NZ, V = nx + 1, h = new Float32Array(V * (nz + 1)), n = Math.max(nx, nz);
   const st = rngSeed(CFG.SEED ^ 0x7e44a1);
   const big = terrainNoise(st, n, 12), small = terrainNoise(st, n, 5);
   // Distance from each corner to the nearest track: stamp the samples of every edge onto the grid.
-  const dist = new Float32Array(V * V).fill(1e9), reach = Math.ceil(C.BLEND_R / C.TILE) + 1;
+  const dist = new Float32Array(V * (nz + 1)).fill(1e9), reach = Math.ceil(C.BLEND_R / C.TILE) + 1;
   for (const E of (T ? T.edges : [])) {
     const k = Math.max(1, Math.ceil(E.len / 0.5));
     for (let s = 0; s <= k; s++) {
       const p = edgeAt(T, E, E.len * s / k);
-      const ci = Math.round((p.x + C.HALF) / C.TILE), cj = Math.round((p.z + C.HALF) / C.TILE);
-      for (let j = Math.max(0, cj - reach); j <= Math.min(n, cj + reach); j++)
-        for (let i = Math.max(0, ci - reach); i <= Math.min(n, ci + reach); i++) {
-          const d = Math.hypot(i * C.TILE - C.HALF - p.x, j * C.TILE - C.HALF - p.z);
+      const ci = Math.round((p.x - C.X0) / C.TILE), cj = Math.round((p.z - C.Z0) / C.TILE);
+      if (ci < -reach || cj < -reach || ci > nx + reach || cj > nz + reach) continue; // off the map (the interchange's far end)
+      for (let j = Math.max(0, cj - reach); j <= Math.min(nz, cj + reach); j++)
+        for (let i = Math.max(0, ci - reach); i <= Math.min(nx, ci + reach); i++) {
+          const d = Math.hypot(i * C.TILE + C.X0 - p.x, j * C.TILE + C.Z0 - p.z);
           if (d < dist[j * V + i]) dist[j * V + i] = d;
         }
     }
   }
-  const Y = C.YARD;
-  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
-    const x = i * C.TILE - C.HALF, z = j * C.TILE - C.HALF;
-    const dYard = Math.hypot(Math.max(Y.x0 - x, 0, x - Y.x1), Math.max(Y.z0 - z, 0, z - Y.z1));
-    const d = Math.min(dist[j * V + i], dYard);
+  const X1 = C.X0 + nx * C.TILE, Z1 = C.Z0 + nz * C.TILE;
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+    const x = i * C.TILE + C.X0, z = j * C.TILE + C.Z0;
+    let d = dist[j * V + i];
+    for (const Y of C.FLAT) d = Math.min(d, Math.hypot(Math.max(Y.x0 - x, 0, x - Y.x1), Math.max(Y.z0 - z, 0, z - Y.z1)));
     const base = 0.75 * big(i, j) + 0.25 * small(i, j);
     const hills = C.HMAX * smooth01(0.35, 0.9, base);
-    const edge = C.HALF - Math.max(Math.abs(x), Math.abs(z));
+    const edge = Math.min(x - C.X0, X1 - x, z - C.Z0, Z1 - z);
     const v = hills * smooth01(C.FLAT_R, C.BLEND_R, d) * smooth01(0, C.EDGE_FADE, edge);
     h[j * V + i] = v < 0.02 ? 0 : Math.round(v * 100) / 100;
   }
@@ -3809,19 +3994,29 @@ function terrainFlatAt(T, x, z) {
 function terrainHeight(x, z) {
   const C = TERRAIN, h = C.h;
   if (!h) return 0;
-  const u = (x + C.HALF) / C.TILE, v = (z + C.HALF) / C.TILE;
-  if (!(u >= 0 && v >= 0 && u <= C.N && v <= C.N)) return 0;
-  const i = Math.min(C.N - 1, Math.floor(u)), j = Math.min(C.N - 1, Math.floor(v)), fx = u - i, fz = v - j, V = C.N + 1;
+  const u = (x - C.X0) / C.TILE, v = (z - C.Z0) / C.TILE;
+  if (!(u >= 0 && v >= 0 && u <= C.NX && v <= C.NZ)) return 0;
+  const i = Math.min(C.NX - 1, Math.floor(u)), j = Math.min(C.NZ - 1, Math.floor(v)), fx = u - i, fz = v - j, V = C.NX + 1;
   const a = h[j * V + i], b = h[j * V + i + 1], c = h[(j + 1) * V + i], d = h[(j + 1) * V + i + 1];
   // Each tile is split along the diagonal from corner b (i+1, j) to corner c (i, j+1).
   return fx + fz <= 1 ? a + (b - a) * fx + (c - a) * fz : d + (c - d) * (1 - fx) + (b - d) * (1 - fz);
 }
 function buildTerrain(G, T) {
-  const C = TERRAIN, n = C.N, V = n + 1, h = terrainCompute(T || (typeof S !== 'undefined' ? S.track : null));
+  T = T || (typeof S !== 'undefined' ? S.track : null);
+  const C = TERRAIN, h = terrainCompute(T), nx = C.NX, nz = C.NZ, V = nx + 1;
   const grass = new THREE.Color(PAL.grass), dirt = new THREE.Color(PAL.dirt), tile = new THREE.Color(), tmp = new THREE.Color();
   const colRng = rngSeed(CFG.SEED ^ 0x51c3);
   C.meshes = [];
-  for (let cj = 0; cj < n / C.CHUNK; cj++) for (let ci = 0; ci < n / C.CHUNK; ci++) {
+  const mesh = (p, col, name) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals(); g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, KIT_MAT);
+    m.receiveShadow = true; m.castShadow = false; m.userData.terrain = true; m.name = name;
+    G.add(m); C.meshes.push(m);
+  };
+  for (let cj = 0; cj < Math.ceil(nz / C.CHUNK); cj++) for (let ci = 0; ci < Math.ceil(nx / C.CHUNK); ci++) {
     const p = [], col = [];
     const tri = (ax, ay, az, bx, by, bz, cx, cy, cz, k) => {
       p.push(ax, ay, az, bx, by, bz, cx, cy, cz);
@@ -3832,31 +4027,26 @@ function buildTerrain(G, T) {
       const rise = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0), Math.abs(y2 - y1)) / C.TILE;
       return tmp.copy(tile).lerp(dirt, smooth01(0.4, 0.9, rise) * 0.6);
     };
-    for (let j = cj * C.CHUNK; j < (cj + 1) * C.CHUNK; j++) for (let i = ci * C.CHUNK; i < (ci + 1) * C.CHUNK; i++) {
-      const x0 = i * C.TILE - C.HALF, z0 = j * C.TILE - C.HALF, x1 = x0 + C.TILE, z1 = z0 + C.TILE;
+    for (let j = cj * C.CHUNK; j < Math.min(nz, (cj + 1) * C.CHUNK); j++) for (let i = ci * C.CHUNK; i < Math.min(nx, (ci + 1) * C.CHUNK); i++) {
+      const x0 = i * C.TILE + C.X0, z0 = j * C.TILE + C.Z0, x1 = x0 + C.TILE, z1 = z0 + C.TILE;
       const a = h[j * V + i], b = h[j * V + i + 1], c = h[(j + 1) * V + i], d = h[(j + 1) * V + i + 1];
       // A slight seeded change of hue and lightness per tile breaks up the green.
       tile.copy(grass).offsetHSL((rngNext(colRng) - 0.5) * 0.008, 0, (rngNext(colRng) - 0.5) * 0.022);
       tri(x0, a, z0, x0, c, z1, x1, b, z0, shade(a, c, b));
       tri(x1, b, z0, x0, c, z1, x1, d, z1, shade(b, c, d));
     }
-    // A flat skirt beyond the map edge, so the ground never ends inside the view.
-    const X0 = ci * C.CHUNK * C.TILE - C.HALF, X1 = X0 + C.CHUNK * C.TILE, Z0 = cj * C.CHUNK * C.TILE - C.HALF, Z1 = Z0 + C.CHUNK * C.TILE;
-    const xs = [X0 <= -C.HALF ? X0 - C.SKIRT : X0, X0, X1, X1 >= C.HALF ? X1 + C.SKIRT : X1];
-    const zs = [Z0 <= -C.HALF ? Z0 - C.SKIRT : Z0, Z0, Z1, Z1 >= C.HALF ? Z1 + C.SKIRT : Z1];
-    for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
-      if ((a === 1 && b === 1) || xs[a] === xs[a + 1] || zs[b] === zs[b + 1]) continue;
-      tri(xs[a], 0, zs[b], xs[a], 0, zs[b + 1], xs[a + 1], 0, zs[b], grass);
-      tri(xs[a + 1], 0, zs[b], xs[a], 0, zs[b + 1], xs[a + 1], 0, zs[b + 1], grass);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.computeVertexNormals(); g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, KIT_MAT);
-    m.receiveShadow = true; m.castShadow = false; m.userData.terrain = true;
-    G.add(m); C.meshes.push(m);
+    mesh(p, col, 'terrain-' + ci + '-' + cj);
   }
+  // A flat skirt beyond the map edge, so the ground never ends inside the view: one mesh of 8 quads round
+  // the map (its own mesh, so the chunks keep small bounds and are culled one by one).
+  const p = [], col = [], X0 = C.X0, Z0 = C.Z0, X1 = X0 + nx * C.TILE, Z1 = Z0 + nz * C.TILE;
+  const xs = [X0 - C.SKIRT, X0, X1, X1 + C.SKIRT], zs = [Z0 - C.SKIRT, Z0, Z1, Z1 + C.SKIRT];
+  for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+    if (a === 1 && b === 1) continue;
+    p.push(xs[a], 0, zs[b], xs[a], 0, zs[b + 1], xs[a + 1], 0, zs[b], xs[a + 1], 0, zs[b], xs[a], 0, zs[b + 1], xs[a + 1], 0, zs[b + 1]);
+    for (let q = 0; q < 6; q++) col.push(grass.r, grass.g, grass.b);
+  }
+  mesh(p, col, 'terrain-skirt');
 }
 
 // ==== Section: day and night ====
@@ -3940,7 +4130,12 @@ const BLD_PLATFORM_TOP = 0.3;
 // The platform (D12) is 20u long and 2.4u deep. The depot and shanty stand 1u further back than in M0
 // (a whole number of walk grid cells; the depot's office bay still steps onto the platform's back edge); the water tower moved east along the
 // track past the platform's end and switch 1's stand, so engines can still take water clear of the platform.
-const BLD_LAYOUT = [
+// Each world has its own layout (BLD_LAYOUTS); BLD_LAYOUT is the one in use (bldUseWorld, from worldUse).
+// kind (optional) names the recipe when the id is not just the kind with a number on the end.
+// Old saves (from before M1 package 9) are in the test yard world, so they keep the yard's buildings beside
+// their own track, exactly as before; only a new game gets the real start's buildings.
+const BLD_LAYOUTS = {};
+BLD_LAYOUTS.yard = [
   { id: 'platform', x: 0, z: BLD_EDGE - 1.2, yaw: 0 },
   { id: 'depot', x: -2.4, z: 9.6, yaw: 0 },
   { id: 'shanty', x: 2.4, z: 9.4, yaw: 0 },
@@ -3951,18 +4146,56 @@ const BLD_LAYOUT = [
   { id: 'lamp3', x: 16.2, z: 12.4, yaw: 0 },
   { id: 'lamp4', x: -12.9, z: 10.6, yaw: 0 },
 ];
+// The real start (M1 package 9). The hub's station stands on the north side of the platform track
+// (z = HUB_PZ, 3.41u north of the main line), laid out as the test yard's station moved 8u east (the same
+// distances from the track, so every clearance is the same), without the telegraph shanty (the telegraph is
+// in the depot, design-doc 15; a pole stands beside it) and with a wood stage east of the water tower.
+// Willow Ford: a 16u platform on the north side of its main track, the small depot behind it, a water tower,
+// two lamps and four cabins as scenery (unstaffed; its businesses come later).
+const HUB_PZ = -TURN_OFF;
+BLD_LAYOUTS.start = [
+  { id: 'platform', x: 8, z: HUB_PZ - 0.9 - 1.2, yaw: 0 },
+  { id: 'depot', x: 5.6, z: HUB_PZ - 4.4, yaw: 0 },
+  { id: 'tpole', x: 8.6, z: HUB_PZ - 4.4, yaw: 0 },
+  { id: 'watertower', x: 22.6, z: HUB_PZ - 2.2, yaw: 0 },
+  { id: 'woodstage', x: 27.5, z: HUB_PZ - 3.1, yaw: 0 },
+  { id: 'freightshed', x: -7.6, z: HUB_PZ - 2.6, yaw: 0 },
+  { id: 'lamp1', x: 0.5, z: HUB_PZ - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp2', x: 15.5, z: HUB_PZ - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp3', x: 20, z: HUB_PZ - 1.6, yaw: 0 },
+  { id: 'lamp4', x: -4.9, z: HUB_PZ - 3.4, yaw: 0 },
+  { id: 'wfplatform', x: WFORD.x + 20, z: WFORD.z - 0.9 - 1.2, yaw: 0 },
+  { id: 'wfdepot', kind: 'depot', x: WFORD.x + 17.6, z: WFORD.z - 4.4, yaw: 0 },
+  { id: 'wftower', kind: 'watertower', x: WFORD.x + 33, z: WFORD.z - 2.2, yaw: 0 },
+  { id: 'wflamp1', kind: 'lamp', x: WFORD.x + 13, z: WFORD.z - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wflamp2', kind: 'lamp', x: WFORD.x + 27, z: WFORD.z - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'cabin1', x: WFORD.x + 6, z: WFORD.z - 9, yaw: 0.25 },
+  { id: 'cabin2', x: WFORD.x + 13.5, z: WFORD.z - 13, yaw: -0.15 },
+  { id: 'cabin3', x: WFORD.x + 25, z: WFORD.z - 11.5, yaw: 0.1 },
+  { id: 'cabin4', x: WFORD.x + 32.5, z: WFORD.z - 8.5, yaw: -0.35 },
+];
+let BLD_LAYOUT = BLD_LAYOUTS.yard;
+function bldKindOf(at) { return at.kind || bldKind(at.id); }
 // Freight shed bays as pure data (no three.js), read by the sim (section "cargo") and the item props.
 // One bay in front of each of the shed's 4 doors, on the dock (top at platform height). Each bay holds
 // 8 items in 2 columns x 2 rows x 2 layers; slot positions are worked out by cargoBaySlot in "world rendering".
 // x, z: the bay centre in world units; yaw: the shed's yaw (local +z faces the track); y: the dock top.
-const BLD_BAYS = (() => {
+function bldBaysOf(layout) {
   const out = {};
-  for (const at of BLD_LAYOUT.filter(a => a.id.replace(/\d+$/, '') === 'freightshed')) {
+  for (const at of layout.filter(a => bldKindOf(a) === 'freightshed')) {
     const c = Math.cos(at.yaw), s = Math.sin(at.yaw), lz = 1.21;
     out[at.id] = { yaw: at.yaw, y: BLD_PLATFORM_TOP, bays: [-1.6, -0.55, 0.55, 1.6].map(lx => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c })) };
   }
   return out;
-})();
+}
+const BLD_BAYS_BY = { yard: bldBaysOf(BLD_LAYOUTS.yard), start: bldBaysOf(BLD_LAYOUTS.start) };
+let BLD_BAYS = BLD_BAYS_BY.yard;
+// Points the plain layout tables at a world's (called by worldUse in "starting world layout").
+function bldUseWorld(id) {
+  BLD_LAYOUT = BLD_LAYOUTS[id]; BLD_BAYS = BLD_BAYS_BY[id];
+  TOOL_PARK = TOOL_PARKS[id]; carryNoCartCache = null;
+  CROWD.AREA = WORLDS[id].crowd;
+}
 
 // A gable roof: a closed triangular prism, ridge along local x, eaves at y = 0, ridge at y = h.
 function bldPrism(len, wid, h) {
@@ -4013,7 +4246,26 @@ const BLD_EXTENTS = {
   watertower: [-0.95, 0.95, -0.95, 0.95],
   freightshed: [-2.35, 2.35, -1.95, 1.7],
   lamp: [-0.15, 0.15, -0.15, 0.15],
+  wfplatform: [-8, 8, -1.2, 1.2],       // Willow Ford: 16u (provisional), no canopy
+  woodstage: [-3, 3, -2, 2],            // 3 x 2 tiles (design-doc 15)
+  tpole: [-0.12, 0.12, -0.12, 0.12],
+  cabin: [-1.2, 1.2, -1, 1],
 };
+// Use spots in a building's local frame [x, z] (local +z faces the track): where a person stands to use
+// something inside. Just outside the walk grid's block (the footprint grown by 0.25u), on the platform.
+const BLD_SPOTS = {
+  depot: { ticket: [1.6, 2.0], telegraph: [0.4, 2.0], desk: [-1.3, 2.0] },
+};
+// Use spots as world points [{ building, kind, x, z }]: the ticket window, telegraph key and office desk of
+// each depot (C1's telegraph, C4's passengers). Plain data, no three.js.
+function buildingSpots() {
+  const out = [];
+  for (const at of BLD_LAYOUT) {
+    const sp = BLD_SPOTS[bldKindOf(at)], c = Math.cos(at.yaw), s = Math.sin(at.yaw);
+    if (sp) for (const k of Object.keys(sp).sort()) { const [lx, lz] = sp[k]; out.push({ building: at.id, kind: k, x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c }); }
+  }
+  return out;
+}
 // Recipes: each draws its parts and returns its plan extent (its BLD_EXTENTS entry).
 const BLD_RECIPES = {
   // Platform, 20u long and 2.4u deep (D12), with a canopy over the middle 10u and a bench under it.
@@ -4084,6 +4336,46 @@ const BLD_RECIPES = {
     // (The three loose crates that stood on the dock in M0 are gone: real items now sit in the bays.)
     return BLD_EXTENTS.freightshed;
   },
+  // Willow Ford's platform: 16u long and 2.4u deep, the same height and stone as the hub's, with a bench.
+  wfplatform(b) {
+    const [x0, x1, z0, z1] = BLD_EXTENTS.wfplatform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP;
+    b.add(box(len, top + 0.05, dep), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    const bx = -2.2, bz = -0.55;
+    b.add(box(1.2, 0.07, 0.34), PAL.trim, bx, top + 0.4, bz);
+    b.add(box(1.2, 0.3, 0.05), PAL.trim, bx, top + 0.65, bz - 0.16);
+    for (const x of [-0.5, 0.5]) b.add(box(0.07, 0.37, 0.3), PAL.loco, bx + x, top + 0.18, bz);
+    return BLD_EXTENTS.wfplatform;
+  },
+  // Wood stage: a raised deck at tender height holding stacked cordwood, under a lean-to roof.
+  woodstage(b) {
+    for (const x of [-2.7, 0, 2.7]) for (const z of [-1.7, 1.7]) b.add(box(0.16, 0.9, 0.16), PAL.trim, x, 0.45, z);
+    b.add(box(5.8, 0.1, 3.6), PAL.tie, 0, 0.95, 0);
+    for (let r = 0; r < 3; r++) {
+      const z = -1.05 + r * 1.0, h = 0.6 - r * 0.12;
+      b.add(box(5.2, h, 0.85), r % 2 ? BLD_COL.tank : PAL.tie, 0, 1.0 + h / 2, z);
+      for (const x of [-2.62, 2.62]) b.add(box(0.04, h - 0.06, 0.8), BLD_COL.canvas, x, 1.0 + h / 2, z);
+    }
+    for (const x of [-2.7, 2.7]) { b.add(box(0.12, 1.6, 0.12), PAL.trim, x, 1.8, -1.7); b.add(box(0.12, 1.1, 0.12), PAL.trim, x, 1.55, 0.6); }
+    b.add(box(6.0, 0.08, 2.7), BLD_COL.tin, 0, 2.35, -0.55, 0.2);
+    return BLD_EXTENTS.woodstage;
+  },
+  // Telegraph pole with its crossarm, beside the hub's depot.
+  tpole(b) {
+    b.add(cyl(0.05, 0.06, 2.9), PAL.trim, 0, 1.45, 0);
+    b.add(box(0.07, 0.07, 0.9), PAL.trim, 0, 2.6, 0);
+    for (const z of [-0.35, -0.15, 0.15, 0.35]) b.add(box(0.05, 0.09, 0.05), PAL.green, 0, 2.68, z);
+    return BLD_EXTENTS.tpole;
+  },
+  // A settler's cabin (scenery at Willow Ford): plank walls, a gable roof, a door and one lit window.
+  cabin(b) {
+    b.add(box(2.3, 0.15, 1.9), PAL.trim, 0, 0.05, 0);
+    b.add(box(2.2, 1.25, 1.8), PAL.wall, 0, 0.7, 0);
+    b.add(bldPrism(2.5, 2.2, 0.75), PAL.roof, 0, 1.32, 0);
+    b.add(box(0.5, 0.9, 0.05), PAL.trim, -0.5, 0.55, 0.9);
+    b.win(0.45, 0.8, 0.9, 0.42, 0.38, 'z');
+    b.add(box(0.28, 0.6, 0.28), PAL.trim, 0.7, 1.8, -0.3);
+    return BLD_EXTENTS.cabin;
+  },
   // Lamp post (style test page): iron post, glowing lamp, cone cap.
   lamp(b) {
     b.add(cyl(0.05, 0.07, 1.6), PAL.loco, 0, 0.8, 0);
@@ -4092,7 +4384,7 @@ const BLD_RECIPES = {
     return BLD_EXTENTS.lamp;
   },
 };
-const bldKind = id => id.replace(/\d+$/, '');
+function bldKind(id) { return id.replace(/\d+$/, ''); }
 
 // Plan rectangles {id, kind, x, z, w, d, yaw, flush}, for the player's walk grid and so other code
 // (terrain, the build tool, the crowd) can keep clear. Pure data: no three.js. flush marks the ones
@@ -4101,30 +4393,45 @@ const bldKind = id => id.replace(/\d+$/, '');
 function buildingFootprints() {
   const out = [];
   for (const at of BLD_LAYOUT) {
-    const kind = bldKind(at.id), ext = BLD_EXTENTS[kind];
+    const kind = bldKindOf(at), ext = BLD_EXTENTS[kind];
     const rect = (id, [x0, x1, z0, z1], flush) => {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, c = Math.cos(at.yaw), s = Math.sin(at.yaw);
       out.push({ id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush });
     };
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95], false); rect('freightdock', [-2.3, 2.3, 0.95, ext[3]], true); }
-    else rect(at.id, ext, kind === 'platform');
+    else rect(at.id, ext, kind === 'platform' || kind === 'wfplatform');
   }
   return out;
 }
+// The hub boundary (design-doc 15), drawn subtly: a pale dashed line 1 cm above the ground (below the 3 cm
+// ballast where it crosses track) with a short survey stake at each corner and every 16u. In the merged mesh.
+function bldHubBoundary(kit, H) {
+  const dash = 1.6, gap = 2.4, col = '#cfc4a4', stake = '#d8d0bc';
+  const side = (x0, z0, x1, z1) => {
+    const len = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / len, uz = (z1 - z0) / len, along = Math.abs(ux) > 0.5;
+    for (let a = 0; a + dash <= len + 1e-9; a += dash + gap) {
+      const m = a + dash / 2;
+      kit.add(box(along ? dash : 0.09, 0.012, along ? 0.09 : dash), col, x0 + ux * m, 0.006, z0 + uz * m);
+    }
+    for (let a = 0; a <= len + 1e-9; a += 16) kit.add(box(0.07, 0.36, 0.07), stake, x0 + ux * a, 0.18, z0 + uz * a);
+  };
+  side(H.x0, H.z0, H.x1, H.z0); side(H.x1, H.z0, H.x1, H.z1); side(H.x1, H.z1, H.x0, H.z1); side(H.x0, H.z1, H.x0, H.z0);
+}
 // Lamp positions, for the day and night section (real point lights for the nearest ones).
 function buildingLights() {
-  return BLD_LAYOUT.filter(a => bldKind(a.id) === 'lamp').map(a => ({ x: a.x, y: (a.y || 0) + 1.73, z: a.z }));
+  return BLD_LAYOUT.filter(a => bldKindOf(a) === 'lamp').map(a => ({ x: a.x, y: (a.y || 0) + 1.73, z: a.z }));
 }
 function buildBuildings(G) {
   const kit = new Kit(), glow = new Kit();
   BLD_LAYOUT.forEach((at, i) => {
-    const kind = bldKind(at.id);
+    const kind = bldKindOf(at);
     const vary = kind === 'lamp' ? null : bldVary(rngSeed(CFG.SEED * 31 + 101 * (i + 1)));
     BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary));
   });
+  if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
   const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'buildingGlow'; G.add(g);
-  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], footprints: buildingFootprints, lights: buildingLights, platformTop: BLD_PLATFORM_TOP };
+  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
 }
 
 // ==== Section: people (crowd) ====
@@ -4901,7 +5208,7 @@ function bEdgeDist(T, E, x, z) {
   return Math.min(Math.hypot(x - A.x, z - A.z), Math.hypot(x - B.x, z - B.z));
 }
 const B_BUILDING_NAMES = { depot: 'the depot', shanty: 'the shanty', watertower: 'the water tower', freightshed: 'the freight shed',
-  platform: 'the platform', lamp: 'a lamp post' };
+  platform: 'the platform', lamp: 'a lamp post', wfplatform: 'the platform', woodstage: 'the wood stage', tpole: 'the telegraph pole', cabin: 'a cabin' };
 // Points every 0.25u along edges [from, to) of T2, with the distance along them.
 function bSamples(T2, from, to) {
   const out = []; let acc = 0;
@@ -4943,10 +5250,14 @@ function buildPlan(S, c) {
   }
   if (minD < 0.05) return fail('Crosses other track: crossings are not built yet');
   if (minD < BUILD.CLEAR - 0.01) return fail(`Too close to other track: ${bFmt(minD)}u, minimum ${BUILD.CLEAR}u`);
-  for (const p of all) if (Math.abs(p.x) > CFG.MAP_HALF - 0.5 || Math.abs(p.z) > CFG.MAP_HALF - 0.5) return fail('Off the edge of the map');
+  const Wd = worldOf(T), MB = Wd.bounds, H = Wd.hub;
+  for (const p of all) if (p.x < MB.x0 + 0.5 || p.x > MB.x1 - 0.5 || p.z < MB.z0 + 0.5 || p.z > MB.z1 - 0.5) return fail('Off the edge of the map');
+  // The real start: track may be planned only inside the hub boundary (design-doc 6 "Where track may be built").
+  if (H) for (const p of all) if (p.x < H.x0 || p.x > H.x1 || p.z < H.z0 || p.z > H.z1) return fail('Outside the hub boundary: track can only be planned inside it');
   // Clearance to buildings (section 6): 1.2u main, 1.0u yard, platforms flush at 0.9u.
   if (typeof buildingFootprints === 'function') {
     const clr = G.cls === 'main' || G.st.swMain ? 1.2 : 1.0;
+    worldUse(T);
     for (const f of buildingFootprints()) {
       const cs = Math.cos(f.yaw), sn = Math.sin(f.yaw), need = f.flush ? 0.9 - 0.01 : clr - 0.01;
       for (const p of all) {
@@ -5321,10 +5632,13 @@ function dbgOverlay(name, on) {
 // Named test scenarios, each built from newState (the same start every time).
 const DBG_SCENARIOS = {
   // The default test yard.
-  yard: () => newState(CFG.SEED),
+  yard: () => newState(CFG.SEED, 'yard'),
+  // The real start (a new game), and the same at Willow Ford: the player on its platform.
+  start: () => newState(CFG.SEED, 'start'),
+  willow: () => { const st = newState(CFG.SEED, 'start'); st.player.x = WFORD.x + 18; st.player.z = WFORD.z - 1.7; return st; },
   // The train stands on the passing siding, facing west, with switch 1 set to the siding.
   siding: () => {
-    const st = newState(CFG.SEED), T = st.track, tr = st.trains[0];
+    const st = newState(CFG.SEED, 'yard'), T = st.track, tr = st.trains[0];
     const mid = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 && T.nodes[E.b].z > 17);
     tr.front = trackWalk(T, { e: mid.id, s: mid.len / 2, d: -1 }, trainLength(tr) / 2).pos;
     T.switches[0].state = 'R';
@@ -5333,21 +5647,21 @@ const DBG_SCENARIOS = {
     return st;
   },
   // Cargo testing: items in the freight shed bays, on the ground by the dock, in the boxcar and in hand.
-  cargo: () => cargoDebugItems(newState(CFG.SEED)),
+  cargo: () => cargoDebugItems(newState(CFG.SEED, 'yard')),
   // The interchange (B4): 05:50 on day 1, ten minutes before the Overland is due; the player waits by the
   // interchange track's dead end, east of the station.
   interchange: () => {
-    const st = newState(CFG.SEED);
+    const st = newState(CFG.SEED, 'yard');
     st.time = 50 * 60;
     st.overland.testDelivery = true; // the fixed test delivery (B4's check), not import orders
     st.player.x = 3.5; st.player.z = 22.5;
     return st;
   },
   // Hand-building: a 20u siding with a switch staked off the north main line, all its materials beside it.
-  handbuild: () => jobDebugScenario(newState(CFG.SEED)),
+  handbuild: () => jobDebugScenario(newState(CFG.SEED, 'yard')),
   // Switch 3 is set for the spur and the train is running towards it on the north main line.
   spur: () => {
-    const st = newState(CFG.SEED), T = st.track, tr = st.trains[0], W = T.switches[2], E = T.edges[W.trunk];
+    const st = newState(CFG.SEED, 'yard'), T = st.track, tr = st.trains[0], W = T.switches[2], E = T.edges[W.trunk];
     const d = E.b === W.node ? 1 : -1;
     tr.front = { e: E.id, s: d > 0 ? E.len - 6 : 6, d };
     W.state = 'R';
@@ -5427,7 +5741,7 @@ function debugInit() {
     get speed() { return speed; },
     teleport: (x, z) => {
       const P = S.player;
-      P.x = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, Number(x))); P.z = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, Number(z)));
+      P.x = clampX(Number(x)); P.z = clampZ(Number(z));
       P.mode = 'idle'; P.use = null; P.act = null;
       prevPlayer = { x: P.x, z: P.z }; cam.fx = P.x; cam.fz = P.z; cam.ox = 0; cam.oz = 0;
       return { x: P.x, z: P.z };
@@ -5454,7 +5768,10 @@ function debugUpdate(dt) {
 }
 
 // ==== Section: game loop state ====
-let S = newState(CFG.SEED);
+// The world a new game starts in: the real start, or with ?world=yard the M0 test yard (used by the checks
+// written for the test yard's layout; a save always keeps its own world).
+const PAGE_WORLD = new URLSearchParams(location.search).get('world') === 'yard' ? 'yard' : 'start';
+let S = newState(CFG.SEED, PAGE_WORLD);
 let pending = [];             // commands waiting for the next tick
 let speed = 1, lastSpeed = 1;
 let acc = 0;
@@ -5976,6 +6293,7 @@ function lerpAngle(a, b, f) { let d = b - a; while (d > Math.PI) d -= 2 * Math.P
 let lastFrame = performance.now(), animT = 0;
 function render(alpha, dt) {
   animT += dt;
+  worldUse(S.track);
   // Arrow keys look away from the player.
   const pan = 12 * dt * 60;
   if (keys.has('ArrowLeft')) panBy(pan, 0); if (keys.has('ArrowRight')) panBy(-pan, 0);
@@ -6075,13 +6393,14 @@ window.__railhead = {
   hash: st => stateHash(st || S),
   send, setSpeed, saveGame,
   step(n) { for (let i = 0; i < n; i++) doTick(); },
-  newState, simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
+  // A new game in the page's world: ?world=yard (the M0 test yard, for the checks written for it) or the real start.
+  newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
-  cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, BLD_BAYS, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
+  cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   econ: { ECON, ECON_CATEGORIES, ECON_BUSINESSES, ECON_ORDERABLE, econNewState, econPost, econCheckMoney, econTelegraphKey, econNextVisit, econPack,
     contractOffer, contractDeliver, econLotFee, econSoldOutside, econMoney, econWhen, econDeliveredPrice, panel: telUi },
-  carry: { TOOL_KINDS, TOOL_PARK, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
+  carry: { TOOL_KINDS, get TOOL_PARK() { return TOOL_PARK; }, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
   interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, withTestDelivery: st => { st.overland.testDelivery = true; return st; }, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
@@ -6092,6 +6411,8 @@ window.__railhead = {
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
+  world: { WORLDS, HUB, WFORD, STATIONS, TURN_OFF, worldOf, worldId, stationsOf, buildingSpots, buildStartWorld, BLD_LAYOUTS, BLD_EXTENTS,
+    get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };
 
 // ==== Section: start ====
@@ -6129,7 +6450,7 @@ window.__railhead = {
     const u = loaded.sv.ui;
     if (u) { cam.yawIdx = u.yawIdx || 0; cam.yaw = camYawTarget(); cam.zoom = u.zoom || 1; lastSpeed = u.speed || 1; }
   } else {
-    S = newState(CFG.SEED);
+    S = newState(CFG.SEED, PAGE_WORLD);
     buildWorld(S); buildActors(S); resetViewsFromState();
   }
   buildCrowd(); buildToolInit(); debugInit();

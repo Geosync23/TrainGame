@@ -875,6 +875,8 @@ sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
 Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 120 });
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
 scene.add(sun); scene.add(sun.target);
+// Direction towards the sun (or moon), set by applyDaylight; starts as piece 1's noon sun from the south-west.
+const sunDir = new THREE.Vector3(10, 50, 28).normalize(), SUN_DIST = 58;
 
 const cam = { yawIdx: 0, yaw: Math.PI / 4, zoom: 1.25, fx: 0, fz: 0, ox: 0, oz: 0 };
 function camYawTarget() { return Math.PI / 4 + cam.yawIdx * Math.PI / 2; }
@@ -887,8 +889,9 @@ function placeCamera() {
   camera.position.set(tx + Math.sin(cam.yaw) * Math.cos(el) * r, 0.5 + Math.sin(el) * r, tz + Math.cos(cam.yaw) * Math.cos(el) * r);
   camera.lookAt(tx, 0.5, tz);
   camera.updateProjectionMatrix();
-  // Sun from the south-west at about 60 degrees, shadow box following the view.
-  sun.position.set(tx + 10, 50, tz + 28); sun.target.position.set(tx, 0, tz); sun.target.updateMatrixWorld();
+  // The shadow box follows the view; the sun's direction comes from the day and night section.
+  sun.target.position.set(tx, 0, tz); sun.target.updateMatrixWorld();
+  sun.position.copy(sun.target.position).addScaledVector(sunDir, SUN_DIST);
 }
 function resize() { renderer.setSize(window.innerWidth, window.innerHeight, false); placeCamera(); }
 window.addEventListener('resize', resize);
@@ -983,20 +986,182 @@ function buildActors(S) {
 
 // ==== Section: terrain ====
 // Owner: piece 3a. The ground, and terrainHeight(x, z) for everything that stands on it.
-// Track beds stay at height 0 in M0; hills keep clear of the track.
-function terrainHeight(x, z) { return 0; }
-function buildTerrain(G) {
-  // Ground: one slab whose top is at y = 0.
-  const ground = new THREE.Mesh(box(CFG.MAP_HALF * 2 + 40, 0.4, CFG.MAP_HALF * 2 + 40),
-    new THREE.MeshStandardMaterial({ color: PAL.grass, flatShading: true, roughness: 0.9, metalness: 0 }));
-  ground.position.y = -0.2; ground.receiveShadow = true; G.add(ground);
+// A 64 x 64 tile test heightmap (tile 2u, so 128u square, centred on the yard) with gentle low-poly
+// hills from seeded value noise. The ground is held flat at height 0 near every track edge and over
+// the yard and station area, and blends into the hills further out. Track beds stay at height 0 in M0.
+// The mesh is 2 x 2 chunks of 32 x 32 tiles with vertex colours and the shared kit material, so it
+// costs at most 4 draw calls. terrainHeight() uses the same two triangles per tile as the mesh.
+// The heights are worked out again from the current track each time buildTerrain runs.
+const TERRAIN = {
+  N: 64, TILE: 2, HALF: 64, CHUNK: 32,
+  FLAT_R: 7, BLEND_R: 16,        // corners within 7u stay flat, so every drawn point within 4u does too
+  YARD: { x0: -25, x1: 25, z0: -20, z1: 24 },
+  HMAX: 5.5, EDGE_FADE: 8, SKIRT: 120,
+  h: null, meshes: [],
+};
+// Smooth value noise in [0, 1]: random values on a lattice every `cell` tiles, cosine blended.
+function terrainNoise(st, n, cell) {
+  const L = Math.ceil(n / cell) + 2, lat = [];
+  for (let i = 0; i < L * L; i++) lat.push(rngNext(st));
+  const ease = f => (1 - Math.cos(f * Math.PI)) / 2;
+  return (i, j) => {
+    const u = i / cell, v = j / cell, iu = Math.floor(u), iv = Math.floor(v), fu = ease(u - iu), fv = ease(v - iv);
+    const a = lat[iv * L + iu], b = lat[iv * L + iu + 1], c = lat[(iv + 1) * L + iu], d = lat[(iv + 1) * L + iu + 1];
+    return (a + (b - a) * fu) * (1 - fv) + (c + (d - c) * fu) * fv;
+  };
+}
+const smooth01 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// Fills TERRAIN.h (one height per tile corner, 65 x 65) for the given track.
+function terrainCompute(T) {
+  const C = TERRAIN, n = C.N, V = n + 1, h = new Float32Array(V * V);
+  const st = rngSeed(CFG.SEED ^ 0x7e44a1);
+  const big = terrainNoise(st, n, 12), small = terrainNoise(st, n, 5);
+  // Distance from each corner to the nearest track: stamp the samples of every edge onto the grid.
+  const dist = new Float32Array(V * V).fill(1e9), reach = Math.ceil(C.BLEND_R / C.TILE) + 1;
+  for (const E of (T ? T.edges : [])) {
+    const k = Math.max(1, Math.ceil(E.len / 0.5));
+    for (let s = 0; s <= k; s++) {
+      const p = edgeAt(T, E, E.len * s / k);
+      const ci = Math.round((p.x + C.HALF) / C.TILE), cj = Math.round((p.z + C.HALF) / C.TILE);
+      for (let j = Math.max(0, cj - reach); j <= Math.min(n, cj + reach); j++)
+        for (let i = Math.max(0, ci - reach); i <= Math.min(n, ci + reach); i++) {
+          const d = Math.hypot(i * C.TILE - C.HALF - p.x, j * C.TILE - C.HALF - p.z);
+          if (d < dist[j * V + i]) dist[j * V + i] = d;
+        }
+    }
+  }
+  const Y = C.YARD;
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+    const x = i * C.TILE - C.HALF, z = j * C.TILE - C.HALF;
+    const dYard = Math.hypot(Math.max(Y.x0 - x, 0, x - Y.x1), Math.max(Y.z0 - z, 0, z - Y.z1));
+    const d = Math.min(dist[j * V + i], dYard);
+    const base = 0.75 * big(i, j) + 0.25 * small(i, j);
+    const hills = C.HMAX * smooth01(0.35, 0.9, base);
+    const edge = C.HALF - Math.max(Math.abs(x), Math.abs(z));
+    const v = hills * smooth01(C.FLAT_R, C.BLEND_R, d) * smooth01(0, C.EDGE_FADE, edge);
+    h[j * V + i] = v < 0.02 ? 0 : Math.round(v * 100) / 100;
+  }
+  C.h = h;
+  return h;
+}
+// Ground height at a world point, on the same two triangles per tile that the mesh draws. 0 off the map.
+function terrainHeight(x, z) {
+  const C = TERRAIN, h = C.h;
+  if (!h) return 0;
+  const u = (x + C.HALF) / C.TILE, v = (z + C.HALF) / C.TILE;
+  if (!(u >= 0 && v >= 0 && u <= C.N && v <= C.N)) return 0;
+  const i = Math.min(C.N - 1, Math.floor(u)), j = Math.min(C.N - 1, Math.floor(v)), fx = u - i, fz = v - j, V = C.N + 1;
+  const a = h[j * V + i], b = h[j * V + i + 1], c = h[(j + 1) * V + i], d = h[(j + 1) * V + i + 1];
+  // Each tile is split along the diagonal from corner b (i+1, j) to corner c (i, j+1).
+  return fx + fz <= 1 ? a + (b - a) * fx + (c - a) * fz : d + (c - d) * (1 - fx) + (b - d) * (1 - fz);
+}
+function buildTerrain(G, T) {
+  const C = TERRAIN, n = C.N, V = n + 1, h = terrainCompute(T || (typeof S !== 'undefined' ? S.track : null));
+  const grass = new THREE.Color(PAL.grass), dirt = new THREE.Color(PAL.dirt), tile = new THREE.Color(), tmp = new THREE.Color();
+  const colRng = rngSeed(CFG.SEED ^ 0x51c3);
+  C.meshes = [];
+  for (let cj = 0; cj < n / C.CHUNK; cj++) for (let ci = 0; ci < n / C.CHUNK; ci++) {
+    const p = [], col = [];
+    const tri = (ax, ay, az, bx, by, bz, cx, cy, cz, k) => {
+      p.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+      for (let q = 0; q < 3; q++) col.push(k.r, k.g, k.b);
+    };
+    // Steeper faces lean towards dirt.
+    const shade = (y0, y1, y2) => {
+      const rise = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0), Math.abs(y2 - y1)) / C.TILE;
+      return tmp.copy(tile).lerp(dirt, smooth01(0.4, 0.9, rise) * 0.6);
+    };
+    for (let j = cj * C.CHUNK; j < (cj + 1) * C.CHUNK; j++) for (let i = ci * C.CHUNK; i < (ci + 1) * C.CHUNK; i++) {
+      const x0 = i * C.TILE - C.HALF, z0 = j * C.TILE - C.HALF, x1 = x0 + C.TILE, z1 = z0 + C.TILE;
+      const a = h[j * V + i], b = h[j * V + i + 1], c = h[(j + 1) * V + i], d = h[(j + 1) * V + i + 1];
+      // A slight seeded change of hue and lightness per tile breaks up the green.
+      tile.copy(grass).offsetHSL((rngNext(colRng) - 0.5) * 0.008, 0, (rngNext(colRng) - 0.5) * 0.022);
+      tri(x0, a, z0, x0, c, z1, x1, b, z0, shade(a, c, b));
+      tri(x1, b, z0, x0, c, z1, x1, d, z1, shade(b, c, d));
+    }
+    // A flat skirt beyond the map edge, so the ground never ends inside the view.
+    const X0 = ci * C.CHUNK * C.TILE - C.HALF, X1 = X0 + C.CHUNK * C.TILE, Z0 = cj * C.CHUNK * C.TILE - C.HALF, Z1 = Z0 + C.CHUNK * C.TILE;
+    const xs = [X0 <= -C.HALF ? X0 - C.SKIRT : X0, X0, X1, X1 >= C.HALF ? X1 + C.SKIRT : X1];
+    const zs = [Z0 <= -C.HALF ? Z0 - C.SKIRT : Z0, Z0, Z1, Z1 >= C.HALF ? Z1 + C.SKIRT : Z1];
+    for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+      if ((a === 1 && b === 1) || xs[a] === xs[a + 1] || zs[b] === zs[b + 1]) continue;
+      tri(xs[a], 0, zs[b], xs[a], 0, zs[b + 1], xs[a + 1], 0, zs[b], grass);
+      tri(xs[a + 1], 0, zs[b], xs[a], 0, zs[b + 1], xs[a + 1], 0, zs[b + 1], grass);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals(); g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, KIT_MAT);
+    m.receiveShadow = true; m.castShadow = false; m.userData.terrain = true;
+    G.add(m); C.meshes.push(m);
+  }
 }
 
 // ==== Section: day and night ====
 // Owner: piece 3a. Called every frame with the game state; sets sun, sky, hemisphere light,
 // and the glow of GLOW_MAT (lit windows and lamps) from the game clock.
+// Keyframes are design-doc section 17: background, sun colour and sun elevation as written there.
+// The intensities used (sunI, skyI) differ from the doc's (si, hi, kept for reference): noon keeps the
+// approved piece 1 brightness (sun 0.8, hemisphere 0.5), and dawn, dusk and night are lifted so the
+// scene stays readable on a phone (the doc's values were for a brighter renderer). Sunrise and sunset follow the season (section 4): summer 05:00 to 21:00,
+// winter 07:00 to 17:00, spring and autumn 06:00 to 19:00. Dawn light is at sunrise and dusk light
+// at sunset; noon light holds from 3 hours after sunrise to 3 hours before sunset; full night
+// starts 1.5 hours after sunset and lasts until 1.5 hours before sunrise.
 const GLOW_MAT = new THREE.MeshStandardMaterial({ color: PAL.win, emissive: PAL.win, emissiveIntensity: 0, flatShading: true, roughness: 0.9, metalness: 0 });
-function applyDaylight(S, dt) { }
+const DAY = {
+  GLOW_MAX: 1.2,
+  RISE: [6, 5, 6, 7], SET: [19, 21, 19, 17],          // by season: spring, summer, autumn, winter
+  NOON_AZ: Math.atan2(10, 28), SWEEP: 75 * Math.PI / 180, MOON_AZ: -30 * Math.PI / 180,
+  KEYS: {
+    night: { bg: '#121828', sun: '#7f95d8', si: 0.22, hi: 0.20, el: 45, sunI: 0.35, skyI: 0.5, sky: '#8f9fd6', gnd: '#3a3a4a' },
+    dawn:  { bg: '#e9b48e', sun: '#ffb27a', si: 0.75, hi: 0.45, el: 12, sunI: 0.95, skyI: 0.65, sky: '#f4d6c2', gnd: '#7a6450' },
+    noon:  { bg: '#b9d3d8', sun: '#fff4e0', si: 1.15, hi: 0.65, el: 60, sunI: 0.8, skyI: 0.5, sky: '#e8f0ff', gnd: '#7a6a50' },
+    dusk:  { bg: '#d98a62', sun: '#ff8a52', si: 0.70, hi: 0.40, el: 14, sunI: 0.9, skyI: 0.62, sky: '#f0c4a6', gnd: '#6e5444' },
+  },
+  c: {},                     // the keyframe colours as THREE.Color, filled on first use
+  now: null,                 // the last values set, for the checks and the debug tools
+};
+// The lighting for one game time, as plain numbers (no three.js), so it can be checked on its own.
+function daylightAt(time) {
+  const abs = time + CFG.DAY_START_S, day = Math.floor(abs / 86400), hr = (abs % 86400) / 3600;
+  const season = Math.floor(day / 14) % 4, R = DAY.RISE[season], Z = DAY.SET[season];
+  // The day as [hour, key] pairs; outside them it is night (through midnight).
+  const tl = [[R - 1.5, 'night'], [R, 'dawn'], [R + 3, 'noon'], [Z - 3, 'noon'], [Z, 'dusk'], [Z + 1.5, 'night']];
+  let a = 'night', b = 'night', f = 0;
+  for (let i = 0; i < tl.length - 1; i++) {
+    if (hr >= tl[i][0] && hr < tl[i + 1][0]) { a = tl[i][1]; b = tl[i + 1][1]; f = smooth01(tl[i][0], tl[i + 1][0], hr); break; }
+  }
+  const A = DAY.KEYS[a], B = DAY.KEYS[b], mix = (p, q) => p + (q - p) * f;
+  // The sun's bearing sweeps east to west through the day (angle from +z towards +x); the moon holds still.
+  const mid = (R + Z) / 2, sunAz = DAY.NOON_AZ + Math.max(-1, Math.min(1, (hr - mid) / ((Z - R) / 2))) * DAY.SWEEP;
+  const dayW = hr < R ? smooth01(R - 1.5, R, hr) : hr > Z ? 1 - smooth01(Z, Z + 1.5, hr) : 1;
+  const az = DAY.MOON_AZ + (sunAz - DAY.MOON_AZ) * dayW, el = mix(A.el, B.el) * Math.PI / 180;
+  // Lamps come on from half an hour before sunset to an hour after, and go off around sunrise.
+  const glow = hr < 12 ? 1 - smooth01(R - 0.5, R + 0.5, hr) : smooth01(Z - 0.5, Z + 1, hr);
+  return {
+    season, hour: hr, a, b, f,
+    sunI: mix(A.sunI, B.sunI), hemiI: mix(A.skyI, B.skyI),
+    dir: [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)],
+    glow: glow * DAY.GLOW_MAX,
+  };
+}
+function applyDaylight(S, dt) {
+  const d = daylightAt(S.time), c = DAY.c;
+  if (!c.night) for (const k in DAY.KEYS) {
+    const K = DAY.KEYS[k];
+    c[k] = { bg: new THREE.Color(K.bg), sun: new THREE.Color(K.sun), sky: new THREE.Color(K.sky), gnd: new THREE.Color(K.gnd) };
+  }
+  const A = c[d.a], B = c[d.b];
+  if (!(scene.background && scene.background.isColor)) scene.background = new THREE.Color();
+  scene.background.copy(A.bg).lerp(B.bg, d.f);
+  sun.color.copy(A.sun).lerp(B.sun, d.f); sun.intensity = d.sunI;
+  hemi.color.copy(A.sky).lerp(B.sky, d.f); hemi.groundColor.copy(A.gnd).lerp(B.gnd, d.f); hemi.intensity = d.hemiI;
+  sunDir.set(d.dir[0], d.dir[1], d.dir[2]);
+  sun.position.copy(sun.target.position).addScaledVector(sunDir, SUN_DIST);
+  GLOW_MAT.emissiveIntensity = d.glow;
+  DAY.now = d;
+}
 
 // ==== Section: buildings ====
 // Owner: piece 3b. The small hub station beside the test yard's main line (bottom straight, z = 14),

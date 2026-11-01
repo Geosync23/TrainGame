@@ -13,6 +13,7 @@ const checks = {
   'touch controls': require('./check-touch'),
   'station buildings': require('./check-buildings'),
   'debug tools (?debug=1)': require('./check-debug'),
+  'ground and light (terrain, day and night)': require('./check-world'),
 };
 
 (async () => {

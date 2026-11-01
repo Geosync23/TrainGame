@@ -1341,9 +1341,429 @@ function buildBuildings(G) {
 }
 
 // ==== Section: people (crowd) ====
-// Owner: piece 4. Extra characters (all three kits), instanced per body part. Render-side only in M0.
-function buildCrowd() { }
-function updateCrowd(dt) { }
+// Owner: piece 4. Extra characters (all three kits), instanced per body part. Render-side only in M0:
+// the walkers are not in the saved game state and never use the sim's random numbers.
+//
+// How it is drawn: for each kit (chunky, lanky, stocky) and each body part (body, left leg, right leg,
+// left arm, right arm) there is one InstancedMesh, so the crowd costs 15 meshes (30 draw calls with the
+// shadow pass) however many people walk. Each part's shapes are merged once, with two extra numbers per
+// vertex (attribute rh): a colour slot (0 = the fixed vertex colour, 1 skin, 2 hair, 3 top, 4 lower,
+// 5 hat, 6 vest) and a shape group (0 = always shown, otherwise a bit in the person's mask: hats, beards,
+// skirt, bonnet and so on). Each person's colours are packed as whole numbers (iA, iB) with the mask;
+// the vertex shader picks the colour and folds away the shapes that person does not have.
+// Limb poses are worked out on the CPU and written straight into the instance matrices.
+const CROWD = {
+  WALK: 2.0,            // citizen walk, u per game minute (section 4)
+  STRIDE: 0.675,        // walk cycles per u: 1.8 per real second at walk speed and 1x (section 17)
+  LEG_SW: 25 * Math.PI / 180, ARM_SW: 20 * Math.PI / 180, BOB: 0.02,
+  BREATH: 0.015, BREATH_HZ: 0.35, DRIFT: 8 * Math.PI / 180,
+  AREA: { x0: -40, x1: 40, z0: -30, z1: 32 }, // where walkers roam on the test map
+  BALLAST: 0.95,        // paths keep this far from a track centre line where they can
+  MAX: 1000,
+  SEED: 0x5eed4,
+};
+// Shape groups (bit numbers; 0 means always shown).
+const CG = { LEGS: 1, MALE: 2, SKIRT: 3, CAP: 4, BOWL: 5, BONNET: 6, BUN: 7, HAIRC: 8, MUST: 9, BEARD: 10, ARMBAND: 11, TOOL: 12, BADGE: 13 };
+const CSLOT = { FIX: 0, SKIN: 1, HAIR: 2, TOP: 3, LOW: 4, HAT: 5, ACC: 6 };
+const CPAL = {
+  skin: ['#f2d2b6', '#e8bf9c', '#d9a77e', '#c48c62', '#a8714a', '#8c5a3a', '#714630', '#5a3a26'],
+  hair: ['#1e1a17', '#3a2a1e', '#4a3222', '#8a4424', '#c09a5a', '#9a958e'], // black, dark brown, brown, red, blond, grey
+  flannel: '#9b3b30', hat: '#6b5232',
+};
+const crowd = { built: 0, n: 0, walkers: [], kits: null, group: null, grid: null };
+
+// A part builder like Kit, but each shape also records its colour slot and shape group.
+class CrowdPart {
+  constructor() { this.p = []; this.c = []; this.r = []; }
+  add(geo, slot, grp, hex, x, y, z, rx, ry, rz, post) {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)), new THREE.Vector3(1, 1, 1));
+    if (post) m.premultiply(post);
+    const pos = g.attributes.position, col = new THREE.Color(hex || '#ffffff'), v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      this.p.push(v.x, v.y, v.z); this.c.push(col.r, col.g, col.b); this.r.push(slot, grp);
+    }
+    if (g !== geo) g.dispose();
+    geo.dispose();
+    return this;
+  }
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    g.setAttribute('rh', new THREE.Float32BufferAttribute(this.r, 2));
+    g.computeVertexNormals();
+    return g;
+  }
+}
+// A sphere cap open at the bottom, for hair, bowler crowns and bonnets. openFront leaves the face clear.
+function crowdCap(r, thetaLen, openFront) {
+  return openFront ? new THREE.SphereGeometry(r, 8, 4, Math.PI * 0.75, Math.PI * 1.5, 0, thetaLen)
+                   : new THREE.SphereGeometry(r, 8, 3, 0, Math.PI * 2, 0, thetaLen);
+}
+
+// Shader changes shared by the colour pass and the shadow pass.
+const CROWD_VERT_HEAD = `
+attribute vec2 rh;
+attribute vec4 iA;
+attribute vec3 iB;
+vec3 rhRGB(float v) { float r = floor(v / 65536.0); float g = floor((v - r * 65536.0) / 256.0); return vec3(r, g, v - r * 65536.0 - g * 256.0) / 255.0; }
+float rhOn() { return rh.y < 0.5 ? 1.0 : mod(floor((iB.z + 0.5) / exp2(rh.y - 1.0)), 2.0); }`;
+const CROWD_BEGIN = 'vec3 transformed = vec3( position ) * rhOn();';
+const CROWD_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
+CROWD_MAT.onBeforeCompile = (sh) => {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>' + CROWD_VERT_HEAD)
+    .replace('#include <begin_vertex>', CROWD_BEGIN)
+    .replace('#include <color_vertex>', `vColor = color;
+  if (rh.x > 0.5) vColor = rhRGB(rh.x < 1.5 ? iA.x : rh.x < 2.5 ? iA.y : rh.x < 3.5 ? iA.z : rh.x < 4.5 ? iA.w : rh.x < 5.5 ? iB.x : iB.y);`);
+};
+CROWD_MAT.customProgramCacheKey = () => 'railhead-crowd';
+const CROWD_DEPTH = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+CROWD_DEPTH.onBeforeCompile = (sh) => {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>' + CROWD_VERT_HEAD)
+    .replace('#include <begin_vertex>', CROWD_BEGIN);
+};
+CROWD_DEPTH.customProgramCacheKey = () => 'railhead-crowd-depth';
+
+// The three kits as five parts each. Limbs are built around their joint; the body around the feet.
+// Shapes and sizes follow the style test page; chunky matches modelChunky().
+function crowdKitParts(kit) {
+  const S = CSLOT, G = CG, H = Math.PI;
+  const body = new CrowdPart(), legs = [], arms = [];
+  let legPiv, armPiv;
+  if (kit === 'chunky') {
+    body.add(cyl(0.2, 0.17, 0.36, 6), S.TOP, 0, 0, 0, 0.52, 0);
+    body.add(cyl(0.21, 0.18, 0.24, 6), S.ACC, G.MALE, 0, 0, 0.46, 0);
+    body.add(ico(0.17), S.SKIN, 0, 0, 0, 0.86, 0);
+    body.add(box(0.04, 0.06, 0.05), S.SKIN, 0, 0, 0, 0.85, 0.17);
+    body.add(box(0.15, 0.035, 0.04), S.HAIR, G.MUST, 0, 0, 0.8, 0.155);
+    body.add(cyl(0.17, 0.18, 0.1, 8), S.HAT, G.CAP, 0, 0, 1.01, 0);
+    body.add(box(0.22, 0.02, 0.11), S.FIX, G.CAP, PAL.boot, 0, 0.965, 0.16);
+    body.add(box(0.06, 0.04, 0.015), S.FIX, G.BADGE, PAL.brass, 0, 1.02, 0.175);
+    body.add(crowdCap(0.15, H / 2), S.HAT, G.BOWL, 0, 0, 0.99, 0);
+    body.add(cyl(0.23, 0.23, 0.025, 9), S.HAT, G.BOWL, 0, 0, 0.985, 0);
+    body.add(crowdCap(0.18, H * 0.42), S.HAIR, G.HAIRC, 0, 0, 0.86, -0.015, -0.4);
+    body.add(ico(0.075, 0), S.HAIR, G.BUN, 0, 0, 0.93, -0.165);
+    body.add(crowdCap(0.2, H * 0.62, true), S.HAT, G.BONNET, 0, 0, 0.87, -0.02, -0.25);
+    body.add(cyl(0.18, 0.27, 0.4, 8), S.LOW, G.SKIRT, 0, 0, 0.2, 0);
+    legPiv = [0.08, 0.34, 0]; armPiv = [0.24, 0.66, 0];
+    for (const s of [-1, 1]) {
+      legs.push(new CrowdPart().add(box(0.13, 0.3, 0.15), S.LOW, G.LEGS, 0, 0, -0.15, 0)
+        .add(box(0.14, 0.08, 0.2), S.FIX, G.LEGS, PAL.boot, 0, -0.3, 0.02));
+      const rot = new THREE.Matrix4().makeRotationZ(s * 0.15), a = new CrowdPart();
+      a.add(box(0.09, 0.3, 0.1), S.TOP, 0, 0, 0, -0.14, 0, 0, 0, 0, rot).add(ico(0.06, 0), S.SKIN, 0, 0, 0, -0.31, 0, 0, 0, 0, rot);
+      if (s < 0) a.add(box(0.1, 0.05, 0.11), S.FIX, G.ARMBAND, PAL.red, 0, -0.08, 0, 0, 0, 0, rot);
+      arms.push(a);
+    }
+  } else if (kit === 'lanky') {
+    body.add(cyl(0.14, 0.21, 0.5, 6), S.TOP, 0, 0, 0, 0.62, 0);
+    body.add(cyl(0.17, 0.14, 0.22, 6), S.TOP, 0, 0, 0, 0.98, 0);
+    [[0.72, 0.165], [0.84, 0.157], [0.96, 0.16]].forEach(([y, z]) => body.add(box(0.03, 0.03, 0.02), S.FIX, G.MALE, PAL.brass, 0, y, z));
+    body.add(box(0.1, 0.012, 0.012), S.FIX, G.MALE, PAL.brass, 0.04, 0.78, 0.165, 0, 0, 0.3);
+    body.add(cyl(0.05, 0.05, 0.08, 6), S.SKIN, 0, 0, 0, 1.12, 0);
+    body.add(ico(0.1), S.SKIN, 0, 0, 0, 1.22, 0);
+    body.add(box(0.025, 0.04, 0.03), S.SKIN, 0, 0, 0, 1.21, 0.1);
+    body.add(new THREE.ConeGeometry(0.08, 0.16, 5), S.HAIR, G.BEARD, 0, 0, 1.12, 0.05, H);
+    body.add(box(0.09, 0.025, 0.03), S.HAIR, G.MUST, 0, 0, 1.17, 0.09);
+    body.add(cyl(0.09, 0.105, 0.13, 8), S.HAT, G.CAP, 0, 0, 1.34, -0.01, -0.15);
+    body.add(box(0.15, 0.015, 0.08), S.FIX, G.CAP, PAL.boot, 0, 1.29, 0.1);
+    body.add(crowdCap(0.105, H / 2), S.HAT, G.BOWL, 0, 0, 1.29, 0);
+    body.add(cyl(0.16, 0.16, 0.02, 9), S.HAT, G.BOWL, 0, 0, 1.29, 0);
+    body.add(crowdCap(0.108, H * 0.42), S.HAIR, G.HAIRC, 0, 0, 1.22, -0.01, -0.4);
+    body.add(ico(0.05, 0), S.HAIR, G.BUN, 0, 0, 1.26, -0.1);
+    body.add(crowdCap(0.125, H * 0.62, true), S.HAT, G.BONNET, 0, 0, 1.23, -0.015, -0.25);
+    body.add(cyl(0.16, 0.25, 0.5, 8), S.LOW, G.SKIRT, 0, 0, 0.25, 0);
+    legPiv = [0.06, 0.42, 0]; armPiv = [0.19, 1.03, 0];
+    for (const s of [-1, 1]) {
+      legs.push(new CrowdPart().add(box(0.08, 0.42, 0.09), S.LOW, G.LEGS, 0, 0, -0.21, 0)
+        .add(box(0.09, 0.05, 0.15), S.FIX, G.LEGS, PAL.boot, 0, -0.395, 0.02));
+      const rot = new THREE.Matrix4().makeRotationZ(s * 0.06);
+      arms.push(new CrowdPart().add(box(0.07, 0.46, 0.08), S.TOP, 0, 0, 0, -0.23, 0, 0, 0, 0, rot)
+        .add(ico(0.045, 0), S.SKIN, 0, 0, s * 0.01, -0.48, 0, 0, 0, 0, rot));
+    }
+  } else { // stocky
+    body.add(cyl(0.29, 0.19, 0.44, 4), S.TOP, 0, 0, 0, 0.58, 0, 0, H / 4);
+    body.add(box(0.28, 0.05, 0.28), S.FIX, 0, PAL.boot, 0, 0.38, 0);
+    body.add(ico(0.14), S.SKIN, 0, 0, 0, 0.93, 0);
+    body.add(box(0.035, 0.05, 0.04), S.SKIN, 0, 0, 0, 0.92, 0.14);
+    body.add(ico(0.13, 0), S.HAIR, G.BEARD, 0, 0, 0.86, 0.05);
+    body.add(box(0.12, 0.03, 0.035), S.HAIR, G.MUST, 0, 0, 0.88, 0.13);
+    body.add(cyl(0.27, 0.27, 0.025, 9), S.HAT, G.CAP, 0, 0, 1.04, 0);
+    body.add(cyl(0.12, 0.15, 0.13, 9), S.HAT, G.CAP, 0, 0, 1.11, 0);
+    body.add(crowdCap(0.148, H * 0.42), S.HAIR, G.HAIRC, 0, 0, 0.93, -0.01, -0.4);
+    legPiv = [0.09, 0.36, 0]; armPiv = [0.27, 0.78, 0];
+    for (const s of [-1, 1]) {
+      legs.push(new CrowdPart().add(box(0.14, 0.32, 0.15), S.LOW, G.LEGS, 0, 0, -0.16, 0)
+        .add(box(0.15, 0.08, 0.2), S.FIX, G.LEGS, PAL.boot, 0, -0.32, 0.02));
+      const a = new CrowdPart().add(box(0.13, 0.24, 0.13), S.TOP, 0, 0, 0, -0.12, 0, 0, 0, s * 0.1)
+        .add(box(0.1, 0.2, 0.1), S.SKIN, 0, 0, s * 0.02, -0.32, 0).add(ico(0.065, 0), S.SKIN, 0, 0, s * 0.02, -0.44, 0);
+      if (s > 0) { // sledge in the right fist, head forward and low
+        const d = [0, -0.4, 0.917], f = [0.02, -0.44, 0], rx = -Math.acos(0.4);
+        a.add(cyl(0.02, 0.02, 0.62, 5), S.FIX, G.TOOL, PAL.trunk, f[0], f[1] + d[1] * 0.22, f[2] + d[2] * 0.22, rx);
+        a.add(box(0.1, 0.1, 0.24), S.FIX, G.TOOL, PAL.loco, f[0], f[1] + d[1] * 0.5, f[2] + d[2] * 0.5, rx);
+      }
+      arms.push(a);
+    }
+  }
+  return { body, legs, arms, legPiv, armPiv };
+}
+
+// ---- Seeded descriptions ----
+function crowdHex(hex, rng, dh, dl) {
+  const c = new THREE.Color(hex), hsl = {};
+  c.getHSL(hsl);
+  c.setHSL((hsl.h + (rngNext(rng) - 0.5) * 2 * dh + 1) % 1, hsl.s, Math.max(0, Math.min(1, hsl.l + (rngNext(rng) - 0.5) * 2 * dl)));
+  return (Math.round(c.r * 255) << 16) | (Math.round(c.g * 255) << 8) | Math.round(c.b * 255);
+}
+function crowdPick(rng, arr) { return arr[Math.floor(rngNext(rng) * arr.length) % arr.length]; }
+// Person i always gets the same look, whatever the crowd size. Roles follow section 17's hats:
+// visor cap railroad staff, kepi conductor, slouch laborer, bowler merchant or banker, bonnet women, none children.
+function crowdDescribe(i) {
+  const rng = rngSeed(CROWD.SEED + i * 7919), G = CG, bit = g => 1 << (g - 1);
+  const r = rngNext(rng);
+  const kit = r < 0.45 ? 'chunky' : r < 0.7 ? 'lanky' : 'stocky';
+  const child = kit === 'chunky' && rngNext(rng) < 0.22;          // about 10% of everyone
+  const woman = kit !== 'stocky' && rngNext(rng) < (child ? 0.5 : 0.45);
+  const v = hex => crowdHex(hex, rng, 4 / 360, 0.06);              // per-person shift: hue 4 degrees, lightness 6%
+  const num = hex => parseInt(hex.slice(1), 16);
+  let mask = 0, role, top, low, hat = 0, acc = 0;
+  const skin = crowdPick(rng, CPAL.skin);
+  let hair = crowdPick(rng, CPAL.hair);
+  if (kit === 'lanky' && !woman && rngNext(rng) < 0.35) hair = CPAL.hair[5];
+  if (woman) {
+    role = child ? 'girl' : 'townswoman';
+    mask |= bit(G.SKIRT);
+    if (kit === 'lanky') { top = v(crowdPick(rng, ['#4a2a3a', '#2a3a4a', '#3a3a3a', '#5a4a3a', '#4a3a52'])); low = top; }
+    else {
+      top = v(crowdPick(rng, ['#e6dcc4', '#b9c4cc', '#c9a0a0', '#a8b48a', '#d8c08a']));
+      low = v(crowdPick(rng, ['#5a3a4a', '#3a4a5a', '#6b5232', '#7a3a30', '#4a5a3a', '#2f3a52']));
+    }
+    if (!child && rngNext(rng) < 0.6) { mask |= bit(G.BONNET); hat = v(crowdPick(rng, ['#e4d6b6', '#d8c8a0', '#efe7d4', '#c9b48a', '#8a5a4a'])); }
+    else mask |= bit(G.HAIRC) | bit(G.BUN);
+  } else {
+    mask |= bit(G.LEGS);
+    if (kit === 'chunky') {
+      top = v(crowdPick(rng, ['#e6dcc4', '#e6dcc4', '#b9c4cc', '#d8c08a', '#ece8de']));
+      if (child) { role = 'boy'; low = v(crowdPick(rng, [PAL.trousers, '#5a4a38', '#3e3a36'])); mask |= bit(G.HAIRC); }
+      else {
+        const rr = rngNext(rng);
+        role = rr < 0.4 ? 'staff' : rr < 0.65 ? 'merchant' : 'townsman';
+        mask |= bit(G.MALE);
+        if (rngNext(rng) < 0.6) mask |= bit(G.MUST);
+        if (role === 'staff') { mask |= bit(G.CAP) | bit(G.BADGE) | bit(G.ARMBAND); hat = acc = low = num(PAL.navy); }
+        else {
+          acc = v(crowdPick(rng, [PAL.vest, '#4a3a2c', '#2f3a2e', '#4a4038']));
+          low = v(crowdPick(rng, [PAL.trousers, '#3e3a36', '#5a4a38']));
+          if (role === 'merchant') { mask |= bit(G.BOWL); hat = v(crowdPick(rng, ['#2a2522', '#3b302a', '#5a4232'])); }
+          else mask |= bit(G.HAIRC);
+        }
+      }
+    } else if (kit === 'lanky') {
+      role = rngNext(rng) < 0.45 ? 'conductor' : 'banker';
+      mask |= bit(G.MALE);
+      const fb = rngNext(rng);
+      if (fb < 0.45) mask |= bit(G.BEARD) | bit(G.MUST); else if (fb < 0.75) mask |= bit(G.MUST);
+      if (role === 'conductor') { mask |= bit(G.CAP); top = hat = low = num(PAL.navy); }
+      else {
+        mask |= bit(G.BOWL);
+        top = v(crowdPick(rng, ['#2a2624', '#3b302a', '#4a4a52', '#5a4232']));
+        hat = v(crowdPick(rng, ['#1f1c1a', '#2a2522', '#3b302a']));
+        low = v(crowdPick(rng, [PAL.trousers, '#2f2c2a', '#5a5a5e']));
+      }
+    } else {
+      role = 'laborer';
+      top = v(crowdPick(rng, [CPAL.flannel, CPAL.flannel, '#7a4a2e', '#4a5a6a', '#6a6a3a', '#8a3a3a']));
+      low = v(crowdPick(rng, ['#3a4256', PAL.trousers, '#4a4a40']));
+      if (rngNext(rng) < 0.85) { mask |= bit(G.CAP); hat = v(crowdPick(rng, [CPAL.hat, '#5a4a36', '#7a6646', '#4a3c2c'])); }
+      else mask |= bit(G.HAIRC);
+      const fb = rngNext(rng);
+      if (fb < 0.45) mask |= bit(G.BEARD); else if (fb < 0.7) mask |= bit(G.MUST);
+      if (rngNext(rng) < 0.35) mask |= bit(G.TOOL);
+    }
+  }
+  return { kit, role, woman, child, scale: child ? 0.7 : 1, mask, skin: num(skin), hair: num(hair), top, low, hat, acc };
+}
+
+// ---- Where walkers go: a coarse grid marking the track ballast, rebuilt when the track changes ----
+function crowdGrid() {
+  const T = S.track;
+  if (crowd.grid && crowd.grid.track === T && crowd.grid.n === T.edges.length) return crowd.grid;
+  const A = CROWD.AREA, cell = 0.5, w = Math.ceil((A.x1 - A.x0) / cell) + 1, h = Math.ceil((A.z1 - A.z0) / cell) + 1;
+  const bad = new Uint8Array(w * h), R = Math.ceil(CROWD.BALLAST / cell);
+  for (const E of T.edges) {
+    const n = Math.max(1, Math.ceil(E.len / 0.25));
+    for (let i = 0; i <= n; i++) {
+      const p = edgeAt(T, E, E.len * i / n), cx = Math.round((p.x - A.x0) / cell), cz = Math.round((p.z - A.z0) / cell);
+      for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+        const gx = cx + dx, gz = cz + dz;
+        if (gx < 0 || gz < 0 || gx >= w || gz >= h) continue;
+        if (Math.hypot(gx * cell + A.x0 - p.x, gz * cell + A.z0 - p.z) <= CROWD.BALLAST) bad[gz * w + gx] = 1;
+      }
+    }
+  }
+  crowd.grid = { track: T, n: T.edges.length, w, h, cell, bad };
+  return crowd.grid;
+}
+function crowdOnBallast(g, x, z) {
+  const A = CROWD.AREA, gx = Math.round((x - A.x0) / g.cell), gz = Math.round((z - A.z0) / g.cell);
+  return gx >= 0 && gz >= 0 && gx < g.w && gz < g.h && g.bad[gz * g.w + gx] === 1;
+}
+function crowdClear(g, x0, z0, x1, z1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.4);
+  for (let i = 1; i <= n; i++) if (crowdOnBallast(g, x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n)) return false;
+  return true;
+}
+// A new target 3 to 15u away whose straight path keeps off the ballast; after 10 tries the walker crosses anyway.
+function crowdTarget(w) {
+  const g = crowdGrid(), A = CROWD.AREA;
+  let tx = w.x, tz = w.z;
+  for (let k = 0; k < 10; k++) {
+    const ang = rngNext(w.rng) * Math.PI * 2, d = 3 + rngNext(w.rng) * 12;
+    tx = Math.max(A.x0, Math.min(A.x1, w.x + Math.cos(ang) * d)); tz = Math.max(A.z0, Math.min(A.z1, w.z + Math.sin(ang) * d));
+    if (!crowdOnBallast(g, tx, tz) && crowdClear(g, w.x, w.z, tx, tz)) break;
+  }
+  w.tx = tx; w.tz = tz; w.mode = 1; w.wait = 0;
+}
+function crowdTrainPoses() { return curPoses ? [].concat(...curPoses) : []; }
+function crowdSpawn(i) {
+  const d = crowdDescribe(i), rng = rngSeed(CROWD.SEED * 3 + i * 104729), g = crowdGrid(), A = CROWD.AREA, poses = crowdTrainPoses();
+  let x = 0, z = 0;
+  for (let k = 0; k < 30; k++) {
+    x = A.x0 + rngNext(rng) * (A.x1 - A.x0); z = A.z0 + rngNext(rng) * (A.z1 - A.z0);
+    if (!crowdOnBallast(g, x, z) && !insideTrain(poses, x, z)) break;
+  }
+  const w = { d, rng, x, z, yaw: rngNext(rng) * Math.PI * 2, tx: x, tz: z, mode: 0, wait: rngNext(rng) * 2,
+    phase: rngNext(rng) * Math.PI * 2, swing: 0, t: rngNext(rng) * 10, ki: 0 };
+  if (rngNext(rng) < 0.7) crowdTarget(w);
+  return w;
+}
+
+// ---- Meshes ----
+function crowdDispose() {
+  if (!crowd.group) return;
+  scene.remove(crowd.group);
+  for (const K of Object.values(crowd.kits)) for (const m of K.meshes) m.geometry.dispose();
+  crowd.group = null; crowd.kits = null; crowd.built = 0;
+}
+// Builds the 15 instanced meshes with room for walkers 0 to n-1.
+function crowdBuildMeshes(n) {
+  crowdDispose();
+  while (crowd.walkers.length < n) crowd.walkers.push(crowdSpawn(crowd.walkers.length));
+  const G = new THREE.Group(); crowd.group = G; scene.add(G);
+  crowd.kits = {};
+  for (const kit of ['chunky', 'lanky', 'stocky']) {
+    const ws = crowd.walkers.slice(0, n).filter(w => w.d.kit === kit), cap = Math.max(1, ws.length);
+    const iA = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4), iB = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+    ws.forEach((w, j) => { const d = w.d; w.ki = j; iA.setXYZW(j, d.skin, d.hair, d.top, d.low); iB.setXYZ(j, d.hat, d.acc, d.mask); });
+    const P = crowdKitParts(kit), parts = [P.body, P.legs[0], P.legs[1], P.arms[0], P.arms[1]];
+    const meshes = parts.map(part => {
+      const g = part.geometry(); g.setAttribute('iA', iA); g.setAttribute('iB', iB);
+      const m = new THREE.InstancedMesh(g, CROWD_MAT, cap);
+      m.customDepthMaterial = CROWD_DEPTH;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.frustumCulled = false; // instances spread over the map; the mesh's own bounds would cull them wrongly
+      m.castShadow = true; m.receiveShadow = true;
+      m.count = 0; G.add(m); return m;
+    });
+    crowd.kits[kit] = { meshes, legPiv: P.legPiv, armPiv: P.armPiv, n: 0 };
+  }
+  crowd.built = n;
+}
+// Writes T(x,y,z) Ry(yaw) S(s, s*by, s) T(pivot) Rx(a) into a column-major matrix array (by is the breath).
+function crowdWrite(arr, i, x, y, z, sy, cy, s, by, px, py, pz, a) {
+  const o = i * 16, sa = Math.sin(a), ca = Math.cos(a);
+  arr[o] = cy * s; arr[o + 1] = 0; arr[o + 2] = -sy * s; arr[o + 3] = 0;
+  arr[o + 4] = sy * sa * s; arr[o + 5] = ca * s * by; arr[o + 6] = cy * sa * s; arr[o + 7] = 0;
+  arr[o + 8] = sy * ca * s; arr[o + 9] = -sa * s; arr[o + 10] = cy * ca * s; arr[o + 11] = 0;
+  arr[o + 12] = x + s * (cy * px + sy * pz); arr[o + 13] = y + s * by * py; arr[o + 14] = z + s * (-sy * px + cy * pz); arr[o + 15] = 1;
+}
+function crowdPose(w) {
+  const K = crowd.kits[w.d.kit], M = K.meshes, i = w.ki, s = w.d.scale, L = K.legPiv, A = K.armPiv;
+  const yaw = w.yaw + Math.sin(w.t * 0.3) * CROWD.DRIFT * (1 - w.swing); // slow idle look-around
+  const sy = Math.sin(yaw), cy = Math.cos(yaw);
+  const y = terrainHeight(w.x, w.z), sw = Math.sin(w.phase) * w.swing;
+  const bob = Math.abs(Math.sin(w.phase)) * CROWD.BOB * w.swing * s;
+  const breath = 1 + Math.sin(w.t * CROWD.BREATH_HZ * Math.PI * 2) * CROWD.BREATH * (1 - w.swing);
+  crowdWrite(M[0].instanceMatrix.array, i, w.x, y + bob, w.z, sy, cy, s, breath, 0, 0, 0, 0);
+  crowdWrite(M[1].instanceMatrix.array, i, w.x, y, w.z, sy, cy, s, 1, -L[0], L[1], L[2], sw * CROWD.LEG_SW);
+  crowdWrite(M[2].instanceMatrix.array, i, w.x, y, w.z, sy, cy, s, 1, L[0], L[1], L[2], -sw * CROWD.LEG_SW);
+  crowdWrite(M[3].instanceMatrix.array, i, w.x, y + bob, w.z, sy, cy, s, 1, -A[0], A[1], A[2], -sw * CROWD.ARM_SW);
+  crowdWrite(M[4].instanceMatrix.array, i, w.x, y + bob, w.z, sy, cy, s, 1, A[0], A[1], A[2], sw * CROWD.ARM_SW);
+}
+
+// Sets how many walkers there are. 0 hides the crowd, so it costs no draw calls.
+function setCrowd(n) {
+  n = Math.max(0, Math.min(CROWD.MAX, Math.floor(Number(n) || 0)));
+  if (n > crowd.built) crowdBuildMeshes(n);
+  crowd.n = n;
+  if (!crowd.group) return n;
+  for (const K of Object.values(crowd.kits)) K.n = 0;
+  for (let i = 0; i < n; i++) { const w = crowd.walkers[i]; crowd.kits[w.d.kit].n++; crowdPose(w); }
+  for (const K of Object.values(crowd.kits)) for (const m of K.meshes) { m.count = K.n; m.visible = K.n > 0; m.instanceMatrix.needsUpdate = true; }
+  crowd.group.visible = n > 0;
+  return n;
+}
+function buildCrowd() {
+  Object.assign(window.__railhead, {
+    setCrowd,
+    // For the checks: counts by kit and role, visible crowd meshes, and each walker's drawn position (from the body matrices).
+    crowdInfo() {
+      const kits = { chunky: 0, lanky: 0, stocky: 0 }, roles = {}, pos = [];
+      let women = 0, children = 0;
+      for (let i = 0; i < crowd.n; i++) {
+        const w = crowd.walkers[i], a = crowd.kits[w.d.kit].meshes[0].instanceMatrix.array, o = w.ki * 16;
+        kits[w.d.kit]++; roles[w.d.role] = (roles[w.d.role] || 0) + 1;
+        if (w.d.woman) women++;
+        if (w.d.child) children++;
+        pos.push([a[o + 12], a[o + 14]]);
+      }
+      const meshes = crowd.group && crowd.group.visible ? crowd.group.children.filter(m => m.visible).length : 0;
+      return { count: crowd.n, kits, roles, women, children, meshes, pos };
+    },
+  });
+  const q = new URLSearchParams(location.search).get('crowd'); // ?crowd=N; normal play has no crowd yet
+  if (q !== null) setCrowd(q);
+}
+function updateCrowd(dt) {
+  if (!crowd.n) return;
+  const gameMin = dt * speed * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60; // scales with game speed, frozen when paused
+  if (gameMin <= 0) return;
+  const t1x = dt * speed; // animation clock: real seconds at 1x
+  const poses = crowdTrainPoses(), step = CROWD.WALK * gameMin;
+  const ease = 1 - Math.exp(-t1x * 10), turn = 1 - Math.exp(-t1x * 12);
+  for (let i = 0; i < crowd.n; i++) {
+    const w = crowd.walkers[i];
+    w.t += t1x;
+    let moving = false;
+    if (w.mode === 1) {
+      const dx = w.tx - w.x, dz = w.tz - w.z, dist = Math.hypot(dx, dz);
+      const go = Math.min(step, dist), nx = w.x + dx / (dist || 1) * go, nz = w.z + dz / (dist || 1) * go;
+      if (poses.length && insideTrain(poses, nx, nz) && !insideTrain(poses, w.x, w.z)) {
+        w.wait += gameMin;                      // wait for the train to pass; after 1.5 game minutes turn away
+        if (w.wait > 1.5) crowdTarget(w);
+      } else {
+        if (go > 0) {
+          w.x = nx; w.z = nz; w.phase += go * CROWD.STRIDE * Math.PI * 2; moving = true;
+          let dy = Math.atan2(dx, dz) - w.yaw;
+          while (dy > Math.PI) dy -= 2 * Math.PI;
+          while (dy < -Math.PI) dy += 2 * Math.PI;
+          w.yaw += dy * turn;
+        }
+        if (go >= dist) { w.mode = 0; w.wait = 1 + rngNext(w.rng) * 3; } // stand for 1 to 4 game minutes
+      }
+    } else {
+      w.wait -= gameMin;
+      if (w.wait <= 0) crowdTarget(w);
+    }
+    w.swing += ((moving ? 1 : 0) - w.swing) * ease;
+    crowdPose(w);
+  }
+  for (const K of Object.values(crowd.kits)) if (K.n) for (const m of K.meshes) m.instanceMatrix.needsUpdate = true;
+}
 
 // ==== Section: build tool ====
 // Owner: piece 2. Laying track and switches by finger.

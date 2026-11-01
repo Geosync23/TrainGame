@@ -14,6 +14,7 @@ const checks = {
   'station buildings': require('./check-buildings'),
   'debug tools (?debug=1)': require('./check-debug'),
   'ground and light (terrain, day and night)': require('./check-world'),
+  'people (crowd of 200 walkers)': require('./check-people'),
 };
 
 (async () => {

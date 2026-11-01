@@ -1013,8 +1013,279 @@ function buildToolInit() { }
 
 // ==== Section: debug ====
 // Owner: piece 5. ?debug=1 overlays and the window.rh console.
-function debugInit() { }
-function debugUpdate(dt) { }
+// Everything here is off unless the address has ?debug=1: no DOM, no meshes, no work per frame.
+// Overlays are flat ribbons, one merged mesh per overlay, drawn on top (no depth test), lifted 0.05u
+// above the ballast. Each is rebuilt only when what it shows changes, checked every few frames.
+// The console never changes the sim's rules: it sends commands, or replaces the whole state.
+const DBG = {
+  on: new URLSearchParams(location.search).get('debug') === '1',
+  group: null, mat: null, frame: 0, carry: 0, bar: null, info: null, lastSpeed: -1,
+  ov: {
+    blocks: { on: true, mesh: null, sig: '', order: 10, label: 'Blocks' },
+    locks: { on: true, mesh: null, sig: '', order: 12, label: 'Locks' },
+    routes: { on: true, mesh: null, sig: '', order: 11, label: 'Routes' },
+    path: { on: true, mesh: null, sig: '', order: 13, label: 'Path' },
+  },
+};
+const DBG_Y = 0.08; // ballast top (0.03) + 0.05
+const DBG_BLOCK_COLS = ['#3d7fd6', '#2fb3a6', '#8c5fd0', '#d65fa8', '#6aa83a', '#3aa0d8', '#c9a227', '#5a6fd6'];
+const DBG_COL = { occupied: '#ff2a2a', reserved: '#ff9a1a', free: '#34d058', route: '#18e0ff', path: '#ff3df0' };
+
+// Geometry helpers: triangles with a colour per vertex, gathered into plain arrays.
+function dbgBuf() { return { p: [], c: [] }; }
+function dbgTri(B, a, b, c, col) { B.p.push(...a, ...b, ...c); for (let i = 0; i < 3; i++) B.c.push(col.r, col.g, col.b); }
+// Ribbon of width w along edge e from s0 to s1.
+function dbgRibbon(B, T, e, s0, s1, w, col, y) {
+  const E = T.edges[e], span = s1 - s0;
+  if (span <= 1e-6) return;
+  const n = E.k === 'S' ? 1 : Math.max(1, Math.ceil(span / 0.4));
+  const lift = T.switches.some(W => W.reverse === e) ? 0.004 : 0, yy = y + lift;
+  let prev = null;
+  for (let i = 0; i <= n; i++) {
+    const p = edgeAt(T, E, s0 + span * i / n);
+    const l = [p.x - p.tz * w / 2, yy, p.z + p.tx * w / 2], r = [p.x + p.tz * w / 2, yy, p.z - p.tx * w / 2];
+    if (prev) { dbgTri(B, prev.l, prev.r, r, col); dbgTri(B, prev.l, r, l, col); }
+    prev = { l, r };
+  }
+}
+// Straight ribbon between two points.
+function dbgLine(B, x0, z0, x1, z1, w, col, y) {
+  const L = Math.hypot(x1 - x0, z1 - z0);
+  if (L < 1e-6) return;
+  const nx = -(z1 - z0) / L * w / 2, nz = (x1 - x0) / L * w / 2;
+  const a = [x0 + nx, y, z0 + nz], b = [x0 - nx, y, z0 - nz], c = [x1 - nx, y, z1 - nz], d = [x1 + nx, y, z1 + nz];
+  dbgTri(B, a, b, c, col); dbgTri(B, a, c, d, col);
+}
+function dbgDiamond(B, x, z, r, col, y) {
+  const n = [x, y, z - r], e = [x + r, y, z], s = [x, y, z + r], w = [x - r, y, z];
+  dbgTri(B, n, e, s, col); dbgTri(B, n, s, w, col);
+}
+// Swap an overlay's mesh for a new one built from B (or none if B is empty).
+function dbgSetMesh(o, B) {
+  if (o.mesh) { DBG.group.remove(o.mesh); o.mesh.geometry.dispose(); o.mesh = null; }
+  if (!B.p.length) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(B.p, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(B.c, 3));
+  o.mesh = new THREE.Mesh(g, DBG.mat);
+  o.mesh.renderOrder = o.order; o.mesh.frustumCulled = false; o.mesh.visible = o.on;
+  DBG.group.add(o.mesh);
+}
+
+// What each overlay shows, as a short signature, so it is rebuilt only when that changes.
+function dbgTrackSig(T) { return T.edges.length + '/' + T.switches.length + '/' + T.nodes.length; }
+function dbgOccupiedBlocks(T) {
+  const ix = trackIndex(T), occ = {};
+  for (const tr of S.trains) for (const [e, a, b] of trainSegs(T, tr)) if (b - a > 1e-6) occ[ix.block[e]] = true;
+  return occ;
+}
+function dbgBlocks(o) {
+  const T = S.track, ix = trackIndex(T), occ = dbgOccupiedBlocks(T);
+  const reserved = {};
+  for (const W of T.switches) if (W.lockedBy !== null) reserved[ix.block[W.normal]] = true;
+  const sig = dbgTrackSig(T) + '|' + Object.keys(occ).join(',') + '|' + Object.keys(reserved).join(',');
+  if (sig === o.sig && o.track === T) return;
+  o.sig = sig; o.track = T;
+  const B = dbgBuf(), col = new THREE.Color(), late = [];
+  for (const E of T.edges) {
+    const b = ix.block[E.id];
+    if (occ[b] || reserved[b]) { late.push(E); continue; }
+    col.set(DBG_BLOCK_COLS[b % DBG_BLOCK_COLS.length]);
+    dbgRibbon(B, T, E.id, 0, E.len, 0.26, col, DBG_Y);
+  }
+  for (const E of late) { // occupied and reserved blocks drawn last, wider
+    const b = ix.block[E.id];
+    col.set(occ[b] ? DBG_COL.occupied : DBG_COL.reserved);
+    dbgRibbon(B, T, E.id, 0, E.len, 0.5, col, DBG_Y + 0.002);
+  }
+  dbgSetMesh(o, B);
+}
+function dbgLocks(o) {
+  const T = S.track, occ = occupiedSwitches(S);
+  const states = T.switches.map(W => W.state + (occ[W.id] !== undefined ? 'o' : W.lockedBy !== null ? 'l' : 'f'));
+  const sig = dbgTrackSig(T) + '|' + states.join(',');
+  if (sig === o.sig && o.track === T) return;
+  o.sig = sig; o.track = T;
+  const B = dbgBuf(), col = new THREE.Color();
+  T.switches.forEach((W, i) => {
+    const k = states[i].slice(1);
+    col.set(k === 'o' ? DBG_COL.occupied : k === 'l' ? DBG_COL.reserved : DBG_COL.free);
+    const N = T.nodes[W.node], leg = T.edges[W.state === 'N' ? W.normal : W.reverse];
+    // A stub along the leg the switch is set for, and a diamond on the switch point.
+    const s0 = leg.a === W.node ? 0 : Math.max(0, leg.len - 2), s1 = leg.a === W.node ? Math.min(leg.len, 2) : leg.len;
+    dbgRibbon(B, T, leg.id, s0, s1, 0.16, col, DBG_Y + 0.006);
+    dbgDiamond(B, N.x, N.z, 0.55, col, DBG_Y + 0.008);
+    dbgDiamond(B, W.stand.x, W.stand.z, 0.3, col, DBG_Y + 0.008);
+  });
+  dbgSetMesh(o, B);
+}
+function dbgRoutes(o) {
+  const T = S.track;
+  const parts = S.trains.map(tr => tr.route ? tr.id + ':' + tr.m + ':' + Math.round(tr.route.left * 4) : '-');
+  const sig = dbgTrackSig(T) + '|' + parts.join(',');
+  if (sig === o.sig && o.track === T) return;
+  o.sig = sig; o.track = T;
+  const B = dbgBuf(), col = new THREE.Color(DBG_COL.route);
+  for (const tr of S.trains) {
+    if (!tr.route) continue;
+    const segs = [], w = trackWalk(T, leadPos(T, tr, tr.m), tr.route.left, segs);
+    for (const [e, a, b] of segs) dbgRibbon(B, T, e, a, b, 0.14, col, DBG_Y + 0.004);
+    const end = edgeAt(T, T.edges[w.pos.e], w.pos.s);
+    dbgDiamond(B, end.x, end.z, 0.45, col, DBG_Y + 0.004);
+  }
+  dbgSetMesh(o, B);
+}
+function dbgPlayerTarget() {
+  const P = S.player;
+  if (P.act) { const W = S.track.switches[P.act.sw]; return { x: W.stand.x, z: W.stand.z }; }
+  if (P.mode === 'to') return { x: P.tx, z: P.tz };
+  if (P.mode === 'dir') { const ang = P.a / 256 * Math.PI * 2; return { x: P.x + Math.cos(ang) * 2, z: P.z + Math.sin(ang) * 2, dir: true }; }
+  return null;
+}
+function dbgPath(o) {
+  const P = S.player, t = dbgPlayerTarget();
+  const sig = t ? [P.mode, Math.round(P.x * 10), Math.round(P.z * 10), Math.round(t.x * 10), Math.round(t.z * 10)].join(',') : '-';
+  if (sig === o.sig) return;
+  o.sig = sig;
+  const B = dbgBuf(), col = new THREE.Color(DBG_COL.path);
+  if (t) {
+    dbgLine(B, P.x, P.z, t.x, t.z, 0.1, col, DBG_Y + 0.01);
+    if (!t.dir) dbgDiamond(B, t.x, t.z, 0.35, col, DBG_Y + 0.01);
+  }
+  dbgSetMesh(o, B);
+}
+const DBG_BUILD = { blocks: dbgBlocks, locks: dbgLocks, routes: dbgRoutes, path: dbgPath };
+function dbgOverlay(name, on) {
+  const o = DBG.ov[name];
+  if (!o) throw new Error('no overlay ' + name + ' (try ' + Object.keys(DBG.ov).join(', ') + ')');
+  if (on === undefined) on = !o.on;
+  o.on = !!on; o.sig = '';
+  if (o.on) DBG_BUILD[name](o);
+  if (o.mesh) o.mesh.visible = o.on;
+  dbgSyncBar();
+  return o.on;
+}
+
+// Named test scenarios, each built from newState (the same start every time).
+const DBG_SCENARIOS = {
+  // The default test yard.
+  yard: () => newState(CFG.SEED),
+  // The train stands on the passing siding, facing west, with switch 1 set to the siding.
+  siding: () => {
+    const st = newState(CFG.SEED), T = st.track, tr = st.trains[0];
+    const mid = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 && T.nodes[E.b].z > 17);
+    tr.front = trackWalk(T, { e: mid.id, s: mid.len / 2, d: -1 }, trainLength(tr) / 2).pos;
+    T.switches[0].state = 'R';
+    tr.mode = 'idle'; tr.v = 0; tr.status = 'Stopped';
+    st.player.x = -6; st.player.z = 21;
+    return st;
+  },
+  // Switch 3 is set for the spur and the train is running towards it on the north main line.
+  spur: () => {
+    const st = newState(CFG.SEED), T = st.track, tr = st.trains[0], W = T.switches[2], E = T.edges[W.trunk];
+    const d = E.b === W.node ? 1 : -1;
+    tr.front = { e: E.id, s: d > 0 ? E.len - 6 : 6, d };
+    W.state = 'R';
+    tr.mode = 'run'; tr.m = 1; tr.v = 2; tr.status = 'Running forward';
+    st.player.x = -2; st.player.z = -11.5;
+    return st;
+  },
+};
+function dbgScenario(name) {
+  const make = DBG_SCENARIOS[name];
+  if (!make) { console.warn('rh.scenario: no scenario "' + name + '". Known: ' + Object.keys(DBG_SCENARIOS).join(', ')); return null; }
+  S = make(); pending = [];
+  closePanel();
+  buildWorld(S); buildActors(S); resetViewsFromState();
+  for (const o of Object.values(DBG.ov)) o.sig = '';
+  return stateHash(S);
+}
+
+// The debug bar: one 48 px toggle above the Centre button; it opens a small grid of buttons.
+function dbgSyncBar() {
+  if (!DBG.bar) return;
+  DBG.bar.querySelectorAll('[data-ov]').forEach(b => b.setAttribute('aria-pressed', String(DBG.ov[b.dataset.ov].on)));
+  DBG.bar.querySelectorAll('[data-warp]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.warp) === speed)));
+}
+function dbgBuildBar() {
+  const st = document.createElement('style');
+  st.textContent = `#dbgBar { right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 66px); z-index: 1;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    #dbgBar .grid { display: grid; grid-template-columns: repeat(4, 56px); gap: 6px; background: rgba(43,33,24,.75); padding: 6px; border-radius: 10px; }
+    #dbgBar .grid button { min-width: 56px; padding: 0 2px; font-size: 13px; }
+    #dbgBar .info { grid-column: 1 / -1; color: #efe7d4; font: 12px/1.3 monospace; }
+    #dbgToggle { font-family: monospace; }`;
+  document.head.appendChild(st);
+  const bar = document.createElement('div');
+  bar.id = 'dbgBar'; bar.className = 'hud';
+  const ovBtns = Object.entries(DBG.ov).map(([k, o]) => `<button data-ov="${k}">${o.label}</button>`).join('');
+  bar.innerHTML = `<div class="grid" id="dbgGrid" hidden>${ovBtns}<button data-warp="8">8x</button><button data-warp="16">16x</button><button data-warp="32">32x</button>` +
+    `<button data-warp="1">1x</button><div class="info" id="dbgInfo"></div></div>` +
+    `<button id="dbgToggle" aria-expanded="false" aria-label="Debug tools">DBG</button>`;
+  // Before the panel in the page, and under it, so the train panel always covers the bar.
+  document.body.insertBefore(bar, $('panel'));
+  DBG.bar = bar; DBG.info = bar.querySelector('#dbgInfo');
+  bar.querySelector('#dbgToggle').addEventListener('click', e => {
+    const g = $('dbgGrid'); g.hidden = !g.hidden; e.currentTarget.setAttribute('aria-expanded', String(!g.hidden)); DBG.frame = 14; // refresh the info line on the next frame
+  });
+  bar.querySelectorAll('[data-ov]').forEach(b => b.addEventListener('click', () => dbgOverlay(b.dataset.ov)));
+  bar.querySelectorAll('[data-warp]').forEach(b => b.addEventListener('click', () => rhWarp(Number(b.dataset.warp))));
+  dbgSyncBar();
+}
+function rhWarp(n) {
+  n = Number(n);
+  if (!(n >= 0 && n <= 32)) throw new Error('rh.warp: speed must be from 0 to 32');
+  setSpeed(n); dbgSyncBar();
+  return n;
+}
+// Run up to n ticks for a debug time warp, time-boxed to about 8 ms of work per frame; the rest is carried over.
+function debugRunTicks(n) {
+  DBG.carry = Math.min(DBG.carry + n, 640);
+  const t0 = performance.now();
+  while (DBG.carry >= 1) { doTick(); DBG.carry -= 1; if (performance.now() - t0 > 8) break; }
+}
+
+function debugInit() {
+  if (!DBG.on) return;
+  DBG.group = new THREE.Group(); DBG.group.name = 'debug overlays'; scene.add(DBG.group);
+  DBG.mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+  dbgBuildBar();
+  window.rh = {
+    send: cmd => send(cmd),
+    get state() { return S; },
+    hash: () => stateHash(S),
+    step: n => { for (let i = 0; i < (n || 1); i++) doTick(); return S.tick; },
+    // Game seconds since 05:00 on day 1 (rounded to whole ticks of 8 s). Sets the clock only.
+    setTime: sec => { S.time = Math.max(0, Math.round(Number(sec) / CFG.TICK_GAME_S)) * CFG.TICK_GAME_S; updateHud(); return S.time; },
+    warp: rhWarp,
+    get speed() { return speed; },
+    teleport: (x, z) => {
+      const P = S.player;
+      P.x = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, Number(x))); P.z = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, Number(z)));
+      P.mode = 'idle'; P.use = null; P.act = null;
+      prevPlayer = { x: P.x, z: P.z }; cam.fx = P.x; cam.fz = P.z; cam.ox = 0; cam.oz = 0;
+      return { x: P.x, z: P.z };
+    },
+    scenario: dbgScenario,
+    get scenarios() { return Object.keys(DBG_SCENARIOS); },
+    overlay: dbgOverlay,
+    get overlays() { const o = {}; for (const [k, v] of Object.entries(DBG.ov)) o[k] = { on: v.on, built: !!v.mesh }; return o; },
+    get drawCalls() { return renderer.info.render.calls; },
+    help: () => 'rh.send(cmd), rh.state, rh.hash(), rh.step(n), rh.setTime(sec since 05:00), rh.warp(0..32), rh.teleport(x, z), ' +
+      'rh.scenario(' + Object.keys(DBG_SCENARIOS).join(' | ') + '), rh.overlay(blocks | locks | routes | path, on)',
+  };
+  const sc = new URLSearchParams(location.search).get('scenario');
+  if (sc) dbgScenario(sc);
+}
+function debugUpdate(dt) {
+  if (!DBG.on) return;
+  if (speed <= 4) DBG.carry = 0;
+  if (speed !== DBG.lastSpeed) { DBG.lastSpeed = speed; dbgSyncBar(); }
+  if (DBG.frame++ % 3 === 0) for (const [k, o] of Object.entries(DBG.ov)) if (o.on) DBG_BUILD[k](o);
+  if (DBG.frame % 15 === 0 && !$('dbgGrid').hidden) {
+    DBG.info.textContent = `tick ${S.tick} · ${speed}x · draws ${renderer.info.render.calls} · ${stateHash(S)}`;
+  }
+}
 
 // ==== Section: game loop state ====
 let S = newState(CFG.SEED);
@@ -1260,8 +1531,8 @@ function frame(now) {
   if (speed > 0) {
     acc += dt * speed * CFG.TICKS_PER_REAL_S;
     let n = Math.floor(acc); acc -= n;
-    n = Math.min(n, 40);
-    for (let i = 0; i < n; i++) doTick();
+    if (DBG.on && speed > 4) debugRunTicks(n); // debug time warp (8x to 32x), time-boxed
+    else { n = Math.min(n, 40); for (let i = 0; i < n; i++) doTick(); }
   }
   render(speed > 0 ? acc : 1, dt);
   updateHud();

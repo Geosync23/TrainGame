@@ -11,6 +11,7 @@ const checks = {
   'same start, same result': require('./check-determinism'),
   'saving and loading': require('./check-save'),
   'touch controls': require('./check-touch'),
+  'debug tools (?debug=1)': require('./check-debug'),
 };
 
 (async () => {

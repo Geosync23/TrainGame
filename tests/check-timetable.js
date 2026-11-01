@@ -219,7 +219,7 @@ module.exports = async function checkTimetable() {
             const run = R.tt.ttRunOf(st, 0);
             if (st.player.act && st.player.act.k === 'water' && waterStart === null) waterStart = st.time;
             const ev = C.auto(st, 0);
-            if (ev.some(e => e.t === 'waterTaken')) waterDone = st.time;
+            if (ev.some(e => e.t === 'waterTaken') && waterDone === null) waterDone = st.time; // the first (Willow Ford); the run back takes water on the way in too
             if (ev.some(e => e.t === 'coupled')) raDone = { at: C.hhmm(st), cons: tr.consist.map(c => c.k + (c.rev ? 'r' : '')), facing: R.tt.trainFacing(tr) };
             if (ev.some(e => e.t === 'ttDeparted' && e.i === 1)) dep = { m: tr.m, tf: R.tt.tenderFirst(tr, tr.m) };
             if (run && run.i === 2 && run.ph === 'go' && dep) vMaxTF = Math.max(vMaxTF, tr.v);
@@ -247,6 +247,34 @@ module.exports = async function checkTimetable() {
           };
           const a = go(), b = go();
           out.det = { same: a.h === b.h, h: a.h, log: a.log, cons: a.cons };
+        }
+        // 11. (D4) Water on the way in, departures from the platform, and the wood need that stays met.
+        {
+          const st = R.newState(1866), tr = st.trains[0], hub = R.tt.ttStation(st, 'hub'), log = [];
+          R.simTick(st, [{ t: 'ttAssign', tr: 0, on: true }]);
+          const maxX = () => Math.max(...R.trainPoses(st.track, tr).map(p => p.x));
+          let wood = null;
+          for (let i = 0; i < 2 * 10800; i++) {
+            const run = R.tt.ttRunOf(st, 0);
+            // The wood need at the hub, judged once on day 2's morning stop: low wood is wanted, a filled tender
+            // stays met after burning a little (as on a move to the spout).
+            if (!wood && run && run.svc === 0 && run.day === 1 && run.i === 0 && run.ph === 'at' && st.trains[0].mode === 'idle') {
+              const L = tr.consist.find(c => c.k === 'loco'), f0 = L.fuel, stop = st.tt.services[0].stops[0];
+              const need = R.tt.ttWoodNeedU(st, st.tt.services[0], 0, tr);
+              L.fuel = 100; const low = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
+              L.fuel = 365; const filled = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
+              L.fuel = 346; const after = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
+              L.fuel = f0; run.wood = false;
+              wood = { need: Math.round(need), low, filled, after };
+            }
+            const ev = C.auto(st, 0);
+            for (const e of ev) {
+              if (e.t === 'waterTaken') { const r = R.tt.ttRunOf(st, 0); log.push({ t: 'water', i: r ? r.i : null, ph: r ? r.ph : null, at: C.hhmm(st) }); }
+              if (e.t === 'ttDeparted' && e.i === 0) log.push({ t: 'dep', x: Math.round(maxX()), at: C.hhmm(st), late: e.late });
+              if (e.t === 'ttArrived' && e.i === 2) log.push({ t: 'arr', late: e.late, at: C.hhmm(st) });
+            }
+          }
+          out.inWater = { log, wood };
         }
         return out;
       });
@@ -277,6 +305,15 @@ module.exports = async function checkTimetable() {
       if (!r.det.same) problems.push('2 game days with the timetable gave different hashes');
       if (r.det.cons) problems.push('item conservation failed over 2 game days with the timetable');
       if (r.det.log.filter(l => /ttDone/.test(l)).length < 3) problems.push('over 2 game days the Willow Ford services should run: ' + r.det.log.join(' | '));
+      {
+        const L = r.inWater.log, w = r.inWater.wood;
+        const inW = L.filter(x => x.t === 'water' && x.i === 2 && x.ph === 'go'), deps = L.filter(x => x.t === 'dep'), arrs = L.filter(x => x.t === 'arr');
+        if (inW.length < 3) problems.push('the run back to the hub should take water on the way in (under the spout, before the platform): ' + JSON.stringify(L));
+        if (deps.length < 3 || deps.some(d => d.x > 19 || d.late > 0)) problems.push('after water on the way in the hub departures should leave from the platform, on time: ' + JSON.stringify(deps));
+        if (arrs.some(a => a.late > 10 * 60)) problems.push('water on the way in should not make the run back late: ' + JSON.stringify(arrs));
+        if (!w || !w.low || w.filled || w.after) problems.push('the hub\'s wood need: wanted when low, met when filled, and still met after burning a little: ' + JSON.stringify(w));
+        console.log(`  water on the way in: ${L.map(x => x.t + (x.i !== undefined && x.i !== null ? ' ' + x.i + x.ph : '') + (x.x !== undefined ? ' x ' + x.x : '') + (x.late ? ' late ' + Math.round(x.late / 60) : '') + ' ' + x.at).join(', ')}; wood need ${JSON.stringify(w)}`);
+      }
       console.log(`  coupling: uncouple ${u.took} s, coupled ${JSON.stringify(r.couple.ev)}; stop short of an engine at ${r.gap.gap && r.gap.gap.toFixed(3)}u`);
       console.log(`  fetch from the interchange: cars ${f.cars.join(',')} (items ${f.items.join(',')}) now in No. 1 at x ${f.xs.join(',')}`);
       console.log(`  on time: ${r.onTime.log.map(e => e.t.slice(2) + '@' + e.at + (e.late ? '+' + e.late : '')).join(' ')}; work not done: "${r.notDone.status}"; unloaded: ${r.doneLate.log.map(e => e.t.slice(2) + '@' + e.at).join(' ')}`);

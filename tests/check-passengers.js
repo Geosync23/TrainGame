@@ -125,7 +125,7 @@ module.exports = async function checkPassengers() {
     if (leaveBox[0] < 48 || leaveBox[1] < 48) problems.push('the Leave button is smaller than 48 px: ' + leaveBox);
     // The one departure board is C3's station card (near the order board, while the player is within 12u of it).
     const boardText = await R(() => { const c = document.getElementById('ttCard'); return c && !c.hidden ? c.textContent : ''; });
-    // The departure board lists the timetable's next departures (C3's services: Willow Ford Mixed at 08:00 and 13:30).
+    // The departure board lists the timetable's next departures (C3's services: Willow Ford Mixed at 08:00 and 14:00).
     const deps = await R(() => { const R = window.__railhead, S = R.state; return R.pax.stationDepartures(S, 'hub'); });
     const hasTT = await R(() => !!window.__railhead.state.tt);
     if (hasTT) {

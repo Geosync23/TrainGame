@@ -13,10 +13,12 @@
 //
 // What it does, most important first:
 //   1. The first morning: accept the starting contracts and order their goods, cordwood and the materials for a
-//      20u siding by telegraph; stake the siding (a 20u extension of the platform track's dead end); retag the
-//      freight shed's Outside bay for Hub goods; put No. 1 on the timetable (a tap on the train, then Timetable).
-//   2. The Willow Ford train's station work: water at the tower, wood on the tender (cords carried by hand from
-//      the pile beside the wood stage), goods for Willow Ford loaded into No. 1's boxcar at the hub, the run-around
+//      20u siding by telegraph; stake the siding (a 20u extension of the platform track's dead end); put No. 1 on
+//      the timetable (a tap on the train, then Timetable). (The freight shed has a Hub bay by default since D4, so
+//      no bay is retagged.)
+//   2. The Willow Ford train's station work: water at the tower (at the hub as the train comes in, since D4),
+//      wood on the tender (cords carried by hand from the piles at the platform's west end, where the tender stands
+//      between runs, and beside the water tower), goods for Willow Ford loaded into No. 1's boxcar at the hub, the run-around
 //      at Willow Ford (uncouple the engine, water), unloading there and carrying the goods to the store's door.
 //      It walks to Willow Ford as soon as the hub's work for the departure is done, and back once the train has left.
 //   3. Freight at the hub: unload the Overland's set-out cars into the freight shed's bays (hand truck for crates,
@@ -27,7 +29,8 @@
 //   5. Otherwise: staff the ticket window while travellers queue (06:00 to 21:00), else work the track job.
 //
 // Day 1 has no wood for the afternoon train (the first cords can only come on the 18:00 Overland), so after the
-// morning run the bot takes No. 1 off the timetable and puts it back on after 19:30 (a known gap, see the report
+// morning run the bot takes No. 1 off the timetable (also once the afternoon run has started at the platform) and
+// puts it back on once that service is too late to start (6 hours after its departure; a known gap, see the report
 // in DEV_NOTES and backlog.md).
 //
 // Use: const bot = botFactory(window.__railhead, mem) in the page (BOT_SRC is this function's source);
@@ -58,9 +61,9 @@ function botFactory(R, mem0) {
     const hub = R.tt.ttStation(S, 'hub'), wf = R.tt.ttStation(S, 'willow'), B = R.cargo.BLD_BAYS.freightshed;
     const W = R.world.walk, grid = R.world.walkGrid(S.track);
     const open = (x, z) => { const cx = Math.floor((x - W.X0) / W.CELL), cz = Math.floor((z - W.Z0) / W.CELL); return cx >= 0 && cz >= 0 && cx < W.N && cz < W.NZ && grid.cost[cz * W.N + cx] > 0; };
-    // Two cord piles: at the platform's west end, beside where the tender stands when a run ends (to fill it before
-    // the next run moves off to the water tower), and on open ground just west of the water tower, near the spout (for a
-    // cord wanted after that move).
+    // Two cord piles: at the platform's west end, beside where the tender stands when a run ends (the train takes
+    // water on the way in and leaves from the platform), and on open ground just west of the water tower, near the
+    // spout (for wood wanted there: a run that still moves to the spout before it leaves).
     const piles = [[], []];
     for (let i = 0; i < 5; i++) { const x = hub.track.x0 - 1.0 + i * 0.7, z = hub.track.z0 - 2.9; if (open(x, z)) piles[0].push([x, z]); }
     for (const dz of [-2.8, -3.5]) for (let i = 0; i < 3; i++) { const x = hub.water.x - 4.3 + i * 0.7, z = hub.track.z0 + dz; if (open(x, z)) piles[1].push([x, z]); }
@@ -145,7 +148,11 @@ function botFactory(R, mem0) {
     }
     if (t === 'RAILHEAD') return jobDrop(S, wb.commodity);
     if (t === 'WILLOW') {
-      if (atWF(S) || (w.kind === 'GROUND' && w.x > 15000)) return biz === 1 ? { biz: 1 } : (w.kind === 'GROUND' ? null : { x: cm(G.wfDrop[0]), z: cm(G.wfDrop[1]) });
+      // At Willow Ford: goods for the store go to its door, but while more goods for Willow Ford are still aboard
+      // No. 1 (the train waits for them: station work) they are put down beside the car first, the door later.
+      const drop = () => { const n = alive(S, (i, w2) => w2.kind === 'GROUND' && w2.x > 15000).length, P = S.player; return { x: cm(P.x + 0.5 * (n % 4) - 0.75), z: cm(P.z) }; };
+      const aboard = () => alive(S, (i, w2) => w2.kind === 'CAR' && carOfOurs(S, w2.stockId) && tag(S, i) === 'WILLOW').length;
+      if (atWF(S) || (w.kind === 'GROUND' && w.x > 15000)) return biz === 1 ? (carried && !mem.fromGround && aboard() ? drop() : { biz: 1 }) : (w.kind === 'GROUND' ? null : drop());
       if (w.kind === 'CAR' && w.stockId === 2) return null;      // aboard No. 1, on its way
       if (no1AtHub(S)) return { stock: 2 };
       if (w.kind === 'BAY') return null;
@@ -178,7 +185,7 @@ function botFactory(R, mem0) {
     if (!wantTruck && has) return send(S, { t: 'carryTool', tool: P.tool }, 'leave the ' + (S.tools[P.tool].k === 'truck' ? 'hand truck' : 'handcart'));
     return null;
   }
-  function pick(S, id, why) { mem.pickKey = 'pick:' + id; mem.fromBay = mem.fromBay || {}; if (I(S).where[id].kind === 'BAY') mem.fromBay[id] = 1; else delete mem.fromBay[id]; return send(S, { t: 'carryPick', id }, why); }
+  function pick(S, id, why) { mem.pickKey = 'pick:' + id; mem.fromBay = mem.fromBay || {}; if (I(S).where[id].kind === 'BAY') mem.fromBay[id] = 1; else delete mem.fromBay[id]; mem.fromGround = I(S).where[id].kind === 'GROUND'; return send(S, { t: 'carryPick', id }, why); }
   // ---- The tasks ----
   // Items waiting to move at the hub, in the order the bot works them.
   function hubWork(S) {
@@ -238,14 +245,15 @@ function botFactory(R, mem0) {
     if (h.length) return deliverTop(S);
     if (S.player.tool !== null) return null;
     const ids = alive(S, (i, w) => ((w.kind === 'CAR' && carOfOurs(S, w.stockId) && !R.interchange.carryCarWhy(S, w.stockId)) || (w.kind === 'GROUND' && w.x > 15000)) && !skipped(S, 'pick:' + i))
-      .filter(id => tag(S, id) === 'WILLOW' && destOf(S, id));
+      .filter(id => tag(S, id) === 'WILLOW' && destOf(S, id))
+      .sort((a, b) => (I(S).where[a].kind === 'CAR' ? 0 : 1) - (I(S).where[b].kind === 'CAR' ? 0 : 1) || a - b);   // off the train first
     if (!ids.length) return null;
     return pick(S, ids[0], 'unload at Willow Ford');
   }
   // The timetable train's needs at the station the player is at.
   function trainTask(S) {
     const run = runOf(S), tr = no1(S);
-    if (!run || run.ph !== 'at') return null;
+    if (!run || !(run.ph === 'at' || /take water/.test(run.why || ''))) return null;   // water on the way in: 'go'
     const st = svcStop(S, run).st, here = st === 'hub' ? atHub(S) : atWF(S);
     if (!here) return null;
     const why = run.why || '';
@@ -291,7 +299,7 @@ function botFactory(R, mem0) {
   // The first morning, in the order a player would do it.
   function setupTask(S) {
     if (mem.setup >= 4) return null;
-    if (mem.setup === 0) { mem.setup = 1; return send(S, { t: 'setBayTag', b: 'freightshed', bay: 2, tag: 'HUB' }, 'retag the Outside bay for Hub goods'); }
+    if (mem.setup === 0) mem.setup = 1;   // (before D4: retag the Outside bay for Hub goods; there is a Hub bay now)
     if (mem.setup === 1) {
       mem.setup = 2; const N = G.end;
       return send(S, { t: 'stakeJob', from: 'node', n: N.id, tx: cm(N.x - 20), tz: cm(N.z) }, 'stake a 20u siding');
@@ -300,33 +308,40 @@ function botFactory(R, mem0) {
     if (mem.setup === 3) { mem.setup = 4; return send(S, { t: 'ttAssign', tr: 0, on: true }, 'put No. 1 on the timetable'); }
     return null;
   }
-  // Day 1: no wood for the afternoon train until the evening Overland. Off the timetable after the morning run, on again after 19:30.
+  // Day 1: no wood for the afternoon train until the evening Overland. Off the timetable after the morning run, on again
+  // once the afternoon service can no longer start that day (6 hours after its departure, 20:00 since D4).
   function day1Task(S) {
     const day = dayOf(S), sod = sodOf(S);
     if (day !== 0) return null;
     const svc = S.tt.services;
-    if (mem.offDay1 === 0 && svc[0].last === 0 && !runOf(S) && sod > 12 * H) {
+    const r1 = runOf(S);
+    if (mem.offDay1 === 0 && svc[0].last === 0 && (!r1 || (r1.svc === 1 && r1.i === 0 && r1.ph === 'at')) && sod > 12 * H) {
       if (!no1AtHub(S) || !atHub(S)) return null;
       mem.offDay1 = 1; return send(S, { t: 'ttAssign', tr: 0, on: false }, 'off the timetable: no wood for the afternoon');
     }
-    if (mem.offDay1 === 1 && sod > 19 * H + 31 * M && atHub(S)) { mem.offDay1 = 2; return send(S, { t: 'ttAssign', tr: 0, on: true }, 'back on the timetable'); }
+    if (mem.offDay1 === 1 && sod > svc[1].stops[0].dep + 6 * H + M && atHub(S)) { mem.offDay1 = 2; return send(S, { t: 'ttAssign', tr: 0, on: true }, 'back on the timetable'); }
     return null;
   }
   function tripTask(S) {
     const run = runOf(S), P = S.player;
     // To Willow Ford: the train has left the hub, or its hub work is done and it is due out soon.
     if (atHub(S) && run && run.i >= 1 && run.i <= 1) { if (held(S).length) return deliverTop(S); if (P.tool !== null) return toolFor(S, false); return send(S, { t: 'walkTo', x: cm(G.wfWait[0]), z: cm(G.wfWait[1]) }, 'walk to Willow Ford'); }
-    if (atHub(S) && run && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '') && !hubOwes(S) && !held(S).length && P.tool === null) {
+    // (Not before the morning's telegraph: since D4 the run starts 60 minutes early and can be ready before 07:02.)
+    // Not too early either: Willow Ford is about 93 minutes' walk, the train takes about 85.
+    if (atHub(S) && run && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '') && !hubOwes(S) && !held(S).length && P.tool === null && (mem.telDay === dayOf(S) || sodOf(S) >= 11 * H + 30 * M)
+      && sodOf(S) >= svcStop(S, run).dep - 20 * M) {
       return send(S, { t: 'walkTo', x: cm(G.wfWait[0]), z: cm(G.wfWait[1]) }, 'walk to Willow Ford ahead of the train');
     }
     // Back to the hub once the train has left Willow Ford (or there is no train to meet) and the store has its goods.
-    if (atWF(S) && (!run || run.i === 2 || (run.i === 0 && run.ph === 'go')) && !wfWork(S)) { if (held(S).length) return deliverTop(S); return send(S, { t: 'walkTo', x: cm(G.hubWait[0]), z: cm(G.hubWait[1] + 0.6) }, 'walk back to the hub'); }
+    if (atWF(S) && (!run || run.i === 2 || (run.i === 0 && run.ph === 'go')) && !wfWork(S)) { if (held(S).length) return deliverTop(S); return send(S, { t: 'walkTo', x: cm(G.stand[0]), z: cm(G.stand[1]) }, 'walk back to the hub (to the water tower: the train takes water on the way in)'); }
     return null;
   }
   // A departure from the hub is near (or its run has started): the player should be at the station.
   function standby(S) {
     const run = runOf(S), sod = sodOf(S), day = dayOf(S);
     if (run && run.i === 0) return true;
+    // The train coming in takes water on the way in (since D4): the bot answers its call from wherever it is at the
+    // hub (trainTask), so it keeps selling tickets meanwhile; the train waits 10 minutes at the spout.
     if (run) return false;
     return S.tt.services.some(v => v.train === 0 && v.last !== day && sod >= v.stops[0].dep - 40 * M && sod < v.stops[0].dep + 6 * H);
   }
@@ -367,9 +382,11 @@ function botFactory(R, mem0) {
     if (!atHub(S)) return [];
     if (standby(S)) {
       // A departure is near: stay by the water tower, doing only the train's own work (and tickets).
-      const started = !!runOf(S);
-      const fr = freightTask(S, needsPile(S) && !started ? 2 : 1); if (fr) return fr;
-      if (!started) { const win = windowTask(S, 1); if (win) return win === 'stay' ? [] : win; }
+      // (Since D4 a run starts 60 minutes early and, with water taken on the way in, often only waits for its time
+      // at the platform: then the bot keeps selling tickets.)
+      const run = runOf(S), started = !!run, ready = started && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '');
+      const fr = freightTask(S, needsPile(S) && (!started || ready) ? 2 : 1); if (fr) return fr;
+      if (!started || ready) { const win = windowTask(S, 1); if (win) return win === 'stay' ? [] : win; }
       else if (S.pax.desk) return send(S, { t: 'leaveWindow' }, 'leave the window: the train needs me');
       const [x, z] = G.stand;
       if (d2(P.x, P.z, x, z) > 3 && !working) return send(S, { t: 'walkTo', x: cm(x), z: cm(z) }, 'wait by the water tower for the train');

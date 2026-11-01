@@ -21,7 +21,23 @@ module.exports = async function checkCargo() {
       if (typeof window.rh !== 'undefined') bad.push('window.rh exists without ?debug=1');
       if (S.items.next !== 0) bad.push('a normal new game starts with items (' + S.items.next + ')');
       if (S.schemaVersion < 2) bad.push('schema version is ' + S.schemaVersion);
-      if (JSON.stringify(S.bayTags.freightshed) !== JSON.stringify(['WILLOW', 'HUBWH', 'OUTSIDE', 'ANY'])) bad.push('default bay tags are ' + JSON.stringify(S.bayTags));
+      // (D4) The second bay is for Hub goods by default (was the hub warehouse); a save from before cargo still gets the old tags.
+      if (JSON.stringify(S.bayTags.freightshed) !== JSON.stringify(['WILLOW', 'HUB', 'OUTSIDE', 'ANY'])) bad.push('default bay tags are ' + JSON.stringify(S.bayTags));
+      // (D4) The real start: the hub station's goods area (station work) takes in every bay of the freight shed.
+      {
+        const S5 = R.newState(1866, 'start'), hub = R.tt.ttStation(S5, 'hub'), [x0, x1, z0, z1] = hub.area;
+        const bays = R.cargo.BLD_BAYS.freightshed.bays;
+        if (!bays.length || bays.some(b => b.x < x0 || b.x > x1 || b.z < z0 || b.z > z1)) bad.push('the hub\'s goods area ' + JSON.stringify(hub.area) + ' misses freight shed bays ' + JSON.stringify(bays));
+        if (JSON.stringify(S5.bayTags.freightshed) !== JSON.stringify(['WILLOW', 'HUB', 'OUTSIDE', 'ANY'])) bad.push('real start bay tags are ' + JSON.stringify(S5.bayTags));
+        // Goods for Willow Ford sorted into their own bay hold the departing train (station work).
+        const run = { svc: 0, i: 0 }, svc = S5.tt.services[0], tr = S5.trains[0];
+        const before = R.tt.ttWorkDone(S5, tr, svc, 0, hub);
+        const ev5 = []; const wbW = { commodity: 'flour', originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 1 }, contractId: null, due: null };
+        C.itemCreate(S5, wbW, { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, ev5);
+        if (!before || R.tt.ttWorkDone(S5, tr, svc, 0, hub)) bad.push('goods for Willow Ford in their own bay should hold the departing train (station work): ' + JSON.stringify({ before, area: hub.area, bay: bays[0] }));
+        void run;
+        R.world.walkGrid(S.track);   // back to the test yard's layout tables (worldUse) for the rest of the check
+      }
       if (Object.keys(C.COMMODITIES).length !== 37) bad.push('commodity table has ' + Object.keys(C.COMMODITIES).length + ' rows, not 37');
       if (C.COMMODITIES.rails.buy !== 4000 || C.COMMODITIES.rails.sell !== 2400 || C.COMMODITIES.rails.type !== 'longBundle') bad.push('rails row is wrong');
       for (const c of Object.values(C.COMMODITIES)) for (const k of ['buy', 'sell']) if (c[k] !== null && !Number.isInteger(c[k])) bad.push(c.id + ' ' + k + ' is not whole cents');

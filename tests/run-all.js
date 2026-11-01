@@ -11,6 +11,7 @@ const checks = {
   'same start, same result': require('./check-determinism'),
   'saving and loading': require('./check-save'),
   'touch controls': require('./check-touch'),
+  'paths (walking round buildings and trains)': require('./check-paths'),
   'station buildings': require('./check-buildings'),
   'debug tools (?debug=1)': require('./check-debug'),
   'ground and light (terrain, day and night)': require('./check-world'),

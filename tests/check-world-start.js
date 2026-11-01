@@ -9,7 +9,7 @@
 // - No. 1 is routed from the hub to Willow Ford's platform, on into the headshunt, back round the run-around
 //   loop, and home to the hub's platform, arriving each time. The Overland still sets out its cars.
 // - The ground is flat under all track (and 4u either side) and across the hub boundary; there are hills.
-// - Same commands twice, same hash. Walk grid build time, memory and a long walk's tick time are reported.
+// - Same commands twice, same hash (with the Overland's test delivery, so it sets out cars). Walk grid build time, memory and a long walk's tick time are reported.
 // - Draw calls in the busiest views (the hub with the train, the Overland's cars and 200 walkers, and Willow
 //   Ford with the train) stay under 100, portrait and landscape; screenshots at noon of both stations.
 
@@ -140,7 +140,7 @@ module.exports = async function checkWorldStart() {
         out.maxHeight = mx;
         // Same commands twice, same hash (2 game hours: the Overland's 06:00 visit and a run to Willow Ford).
         const script = [{ tick: 3, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: 40, cmd: { t: 'walkTo', x: -2000, z: -1500 } }, { tick: 400, cmd: { t: 'trainStop', tr: 0 } }];
-        const run = () => R.simRun(R.newState(1866), script, 900);
+        const run = () => R.simRun(R.interchange.withTestDelivery(R.newState(1866)), script, 900); // the Overland's fixed test delivery (C1: otherwise only ordered goods come)
         const s1 = run(), s2 = run();
         out.h1 = R.stateHash(s1); out.h2 = R.stateHash(s2);
         out.overland = { phase: s1.overland.phase, setOut: s1.trains.find(t => t.owner === 'interchange').consist.length, conservation: R.cargo.itemCheckConservation(s1) };
@@ -177,7 +177,7 @@ module.exports = async function checkWorldStart() {
     try {
       const frame = () => page.evaluate(() => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(() => res(window.__railhead.drawCalls)))));
       // The Overland comes in at 06:00 and sets out its cars by about 06:40.
-      await page.evaluate(() => { const R = window.__railhead; R.state.time = 3600 - 80; R.step(330); R.send({ t: 'trainRun', tr: 0, dir: 1 }); R.step(30);
+      await page.evaluate(() => { const R = window.__railhead; R.interchange.withTestDelivery(R.state); R.state.time = 3600 - 80; R.step(330); R.send({ t: 'trainRun', tr: 0, dir: 1 }); R.step(30);
         const P = R.state.player; P.x = 2; P.z = -1.6; P.mode = 'idle'; R.state.time = 7 * 3600; });
       await page.waitForTimeout(1200);
       const hub = await frame();

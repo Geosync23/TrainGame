@@ -18,6 +18,7 @@ const checks = {
   'build tool (laying track and switches)': require('./check-build'),
   'M0 acceptance criteria': require('./check-m0'),
   'carrying (by hand, hand truck, handcart)': require('./check-carry'),
+  'cargo (items, waybills, bays)': require('./check-cargo'),
 };
 
 (async () => {

@@ -21,6 +21,10 @@ Status: approved by the designer (survey answers recorded as D12, 2026-11-01). R
 | C | C3 | Trains: coupling and uncoupling, services with stops and stop actions, single-track reservation, order board, cordwood and water, run-around, tender-first. Merged (schema 8), npm test passed (22 checks) | trains, routes, new "timetable" |
 | C | C4 | Passengers: travellers at fixed rates, ticket queue and window, boarding and alighting, departure board. Merged (schema 9), npm test passed (23 checks) | new "passengers" |
 | C | C5 | Placeholder town (after C1): businesses as stock holders with weekly use, contracts, delivery to business doors. Merged (schema 10), npm test passed (24 checks) | new "town" |
-| D | | Panels and HUD (panel gestures to be proposed), tutorial, M1 acceptance check | after approval |
+Round D survey (answers in its database, collection `answers`, doc `round-d`): https://claude.ai/artifact/AJG1v9NjZkQxbhmc81ZJQn (source `plans/m1-round-d-survey.html`)
+
+| D | D1 | Office panels and HUD (Contracts, Market, Ledger, Trains, Timetable; telegram tape, alerts, Look/inspect) | waits for the round D survey |
+| D | D2 | Tutorial: the investor telegrams for days 1 and 2 | waits for the round D survey |
+| D | D3 | M1 acceptance check with a "reasonable player" bot playing a week; report gaps | started |
 
 Proposed in the plan (not decided until the designer answers): hand-building pace (tie 0.5, rail pair 1, spike 1.3 game minutes; a 20u siding about 5 real minutes at 1x), one tap keeps working, 4 spikes per tie, no helpers before M3, no earthwork in M1, cancelled jobs return all materials, platform 20u x 2.4u, track crossable on foot anywhere in M1, review once per round.

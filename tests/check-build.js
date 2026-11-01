@@ -7,9 +7,9 @@
 //   buildTrack commands, passes the validator, and a train sent to the siding takes the diverging route.
 // - Building over a train's track is refused with a reason.
 // Parts 1 to 6 open the page with ?debug=1, because the M0 instant build (Lay track) is parked behind it (D10).
-// - Part 7, without ?debug=1: the tool still plans (ghost and label), but there is no Lay track button, a
-//   "Plan only" note shows beside Cancel, and a buildTrack command sent through __railhead.send is refused
-//   with a buildRefused event and adds no track. Screenshot: build-plan-only-portrait.png.
+// - Part 7, without ?debug=1: the tool still plans (ghost and label), the button beside Cancel says Stake it
+//   (hand-building, D12; check-handbuild.js covers what it does), and a buildTrack command sent through
+//   __railhead.send is refused with a buildRefused event and adds no track. Screenshot: build-plan-only-portrait.png.
 
 const { openGame, screenshotPath } = require('./browser');
 
@@ -227,11 +227,11 @@ async function checkPlanOnly(problems) {
     if (!seen || seen.k !== 'ok') problems.push(`plan only: the plan preview was not green (${seen && seen.k}: ${seen && seen.text})`);
     if (!(await R(() => !!window.__railhead.buildTool.ghost))) problems.push('plan only: no ghost track was drawn');
     if (!(await page.isVisible('#buildConfirm'))) problems.push('plan only: Cancel did not appear after release');
-    if (await page.isVisible('#buildLay')) problems.push('plan only: the Lay track button appears without ?debug=1');
-    if (!(await page.isVisible('#buildPlanOnly'))) problems.push('plan only: the "Plan only" note is not shown');
+    // D12: without ?debug=1 the button is Stake it (a construction job), never Lay track.
+    if (!(await page.isVisible('#buildLay'))) problems.push('plan only: the Stake it button is not shown');
     else {
-      const t = await page.textContent('#buildPlanOnly');
-      if (!/Plan only/.test(t)) problems.push(`plan only: the note says "${t}"`);
+      const t = await page.textContent('#buildLay');
+      if (!/^Stake it$/.test(t.trim())) problems.push(`plan only: the button says "${t}", not Stake it`);
     }
     const cb = await page.locator('#buildCancel').boundingBox();
     if (!cb || cb.width < 48 || cb.height < 48) problems.push('plan only: Cancel is smaller than 48 px');
@@ -251,7 +251,7 @@ async function checkPlanOnly(problems) {
     await page.tap('#buildCancel'); await settle();
     if (await R(() => !!window.__railhead.buildTool.ghost)) problems.push('plan only: Cancel left the ghost shown');
     if (errors.length) problems.push('plan only: console errors: ' + errors.join(' | '));
-    console.log(`  plan only: Lay track hidden, buildTrack refused: "${res.ev[0] && res.ev[0].why}"`);
+    console.log(`  plan only: the button is Stake it, buildTrack refused: "${res.ev[0] && res.ev[0].why}"`);
   } finally { await browser.close(); }
 }
 

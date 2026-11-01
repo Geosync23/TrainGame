@@ -105,7 +105,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 3,
+  SCHEMA_VERSION: 4,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -414,6 +414,7 @@ function newState(seed) {
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
+    jobs: jobNewStore(),             // staked construction jobs (section "construction jobs")
   };
 }
 function trainLength(tr) { return tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1); }
@@ -546,6 +547,9 @@ function applyCommand(S, c, ev) {
     case 'carryPut': carryPutCmd(S, c, ev); break;
     case 'carryTool': carryToolCmd(S, c, ev); break;
     case 'buildTrack': buildTrackCmd(S, c, ev); break;
+    case 'stakeJob': jobStakeCmd(S, c, ev); break;   // construction jobs: Stake it, work, cancel
+    case 'jobWork': jobWorkCmd(S, c, ev); break;
+    case 'jobCancel': jobCancelCmd(S, c, ev); break;
     case 'setBayTag': setBayTag(S, c.b, c.bay, c.tag, ev); break;
     case 'trainRun': {
       if (!tr) return;
@@ -606,9 +610,14 @@ function clampMap(v) { return Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, v))
 function buildTrackCmd(S, c, ev) {
   const p = buildPlan(S, c);
   if (!p.ok) { ev.push({ t: 'buildRefused', why: p.why || 'Drag further to lay track' }); return; }
+  trackLayPlan(S, p, ev);
+}
+// Add a checked plan's track to the network: the instant build, and a construction job when its last spike is in.
+function trackLayPlan(S, p, ev) {
   const e0 = S.track.edges.length, r = bMutate(S.track, p.G);
   trackIndexCache.delete(S.track); walkGridCache.delete(S.track);
   ev.push({ t: 'trackBuilt', edges: S.track.edges.length - e0, sw: r.sw, len: Math.round(p.len * 100) });
+  return r;
 }
 function throwSwitch(S, swId, ev) {
   const W = S.track.switches[swId];
@@ -697,6 +706,7 @@ function trainTick(S, tr, ev) {
 // The item store lives in S.items (struct of arrays, indexed by item id; ids are never reused):
 //   S.items.next        the next item id
 //   S.items.waybill[id] { commodity, originTownId, destTownId, consignee: { kind, id }, contractId, due }
+//                       plus, only on a part-used bundle or keg, pieces (see "construction jobs")
 //   S.items.where[id]   an ItemLocation (below), or null once the item is consumed
 //   S.items.alive[id]   true until the item is consumed
 //   S.items.used        the consumption log, oldest first: { id, tick, reason, from } (from = where it was)
@@ -799,12 +809,14 @@ function cargoWaybillProblem(wb) {
   if (!wb.consignee || !CARGO_CONSIGNEE_KINDS.includes(wb.consignee.kind) || !cargoId(wb.consignee.id)) return 'bad consignee';
   if (wb.contractId !== null && !cargoInt(wb.contractId)) return 'bad contract id';
   if (wb.due !== null && !cargoInt(wb.due)) return 'bad due time';
+  // Optional (construction jobs): a part-used bundle or keg holds this many pieces, fewer than a full one.
+  if (wb.pieces !== undefined && !(cargoInt(wb.pieces) && wb.pieces >= 1)) return 'bad piece count';
   return null;
 }
 function cargoCopyWaybill(wb) {
   return { commodity: wb.commodity, originTownId: wb.originTownId, destTownId: wb.destTownId,
     consignee: { kind: wb.consignee.kind, id: wb.consignee.id }, contractId: wb.contractId === undefined ? null : wb.contractId,
-    due: wb.due === undefined ? null : wb.due };
+    due: wb.due === undefined ? null : wb.due, ...(wb.pieces !== undefined ? { pieces: wb.pieces } : {}) };
 }
 // The car with this stock id, or null.
 function cargoCar(S, stockId) {
@@ -1005,6 +1017,388 @@ function cargoDebugItems(S) {
   itemCreate(S, wb('flour', 1), { kind: 'CAR', stockId: box.id }, ev);
   itemCreate(S, wb('tools', 1), { kind: 'CAR', stockId: box.id }, ev);
   itemCreate(S, wb('coffee', 1), { kind: 'CARRIED', actorId: 'player', carrier: 'HAND', slot: 0 }, ev);
+  return S;
+}
+
+// ==== Section: construction jobs ====
+// Owner: M1 round B, builder B1. Hand-building track, the game rules (design-doc 0 D10 and D12, 6 "Build tool"
+// step 5, 13 "Construction stages", 20 ConstructionJob). Drawing jobs is builder B2's (not here).
+// Pure simulation: no three.js, no page elements. Commands carry whole numbers only.
+//
+// A confirmed plan (the build tool's Stake it) becomes a job, never track. The job's track is not in S.track,
+// so trains cannot use it, until the last spike is driven: then it joins the network exactly as buildTrack
+// lays it (trackLayPlan in "commands"), and the job is removed.
+//
+// S.jobs = { next, list }: next is the next job id (never reused); list holds the jobs in ascending id order.
+// A job:
+//   id, tick              its id, and the tick it was staked
+//   cmd                   the plan, as the buildTrack command's whole-number fields (without t), planned again on completion
+//   cls, sw, len          'yard' or 'main'; true if it adds a switch (the switch is fitted when the track joins); length in u
+//   geo { nodes, edges }  the planned new track as its own small graph, edges in order from the start, each running
+//                         from its node a to b, so edgeAt(job.geo, E, s) and jobPoint(job, s) work. For a switch job
+//                         the first edge is the switch's diverging leg; the through leg is the existing track.
+//   side                  +1 or -1: the side the player works from (jobPoint's normal), the one with more room
+//   stakes [[x, z], ...]  stake positions in hundredths of a u, every 2.5u along the centre line, and the end
+//   count { ties, rails, spikes }               pieces to place: a tie every 0.5u, a rail pair per 5u stretch, 4 spikes per tie
+//   need { ties, rails, spikes, hardware }      bundles and kegs (crates) the job takes, rounded up per job
+//   done { ties, rails, spikes, hardware }      placed so far: ties, rail PAIRS, spikes, hardware crates fitted
+//   loose { ties, rails, spikes }               pieces from opened bundles not placed yet (single rails)
+//   site { itemId: [x, z] }                     where each item now at this job's stockpile was put down (hundredths)
+// Where progress lies: tie i is at jobTieAt(job, i) = (i + 0.5) x len / count.ties along the job; rail pair k covers
+// [5k, min(5k + 5, len)]; spike j is on tie floor(j / 4). Work goes stretch by stretch (5u): the stretch's ties ahead,
+// then its rail pair dropped on them, then its spikes (jobStepAt), so done.ties >= ties under the railed stretches and
+// done.spikes <= 4 x those ties at all times.
+//
+// Materials: tie bundles (10 ties), rail bundles (4 rails of 5u), spike kegs (80) and hardware crates (a switch).
+// Freight items of these four commodities put down on the ground within 3u of a job's stakes (carrying's Put down, or
+// lying there when the job is staked) move to { kind: 'STOCKPILE', jobId } through itemMove. A step that needs pieces
+// opens a bundle or keg at the stockpile: the item is consumed (itemConsume, reason 'construction') and its pieces are
+// added to job.loose. A part-used bundle or keg is an ordinary item whose waybill has pieces: n (fewer than a full one);
+// it is only ever made when a job hands back pieces that do not fill a whole bundle. So no material is ever lost:
+// pieces placed + loose + in items stays the same, and the item conservation check holds (every item ever made is
+// alive in one place or consumed once).
+//
+// Commands:
+//   { t: 'stakeJob', ...the buildTrack plan fields }   re-checks the plan; amber plans (earthwork) are refused in M1
+//   { t: 'jobWork', id }    walk to the job and keep working until it is done, a material runs out, or any other
+//                           command moves the player (P.act / P.use are replaced, which stops the work)
+//   { t: 'jobCancel', id }  every tie, rail, spike and crate placed, loose or on site goes back as items on the ground
+// Events: jobStaked { id, len, need }, jobRefused { why }, jobDelivered { id, item, commodity }, jobOpened { id, item,
+//   commodity, pieces }, jobStep { id, k: 'tie' | 'rail' | 'spike', n (done count) }, jobStopped { id, why, missing? },
+//   jobDone { id, len }, jobCancelled { id, items } (plus trackBuilt from trackLayPlan when a job joins).
+// The player's work: P.use = { k: 'job', id } while walking to the next spot; P.act = { k: 'job', id, step, i, left,
+// total } during a step (left in game seconds; the time carried over from the tick that ended the last step goes into
+// the next one, so the total work time is exact). jobActorTick runs it around carryActorTick in the sim tick.
+const JOB = {
+  STAKE: 2.5,        // stakes every 2.5u (D12)
+  TIE_GAP: 0.5,      // a tie every 0.5u
+  RAIL_LEN: 5,       // one rail pair per 5u stretch
+  SPIKES_PER_TIE: 4,
+  SITE_R: 3,         // an item put down within 3u of a stake is on site
+  TIE_S: 30, RAIL_S: 60, SPIKE_S: 78,   // set a tie 0.5, drop a rail pair 1, drive a spike 1.3 game minutes (D12)
+  STAND: 0.9,        // the player stands this far beside the centre line
+  AHEAD: 0.9,        // and this far ahead of the next piece, so the next few are in reach too
+};
+// Commodity id, pieces in a full bundle or keg (rails: single rails), and words for messages.
+const JOB_MAT = {
+  ties: { per: 10, one: 'tie bundle', many: 'tie bundles', out: 'Out of ties: put a tie bundle down beside the job' },
+  rails: { per: 4, one: 'rail bundle', many: 'rail bundles', out: 'Out of rails: put a rail bundle down beside the job' },
+  spikes: { per: 80, one: 'spike keg', many: 'spike kegs', out: 'Out of spikes: put a spike keg down beside the job' },
+  hardware: { per: 1, one: 'hardware crate', many: 'hardware crates', out: 'The switch needs a hardware crate beside the job' },
+};
+const JOB_MATS = ['ties', 'rails', 'spikes', 'hardware'];
+const JOB_CMD_KEYS = ['n', 'x', 'z', 'h', 'e', 's', 'fwd', 'side', 'tx', 'tz'];
+function jobNewStore() { return { next: 0, list: [] }; }
+function jobGet(S, id) { return S.jobs.list.find(j => j.id === id) || null; }
+// Point and tangent at distance s along the job (clamped to it).
+function jobPoint(job, s) {
+  const G = job.geo;
+  let left = Math.max(0, Math.min(job.len, s));
+  for (let i = 0; i < G.edges.length; i++) {
+    const E = G.edges[i];
+    if (left <= E.len + 1e-9 || i === G.edges.length - 1) return edgeAt(G, E, Math.min(E.len, left));
+    left -= E.len;
+  }
+  return null;
+}
+function jobTieAt(job, i) { return (i + 0.5) * job.len / job.count.ties; }
+// Number of ties under the first m rail stretches.
+function jobTiesUpTo(job, m) {
+  if (m >= job.count.rails) return job.count.ties;
+  return Math.max(0, Math.min(job.count.ties, Math.ceil(JOB.RAIL_LEN * m * job.count.ties / job.len - 0.5)));
+}
+// The next piece of work, in the real order, or null when every spike is driven.
+function jobStepAt(job) {
+  const c = job.count, d = job.done;
+  const spikeable = JOB.SPIKES_PER_TIE * jobTiesUpTo(job, d.rails);
+  if (d.spikes < spikeable) return { k: 'spike', i: d.spikes, s: jobTieAt(job, Math.floor(d.spikes / JOB.SPIKES_PER_TIE)) };
+  if (d.rails < c.rails) {
+    if (d.ties < jobTiesUpTo(job, d.rails + 1)) return { k: 'tie', i: d.ties, s: jobTieAt(job, d.ties) };
+    const a = d.rails * JOB.RAIL_LEN, b = Math.min(job.len, a + JOB.RAIL_LEN);
+    return { k: 'rail', i: d.rails, s: (a + b) / 2 };
+  }
+  return null;
+}
+const JOB_STEP_S = { tie: JOB.TIE_S, rail: JOB.RAIL_S, spike: JOB.SPIKE_S };
+const jobItemPieces = (S, id) => { const wb = S.items.waybill[id], M = JOB_MAT[wb.commodity]; return wb.pieces !== undefined ? wb.pieces : M ? M.per : 0; };
+// Items of one commodity at a job's stockpile: part-used ones first, then by id.
+function jobSiteItems(S, job, commodity) {
+  return itemsAt(S, { kind: 'STOCKPILE', jobId: job.id }).filter(id => S.items.waybill[id].commodity === commodity)
+    .sort((a, b) => jobItemPieces(S, a) - jobItemPieces(S, b) || a - b);
+}
+const jobSitePieces = (S, job, commodity) => jobSiteItems(S, job, commodity).reduce((n, id) => n + jobItemPieces(S, id), 0);
+// What a step uses: [commodity, pieces needed loose].
+function jobStepUses(job, st) {
+  const out = [];
+  if (st.k === 'tie') out.push(['ties', 1]);
+  if (st.k === 'spike') out.push(['spikes', 1]);
+  if (st.k === 'rail') {
+    out.push(['rails', 2]);
+    if (st.i === 0 && job.done.hardware < job.need.hardware) out.push(['hardware', 1]);
+  }
+  return out;
+}
+// The commodity a step is missing (nothing is changed), or null.
+function jobMissing(S, job, st) {
+  for (const [c, n] of jobStepUses(job, st)) {
+    const have = (c === 'hardware' ? 0 : job.loose[c]) + jobSitePieces(S, job, c);
+    if (have < n) return c;
+  }
+  return null;
+}
+// Open bundles (or fit the hardware crate) for a step that is starting. jobMissing said there is enough.
+function jobTake(S, job, st, ev) {
+  for (const [c, n] of jobStepUses(job, st)) {
+    if (c === 'hardware') {
+      const id = jobSiteItems(S, job, c)[0];
+      itemConsume(S, id, 'construction', ev); delete job.site[id];
+      job.done.hardware += 1; ev.push({ t: 'jobOpened', id: job.id, item: id, commodity: c, pieces: 1 });
+      continue;
+    }
+    while (job.loose[c] < n) {
+      const id = jobSiteItems(S, job, c)[0], pieces = jobItemPieces(S, id);
+      itemConsume(S, id, 'construction', ev); delete job.site[id];
+      job.loose[c] += pieces; ev.push({ t: 'jobOpened', id: job.id, item: id, commodity: c, pieces });
+    }
+  }
+}
+// Bundles and kegs still to bring, per commodity (for the job's sign): what is left to place, less what is loose or on site.
+function jobNeeds(S, job) {
+  const c = job.count, d = job.done, out = {};
+  const left = { ties: c.ties - d.ties, rails: 2 * (c.rails - d.rails), spikes: c.spikes - d.spikes, hardware: job.need.hardware - d.hardware };
+  for (const m of JOB_MATS) {
+    const have = (m === 'hardware' ? 0 : job.loose[m]) + jobSitePieces(S, job, m);
+    out[m] = Math.max(0, Math.ceil((left[m] - have) / JOB_MAT[m].per));
+  }
+  return out;
+}
+// The new track of a checked plan (buildPlan), as a job's own small graph, edges in order from the start.
+function jobGeoFromPlan(p) {
+  const T2 = p.T2, first = p.sw !== null ? T2.switches[p.sw].reverse : p.e0, map = {}, nodes = [], edges = [];
+  const node = n => { if (map[n] === undefined) { map[n] = nodes.length; nodes.push({ x: T2.nodes[n].x, z: T2.nodes[n].z }); } return map[n]; };
+  let len = 0;
+  for (let i = first; i < T2.edges.length; i++) {
+    const E = T2.edges[i], C = { k: E.k, a: node(E.a), b: node(E.b), len: E.len };
+    if (E.k === 'A') Object.assign(C, { cx: E.cx, cz: E.cz, R: E.R, th0: E.th0, sweep: E.sweep });
+    edges.push(C); len += E.len;
+  }
+  return { geo: { nodes, edges }, len };
+}
+// Is the point within 3u of one of the job's stakes?
+function jobNearStakes(job, x, z) { return job.stakes.some(([sx, sz]) => Math.hypot(sx / 100 - x, sz / 100 - z) <= JOB.SITE_R + 1e-9); }
+// A freight item on the ground beside a job (the lowest id first) goes to its stockpile, if it is a track material.
+function jobDeliver(S, id, ev) {
+  const w = S.items.where[id], wb = S.items.waybill[id];
+  if (!w || w.kind !== 'GROUND' || !JOB_MAT[wb.commodity]) return false;
+  const job = S.jobs.list.find(j => jobNearStakes(j, w.x / 100, w.z / 100));
+  if (!job) return false;
+  if (!itemMove(S, id, { kind: 'STOCKPILE', jobId: job.id }, ev).ok) return false;
+  job.site[id] = [w.x, w.z];
+  ev.push({ t: 'jobDelivered', id: job.id, item: id, commodity: wb.commodity });
+  return true;
+}
+// Called by carrying (carryActorTick) after a put-down finishes: an item put down beside a job is delivered.
+function jobAfterCarry(S, a, ev) {
+  if (a.k !== 'put' || !a.dest || a.dest.kind !== 'GROUND') return;
+  for (let i = ev.length - 1; i >= 0; i--) if (ev[i].t === 'carryPut') { jobDeliver(S, ev[i].id, ev); return; }
+}
+const jobRefuse = (ev, why) => { ev.push({ t: 'jobRefused', why }); return null; };
+// Stake it: check the plan again from its whole numbers and make a job. Returns the job or null.
+function jobStakeCmd(S, c, ev) {
+  if (!['node', 'free', 'switch'].includes(c.from)) return jobRefuse(ev, 'That is not a plan');
+  const cmd = { from: c.from };
+  for (const k of JOB_CMD_KEYS) if (c[k] !== undefined) {
+    if (!Number.isInteger(c[k])) return jobRefuse(ev, 'A plan is made of whole numbers only');
+    cmd[k] = c[k];
+  }
+  if (!Number.isInteger(cmd.tx) || !Number.isInteger(cmd.tz)) return jobRefuse(ev, 'The plan has no end');
+  for (const j of S.jobs.list) {
+    if (cmd.from === 'node' && (j.cmd.n === cmd.n && j.cmd.from === 'node')) return jobRefuse(ev, 'Another job already starts from that track end');
+    if (cmd.from === 'switch' && j.cmd.from === 'switch' && j.cmd.e === cmd.e) return jobRefuse(ev, 'Another job already puts a switch on that track');
+  }
+  terrainFlatAt(S.track, 0, 0); // the ground heights for this track, so the earthwork check is the same every time
+  const p = buildPlan(S, { t: 'buildTrack', ...cmd });
+  if (!p.ok) return jobRefuse(ev, p.why || 'Drag further to plan track');
+  if (p.amber) return jobRefuse(ev, `It needs earthwork (the ground is ${bFmt(p.earth)}u off), and earthwork comes later: only flat track can be staked for now`);
+  const ends = [p.G.st.node, p.G.endNode].filter(n => n !== null);
+  for (const j of S.jobs.list) if (j.ends.some(n => ends.includes(n))) return jobRefuse(ev, 'Another job already joins that track end');
+  const { geo, len } = jobGeoFromPlan(p);
+  const job = { id: S.jobs.next, tick: S.tick, cmd, cls: p.cls, sw: p.sw !== null, len, geo, ends, side: 1, stakes: [],
+    count: null, need: null, done: { ties: 0, rails: 0, spikes: 0, hardware: 0 }, loose: { ties: 0, rails: 0, spikes: 0 }, site: {} };
+  // Keep clear of other jobs as of other track (the build tool's 1.6u spacing).
+  for (const j of S.jobs.list) for (let s = 0; s <= len + 1e-9; s += 0.25) {
+    const q = jobPoint(job, s);
+    for (const E of j.geo.edges) if (bEdgeDist(j.geo, E, q.x, q.z) < BUILD.CLEAR - 0.01) return jobRefuse(ev, `Too close to job ${j.id + 1}, which is staked already`);
+  }
+  // Work from the side with more room from other track.
+  const mid = jobPoint(job, len / 2), room = sd => {
+    const x = mid.x - mid.tz * sd * 1.2, z = mid.z + mid.tx * sd * 1.2;
+    return S.track.edges.reduce((m, E) => Math.min(m, bEdgeDist(S.track, E, x, z)), Infinity);
+  };
+  job.side = room(-1) > room(1) + 1e-9 ? -1 : 1;
+  for (let k = 0; k * JOB.STAKE <= len + 1e-9; k++) { const q = jobPoint(job, k * JOB.STAKE); job.stakes.push([Math.round(q.x * 100), Math.round(q.z * 100)]); }
+  if (len - (job.stakes.length - 1) * JOB.STAKE > 0.5) { const q = jobPoint(job, len); job.stakes.push([Math.round(q.x * 100), Math.round(q.z * 100)]); }
+  const ties = Math.max(1, Math.round(len / JOB.TIE_GAP)), rails = Math.max(1, Math.ceil(len / JOB.RAIL_LEN - 0.01));
+  job.count = { ties, rails, spikes: ties * JOB.SPIKES_PER_TIE };
+  job.need = { ties: Math.ceil(ties / JOB_MAT.ties.per), rails: Math.ceil(2 * rails / JOB_MAT.rails.per),
+    spikes: Math.ceil(ties * JOB.SPIKES_PER_TIE / JOB_MAT.spikes.per), hardware: job.sw ? 1 : 0 };
+  S.jobs.next += 1; S.jobs.list.push(job);
+  ev.push({ t: 'jobStaked', id: job.id, len: Math.round(len * 100), need: { ...job.need } });
+  // Materials already lying beside it are on site.
+  for (const id of itemsAt(S, { kind: 'GROUND' })) jobDeliver(S, id, ev);
+  return job;
+}
+function jobStop(S, job, ev, why, missing) {
+  const P = S.player;
+  if ((P.use && P.use.k === 'job') || (P.act && P.act.k === 'job')) { P.use = null; P.act = null; P.mode = 'idle'; }
+  const e = { t: 'jobStopped', id: job.id, why };
+  if (missing) e.missing = missing;
+  ev.push(e);
+}
+function jobWorkCmd(S, c, ev) {
+  const job = Number.isInteger(c.id) ? jobGet(S, c.id) : null;
+  if (!job) return jobRefuse(ev, 'There is no such job');
+  if (carryCarrier(S) === 'HAND' && carryHeld(S).length) return jobRefuse(ev, 'Put down what you carry first');
+  jobContinue(S, job, ev, 0, true);
+}
+// The next piece of work: done (the track joins), out of a material (stop), walk to it, or start it here.
+// carry: game seconds left over from the tick that finished the last step. walk: may walk to the next spot.
+function jobContinue(S, job, ev, carry, walk) {
+  const P = S.player, st = jobStepAt(job);
+  if (!st) { jobComplete(S, job, ev); return; }
+  const miss = jobMissing(S, job, st);
+  if (miss) { jobStop(S, job, ev, JOB_MAT[miss].out, miss); return; }
+  const p = jobPoint(job, st.s);
+  if (Math.hypot(p.x - P.x, p.z - P.z) > CFG.REACH) {
+    if (!walk) { jobStop(S, job, ev, 'Something is in the way of the work'); return; }
+    const q = jobPoint(job, Math.min(job.len, st.s + JOB.AHEAD));
+    P.mode = 'to'; P.tx = clampMap(q.x - q.tz * job.side * JOB.STAND); P.tz = clampMap(q.z + q.tx * job.side * JOB.STAND);
+    P.use = { k: 'job', id: job.id }; P.act = null; P.run = false;
+    return;
+  }
+  jobTake(S, job, st, ev);
+  if (Math.hypot(p.x - P.x, p.z - P.z) > 1e-6) P.f = Math.atan2(p.x - P.x, p.z - P.z);
+  const dur = JOB_STEP_S[st.k];
+  P.mode = 'idle'; P.use = null;
+  P.act = { k: 'job', id: job.id, step: st.k, i: st.i, left: dur - carry, total: dur };
+}
+function jobStepDone(S, job, a, ev) {
+  const d = job.done, L = job.loose;
+  if (a.step === 'tie') { L.ties -= 1; d.ties += 1; }
+  else if (a.step === 'rail') { L.rails -= 2; d.rails += 1; }
+  else { L.spikes -= 1; d.spikes += 1; }
+  ev.push({ t: 'jobStep', id: job.id, k: a.step, n: a.step === 'tie' ? d.ties : a.step === 'rail' ? d.rails : d.spikes });
+}
+// Step 7 for the player (wraps carryActorTick): a job step in progress, or walking and carrying, then arriving at the work.
+function jobActorTick(S, ev, poseCache) {
+  const P = S.player;
+  if (P.act && P.act.k === 'job') {
+    const job = jobGet(S, P.act.id);
+    if (!job) { P.act = null; P.mode = 'idle'; return; }
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left <= 0) { const a = P.act; P.act = null; jobStepDone(S, job, a, ev); jobContinue(S, job, ev, -a.left, true); }
+    return;
+  }
+  const use = P.use && P.use.k === 'job' ? P.use : null, evFrom = ev.length;
+  carryActorTick(S, ev, poseCache);
+  if (!use || P.use !== null || P.mode !== 'idle') return;
+  const job = jobGet(S, use.id);
+  if (!job) return;
+  // Arrived (or stopped short): in reach of the work after all, the walk's "blocked" does not count.
+  const st = jobStepAt(job), p = st && jobPoint(job, st.s);
+  if (p && Math.hypot(p.x - P.x, p.z - P.z) <= CFG.REACH) for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1);
+  jobContinue(S, job, ev, 0, false);
+}
+// Items back on the ground beside a job: what is at its stockpile (where it was put down), and pieces as whole bundles
+// and kegs plus one part-used one for any remainder. placed: also the pieces already placed (a cancel).
+function jobReturn(S, job, ev, placed) {
+  let k = 0, n = 0;
+  const spot = () => {
+    const s = Math.min(job.len, 0.5 + 0.6 * k++), q = jobPoint(job, s), off = job.side * 1.8;
+    return { kind: 'GROUND', x: Math.round(clampMap(q.x - q.tz * off) * 100), z: Math.round(clampMap(q.z + q.tx * off) * 100) };
+  };
+  for (const id of itemsAt(S, { kind: 'STOCKPILE', jobId: job.id })) {
+    const at = job.site[id], to = at ? { kind: 'GROUND', x: at[0], z: at[1] } : spot();
+    if (itemMove(S, id, to, ev).ok) n++;
+  }
+  const d = job.done, L = job.loose;
+  const pieces = { ties: L.ties + (placed ? d.ties : 0), rails: L.rails + (placed ? 2 * d.rails : 0), spikes: L.spikes + (placed ? d.spikes : 0), hardware: placed ? d.hardware : 0 };
+  for (const m of JOB_MATS) {
+    const per = JOB_MAT[m].per;
+    for (let left = pieces[m]; left > 0; left -= per) {
+      const wb = { commodity: m, originTownId: 0, destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: job.id }, contractId: null, due: null };
+      if (left < per) wb.pieces = left;
+      if (itemCreate(S, wb, spot(), ev).ok) n++;
+    }
+  }
+  L.ties = 0; L.rails = 0; L.spikes = 0;
+  if (placed) { d.ties = 0; d.rails = 0; d.spikes = 0; d.hardware = 0; }
+  return n;
+}
+function jobRemove(S, job) { S.jobs.list = S.jobs.list.filter(j => j !== job); }
+// The last spike is in: the track joins the network exactly as the build command lays it, then the job goes.
+function jobComplete(S, job, ev) {
+  const P = S.player;
+  if ((P.use && P.use.k === 'job') || (P.act && P.act.k === 'job')) { P.use = null; P.act = null; P.mode = 'idle'; }
+  const p = buildPlan(S, { t: 'buildTrack', ...job.cmd });
+  if (!p.ok) { jobStop(S, job, ev, 'The track cannot join yet: ' + (p.why || 'the plan no longer fits')); return; }
+  const g = jobGeoFromPlan(p);
+  if (Math.abs(g.len - job.len) > 1e-6) { jobStop(S, job, ev, 'The track cannot join: the track around the job has changed'); return; }
+  trackLayPlan(S, p, ev);
+  jobReturn(S, job, ev, false);
+  jobRemove(S, job);
+  ev.push({ t: 'jobDone', id: job.id, len: Math.round(job.len * 100) });
+}
+function jobCancelCmd(S, c, ev) {
+  const job = Number.isInteger(c.id) ? jobGet(S, c.id) : null;
+  if (!job) return jobRefuse(ev, 'There is no such job');
+  const P = S.player;
+  if ((P.use && P.use.k === 'job' && P.use.id === job.id) || (P.act && P.act.k === 'job' && P.act.id === job.id)) { P.use = null; P.act = null; P.mode = 'idle'; }
+  const items = jobReturn(S, job, ev, true);
+  jobRemove(S, job);
+  ev.push({ t: 'jobCancelled', id: job.id, items });
+}
+// Every piece of track material in the game: in items (whole or part-used), loose at jobs, placed at jobs.
+// Track that has joined the network is not counted. For the checks.
+function jobPieceTotals(S) {
+  const out = { ties: 0, rails: 0, spikes: 0, hardware: 0 };
+  for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && JOB_MAT[S.items.waybill[i].commodity]) out[S.items.waybill[i].commodity] += jobItemPieces(S, i);
+  for (const j of S.jobs.list) {
+    out.ties += j.loose.ties + j.done.ties; out.rails += j.loose.rails + 2 * j.done.rails;
+    out.spikes += j.loose.spikes + j.done.spikes; out.hardware += j.done.hardware;
+  }
+  return out;
+}
+// Shape check for the saved jobs (used when a save is loaded). Throws on damage.
+function jobCheckSaveShape(st) {
+  const J = st.jobs, int = Number.isInteger, bad = () => { throw new Error('damaged save: construction jobs'); };
+  if (!J || !int(J.next) || !Array.isArray(J.list)) bad();
+  for (const j of J.list) {
+    if (!j || !int(j.id) || j.id >= J.next || !j.cmd || !j.geo || !Array.isArray(j.geo.edges) || !j.geo.edges.length || !Array.isArray(j.stakes)) bad();
+    for (const k of ['count', 'need', 'done', 'loose']) if (!j[k] || Object.values(j[k]).some(v => !int(v) || v < 0)) bad();
+    if (!(j.len > 0) || Math.abs(j.side) !== 1 || !j.site || typeof j.site !== 'object') bad();
+  }
+}
+// Debug only (rh.scenario('handbuild')): a 20u siding staked off the north main line, with a switch, and every
+// material it needs lying beside it. Not used in normal play.
+const JOB_DEBUG_PLAN = { from: 'switch', fwd: 1, side: -1, tx: -124, tz: -1780 };
+function jobDebugScenario(S) {
+  const T = S.track, ev = [];
+  // The north main line: the straight at z = -14 between x = 20 and x = -4. The switch goes 2u in from its east end, facing west.
+  const E = T.edges.find(E => E.k === 'S' && E.cls === 'main' && Math.abs(T.nodes[E.a].z + 14) < 1e-6 && Math.abs(T.nodes[E.b].z + 14) < 1e-6 && E.len > 20);
+  const A = T.nodes[E.a], east = A.x > T.nodes[E.b].x;
+  const job = jobStakeCmd(S, { t: 'stakeJob', ...JOB_DEBUG_PLAN, e: E.id, s: Math.round((east ? A.x - 18 : 18 - A.x) * 1000), fwd: east ? 1 : -1 }, ev);
+  if (!job) throw new Error('handbuild scenario: ' + (ev.find(e => e.t === 'jobRefused') || {}).why);
+  const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: job.id }, contractId: null, due: null });
+  const mats = [];
+  for (const m of JOB_MATS) for (let i = 0; i < job.need[m]; i++) mats.push(m);
+  mats.forEach((m, i) => {
+    const q = jobPoint(job, 1 + i * 1.1), off = job.side * 2;
+    itemCreate(S, wb(m), { kind: 'GROUND', x: Math.round((q.x - q.tz * off) * 100), z: Math.round((q.z + q.tx * off) * 100) }, ev);
+  });
+  for (const id of itemsAt(S, { kind: 'GROUND' })) jobDeliver(S, id, ev);
+  const q = jobPoint(job, 0);
+  S.player.x = q.x - q.tz * job.side * 3; S.player.z = q.z + q.tx * job.side * 3;
   return S;
 }
 
@@ -1483,7 +1877,7 @@ function carryActorTick(S, ev, poseCache) {
   const P = S.player;
   if (P.act && (P.act.k === 'pick' || P.act.k === 'put')) {
     P.act.left -= CFG.TICK_GAME_S;
-    if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; carryFinish(S, a, ev); }
+    if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; carryFinish(S, a, ev); jobAfterCarry(S, a, ev); }
     return;
   }
   const use = P.use && CARRY_USES[P.use.k] ? P.use : null, x0 = P.x, z0 = P.z, evFrom = ev.length;
@@ -1519,7 +1913,7 @@ function simTick(S, cmds) {
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
-  carryActorTick(S, ev, poseCache);                     // 7. actors (the player: walking in playerTick, carrying around it)
+  jobActorTick(S, ev, poseCache);                       // 7. actors (the player: walking in playerTick, carrying and job work around it)
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
 }
@@ -1567,6 +1961,11 @@ function migrate(save) {
     if (st.player && typeof st.player === 'object') st.player.tool = null;
     st.schemaVersion = 3;
   }
+  if (st.schemaVersion === 3) {
+    // 3 -> 4 (construction jobs): no jobs staked yet.
+    st.jobs = jobNewStore();
+    st.schemaVersion = 4;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -1595,6 +1994,7 @@ function checkSaveShape(st) {
   if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
   cargoCheckSaveShape(st);
   carryCheckSaveShape(st);
+  jobCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -2027,7 +2427,7 @@ function carryDraw(alpha, dt) {
   // Progress ring over the head for any timed action (switch throw, pick up, put down).
   const ring = carryView.ring;
   if (P.act) {
-    const total = P.act.k === 'throw' ? CFG.THROW_S : CFG.CARRY_S;
+    const total = P.act.total || (P.act.k === 'throw' ? CFG.THROW_S : CFG.CARRY_S);
     const f = Math.max(0, Math.min(1, (total - P.act.left + (speed > 0 ? alpha : 0) * CFG.TICK_GAME_S) / total));
     ring.geometry.setDrawRange(0, 6 * Math.max(1, Math.ceil(f * 24)));
     ring.position.set(pl.position.x, 1.45, pl.position.z); ring.quaternion.copy(camera.quaternion);
@@ -3438,7 +3838,7 @@ function buildPlan(S, c) {
 // page's command intake (send, so also __railhead.send) refuse buildTrack. The sim itself is not gated:
 // simTick never reads page flags, so the same commands always give the same result.
 const BUILD_INSTANT = new URLSearchParams(location.search).get('debug') === '1';
-const BUILD_PLAN_ONLY = 'instant track laying is switched off, the build tool only plans (hand-building comes in M1)';
+const BUILD_PLAN_ONLY = 'instant track laying is switched off: Stake it, then build the track by hand';
 const bt = { on: false, drag: null, plan: null, cmd: null, ghost: null, ends: null, confirm: false, instant: BUILD_INSTANT, refused: [] };
 const B_COL = { ok: '#3f8a3a', amber: '#d9952b', bad: '#c2402a' };
 // Called by send() for every command from the page. Returns a refusal event, or null to accept the command.
@@ -3451,13 +3851,8 @@ function buildIntakeRefusal(cmd) {
 function buildToolInit() {
   $('buildBtn').addEventListener('click', () => setBuildMode(!bt.on));
   $('buildLay').addEventListener('click', buildLay);
-  if (!BUILD_INSTANT) {
-    $('buildLay').hidden = true;
-    const note = document.createElement('div');
-    note.id = 'buildPlanOnly'; note.textContent = 'Plan only: hand-building comes in M1';
-    $('buildConfirm').insertBefore(note, $('buildCancel'));
-    $('buildConfirm').classList.add('planOnly');
-  }
+  // Without ?debug=1 (D12) the button is Stake it: the plan becomes a construction job, never track.
+  if (!BUILD_INSTANT) $('buildLay').textContent = 'Stake it';
   $('buildCancel').addEventListener('click', () => { buildClear(); buildHint(); });
   Object.assign(window.__railhead, { buildPlan, buildTool: bt, setBuildMode });
 }
@@ -3519,7 +3914,7 @@ function buildShowPlan(plan) {
   if (!plan.ok) { buildLabel(plan.short ? 'hint' : 'bad', plan.why || 'Drag further to lay track'); return; }
   const what = (plan.cls === 'main' ? 'Main line' : 'Yard track') + `, ${bFmt(plan.len)}u` +
     (plan.minR < Infinity ? `, curve ${bFmt(plan.minR)}u` : '') + (plan.sw !== null ? ', with a switch' : '');
-  if (plan.amber) buildLabel('amber', `Needs earthwork (ground ${bFmt(plan.earth)}u off). ${what}`);
+  if (plan.amber) buildLabel('amber', `Needs earthwork (ground ${bFmt(plan.earth)}u off). ${what}` + (BUILD_INSTANT ? '' : '. Cannot be staked yet'));
   else buildLabel('ok', what);
 }
 // Finger down in build mode: on a track end, on a straight (switch), or on open ground.
@@ -3570,12 +3965,12 @@ function buildUp() {
   if (!d || !d.moved || !bt.plan || (bt.plan.short && !bt.plan.T2)) { buildClear(); buildHint(); return; }
   bt.confirm = true;
   $('buildConfirm').hidden = false;
-  $('buildLay').disabled = !bt.plan.ok;
+  $('buildLay').disabled = !bt.plan.ok || (!BUILD_INSTANT && bt.plan.amber); // amber plans cannot be staked in M1
 }
 function buildAbortDrag() { if (bt.drag) { buildClear(); buildHint(); } }
 function buildLay() {
   if (!bt.plan || !bt.plan.ok || !bt.cmd) return;
-  send(bt.cmd);
+  send(BUILD_INSTANT ? bt.cmd : { ...bt.cmd, t: 'stakeJob' }); // Stake it sends the same plan as a construction job
   buildClear();
   if (speed === 0) doTick(); // paused: run one tick so the track appears at once
 }
@@ -3583,6 +3978,35 @@ function buildOnBuilt(e) {
   buildWorld(S);
   if (bt.on) { buildEndMarkers(); buildHint(); }
   toast(`Track laid: ${bFmt(e.len / 100)}u` + (e.sw !== null ? `, switch ${e.sw + 1}` : ''));
+}
+// ---- Stake it and construction jobs on the page (the rules are in "construction jobs"; drawing jobs is builder B2's) ----
+// What a job still needs, in words: "2 tie bundles, 1 spike keg".
+function jobNeedsText(need) {
+  const parts = JOB_MATS.filter(m => need[m] > 0).map(m => need[m] + ' ' + (need[m] === 1 ? JOB_MAT[m].one : JOB_MAT[m].many));
+  return parts.length ? parts.slice(0, -1).join(', ') + (parts.length > 1 ? ' and ' : '') + parts[parts.length - 1] : '';
+}
+function jobOnEvent(e) {
+  const job = e.id !== undefined ? jobGet(S, e.id) : null, needs = job ? jobNeedsText(jobNeeds(S, job)) : '';
+  if (e.t === 'jobStaked') {
+    if (bt.on) setBuildMode(false);
+    toast(`Job ${e.id + 1} staked: ${bFmt(e.len / 100)}u of track.` + (needs ? ` Bring ${needs} beside it.` : ' Everything is on site: tap the stakes to work.'));
+  } else if (e.t === 'jobRefused') toast(`Cannot do that: ${e.why}.`);
+  else if (e.t === 'jobDelivered') toast(needs ? `On site for job ${e.id + 1}. Still to bring: ${needs}.` : `Job ${e.id + 1} has everything it needs.`);
+  else if (e.t === 'jobStopped') toast(e.why + '.');
+  else if (e.t === 'jobDone') toast(`Job ${e.id + 1} finished: ${bFmt(e.len / 100)}u of track joins the line.`);
+  else if (e.t === 'jobCancelled') toast(`Job ${e.id + 1} cancelled: its materials are on the ground beside it.`);
+}
+// A tap on a staked job (within 1u of its centre line) starts work on it. Returns true when the tap was used.
+function jobTap(g) {
+  if (!g) return false;
+  let best = null;
+  for (const j of S.jobs.list) for (const E of j.geo.edges) {
+    const d = bEdgeDist(j.geo, E, g.x, g.z);
+    if (d < 1 && (!best || d < best.d)) best = { id: j.id, d };
+  }
+  if (!best) return false;
+  send({ t: 'jobWork', id: best.id });
+  return true;
 }
 
 // ==== Section: debug ====
@@ -3762,6 +4186,8 @@ const DBG_SCENARIOS = {
   },
   // Cargo testing: items in the freight shed bays, on the ground by the dock, in the boxcar and in hand.
   cargo: () => cargoDebugItems(newState(CFG.SEED)),
+  // Hand-building: a 20u siding with a switch staked off the north main line, all its materials beside it.
+  handbuild: () => jobDebugScenario(newState(CFG.SEED)),
   // Switch 3 is set for the spur and the train is running towards it on the north main line.
   spur: () => {
     const st = newState(CFG.SEED), T = st.track, tr = st.trains[0], W = T.switches[2], E = T.edges[W.trunk];
@@ -3886,7 +4312,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$/.test(e.t));
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -3913,6 +4339,7 @@ function handleEvent(e) {
   else if (e.t === 'carryRefused') toast(e.why + '.');
   else if (e.t === 'toolTaken') toast(`You take the ${TOOL_KINDS[S.tools[e.tool].k].name.toLowerCase()}.`);
   else if (e.t === 'toolLeft') toast(`${TOOL_KINDS[S.tools[e.tool].k].name} left at its spot.`);
+  else if (/^job/.test(e.t)) jobOnEvent(e);
 }
 // The carry readout (bottom left, above the turn buttons): what the player carries, and a Put down button.
 // Hidden while the train panel or the build tool use that part of the screen.
@@ -3998,6 +4425,7 @@ function onTap(px, py) {
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
   if (carryTap(px, py, g)) return;
+  if (jobTap(g)) return;
   if (g) {
     send({ t: 'walkTo', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
     view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
@@ -4260,6 +4688,7 @@ window.__railhead = {
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, BLD_BAYS, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   carry: { TOOL_KINDS, TOOL_PARK, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
+  jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },

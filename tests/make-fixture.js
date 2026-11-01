@@ -11,16 +11,24 @@ const { openGame, stopServer } = require('./browser');
   const out = await page.evaluate(() => {
     const R = window.__railhead;
     // From schema 3: two freight items, and the player takes the hand truck and loads one.
-    const S0 = R.newState(1866), carry = S0.schemaVersion >= 3;
+    const S0 = R.newState(1866), carry = S0.schemaVersion >= 3, jobs = S0.schemaVersion >= 4;
     if (carry) {
       const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
       R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', x: -1050, z: 1000 }, null);
       R.cargo.itemCreate(S0, wb('salt'), { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, null);
     }
+    // From schema 4: a job staked 6u on from the spur's dead end, with a tie bundle lying beside it (on site).
+    let stake = [];
+    if (jobs) {
+      const T = S0.track, N = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1).sort((a, b) => a.x - b.x)[0];
+      R.cargo.itemCreate(S0, { commodity: 'ties', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null },
+        { kind: 'GROUND', x: Math.round((N.x - 2) * 100), z: Math.round((N.z - 1.5) * 100) }, null);
+      stake = [{ tick: 50, cmd: { t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6) * 100), tz: Math.round(N.z * 100) } }];
+    }
     const S = R.simRun(S0, [
       { tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } },
       { tick: 2, cmd: { t: 'useSwitch', sw: 0 } },
-    ].concat(carry ? [
+    ].concat(stake).concat(carry ? [
       { tick: 100, cmd: { t: 'carryTool', tool: 0 } },
       { tick: 160, cmd: { t: 'carryPick', id: 0 } },
     ] : []).concat([

@@ -51,4 +51,5 @@ Current checks:
 
 The plan for M0 piece 1 (your character walking, test yard, switches, one train, yard moves, clock, saving) is waiting for the designer's review:
 https://claude.ai/artifact/5ysP6CghXJwzq9pKJ9ivTS
-Read the answers in its "Questions for you" table and any comments on it. Do not build it until it is approved.
+The questions are also on an interactive survey page that saves answers: https://claude.ai/artifact/Rff43eTxzRrdcunq21MC16
+Read saved answers with ArtifactData (collection "survey", document "answers"), plus the plan's table and comments. Do not build until approved.

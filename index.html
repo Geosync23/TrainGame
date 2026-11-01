@@ -109,6 +109,7 @@ const CFG = {
   LIM: { main: 4.0, yard: 1.0, diverge: 1.5 },
   STOP_GAP: 0.5,             // trains stop 0.5u before a block they may not enter
   THROW_S: 30,               // throwing a switch takes 0.5 game minutes
+  CARRY_S: 12,               // picking up or putting down an item takes 0.2 game minutes (section 9)
   DIVERGE_PENALTY: 20,       // route cost per diverging switch
   REACH: 1.5,                // interactables are in reach within 1.5u
   GEOM: { main: { minR: 12, revStraight: 3 }, yard: { minR: 8, revStraight: 2 } },
@@ -400,7 +401,8 @@ function newState(seed) {
     track: T,
     trains: [{ id: 0, name: 'No. 1', front: { e: 2, s: 12, d: 1 }, v: 0, mode: 'idle', m: 1,
       route: null, status: 'Stopped', consist: CONSIST_NO1.map(c => ({ ...c })) }],
-    player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null },
+    player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null },
+    tools: carryNewTools(),
   };
 }
 function trainLength(tr) { return tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1); }
@@ -529,6 +531,9 @@ function applyCommand(S, c, ev) {
       if (Number.isInteger(c.view)) P.use.view = ((c.view % 256) + 256) % 256;
       break;
     case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
+    case 'carryPick': carryPickCmd(S, c, ev); break;
+    case 'carryPut': carryPutCmd(S, c, ev); break;
+    case 'carryTool': carryToolCmd(S, c, ev); break;
     case 'buildTrack': buildTrackCmd(S, c, ev); break;
     case 'trainRun': {
       if (!tr) return;
@@ -774,7 +779,7 @@ function simTick(S, cmds) {
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
-  playerTick(S, ev, poseCache);                         // 7. actors
+  carryActorTick(S, ev, poseCache);                     // 7. actors (the player: walking in playerTick, carrying around it)
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
 }
@@ -983,6 +988,44 @@ function modelChunky() {
   }
   root.userData = { body: bodyMesh, ...limbs, phase: 0 };
   return root;
+}
+// Hand truck (section 9, 3 items): an upright iron frame on two wheels with a nose plate at the foot.
+// Local frame: the wheels' axle at x = z = 0, the handles towards -z (the pusher), the load leans on the frame.
+// TOOL_STACK gives where stacked items sit on each tool, in the same local frame.
+const TOOL_STACK = {
+  truck: { x: 0, z: 0.2, y: 0.12, dy: 0.32, tilt: -0.35 },        // items stand on the nose plate, up the frame
+  cart: { x: 0, z: 0.35, y: 0.5, cols: 2, rows: 3, dx: 0.34, dz: 0.34, dy: 0.32 }, // two by three on the bed
+};
+function modelHandTruck() {
+  const k = new Kit(), H = Math.PI / 2, tilt = -0.35; // the frame leans back towards the handles
+  const up = (dy, dz) => [dz + Math.sin(tilt) * dy, Math.cos(tilt) * dy]; // [z, y] of a point dy up the frame
+  for (const s of [-1, 1]) {
+    const [z0, y0] = up(0.5, 0.05);
+    k.add(box(0.04, 1.05, 0.04), PAL.loco, s * 0.2, 0.08 + y0, z0, tilt);              // side rails
+    const [z1, y1] = up(1.05, 0.05);
+    k.add(box(0.05, 0.05, 0.16), PAL.trunk, s * 0.2, 0.08 + y1, z1 - 0.06, tilt);       // wooden grips
+    k.add(cyl(0.12, 0.12, 0.05, SEG), PAL.loco, s * 0.27, 0.12, 0, 0, 0, H);            // wheels
+  }
+  for (const dy of [0.35, 0.7]) { const [z, y] = up(dy, 0.05); k.add(box(0.4, 0.04, 0.04), PAL.loco, 0, 0.08 + y, z, tilt); }
+  k.add(cyl(0.025, 0.025, 0.58, 5), PAL.loco, 0, 0.12, 0, 0, 0, H);                    // axle
+  k.add(box(0.42, 0.03, 0.2), PAL.loco, 0, 0.035, 0.14);                               // nose plate
+  return k.mesh();
+}
+// Handcart (6 items): a wooden bed on two big wheels, with two long handles towards -z.
+function modelHandcart() {
+  const k = new Kit(), H = Math.PI / 2;
+  k.add(box(0.8, 0.06, 1.1), PAL.trim, 0, 0.45, 0.35);                                 // bed
+  for (const s of [-1, 1]) {
+    k.add(box(0.04, 0.16, 1.1), PAL.trunk, s * 0.42, 0.55, 0.35);                      // side boards
+    k.add(box(0.05, 0.05, 0.9), PAL.trunk, s * 0.3, 0.47, -0.55, -0.12);               // handles
+    k.add(cyl(0.3, 0.3, 0.05, 9), PAL.trunk, s * 0.47, 0.3, 0.3, 0, 0, H);             // wheels
+    k.add(cyl(0.08, 0.08, 0.07, 6), PAL.loco, s * 0.47, 0.3, 0.3, 0, 0, H);            // hubs
+    k.add(box(0.05, 0.4, 0.05), PAL.trunk, s * 0.3, 0.25, 0.85);                       // front legs
+  }
+  k.add(box(0.8, 0.16, 0.04), PAL.trunk, 0, 0.55, 0.9);                                // front board
+  k.add(box(0.66, 0.04, 0.04), PAL.trunk, 0, 0.42, -0.98);                             // handle bar
+  k.add(cyl(0.03, 0.03, 0.98, 5), PAL.loco, 0, 0.3, 0.3, 0, 0, H);                     // axle
+  return k.mesh();
 }
 
 // ==== Section: renderer and camera ====

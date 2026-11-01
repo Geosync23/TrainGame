@@ -99,7 +99,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 1,
+  SCHEMA_VERSION: 2,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -402,8 +402,10 @@ function newState(seed) {
     seed, rng: rngSeed(seed), tick: 0, time: 0,
     track: T,
     trains: [{ id: 0, name: 'No. 1', front: { e: 2, s: 12, d: 1 }, v: 0, mode: 'idle', m: 1,
-      route: null, status: 'Stopped', consist: CONSIST_NO1.map(c => ({ ...c })) }],
+      route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }],
     player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null },
+    items: cargoNewStore(),          // freight items and waybills (section "cargo")
+    bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
   };
 }
 function trainLength(tr) { return tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1); }
@@ -533,6 +535,7 @@ function applyCommand(S, c, ev) {
       break;
     case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
     case 'buildTrack': buildTrackCmd(S, c, ev); break;
+    case 'setBayTag': setBayTag(S, c.b, c.bay, c.tag, ev); break;
     case 'trainRun': {
       if (!tr) return;
       releaseRoute(S, tr);
@@ -674,6 +677,324 @@ function trainTick(S, tr, ev) {
     const dir = tr.m > 0 ? 'forward' : 'back (tender first)';
     tr.status = (tr.mode === 'route' ? 'On its way, ' : 'Running ') + dir;
   } else if (tr.mode === 'idle' && tr.status !== 'Arrived') tr.status = 'Stopped';
+}
+
+// ==== Section: cargo (items and waybills) ====
+// Owner: M1 package 2 (builder W2). Freight items, their waybills and where each one is (design-doc 9, 19, 20, 21).
+// Pure simulation: no three.js, no page elements. Whole numbers only in the state (positions in hundredths of a u).
+//
+// The item store lives in S.items (struct of arrays, indexed by item id; ids are never reused):
+//   S.items.next        the next item id
+//   S.items.waybill[id] { commodity, originTownId, destTownId, consignee: { kind, id }, contractId, due }
+//   S.items.where[id]   an ItemLocation (below), or null once the item is consumed
+//   S.items.alive[id]   true until the item is consumed
+//   S.items.used        the consumption log, oldest first: { id, tick, reason, from } (from = where it was)
+// Bay destination tags live in S.bayTags[buildingId] = [tag code per bay] (codes in CARGO_TAGS).
+//
+// ItemLocation, one of:
+//   { kind: 'CAR', stockId }                        in a car (stockId = the car's id in a train's consist)
+//   { kind: 'BAY', buildingId, bay }                in a freight shed bay (bay number from 0); 8 per bay
+//   { kind: 'CARRIED', actorId, carrier, slot }     carried by an actor ('player' for the player);
+//                                                   carrier 'HAND' (1, slot 0), 'HANDTRUCK' (3), 'HANDCART' (6)
+//   { kind: 'GROUND', x, z }                        on the ground, x and z in hundredths of a u
+//   { kind: 'STOCKPILE', jobId }                    at a construction job's stockpile
+//   { kind: 'BUSINESS', businessId }                delivered to a business door or stock
+//
+// API (all take the game state S; ev is the tick's event list, or null for no events):
+//   itemCreate(S, waybill, where, ev)  -> { ok: true, id } or { ok: false, why }   event 'itemCreated'
+//   itemMove(S, id, where, ev)         -> { ok: true } or { ok: false, why }       event 'itemMoved' or 'itemRefused'
+//                                         refuses impossible moves: full bay, long bundle on a hand truck,
+//                                         a taken slot, a car that cannot take that item type, and so on.
+//   itemCanMove(S, id, where)          -> null if the move is allowed, else the reason (changes nothing)
+//   itemsAt(S, query)                  -> ascending ids of living items whose location matches every field
+//                                         given in query, e.g. { kind: 'BAY', buildingId: 'freightshed' }
+//                                         (all bays) or { kind: 'CARRIED', actorId: 'player' }
+//   itemConsume(S, id, reason, ev)     -> { ok: true } or { ok: false, why }       event 'itemConsumed'
+//                                         reason is one of CARGO_CONSUME_REASONS; the only way an item ends
+//   itemCheckConservation(S)           -> list of problems (empty when all is well)
+//   itemType(S, id), itemTag(waybill), bayTagMatches(S, buildingId, bay, id), setBayTag(S, b, bay, tag, ev)
+// Commands: { t: 'setBayTag', b: 'freightshed', bay: 0..3, tag: 'WILLOW' | 'HUB' | 'HUBWH' | ... | 'ANY' }.
+
+// Section 21 commodity table: id, name, item type, buy and sell in whole cents (null: not traded).
+// Item types: crate, sack, keg, barrel, bale, longBundle, mailSack, pallet (crate handling), machinery, bulk.
+const COMMODITIES = [
+  ['flour', 'Flour', 'sack', 400, 250], ['beans', 'Beans', 'sack', 300, 180], ['meat', 'Salted meat', 'barrel', 900, 550],
+  ['coffee', 'Coffee', 'sack', 600, 350], ['salt', 'Salt', 'sack', 200, 100], ['tinned', 'Tinned goods', 'crate', 700, 400],
+  ['whiskey', 'Whiskey', 'barrel', 1200, 700], ['fabric', 'Fabric', 'bale', 1000, 600], ['clothing', 'Clothing (4 outfits)', 'crate', 1800, 1100],
+  ['hardware', 'Hardware', 'crate', 1400, 800], ['furniture', 'Furniture', 'crate', 2000, 1400], ['lampoil', 'Lamp oil', 'barrel', 800, 450],
+  ['cordwood', 'Cordwood (1 cord)', 'longBundle', 150, 80], ['tents', 'Tent canvas', 'bale', 900, 500], ['lumber', 'Lumber', 'longBundle', 800, 550],
+  ['ties', 'Ties (bundle of 10)', 'longBundle', 300, 200], ['rails', 'Rails (bundle)', 'longBundle', 4000, 2400], ['spikes', 'Spikes', 'keg', 600, 350],
+  ['nails', 'Nails', 'keg', 500, 300], ['glass', 'Window glass', 'crate', 1200, 600], ['bricks', 'Bricks', 'pallet', 1000, 600],
+  ['stone', 'Dressed stone', 'pallet', 600, 450], ['tools', 'Tools', 'crate', 1500, 800], ['powder', 'Blasting powder', 'keg', 2000, 1000],
+  ['machinery', 'Machinery', 'machinery', 12000, 7000], ['iron', 'Iron bar', 'crate', 900, 500], ['wire', 'Telegraph wire coil', 'crate', 1500, 800],
+  ['poles', 'Telegraph poles (bundle of 4)', 'longBundle', 500, 200], ['medicine', 'Medicine', 'crate', 2500, 1200], ['books', 'Books and slates', 'crate', 1200, 600],
+  ['paper', 'Newsprint', 'crate', 800, 400], ['seed', 'Seed grain', 'sack', 300, 150], ['grain', 'Grain', 'sack', 250, 180],
+  ['logs', 'Logs', 'bulk', 120, 90], ['coal', 'Coal', 'bulk', 400, 280], ['ore', 'Silver ore', 'bulk', null, 18000],
+  ['mail', 'Mail sack', 'mailSack', null, null],
+].reduce((o, [id, name, type, buy, sell]) => { o[id] = { id, name, type, buy, sell }; return o; }, {});
+// Placeholder towns until the towns package builds real ones (provisional): the hub and Willow Ford.
+const CARGO_TOWNS = [{ id: 0, name: 'Hub' }, { id: 1, name: 'Willow Ford' }];
+// Destination tags: colour (Okabe-Ito, colourblind-safe), one letter and a shape, so no one cue is needed alone.
+// Shapes: 0 circle, 1 square, 2 triangle, 3 diamond, 4 hexagon, 5 ring. 'ANY' is for bays only.
+const CARGO_TAGS = {
+  WILLOW: { name: 'Willow Ford', letter: 'W', col: '#009e73', shape: 0 },
+  HUB: { name: 'Hub town', letter: 'T', col: '#e69f00', shape: 1 },
+  HUBWH: { name: 'Hub warehouse', letter: 'H', col: '#cc79a7', shape: 4 },
+  RAILHEAD: { name: 'Railhead', letter: 'R', col: '#d55e00', shape: 2 },
+  OUTSIDE: { name: 'Outside', letter: 'O', col: '#0072b2', shape: 3 },
+  ANY: { name: 'Any', letter: 'A', col: '#9a9a9a', shape: 5 },
+};
+const CARGO_CONSIGNEE_KINDS = ['BUSINESS', 'CAMP', 'WAREHOUSE', 'CONSTRUCTION', 'OUTSIDE'];
+const CARGO_CONSUME_REASONS = ['business', 'household', 'construction', 'soldOutside', 'fuel'];
+const CARGO_BAY_CAP = 8;
+const CARGO_CARRY_CAP = { HAND: 1, HANDTRUCK: 3, HANDCART: 6 };
+// Car capacity (section 7) in slot units. Flatcar: 12 long items or 8 crates, so a long bundle uses 2 of 24
+// units and a crate (or pallet) 3. Machinery uses a flatcar's whole crate allowance less one (provisional: 9).
+const CARGO_CAR_RULES = {
+  boxcar: { cap: 16, cost: { crate: 1, sack: 1, keg: 1, barrel: 1, bale: 1, mailSack: 1, pallet: 1 } },
+  combine: { cap: 8, cost: { crate: 1, sack: 1, keg: 1, barrel: 1, bale: 1, mailSack: 1 } },
+  flatcar: { cap: 24, cost: { longBundle: 2, crate: 3, pallet: 3, machinery: 9 } },
+};
+const cargoName = t => ({ crate: 'crate', sack: 'sack', keg: 'keg', barrel: 'barrel', bale: 'bale', longBundle: 'long bundle',
+  mailSack: 'mail sack', pallet: 'pallet', machinery: 'machinery', bulk: 'bulk load' })[t] || t;
+
+function cargoNewStore() { return { next: 0, waybill: [], where: [], alive: [], used: [] }; }
+// Every freight shed's bays start with these tags (section 9 examples), one per bay.
+function cargoDefaultBayTags() {
+  const out = {};
+  for (const b of Object.keys(BLD_BAYS).sort()) out[b] = BLD_BAYS[b].bays.map((_, i) => ['WILLOW', 'HUBWH', 'OUTSIDE', 'ANY'][i] || 'ANY');
+  return out;
+}
+const cargoInt = v => Number.isInteger(v);
+const cargoId = v => (Number.isInteger(v) && v >= 0) || (typeof v === 'string' && v.length > 0 && v.length <= 40);
+function itemType(S, id) { const w = S.items.waybill[id]; return w && COMMODITIES[w.commodity] ? COMMODITIES[w.commodity].type : null; }
+// The destination tag an item's waybill calls for.
+function itemTag(wb) {
+  const k = wb.consignee && wb.consignee.kind;
+  if (wb.destTownId === 'OUTSIDE' || k === 'OUTSIDE') return 'OUTSIDE';
+  if (k === 'CONSTRUCTION' || k === 'CAMP') return 'RAILHEAD';
+  if (k === 'WAREHOUSE') return 'HUBWH';
+  return wb.destTownId === 1 ? 'WILLOW' : 'HUB';
+}
+function bayTagMatches(S, b, bay, id) { const t = S.bayTags[b] && S.bayTags[b][bay]; return t === 'ANY' || t === itemTag(S.items.waybill[id]); }
+function cargoWaybillProblem(wb) {
+  if (!wb || typeof wb !== 'object') return 'no waybill';
+  const C = COMMODITIES[wb.commodity];
+  if (!C) return 'unknown commodity ' + wb.commodity;
+  if (C.type === 'bulk') return C.name + ' is bulk, carried as tons, not as items';
+  const town = v => v === 'OUTSIDE' || CARGO_TOWNS.some(t => t.id === v);
+  if (!town(wb.originTownId)) return 'unknown origin';
+  if (!town(wb.destTownId)) return 'unknown destination';
+  if (!wb.consignee || !CARGO_CONSIGNEE_KINDS.includes(wb.consignee.kind) || !cargoId(wb.consignee.id)) return 'bad consignee';
+  if (wb.contractId !== null && !cargoInt(wb.contractId)) return 'bad contract id';
+  if (wb.due !== null && !cargoInt(wb.due)) return 'bad due time';
+  return null;
+}
+function cargoCopyWaybill(wb) {
+  return { commodity: wb.commodity, originTownId: wb.originTownId, destTownId: wb.destTownId,
+    consignee: { kind: wb.consignee.kind, id: wb.consignee.id }, contractId: wb.contractId === undefined ? null : wb.contractId,
+    due: wb.due === undefined ? null : wb.due };
+}
+// The car with this stock id, or null.
+function cargoCar(S, stockId) {
+  for (const tr of S.trains) for (const c of tr.consist) if (c.id === stockId) return c;
+  return null;
+}
+// A clean copy of a location (only its own fields), or a reason string if it is not a real place.
+function cargoWhere(S, w) {
+  if (!w || typeof w !== 'object') return 'no location';
+  switch (w.kind) {
+    case 'CAR': {
+      const c = cargoInt(w.stockId) ? cargoCar(S, w.stockId) : null;
+      if (!c) return 'no such car';
+      if (!CARGO_CAR_RULES[c.k]) return 'a ' + c.k + ' carries no freight';
+      return { kind: 'CAR', stockId: w.stockId };
+    }
+    case 'BAY': {
+      const B = BLD_BAYS[w.buildingId];
+      if (!B) return 'no such freight shed';
+      if (!cargoInt(w.bay) || w.bay < 0 || w.bay >= B.bays.length) return 'no such bay';
+      return { kind: 'BAY', buildingId: w.buildingId, bay: w.bay };
+    }
+    case 'CARRIED': {
+      const cap = CARGO_CARRY_CAP[w.carrier || 'HAND'];
+      if (!cargoId(w.actorId)) return 'no such actor';
+      if (!cap) return 'unknown way of carrying';
+      const slot = w.slot === undefined || w.slot === null ? 0 : w.slot;
+      if (!cargoInt(slot) || slot < 0 || slot >= cap) return 'no such slot';
+      return { kind: 'CARRIED', actorId: w.actorId, carrier: w.carrier || 'HAND', slot };
+    }
+    case 'GROUND': {
+      const lim = CFG.MAP_HALF * 100;
+      if (!cargoInt(w.x) || !cargoInt(w.z)) return 'ground positions are whole hundredths';
+      if (Math.abs(w.x) > lim || Math.abs(w.z) > lim) return 'off the map';
+      return { kind: 'GROUND', x: w.x, z: w.z };
+    }
+    case 'STOCKPILE': return cargoInt(w.jobId) && w.jobId >= 0 ? { kind: 'STOCKPILE', jobId: w.jobId } : 'no such job';
+    case 'BUSINESS': return cargoInt(w.businessId) && w.businessId >= 0 ? { kind: 'BUSINESS', businessId: w.businessId } : 'no such business';
+  }
+  return 'unknown kind of place';
+}
+const cargoSame = (a, b) => a && b && JSON.stringify(a) === JSON.stringify(b);
+// Can an item of this type go to this (clean) place, given what is already there? ignoreId: the item being moved.
+function cargoRoomProblem(S, type, w, ignoreId) {
+  const I = S.items, n = I.next;
+  const others = []; // living items at the same place-kind and target, except the one moving
+  const key = w.kind === 'CAR' ? 'stockId' : w.kind === 'BAY' ? 'buildingId' : w.kind === 'CARRIED' ? 'actorId' : null;
+  if (key) for (let i = 0; i < n; i++) {
+    const o = I.where[i];
+    if (i !== ignoreId && o && o.kind === w.kind && o[key] === w[key]) others.push(i);
+  }
+  const tn = cargoName(type);
+  if (w.kind === 'BAY') {
+    if (type === 'machinery') return 'machinery is too heavy for a bay';
+    if (others.filter(i => I.where[i].bay === w.bay).length >= CARGO_BAY_CAP) return 'bay ' + (w.bay + 1) + ' is full (8 items)';
+  } else if (w.kind === 'CARRIED') {
+    if (type === 'machinery') return 'machinery needs two people or the station crane';
+    if (type === 'longBundle' && w.carrier === 'HANDTRUCK') return 'a long bundle never goes on a hand truck';
+    if (type === 'longBundle' && w.carrier === 'HANDCART') return 'a long bundle is carried by hand only';
+    if (others.some(i => I.where[i].carrier !== w.carrier)) return 'already carrying by ' + others.map(i => I.where[i].carrier.toLowerCase())[0];
+    if (others.some(i => I.where[i].slot === w.slot)) return 'that slot is taken';
+  } else if (w.kind === 'CAR') {
+    const c = cargoCar(S, w.stockId), R = CARGO_CAR_RULES[c.k], cost = R.cost[type];
+    if (!cost) return 'a ' + c.k + ' cannot take a ' + tn;
+    const used = others.reduce((s, i) => s + (R.cost[itemType(S, i)] || 0), 0);
+    if (used + cost > R.cap) return 'the ' + c.k + ' is full';
+  }
+  return null;
+}
+function itemCanMove(S, id, where) {
+  const I = S.items;
+  if (!cargoInt(id) || id < 0 || id >= I.next) return 'no such item';
+  if (!I.alive[id]) return 'that item is gone';
+  const w = cargoWhere(S, where);
+  if (typeof w === 'string') return w;
+  if (cargoSame(I.where[id], w)) return 'it is already there';
+  return cargoRoomProblem(S, itemType(S, id), w, id);
+}
+function itemCreate(S, waybill, where, ev) {
+  const I = S.items, bad = cargoWaybillProblem(waybill);
+  const w = bad ? null : cargoWhere(S, where);
+  const why = bad || (typeof w === 'string' ? w : cargoRoomProblem(S, COMMODITIES[waybill.commodity].type, w, -1));
+  if (why) { if (ev) ev.push({ t: 'itemRefused', id: null, why }); return { ok: false, why }; }
+  const id = I.next++;
+  I.waybill[id] = cargoCopyWaybill(waybill); I.where[id] = w; I.alive[id] = true;
+  if (ev) ev.push({ t: 'itemCreated', id, to: w });
+  return { ok: true, id };
+}
+function itemMove(S, id, where, ev) {
+  const why = itemCanMove(S, id, where);
+  if (why) { if (ev) ev.push({ t: 'itemRefused', id, why }); return { ok: false, why }; }
+  const from = S.items.where[id], to = cargoWhere(S, where);
+  S.items.where[id] = to;
+  const e = { t: 'itemMoved', id, from, to };
+  if (to.kind === 'BAY' && !bayTagMatches(S, to.buildingId, to.bay, id)) e.mismatch = true; // overflow: allowed (section 9)
+  if (ev) ev.push(e);
+  return { ok: true };
+}
+function itemsAt(S, q) {
+  const I = S.items, out = [], keys = Object.keys(q || {}).filter(k => q[k] !== undefined);
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i];
+    if (w && keys.every(k => w[k] === q[k])) out.push(i);
+  }
+  return out;
+}
+function itemConsume(S, id, reason, ev) {
+  const I = S.items;
+  let why = null;
+  if (!cargoInt(id) || id < 0 || id >= I.next) why = 'no such item';
+  else if (!I.alive[id]) why = 'that item is gone';
+  else if (!CARGO_CONSUME_REASONS.includes(reason)) why = 'items are only used up by: ' + CARGO_CONSUME_REASONS.join(', ');
+  if (why) { if (ev) ev.push({ t: 'itemRefused', id, why }); return { ok: false, why }; }
+  const from = I.where[id];
+  I.used.push({ id, tick: S.tick, reason, from });
+  I.where[id] = null; I.alive[id] = false;
+  if (ev) ev.push({ t: 'itemConsumed', id, reason });
+  return { ok: true };
+}
+function setBayTag(S, b, bay, tag, ev) {
+  const tags = S.bayTags[b];
+  const why = !tags ? 'no such freight shed' : !cargoInt(bay) || bay < 0 || bay >= tags.length ? 'no such bay' : !CARGO_TAGS[tag] ? 'unknown tag' : null;
+  if (why) { ev.push({ t: 'bayTagRefused', b, bay, why }); return; }
+  tags[bay] = tag;
+  ev.push({ t: 'bayTagSet', b, bay, tag });
+}
+// The item conservation rule (section 19): every item ever created is alive in exactly one real place, or
+// listed once in the consumption log; every place is within its capacity. Returns a list of problems.
+function itemCheckConservation(S) {
+  const I = S.items, out = [];
+  if (!I || !cargoInt(I.next) || I.next < 0) return ['no item store'];
+  for (const k of ['waybill', 'where', 'alive']) if (!Array.isArray(I[k]) || I[k].length !== I.next) out.push(k + ' has ' + (I[k] && I[k].length) + ' entries for ' + I.next + ' items');
+  if (!Array.isArray(I.used)) return out.concat('no consumption log');
+  const logged = new Map();
+  for (const u of I.used) {
+    if (!u || !cargoInt(u.id) || u.id < 0 || u.id >= I.next) { out.push('consumption log names an item that was never created'); continue; }
+    if (logged.has(u.id)) out.push('item ' + u.id + ' is consumed twice in the log');
+    if (!CARGO_CONSUME_REASONS.includes(u.reason)) out.push('item ' + u.id + ' consumed with no valid reason');
+    logged.set(u.id, u);
+  }
+  const room = {}; // place key -> slot units used
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i], wb = I.waybill[i];
+    const badWb = cargoWaybillProblem(wb);
+    if (badWb) out.push('item ' + i + ': ' + badWb);
+    if (I.alive[i] === true) {
+      if (logged.has(i)) out.push('item ' + i + ' is alive but also in the consumption log');
+      const c = cargoWhere(S, w);
+      if (typeof c === 'string') { out.push('item ' + i + ' is in no real place (' + c + ')'); continue; }
+      if (!cargoSame(c, w)) out.push('item ' + i + ' has a malformed location');
+      if (badWb) continue;
+      const type = COMMODITIES[wb.commodity].type;
+      if (c.kind === 'BAY') { const k = 'B:' + c.buildingId + ':' + c.bay; room[k] = (room[k] || 0) + 1; if (room[k] > CARGO_BAY_CAP) out.push('bay ' + c.buildingId + ' ' + c.bay + ' holds more than 8 items'); }
+      if (c.kind === 'CARRIED') {
+        const k = 'C:' + c.actorId + ':' + c.slot, kc = 'K:' + c.actorId;
+        room[k] = (room[k] || 0) + 1; if (room[k] > 1) out.push(c.actorId + ' has two items in slot ' + c.slot);
+        if (room[kc] && room[kc] !== c.carrier) out.push(c.actorId + ' carries with two kinds of carrier at once');
+        room[kc] = c.carrier;
+        if ((type === 'longBundle' && c.carrier !== 'HAND') || type === 'machinery') out.push('item ' + i + ' (' + cargoName(type) + ') cannot be carried by ' + c.carrier);
+      }
+      if (c.kind === 'CAR') {
+        const car = cargoCar(S, c.stockId), R = CARGO_CAR_RULES[car.k], k = 'R:' + c.stockId;
+        if (!R.cost[type]) out.push('item ' + i + ' (' + cargoName(type) + ') cannot ride in a ' + car.k);
+        room[k] = (room[k] || 0) + (R.cost[type] || 0);
+        if (room[k] > R.cap) out.push('car ' + c.stockId + ' is over capacity');
+      }
+    } else if (I.alive[i] === false) {
+      if (!logged.has(i)) out.push('item ' + i + ' vanished: not alive and not in the consumption log');
+      if (w !== null) out.push('consumed item ' + i + ' still has a place');
+    } else out.push('item ' + i + ' has no alive flag');
+  }
+  return out;
+}
+// Shape check for a saved item store and bay tags (used when a save is loaded). Throws on damage.
+function cargoCheckSaveShape(st) {
+  if (!st.items || !Array.isArray(st.items.where) || !Array.isArray(st.items.waybill) || !Array.isArray(st.items.alive) || !Array.isArray(st.items.used) || !cargoInt(st.items.next)) throw new Error('damaged save: items');
+  if (!st.bayTags || typeof st.bayTags !== 'object') throw new Error('damaged save: bay tags');
+  for (const b of Object.keys(st.bayTags)) if (!Array.isArray(st.bayTags[b]) || st.bayTags[b].some(t => !CARGO_TAGS[t])) throw new Error('damaged save: bay tags');
+}
+// Debug only: a starting set of items for testing (rh.scenario('cargo')). Not used in normal play.
+function cargoDebugItems(S) {
+  const ev = [], wb = (commodity, dest, kind, cid) => ({ commodity, originTownId: 'OUTSIDE', destTownId: dest, consignee: { kind: kind || 'BUSINESS', id: cid || 0 }, contractId: null, due: null });
+  const out = () => ({ commodity: 'grain', originTownId: 0, destTownId: 'OUTSIDE', consignee: { kind: 'OUTSIDE', id: 0 }, contractId: null, due: null });
+  // Bay 1 (Willow Ford): goods for Willow Ford. Bay 2 (Hub warehouse). Bay 3 (Outside). Bay 4 (Any): mixed.
+  ['flour', 'flour', 'beans', 'coffee', 'tinned', 'hardware'].forEach(c => itemCreate(S, wb(c, 1), { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, ev));
+  ['whiskey', 'meat', 'lampoil', 'fabric', 'tents'].forEach(c => itemCreate(S, wb(c, 0, 'WAREHOUSE'), { kind: 'BAY', buildingId: 'freightshed', bay: 1 }, ev));
+  for (let i = 0; i < 4; i++) itemCreate(S, out(), { kind: 'BAY', buildingId: 'freightshed', bay: 2 }, ev);
+  ['spikes', 'nails', 'clothing'].forEach(c => itemCreate(S, wb(c, 0), { kind: 'BAY', buildingId: 'freightshed', bay: 3 }, ev));
+  itemCreate(S, wb('mail', 1), { kind: 'BAY', buildingId: 'freightshed', bay: 3 }, ev);
+  // On the ground beside the dock: track materials for the railhead, and a pile of mixed freight.
+  [['rails', -1060, 1215], ['ties', -1060, 1255], ['ties', -1010, 1215], ['lumber', -1000, 1255], ['poles', -950, 1215]]
+    .forEach(([c, x, z]) => itemCreate(S, wb(c, 0, 'CONSTRUCTION'), { kind: 'GROUND', x, z }, ev));
+  [['spikes', -860, 1160], ['spikes', -860, 1160], ['bricks', -815, 1155], ['glass', -820, 1205], ['flour', -775, 1200],
+   ['salt', -770, 1155], ['seed', -730, 1200], ['mail', -725, 1155], ['fabric', -685, 1160], ['meat', -680, 1205]]
+    .forEach(([c, x, z], i) => itemCreate(S, wb(c, i % 2, 'BUSINESS', i), { kind: 'GROUND', x, z }, ev));
+  // Two in the boxcar (not drawn) and one in the player's hands.
+  const box = S.trains[0].consist.find(c => c.k === 'boxcar');
+  itemCreate(S, wb('flour', 1), { kind: 'CAR', stockId: box.id }, ev);
+  itemCreate(S, wb('tools', 1), { kind: 'CAR', stockId: box.id }, ev);
+  itemCreate(S, wb('coffee', 1), { kind: 'CARRIED', actorId: 'player', carrier: 'HAND', slot: 0 }, ev);
+  return S;
 }
 
 // ==== Section: walk grid and path-finding ====
@@ -1030,9 +1351,18 @@ function clockText(S) {
 const SAVE_KEY = 'auto', QUICK_KEY = 'railhead-quicksave';
 function migrate(save) {
   if (!save || typeof save !== 'object' || !save.state || typeof save.state !== 'object') throw new Error('not a Railhead save');
-  // schemaVersion 1 is the first version; future versions add their migration steps here.
-  if (save.state.schemaVersion !== 1) throw new Error('unknown save version ' + save.state.schemaVersion);
-  checkSaveShape(save.state);
+  // Each step takes a save from one version to the next. Keep every step: old saves pass through all of them.
+  const st = save.state;
+  if (st.schemaVersion === 1) {
+    // 1 -> 2 (cargo): every car gets a stock id, and the game gets an empty item store and the default bay tags.
+    let id = 0;
+    if (Array.isArray(st.trains)) for (const tr of st.trains) if (tr && Array.isArray(tr.consist)) for (const c of tr.consist) if (c && typeof c === 'object') c.id = id++;
+    st.items = cargoNewStore();
+    st.bayTags = cargoDefaultBayTags();
+    st.schemaVersion = 2;
+  }
+  if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
+  checkSaveShape(st);
   return save;
 }
 // Throws if the saved state is not shaped like a game: track, trains and player.
@@ -1057,6 +1387,7 @@ function checkSaveShape(st) {
   }
   const P = st.player;
   if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
+  cargoCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -1209,6 +1540,55 @@ function modelChunky() {
   return root;
 }
 
+// --- Item props (cargo): one small low-poly shape per item type, origin at the bottom centre. ---
+// Each is a vertex-coloured geometry drawn through ONE InstancedMesh per type with the shared KIT_MAT
+// (see cargo drawing in "world rendering"). h is the height, used to stack items on each other.
+const ITEM_PROP_COL = { wood: '#a07a4c', slat: '#6e4f30', burlap: '#c8b48a', tie: '#7a6644', hoop: '#3d3a36', stave: '#8a5c34',
+  bale: '#d8c9a4', strap: '#5b4128', mail: '#7c8a9e', band: '#e6dcc4', bundle: '#ffffff' };
+function itemPropShapes() {
+  const C = ITEM_PROP_COL, geo = k => k.mesh().geometry, out = {};
+  let k = new Kit();                                   // crate: a box with darker edge slats
+  k.add(box(0.36, 0.34, 0.36), C.wood, 0, 0.17, 0);
+  for (const y of [0.04, 0.3]) for (const s of [-1, 1]) {
+    k.add(box(0.38, 0.05, 0.03), C.slat, 0, y, s * 0.175); k.add(box(0.03, 0.05, 0.38), C.slat, s * 0.175, y, 0);
+  }
+  out.crate = { g: geo(k), h: 0.345 };
+  k = new Kit();                                       // sack: a squat 6-sided body with a tied neck
+  k.add(cyl(0.15, 0.18, 0.26, 6), C.burlap, 0, 0.13, 0);
+  k.add(cyl(0.05, 0.12, 0.06, 6), C.burlap, 0, 0.29, 0);
+  k.add(cyl(0.04, 0.04, 0.04, 6), C.tie, 0, 0.33, 0);
+  out.sack = { g: geo(k), h: 0.29 };
+  k = new Kit();                                       // keg: short, with two hoops
+  k.add(cyl(0.12, 0.12, 0.28, 8), C.stave, 0, 0.14, 0);
+  k.add(cyl(0.14, 0.14, 0.16, 8), C.stave, 0, 0.14, 0);
+  for (const y of [0.05, 0.23]) k.add(cyl(0.13, 0.13, 0.03, 8), C.hoop, 0, y, 0);
+  out.keg = { g: geo(k), h: 0.28 };
+  k = new Kit();                                       // barrel: taller and wider, three hoops
+  k.add(cyl(0.15, 0.15, 0.4, 8), C.stave, 0, 0.2, 0);
+  k.add(cyl(0.175, 0.175, 0.24, 8), C.stave, 0, 0.2, 0);
+  for (const y of [0.06, 0.2, 0.34]) k.add(cyl(0.17, 0.17, 0.03, 8), C.hoop, 0, y, 0);
+  out.barrel = { g: geo(k), h: 0.4 };
+  k = new Kit();                                       // bale: a long pale box with two straps
+  k.add(box(0.42, 0.28, 0.3), C.bale, 0, 0.14, 0);
+  for (const x of [-0.11, 0.11]) k.add(box(0.04, 0.3, 0.32), C.strap, x, 0.14, 0);
+  out.bale = { g: geo(k), h: 0.3 };
+  k = new Kit();                                       // long bundle: four sticks with two bands (tinted per commodity)
+  for (const [x, y] of [[-0.06, 0.04], [0.06, 0.04], [0, 0.12], [-0.12, 0.12]]) k.add(box(0.11, 0.08, 0.84), C.bundle, x + 0.03, y, 0);
+  for (const z of [-0.26, 0.26]) k.add(box(0.28, 0.18, 0.04), C.hoop, -0.015, 0.08, z);
+  out.longBundle = { g: geo(k), h: 0.17 };
+  k = new Kit();                                       // mail sack: blue-grey, with a pale band round its middle
+  k.add(cyl(0.12, 0.15, 0.3, 6), C.mail, 0, 0.15, 0);
+  k.add(cyl(0.155, 0.155, 0.05, 6), C.band, 0, 0.14, 0);
+  k.add(cyl(0.04, 0.09, 0.07, 6), C.mail, 0, 0.33, 0);
+  out.mailSack = { g: geo(k), h: 0.33 };
+  return out;
+}
+// Which prop draws each item type, and at what scale (pallets and machinery reuse the crate).
+const ITEM_PROP_OF = { crate: ['crate', 1, 1], sack: ['sack', 1, 1], keg: ['keg', 1, 1], barrel: ['barrel', 1, 1], bale: ['bale', 1, 1],
+  longBundle: ['longBundle', 1, 1], mailSack: ['mailSack', 1, 1], pallet: ['crate', 1.15, 0.7], machinery: ['crate', 1.6, 1.4] };
+// Tints for long bundles (rails grey, ties dark, lumber pale, cordwood and poles bark brown).
+const ITEM_TINT = { rails: '#6a6a70', ties: '#6b4a2c', lumber: '#d2b07a', cordwood: '#7a5634', poles: '#8a6a44', bricks: '#c07050', stone: '#b0aaa0' };
+
 // ==== Section: renderer and camera ====
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -1334,6 +1714,156 @@ function buildActors(S) {
     m.userData.train = tr.id; view.trainGroup.add(m); return m;
   }));
   if (!view.player) { view.player = modelChunky(); scene.add(view.player); }
+}
+
+// --- Cargo drawing: item props and their destination tags. ---
+// One InstancedMesh per prop shape (shared KIT_MAT) plus ONE InstancedMesh for every tag card, so the
+// draw calls do not grow with the number of items: at most 7 shapes x 2 (shadow pass) + 1 tag mesh.
+// A shape with no items is hidden, so it costs nothing. Items in a car, a stockpile or a business are
+// not drawn. Bays and the ground are rebuilt only when the items change (cargoView.dirty, set by item
+// events in doTick, or a new state); carried items follow their actor every frame.
+// Tags: a flat card on the item's top, 6 mm up, turned to read upright for the current camera turn.
+// Each card shows colour + letter + shape from a small canvas atlas (one cell per CARGO_TAGS code).
+const cargoView = { group: null, meshes: {}, tag: null, shapes: null, S: null, yawIdx: null, dirty: true, carried: [], count: 0 };
+const CARGO_TAG_CODES = Object.keys(CARGO_TAGS); // atlas cell order
+function cargoTagMaterial() {
+  const cv = document.createElement('canvas'), N = 64, cols = 4, rows = Math.ceil(CARGO_TAG_CODES.length / cols);
+  cv.width = N * cols; cv.height = N * rows;
+  const g = cv.getContext('2d');
+  CARGO_TAG_CODES.forEach((code, i) => {
+    const T = CARGO_TAGS[code], cx = (i % cols) * N + N / 2, cy = Math.floor(i / cols) * N + N / 2, r = N * 0.44;
+    g.beginPath();
+    if (T.shape === 0 || T.shape === 5) g.arc(cx, cy, r, 0, Math.PI * 2);
+    else {
+      const n = [0, 4, 3, 4, 6][T.shape], rot = [0, Math.PI / 4, -Math.PI / 2, 0, 0][T.shape], rr = T.shape === 1 ? r * 1.3 : T.shape === 2 ? r * 1.12 : r;
+      for (let j = 0; j < n; j++) { const a = rot + j * 2 * Math.PI / n; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr + (T.shape === 2 ? r * 0.18 : 0)); }
+      g.closePath();
+    }
+    g.fillStyle = T.col; g.fill(); g.lineWidth = 4; g.strokeStyle = '#f4ecd8'; g.stroke();
+    g.font = 'bold ' + Math.round(N * (T.shape === 2 ? 0.42 : 0.5)) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 5; g.strokeStyle = '#1d1a16'; g.strokeText(T.letter, cx, cy + (T.shape === 2 ? N * 0.1 : 2));
+    g.fillStyle = '#ffffff'; g.fillText(T.letter, cx, cy + (T.shape === 2 ? N * 0.1 : 2));
+  });
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+  const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
+  // Each instance picks its atlas cell through the aCell attribute (cell x, cell y, in cells).
+  mat.onBeforeCompile = sh => {
+    sh.vertexShader = 'attribute vec2 aCell;\n' + sh.vertexShader.replace('#include <uv_vertex>',
+      `#include <uv_vertex>\n  vUv = (vUv + aCell) * vec2(${(1 / cols).toFixed(6)}, ${(1 / rows).toFixed(6)});`);
+  };
+  return { mat, cols, rows };
+}
+function cargoEnsure(type, need) {
+  let m = cargoView.meshes[type];
+  if (m && m.userData.cap >= need) return m;
+  const cap = Math.max(32, 2 ** Math.ceil(Math.log2(Math.max(1, need))));
+  if (m) { cargoView.group.remove(m); m.dispose(); }
+  m = new THREE.InstancedMesh(cargoView.shapes[type].g, KIT_MAT, cap);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.setColorAt(0, new THREE.Color(1, 1, 1));
+  m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; m.count = 0; m.name = 'items-' + type;
+  m.userData.cap = cap; cargoView.meshes[type] = m; cargoView.group.add(m);
+  return m;
+}
+function cargoEnsureTag(need) {
+  let m = cargoView.tag;
+  if (m && m.userData.cap >= need) return m;
+  const cap = Math.max(64, 2 ** Math.ceil(Math.log2(Math.max(1, need))));
+  if (m) { cargoView.group.remove(m); m.geometry.dispose(); } else cargoView.tagMat = cargoTagMaterial();
+  const g = new THREE.PlaneGeometry(0.26, 0.26);
+  g.setAttribute('aCell', new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2));
+  m = new THREE.InstancedMesh(g, cargoView.tagMat.mat, cap);
+  m.castShadow = false; m.receiveShadow = true; m.frustumCulled = false; m.count = 0; m.name = 'itemTags';
+  m.userData.cap = cap; cargoView.tag = m; cargoView.group.add(m);
+  return m;
+}
+// Where a stacked item stands: bays use 2 x 2 cells per bay, the ground stacks items on the same spot.
+// Long bundles in a bay lie along the bay's depth, two side by side. Returns {x, y, z, yaw} or null.
+function cargoPoses(S) {
+  const I = S.items, poses = [], stack = {};
+  const put = (id, key, x, y0, z, yaw) => {
+    const P = ITEM_PROP_OF[itemType(S, id)], h = cargoView.shapes[P[0]].h * P[2];
+    const y = y0 + (stack[key] || 0);
+    stack[key] = (stack[key] || 0) + h + 0.006;   // 6 mm between stacked items: no touching faces
+    poses[id] = { x, y, z, yaw, top: y + h };
+  };
+  const byBay = {};
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i];
+    if (!w) continue;
+    if (w.kind === 'BAY') (byBay[w.buildingId + ':' + w.bay] = byBay[w.buildingId + ':' + w.bay] || []).push(i);
+    else if (w.kind === 'GROUND') {
+      const x = w.x / 100, z = w.z / 100, ty = typeof terrainHeight === 'function' ? terrainHeight(x, z) : 0;
+      put(i, 'G' + w.x + ',' + w.z, x, ty + 0.004, z, ((i * 2654435761) >>> 0) % 16 * Math.PI / 8);
+    }
+  }
+  for (const key of Object.keys(byBay).sort()) {
+    const [b, bay] = key.split(':'), B = BLD_BAYS[b], at = B.bays[+bay], c = Math.cos(B.yaw), s = Math.sin(B.yaw);
+    byBay[key].forEach((id, r) => {
+      const long = itemType(S, id) === 'longBundle', col = r % 2, row = (r >> 1) % 2;
+      const lx = (col - 0.5) * 0.42, lz = long ? 0 : (row - 0.5) * 0.42;
+      put(id, key + (long ? ':L' + col : ':' + col + row), at.x + lx * c + lz * s, B.y + 0.004, at.z - lx * s + lz * c, B.yaw);
+    });
+  }
+  return poses;
+}
+// Default pose of a carried item: held in front of the actor (in hand), or low in front for a hand truck or
+// handcart until the carrying code draws those. Builder W3 may replace this function.
+function cargoCarriedPose(S, w, actor) {
+  if (!actor) return null;
+  const f = actor.rotation.y, fx = -Math.sin(f), fz = -Math.cos(f); // the character model faces local -z
+  if (w.carrier === 'HAND') return { x: actor.position.x + fx * 0.32, y: 0.42, z: actor.position.z + fz * 0.32, yaw: f };
+  const n = w.slot, d = 0.55, side = (n % 3 - 1) * 0.3;
+  return { x: actor.position.x + fx * d + fz * side, y: 0.25 + Math.floor(n / 3) * 0.36, z: actor.position.z + fz * d - fx * side, yaw: f };
+}
+const cargoM = new THREE.Matrix4(), cargoQ = new THREE.Quaternion(), cargoQ2 = new THREE.Quaternion(), cargoV = new THREE.Vector3(),
+  cargoS = new THREE.Vector3(), cargoUp = new THREE.Vector3(0, 1, 0), cargoX = new THREE.Vector3(1, 0, 0), cargoCol = new THREE.Color();
+function cargoSetItem(S, id, p) {
+  const type = itemType(S, id), P = ITEM_PROP_OF[type], m = cargoView.meshes[P[0]], k = m.userData.k++;
+  cargoQ.setFromAxisAngle(cargoUp, p.yaw); cargoS.set(P[1], P[2], P[1]);
+  m.setMatrixAt(k, cargoM.compose(cargoV.set(p.x, p.y, p.z), cargoQ, cargoS));
+  const tint = ITEM_TINT[S.items.waybill[id].commodity];
+  m.setColorAt(k, tint ? cargoCol.set(tint) : cargoCol.setRGB(1, 1, 1));
+  // The tag: flat on top, its top edge pointing away from the camera, so the letter reads upright.
+  const h = cargoView.shapes[P[0]].h * P[2], t = cargoView.tag, j = t.userData.k++;
+  cargoQ.setFromAxisAngle(cargoUp, camYawTarget()); cargoQ2.setFromAxisAngle(cargoX, -Math.PI / 2);
+  t.setMatrixAt(j, cargoM.compose(cargoV.set(p.x, p.y + h + 0.006, p.z), cargoQ.multiply(cargoQ2), cargoS.set(1, 1, 1)));
+  const cell = CARGO_TAG_CODES.indexOf(itemTag(S.items.waybill[id])), cols = cargoView.tagMat.cols, rows = cargoView.tagMat.rows;
+  t.geometry.attributes.aCell.setXY(j, cell % cols, rows - 1 - Math.floor(cell / cols));
+}
+function cargoDraw(S) {
+  if (!cargoView.group) { cargoView.group = new THREE.Group(); cargoView.group.name = 'cargo'; scene.add(cargoView.group); cargoView.shapes = itemPropShapes(); }
+  const I = S.items, carried = [];
+  for (let i = 0; i < I.next; i++) if (I.where[i] && I.where[i].kind === 'CARRIED') carried.push(i);
+  const changed = cargoView.dirty || cargoView.S !== S || cargoView.yawIdx !== cam.yawIdx;
+  if (!changed && !carried.length) return;
+  // Bays and the ground only change with item events; carried items move every frame.
+  if (changed) { cargoView.poses = cargoPoses(S); cargoView.dirty = false; cargoView.S = S; cargoView.yawIdx = cam.yawIdx; }
+  const poses = cargoView.poses, need = {};
+  let total = 0;
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i];
+    if (!w || !(poses[i] || w.kind === 'CARRIED')) continue;
+    const t = ITEM_PROP_OF[itemType(S, i)][0];
+    need[t] = (need[t] || 0) + 1; total++;
+  }
+  for (const t of Object.keys(cargoView.shapes)) { const m = need[t] ? cargoEnsure(t, need[t]) : cargoView.meshes[t]; if (m) m.userData.k = 0; }
+  cargoEnsureTag(total).userData.k = 0;
+  const actorOf = id => (id === 'player' ? view.player : null);
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i];
+    if (!w) continue;
+    const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId)) : poses[i];
+    if (p) cargoSetItem(S, i, p);
+  }
+  for (const m of Object.values(cargoView.meshes).concat(cargoView.tag)) {
+    m.count = m.userData.k; m.visible = m.count > 0;
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }
+  cargoView.tag.geometry.attributes.aCell.needsUpdate = true;
+  cargoView.count = cargoView.tag.count;
 }
 
 // ==== Section: terrain ====
@@ -1546,6 +2076,18 @@ const BLD_LAYOUT = [
   { id: 'lamp3', x: 6.4, z: 12.4, yaw: 0 },
   { id: 'lamp4', x: -12.9, z: 10.6, yaw: 0 },
 ];
+// Freight shed bays as pure data (no three.js), read by the sim (section "cargo") and the item props.
+// One bay in front of each of the shed's 4 doors, on the dock (top at platform height). Each bay holds
+// 8 items in 2 columns x 2 rows x 2 layers; slot positions are worked out by cargoBaySlot in "world rendering".
+// x, z: the bay centre in world units; yaw: the shed's yaw (local +z faces the track); y: the dock top.
+const BLD_BAYS = (() => {
+  const out = {};
+  for (const at of BLD_LAYOUT.filter(a => a.id.replace(/\d+$/, '') === 'freightshed')) {
+    const c = Math.cos(at.yaw), s = Math.sin(at.yaw), lz = 1.21;
+    out[at.id] = { yaw: at.yaw, y: BLD_PLATFORM_TOP, bays: [-1.6, -0.55, 0.55, 1.6].map(lx => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c })) };
+  }
+  return out;
+})();
 
 // A gable roof: a closed triangular prism, ridge along local x, eaves at y = 0, ridge at y = h.
 function bldPrism(len, wid, h) {
@@ -1652,7 +2194,8 @@ const BLD_RECIPES = {
     b.add(box(0.12, 0.12, 0.8), PAL.trim, 0, 2.53, 1.13, -0.6);
     return BLD_EXTENTS.watertower;
   },
-  // Freight shed: 4 bays on a loading dock at platform height; red siding, grey tin roof, a few crates.
+  // Freight shed: 4 bays on a loading dock at platform height (one in front of each door, see BLD_BAYS);
+  // red siding and a grey tin roof.
   freightshed(b) {
     const top = BLD_PLATFORM_TOP;
     b.add(box(4.6, top + 0.05, 3.4), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
@@ -1661,9 +2204,7 @@ const BLD_RECIPES = {
     for (const x of [-1.6, -0.55, 0.55, 1.6]) b.add(box(0.85, 1.1, 0.05), PAL.trim, x, top + 0.55, 0.725);
     b.add(box(4.1, 0.06, 0.06), PAL.loco, 0, top + 1.18, 0.75);
     for (const x of [-1.2, 1.2]) b.win(x, top + 1.0, -1.7, 0.5, 0.4, 'z', -1);
-    b.add(box(0.42, 0.4, 0.42), PAL.tie, 1.85, top + 0.19, 1.2);
-    b.add(box(0.36, 0.34, 0.36), PAL.tie, 1.4, top + 0.16, 1.25, 0, 0.4);
-    b.add(cyl(0.15, 0.15, 0.42), PAL.trunk, -1.9, top + 0.2, 1.2);
+    // (The three loose crates that stood on the dock in M0 are gone: real items now sit in the bays.)
     return BLD_EXTENTS.freightshed;
   },
   // Lamp post (style test page): iron post, glowing lamp, cone cap.
@@ -2887,6 +3428,8 @@ const DBG_SCENARIOS = {
     st.player.x = -6; st.player.z = 21;
     return st;
   },
+  // Cargo testing: items in the freight shed bays, on the ground by the dock, in the boxcar and in hand.
+  cargo: () => cargoDebugItems(newState(CFG.SEED)),
   // Switch 3 is set for the spur and the train is running towards it on the north main line.
   spur: () => {
     const st = newState(CFG.SEED), T = st.track, tr = st.trains[0], W = T.switches[2], E = T.edges[W.trunk];
@@ -3011,10 +3554,11 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt');
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
+  if (ev.some(e => /^item(Created|Moved|Consumed)$/.test(e.t))) cargoView.dirty = true; // redraw the item props
   if (changed) saveSoon();                 // the world changed: save a couple of seconds later
   if (S.time % 600 === 0) saveGame();      // and every 10 game minutes
 }
@@ -3242,6 +3786,7 @@ function render(alpha, dt) {
   cam.fx += (px - cam.fx) * k; cam.fz += (pz - cam.fz) * k;
   cam.yaw += (camYawTarget() - cam.yaw) * (1 - Math.exp(-dt * 10));
   placeCamera();
+  cargoDraw(S);           // item props and tags (section "cargo")
   applyDaylight(S, dt);
   updateCrowd(dt);
   debugUpdate(dt);
@@ -3300,6 +3845,8 @@ window.__railhead = {
   step(n) { for (let i = 0; i < n; i++) doTick(); },
   newState, simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
+  cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, BLD_BAYS, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
+    redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },

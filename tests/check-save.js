@@ -36,14 +36,21 @@ module.exports = async function checkSave() {
     if (!files.length) problems.push('no sample saves in tests/fixtures');
     for (const f of files) {
       const fx = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+      // A sample from the current version must load with its own hash. An older one goes through migrate(),
+      // so its state changes: it must load with the hash recorded for this version by make-fixture.js.
       const r = await page.evaluate((fx) => {
-        const R = window.__railhead;
-        try { const h = R.importSave(fx.save); R.step(100); return { h, tick: R.state.tick }; }
-        catch (e) { return { err: String(e) }; }
+        const R = window.__railhead, cur = R.newState(1).schemaVersion;
+        const raw = R.stateHash(JSON.parse(fx.save).state);
+        try { const h = R.importSave(fx.save); const t0 = R.state.tick; R.step(100); return { h, raw, cur, t0, tick: R.state.tick }; }
+        catch (e) { return { err: String(e), raw, cur }; }
       }, fx);
+      const want = r.cur === fx.schemaVersion ? fx.hash : fx.loads && fx.loads['v' + r.cur];
+      if (r.raw !== fx.hash) problems.push(`${f} is damaged: its own state no longer gives its recorded hash`);
       if (r.err) problems.push(`${f} did not load: ${r.err}`);
-      else if (r.h !== fx.hash) problems.push(`${f} loaded with a different hash (${r.h} vs ${fx.hash})`);
-      else console.log(`  ${f}: loads, hash ${r.h}, ran on to tick ${r.tick}`);
+      else if (!want) problems.push(`${f} has no recorded hash for schema version ${r.cur}: run node tests/make-fixture.js`);
+      else if (r.h !== want) problems.push(`${f} loaded with a different hash (${r.h} vs ${want})`);
+      else if (r.t0 !== JSON.parse(fx.save).state.tick) problems.push(`${f} lost its game time when it loaded`);
+      else console.log(`  ${f}: loads${r.cur === fx.schemaVersion ? '' : ' (migrated to v' + r.cur + ')'}, hash ${r.h}, ran on to tick ${r.tick}`);
     }
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
   } finally { await browser.close(); }

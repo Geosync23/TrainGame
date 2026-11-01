@@ -28,6 +28,7 @@ const checks = {
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
+  'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
 };
 
 (async () => {

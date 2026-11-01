@@ -1,5 +1,7 @@
-// Makes tests/fixtures/save-v1.json: a save from schema version 1 after a short scripted session,
-// with its state hash. Kept in git so every later build is checked against this old save.
+// Makes tests/fixtures/save-v<N>.json for the current schema version N: a save after a short scripted
+// session, with its state hash. Kept in git so every later build is checked against this old save.
+// It also loads every OLDER sample save through migrate() and records the hash it loads with under
+// "loads": { "v<N>": hash }, so check-save.js can tell that each old save still migrates to the same state.
 // Run once per new schema version:  node tests/make-fixture.js
 const fs = require('fs');
 const path = require('path');
@@ -15,8 +17,17 @@ const { openGame, stopServer } = require('./browser');
     ], 400);
     return { save: JSON.stringify({ state: S, ui: { yawIdx: 1, zoom: 1.5, speed: 1 } }), hash: R.stateHash(S), schemaVersion: S.schemaVersion };
   });
+  const dir = path.join(__dirname, 'fixtures');
+  for (const f of fs.readdirSync(dir).filter(f => /^save-v\d+\.json$/.test(f)).sort()) {
+    const fx = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    if (fx.schemaVersion >= out.schemaVersion) continue;
+    const h = await page.evaluate((json) => window.__railhead.importSave(json), fx.save);
+    fx.loads = Object.assign(fx.loads || {}, { ['v' + out.schemaVersion]: h });
+    fs.writeFileSync(path.join(dir, f), JSON.stringify(fx, null, 1) + '\n');
+    console.log('recorded', f, 'loads as v' + out.schemaVersion, 'with hash', h);
+  }
   await browser.close(); stopServer();
-  const file = path.join(__dirname, 'fixtures', `save-v${out.schemaVersion}.json`);
+  const file = path.join(dir, `save-v${out.schemaVersion}.json`);
   fs.writeFileSync(file, JSON.stringify(out, null, 1) + '\n');
   console.log('wrote', file, 'hash', out.hash);
 })();

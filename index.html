@@ -5,70 +5,1271 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Railhead</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #c9b48a; touch-action: none; }
-  canvas { display: block; width: 100%; height: 100%; }
-  #label { position: fixed; left: 12px; top: calc(env(safe-area-inset-top) + 12px);
-           font: 600 15px/1.2 Georgia, serif; color: #3b2a1a; pointer-events: none; }
+  :root { --ink: #2b2118; --paper: #efe7d4; --paper-2: #e2d6ba; --edge: #6e4426; --accent: #9e3a26; --green: #3f6b2c; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #b9d3d8; touch-action: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; font-family: Georgia, "Times New Roman", serif; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .hud { position: fixed; z-index: 2; }
+  [hidden] { display: none !important; }
+  button { font: 600 15px/1 Georgia, serif; color: var(--ink); background: var(--paper); border: 2px solid var(--edge);
+    border-radius: 8px; min-width: 48px; min-height: 48px; padding: 0 12px; cursor: pointer; touch-action: manipulation; }
+  button:active { background: var(--paper-2); }
+  button[aria-pressed="true"] { background: var(--edge); color: var(--paper); }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #topleft { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 10px); display: grid; gap: 6px; }
+  #clock { background: var(--paper); border: 2px solid var(--edge); border-radius: 8px; padding: 6px 10px; font-size: 15px;
+    color: var(--ink); font-variant-numeric: tabular-nums; justify-self: start; }
+  #speeds { display: flex; gap: 4px; }
+  #speeds button { padding: 0 8px; }
+  #bottomleft { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); display: flex; gap: 8px; }
+  #bottomleft svg { width: 26px; height: 26px; display: block; }
+  #centre { right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); }
+  #toast { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 112px); max-width: min(92vw, 420px);
+    background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.3;
+    pointer-events: none; opacity: 0; transition: opacity .25s; text-align: center; }
+  #toast.show { opacity: 1; }
+  #panel { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); width: min(94vw, 380px);
+    box-sizing: border-box; background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
+  #panel .row { display: flex; gap: 6px; align-items: center; }
+  #panel .grow { flex: 1; }
+  #panel h2 { margin: 0; font-size: 18px; color: var(--ink); }
+  #panelStatus { font-size: 14px; color: #5a4a3a; min-height: 1.3em; }
+  #panel .acts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #panel .acts button { padding: 0 4px; font-size: 14px; }
+  #banner { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 112px); width: min(94vw, 380px);
+    box-sizing: border-box; background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 8px 8px 14px;
+    display: flex; gap: 10px; align-items: center; font-size: 15px; }
+  #banner span { flex: 1; }
+  @media (orientation: landscape) and (max-height: 500px) {
+    #panel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 66px); width: 340px; }
+    #toast, #banner { top: calc(env(safe-area-inset-top) + 10px); }
+  }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-<div id="label">Railhead (setup build)</div>
+<div id="topleft" class="hud">
+  <div id="clock">Mon, Spring 1, 1866 &middot; 05:00</div>
+  <div id="speeds" role="group" aria-label="Game speed">
+    <button data-speed="0" aria-label="Pause">II</button>
+    <button data-speed="1">1x</button>
+    <button data-speed="2">2x</button>
+    <button data-speed="4">4x</button>
+  </div>
+</div>
+<div id="bottomleft" class="hud">
+  <button id="rotL" aria-label="Turn view left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 3v5h5"/></svg></button>
+  <button id="rotR" aria-label="Turn view right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 3v5h-5"/></svg></button>
+</div>
+<button id="centre" class="hud" hidden>Centre</button>
+<div id="toast" class="hud" role="status" aria-live="polite"></div>
+<div id="banner" class="hud" hidden><span id="bannerText">Tap a track to send the train there</span><button id="bannerCancel">Cancel</button></div>
+<div id="panel" class="hud" hidden>
+  <div class="row"><h2 class="grow" id="panelTitle">No. 1</h2><button id="panelClose" aria-label="Close">X</button></div>
+  <div id="panelStatus"></div>
+  <div class="acts">
+    <button id="actFwd">Forward</button><button id="actBack">Back</button><button id="actStop">Stop</button><button id="actSend">Send to</button>
+  </div>
+</div>
 <script>
 'use strict';
 
 // ==== Section: config ====
-const CONFIG = {
-  ISO_ELEVATION_DEG: 35.264, // true isometric angle (design doc section 5)
-  VIEW_HEIGHT_U: 24,         // world units visible top to bottom at zoom 1
+// Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
+const CFG = {
+  SCHEMA_VERSION: 1,
+  SEED: 1866,
+  TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
+  TICKS_PER_REAL_S: 10,      // at 1x
+  DAY_START_S: 5 * 3600,     // the game starts at 05:00
+  WALK: 2.25, RUN: 3.5,      // player speeds, u per game minute (section 4)
+  ACCEL_K: 2.0,              // a = 2.0 x power / mass, u/min^2 (section 7)
+  BRAKE: 3.0,                // u/min^2
+  TENDER_FIRST: 0.6,         // speed cap factor running tender-first
+  LOCO_MAX: 4.0,             // mainline maximum
+  LIM: { main: 4.0, yard: 1.0, diverge: 1.5 },
+  STOP_GAP: 0.5,             // trains stop 0.5u before a block they may not enter
+  THROW_S: 30,               // throwing a switch takes 0.5 game minutes
+  DIVERGE_PENALTY: 20,       // route cost per diverging switch
+  REACH: 1.5,                // interactables are in reach within 1.5u
+  GEOM: { main: { minR: 12, revStraight: 3 }, yard: { minR: 8, revStraight: 2 } },
+  GAUGE_HALF: 0.38,
+  ZOOM_MIN: 0.6, ZOOM_MAX: 4, VIEW_MIN_U: 14,
+  ISO_EL: Math.atan(1 / Math.SQRT2), // 35.264 degrees
+  CAM_LAG_S: 0.2,
+  HOLD_MS: 220, TAP_MOVE_PX: 10,
+  MAP_HALF: 60,
 };
+const DT_MIN = CFG.TICK_GAME_S / 60; // one tick in game minutes
+
+// ==== Section: random numbers (seeded) ====
+// sfc32. The state is four 32-bit integers kept inside the game state, so saves resume the same sequence.
+function rngSeed(seed) {
+  const st = [0x9e3779b9 | 0, 0x243f6a88 | 0, 0xb7e15162 | 0, seed | 0];
+  for (let i = 0; i < 15; i++) rngNext(st);
+  return st;
+}
+function rngNext(st) {
+  let a = st[0], b = st[1], c = st[2], d = st[3];
+  let t = (a + b) | 0; a = b ^ (b >>> 9); b = (c + (c << 3)) | 0; c = (c << 21) | (c >>> 11);
+  d = (d + 1) | 0; t = (t + d) | 0; c = (c + t) | 0;
+  st[0] = a; st[1] = b; st[2] = c; st[3] = d;
+  return (t >>> 0) / 4294967296;
+}
+
+// ==== Section: track graph ====
+// Nodes joined by straight or arc edges (section 6). A train position is {e, s, d}:
+// edge id, distance from node A, and d = +1 facing towards B or -1 facing towards A.
+function trackNew() { return { nodes: [], edges: [], switches: [] }; }
+function trackNode(T, x, z) { const id = T.nodes.length; T.nodes.push({ id, x, z }); return id; }
+function trackStraight(T, a, b, cls, lim) {
+  const A = T.nodes[a], B = T.nodes[b], id = T.edges.length;
+  T.edges.push({ id, a, b, k: 'S', len: Math.hypot(B.x - A.x, B.z - A.z), cls, lim });
+  return id;
+}
+// Arc starting at node a with heading (hx,hz). turn = +1 or -1 picks the side; deg is the sweep.
+// If endNode is given the arc must land on it (checked by the validator).
+function trackArc(T, a, hx, hz, R, turn, deg, cls, lim, endNode) {
+  const A = T.nodes[a];
+  const cx = A.x + R * hz * turn, cz = A.z - R * hx * turn;
+  const th0 = Math.atan2(A.z - cz, A.x - cx), sweep = -turn * deg * Math.PI / 180, th1 = th0 + sweep;
+  const b = endNode !== undefined ? endNode : trackNode(T, cx + R * Math.cos(th1), cz + R * Math.sin(th1));
+  const id = T.edges.length;
+  T.edges.push({ id, a, b, k: 'A', cx, cz, R, th0, sweep, len: R * Math.abs(sweep), cls, lim });
+  const sg = sweep > 0 ? 1 : -1;
+  return { e: id, node: b, hx: -Math.sin(th1) * sg, hz: Math.cos(th1) * sg };
+}
+// Point and tangent (pointing from A towards B) at distance s along edge E.
+function edgeAt(T, E, s) {
+  if (E.k === 'S') {
+    const A = T.nodes[E.a], B = T.nodes[E.b], f = E.len ? s / E.len : 0;
+    return { x: A.x + (B.x - A.x) * f, z: A.z + (B.z - A.z) * f, tx: (B.x - A.x) / E.len, tz: (B.z - A.z) / E.len };
+  }
+  const th = E.th0 + E.sweep * s / E.len, sg = E.sweep > 0 ? 1 : -1;
+  return { x: E.cx + E.R * Math.cos(th), z: E.cz + E.R * Math.sin(th), tx: -Math.sin(th) * sg, tz: Math.cos(th) * sg };
+}
+// Tangent pointing out of a node along the edge.
+function outTangent(T, E, node) {
+  if (node === E.a) { const p = edgeAt(T, E, 0); return { x: p.tx, z: p.tz }; }
+  const p = edgeAt(T, E, E.len); return { x: -p.tx, z: -p.tz };
+}
+// A switch on node `node`: trunk edge, through (normal) leg and diverging (reverse) leg.
+function trackSwitch(T, node, trunk, normal, reverse) {
+  const id = T.switches.length, N = T.nodes[node];
+  const h = outTangent(T, T.edges[normal], node);
+  const rev = T.edges[reverse], far = rev.a === node ? T.nodes[rev.b] : T.nodes[rev.a];
+  const px = -h.z, pz = h.x, side = Math.sign((far.x - N.x) * px + (far.z - N.z) * pz) || 1;
+  // The stand sits beside the trunk end, on the side away from the diverging leg.
+  const sx = N.x - h.x * 0.4 - px * side * 1.3, sz = N.z - h.z * 0.4 - pz * side * 1.3;
+  T.switches.push({ id, node, trunk, normal, reverse, state: 'N', lockedBy: null,
+    stand: { x: sx, z: sz, hx: h.x, hz: h.z, ux: sx - px * side * 0.65, uz: sz - pz * side * 0.65 } });
+  return id;
+}
+
+// Derived lookups (not saved): edges per node, switch per node, blocks.
+const trackIndexCache = new WeakMap();
+function trackIndex(T) {
+  let ix = trackIndexCache.get(T);
+  if (ix) return ix;
+  ix = { nodeEdges: T.nodes.map(() => []), nodeSw: {}, legSw: {}, block: [] };
+  for (const E of T.edges) { ix.nodeEdges[E.a].push(E.id); ix.nodeEdges[E.b].push(E.id); }
+  for (const W of T.switches) { ix.nodeSw[W.node] = W.id; ix.legSw[W.normal] = W.id; ix.legSw[W.reverse] = W.id; }
+  // Blocks: every switch (its two legs) is a block; other runs of edges joined by plain nodes form one block each.
+  let nb = 0;
+  for (const W of T.switches) { ix.block[W.normal] = nb; ix.block[W.reverse] = nb; nb++; }
+  for (const E of T.edges) {
+    if (ix.block[E.id] !== undefined) continue;
+    const stack = [E.id]; ix.block[E.id] = nb;
+    while (stack.length) {
+      const cur = T.edges[stack.pop()];
+      for (const n of [cur.a, cur.b]) {
+        if (ix.nodeSw[n] !== undefined || ix.nodeEdges[n].length !== 2) continue;
+        for (const o of ix.nodeEdges[n]) if (ix.block[o] === undefined && ix.legSw[o] === undefined) { ix.block[o] = nb; stack.push(o); }
+      }
+    }
+    nb++;
+  }
+  ix.blockCount = nb;
+  trackIndexCache.set(T, ix);
+  return ix;
+}
+
+// Which edge comes next when leaving edge `fromE` through node `node`, following the switches as set.
+function nextEdge(T, node, fromE) {
+  const ix = trackIndex(T), swId = ix.nodeSw[node];
+  if (swId !== undefined) {
+    const W = T.switches[swId];
+    if (fromE === W.trunk) return { e: W.state === 'N' ? W.normal : W.reverse };
+    const want = fromE === W.normal ? 'N' : 'R';
+    if (W.state !== want) return { blocked: 'against', sw: swId };
+    return { e: W.trunk };
+  }
+  for (const o of ix.nodeEdges[node]) if (o !== fromE) return { e: o };
+  return { blocked: 'end' };
+}
+function reversePos(p) { return { e: p.e, s: p.s, d: -p.d }; }
+// Move a position `dist` along the track in its facing direction.
+// Returns the new position, how far it got, and why it stopped early (if it did).
+function trackWalk(T, pos, dist, collect) {
+  let e = pos.e, s = pos.s, d = pos.d, left = dist;
+  for (let guard = 0; guard < 1000; guard++) {
+    const E = T.edges[e], avail = d > 0 ? E.len - s : s;
+    if (left <= avail + 1e-12) {
+      const s2 = s + d * left;
+      if (collect) collect.push([e, Math.min(s, s2), Math.max(s, s2)]);
+      return { pos: { e, s: s2, d }, moved: dist, blocked: null };
+    }
+    if (collect) collect.push([e, d > 0 ? s : 0, d > 0 ? E.len : s]);
+    left -= avail;
+    const node = d > 0 ? E.b : E.a, nx = nextEdge(T, node, e);
+    if (nx.blocked) return { pos: { e, s: d > 0 ? E.len : 0, d }, moved: dist - left, blocked: nx.blocked, sw: nx.sw };
+    const E2 = T.edges[nx.e];
+    e = nx.e; d = E2.a === node ? 1 : -1; s = d > 0 ? 0 : E2.len;
+  }
+  return { pos: { e, s, d }, moved: dist - left, blocked: 'end' };
+}
+// Look ahead from a position: distance to the first place the train must stop, and speed limits on the way.
+function trackScan(T, pos, maxDist) {
+  let e = pos.e, s = pos.s, d = pos.d, run = 0;
+  const limits = [];
+  for (let guard = 0; guard < 1000; guard++) {
+    const E = T.edges[e], avail = d > 0 ? E.len - s : s;
+    limits.push({ at: run, lim: E.lim });
+    run += avail;
+    if (run >= maxDist) return { stop: Infinity, reason: null, limits };
+    const node = d > 0 ? E.b : E.a, nx = nextEdge(T, node, e);
+    if (nx.blocked) return { stop: Math.max(0, run - CFG.STOP_GAP), reason: nx.blocked, sw: nx.sw, limits };
+    // Entering a switch from the far end of one of its legs: if the switch is set for the other leg,
+    // stop before the switch's block, so the train never stands on a switch it cannot pass.
+    const ix = trackIndex(T), legSw = ix.legSw[nx.e];
+    if (legSw !== undefined && T.switches[legSw].node !== node && e !== T.switches[legSw].trunk) {
+      const W = T.switches[legSw];
+      if ((W.state === 'N' ? W.normal : W.reverse) !== nx.e) return { stop: Math.max(0, run - CFG.STOP_GAP), reason: 'against', sw: legSw, limits };
+    }
+    const E2 = T.edges[nx.e];
+    e = nx.e; d = E2.a === node ? 1 : -1; s = d > 0 ? 0 : E2.len;
+  }
+  return { stop: Infinity, reason: null, limits };
+}
+// Nearest point on any edge to (x, z). Used for taps on the track.
+function trackNearest(T, x, z) {
+  let best = null;
+  for (const E of T.edges) {
+    const n = Math.max(2, Math.ceil(E.len / 0.2));
+    for (let i = 0; i <= n; i++) {
+      const s = E.len * i / n, p = edgeAt(T, E, s), dd = (p.x - x) ** 2 + (p.z - z) ** 2;
+      if (!best || dd < best.dd) best = { e: E.id, s, dd, x: p.x, z: p.z };
+    }
+  }
+  if (best) best.dist = Math.sqrt(best.dd);
+  return best;
+}
+
+// ==== Section: track validation ====
+// Checks the rules of section 6: exact arc ends, smooth joints (G1), switch shape, curve radius,
+// and the straight needed between reverse curves. Returns a list of problems (empty = valid).
+function trackValidate(T) {
+  const errs = [], ix = trackIndex(T);
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  for (const E of T.edges) {
+    const A = T.nodes[E.a], B = T.nodes[E.b];
+    const p0 = edgeAt(T, E, 0), p1 = edgeAt(T, E, E.len);
+    if (!near(p0.x, A.x) || !near(p0.z, A.z)) errs.push(`edge ${E.id}: start is off node ${E.a}`);
+    if (!near(p1.x, B.x) || !near(p1.z, B.z)) errs.push(`edge ${E.id}: end is off node ${E.b}`);
+    if (E.k === 'A') {
+      if (!near(E.len, E.R * Math.abs(E.sweep))) errs.push(`edge ${E.id}: arc length is not exact`);
+      const g = CFG.GEOM[E.cls];
+      if (g && E.R < g.minR - 1e-9) errs.push(`edge ${E.id}: radius ${E.R} is below the ${E.cls} minimum ${g.minR}`);
+    }
+  }
+  for (const N of T.nodes) {
+    const list = ix.nodeEdges[N.id];
+    if (list.length > 3) errs.push(`node ${N.id}: ${list.length} edges (crossings are not built yet)`);
+    const sw = ix.nodeSw[N.id];
+    if (list.length === 2 && sw === undefined) {
+      const t1 = outTangent(T, T.edges[list[0]], N.id), t2 = outTangent(T, T.edges[list[1]], N.id);
+      if (t1.x * t2.x + t1.z * t2.z > -1 + 1e-9) errs.push(`node ${N.id}: edges do not meet smoothly`);
+    }
+    if (list.length === 3 && sw === undefined) errs.push(`node ${N.id}: three edges but no switch`);
+    if (sw !== undefined) {
+      const W = T.switches[sw];
+      const tt = outTangent(T, T.edges[W.trunk], N.id), tn = outTangent(T, T.edges[W.normal], N.id), tr = outTangent(T, T.edges[W.reverse], N.id);
+      if (tt.x * tn.x + tt.z * tn.z > -1 + 1e-9) errs.push(`switch ${W.id}: trunk and through leg do not line up`);
+      if (tn.x * tr.x + tn.z * tr.z < 1 - 1e-9) errs.push(`switch ${W.id}: legs do not leave in the same direction`);
+    }
+  }
+  // Reverse curves: two arcs that turn opposite ways need a straight of at least revStraight between them.
+  const turnAt = (E, node) => (E.k !== 'A' ? 0 : (E.a === node ? Math.sign(E.sweep) : -Math.sign(E.sweep)));
+  const otherEnd = (E, node) => (E.a === node ? E.b : E.a);
+  for (const N of T.nodes) {
+    const list = ix.nodeEdges[N.id];
+    if (list.length !== 2 || ix.nodeSw[N.id] !== undefined) continue;
+    const E1 = T.edges[list[0]], E2 = T.edges[list[1]];
+    if (E1.k === 'A' && E2.k === 'A' && turnAt(E1, N.id) === turnAt(E2, N.id)) errs.push(`node ${N.id}: reverse curves with no straight between`);
+  }
+  for (const E of T.edges) {
+    if (E.k !== 'S') continue;
+    const ends = [E.a, E.b].map(n => {
+      const l = ix.nodeEdges[n].filter(o => o !== E.id);
+      if (l.length !== 1) return null;
+      const O = T.edges[l[0]];
+      return O.k === 'A' ? { O, n } : null;
+    });
+    if (!ends[0] || !ends[1]) continue;
+    // Turning sense when travelling A -> B through the straight: compare arc turn at both ends.
+    const t1 = -turnAt(ends[0].O, ends[0].n), t2 = turnAt(ends[1].O, ends[1].n);
+    const g = CFG.GEOM[E.cls] || CFG.GEOM.yard;
+    if (t1 !== t2 && E.len < g.revStraight - 1e-9) errs.push(`edge ${E.id}: ${E.len.toFixed(2)}u straight between reverse curves (minimum ${g.revStraight})`);
+  }
+  return errs;
+}
+
+// ==== Section: test yard layout ====
+// An oval main line (radius 14 ends) with a passing siding on the south side (switches 0 and 1)
+// and a dead-end spur off the north side (switch 2). Switch legs follow section 6:
+// through leg straight 5u, diverging leg radius 10u, 30 degrees.
+function buildTestYard() {
+  const T = trackNew(), L = CFG.LIM;
+  const n0 = trackNode(T, -20, 14), s1 = trackNode(T, -12, 14), s1t = trackNode(T, -7, 14);
+  const s2t = trackNode(T, 7, 14), s2 = trackNode(T, 12, 14), n1 = trackNode(T, 20, 14);
+  const n2 = trackNode(T, 20, -14), s3 = trackNode(T, -4, -14), s3t = trackNode(T, -9, -14), n3 = trackNode(T, -20, -14);
+  const eW = trackStraight(T, n0, s1, 'main', L.main);
+  const e1t = trackStraight(T, s1, s1t, 'switch', L.main);
+  trackStraight(T, s1t, s2t, 'main', L.main);
+  const e2t = trackStraight(T, s2t, s2, 'switch', L.main);
+  const eE = trackStraight(T, s2, n1, 'main', L.main);
+  trackArc(T, n1, 1, 0, 14, 1, 180, 'main', L.main, n2);
+  const eN = trackStraight(T, n2, s3, 'main', L.main);
+  const e3t = trackStraight(T, s3, s3t, 'switch', L.main);
+  trackStraight(T, s3t, n3, 'main', L.main);
+  trackArc(T, n3, -1, 0, 14, 1, 180, 'main', L.main, n0);
+  // Passing siding, built from both switches towards the middle.
+  const d1 = trackArc(T, s1, 1, 0, 10, -1, 30, 'switch', L.diverge);
+  const a1 = trackNode(T, T.nodes[d1.node].x + d1.hx * 2, T.nodes[d1.node].z + d1.hz * 2);
+  trackStraight(T, d1.node, a1, 'yard', L.yard);
+  const b1 = trackArc(T, a1, d1.hx, d1.hz, 8, 1, 30, 'yard', L.yard);
+  const d2 = trackArc(T, s2, -1, 0, 10, 1, 30, 'switch', L.diverge);
+  const a2 = trackNode(T, T.nodes[d2.node].x + d2.hx * 2, T.nodes[d2.node].z + d2.hz * 2);
+  trackStraight(T, d2.node, a2, 'yard', L.yard);
+  const b2 = trackArc(T, a2, d2.hx, d2.hz, 8, -1, 30, 'yard', L.yard);
+  trackStraight(T, b1.node, b2.node, 'yard', L.yard);
+  // Dead-end spur.
+  const d3 = trackArc(T, s3, -1, 0, 10, -1, 30, 'switch', L.diverge);
+  const a3 = trackNode(T, T.nodes[d3.node].x + d3.hx * 2, T.nodes[d3.node].z + d3.hz * 2);
+  trackStraight(T, d3.node, a3, 'yard', L.yard);
+  const b3 = trackArc(T, a3, d3.hx, d3.hz, 8, 1, 30, 'yard', L.yard);
+  const end = trackNode(T, T.nodes[b3.node].x + b3.hx * 10, T.nodes[b3.node].z + b3.hz * 10);
+  trackStraight(T, b3.node, end, 'yard', L.yard);
+  trackSwitch(T, s1, eW, e1t, d1.e);
+  trackSwitch(T, s2, eE, e2t, d2.e);
+  trackSwitch(T, s3, eN, e3t, d3.e);
+  return T;
+}
+
+// ==== Section: game state ====
+const CONSIST_NO1 = [
+  { k: 'loco', len: 5.2, mass: 3, power: 10 },
+  { k: 'combine', len: 2.8, mass: 0.8 },
+  { k: 'boxcar', len: 2.6, mass: 0.5 },
+];
+const COUPLER_GAP = 0.1;
+function newState(seed) {
+  const T = buildTestYard();
+  return {
+    schemaVersion: CFG.SCHEMA_VERSION,
+    seed, rng: rngSeed(seed), tick: 0, time: 0,
+    track: T,
+    trains: [{ id: 0, name: 'No. 1', front: { e: 2, s: 12, d: 1 }, v: 0, mode: 'idle', m: 1,
+      route: null, status: 'Stopped', consist: CONSIST_NO1.map(c => ({ ...c })) }],
+    player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null },
+  };
+}
+function trainLength(tr) { return tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1); }
+// Where each vehicle is: centre, heading and length, worked out by walking back from the front.
+function trainPoses(T, tr) {
+  const out = [], back = reversePos(tr.front);
+  let off = 0;
+  for (const c of tr.consist) {
+    const inset = Math.min(0.6, c.len / 3);
+    const pf = trackWalk(T, back, off + inset).pos, pr = trackWalk(T, back, off + c.len - inset).pos;
+    const a = edgeAt(T, T.edges[pf.e], pf.s), b = edgeAt(T, T.edges[pr.e], pr.s);
+    out.push({ k: c.k, len: c.len, x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, yaw: Math.atan2(-(a.z - b.z), a.x - b.x) });
+    off += c.len + COUPLER_GAP;
+  }
+  return out;
+}
+// The stretches of track the train covers, as [edge, sFrom, sTo].
+function trainSegs(T, tr) { const segs = []; trackWalk(T, reversePos(tr.front), trainLength(tr), segs); return segs; }
+function occupiedSwitches(S) {
+  const T = S.track, ix = trackIndex(T), occ = {};
+  for (const tr of S.trains) for (const [e, a, b] of trainSegs(T, tr)) {
+    const sw = ix.legSw[e];
+    if (sw !== undefined && b - a > 1e-6) occ[sw] = tr.id;
+  }
+  return occ;
+}
+function switchLockReason(S, swId, occ) {
+  const W = S.track.switches[swId];
+  occ = occ || occupiedSwitches(S);
+  if (occ[swId] !== undefined) return 'a train is on it';
+  if (W.lockedBy !== null) return 'it is set for a train\'s route';
+  return null;
+}
+
+// ==== Section: routes ====
+// Shortest way for the train's leading end to reach a point, without reversing (section 8: A* over the
+// track graph, cost = length plus 20u for each diverging switch). Returns the switch settings it needs.
+function findRoute(T, start, target) {
+  const ix = trackIndex(T);
+  const E0 = T.edges[start.e];
+  if (start.e === target.e && (start.d > 0 ? target.s >= start.s : target.s <= start.s)) {
+    return { cost: Math.abs(target.s - start.s), dist: Math.abs(target.s - start.s), needs: [] };
+  }
+  const open = [], seen = new Set();
+  const first = start.d > 0 ? E0.len - start.s : start.s;
+  open.push({ cost: first, dist: first, e: start.e, d: start.d, needs: [] });
+  let best = null;
+  while (open.length) {
+    open.sort((p, q) => p.cost - q.cost || p.e - q.e || p.d - q.d);
+    const cur = open.shift();
+    if (best && cur.cost >= best.cost) break;
+    const key = cur.e + ':' + cur.d;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const E = T.edges[cur.e], node = cur.d > 0 ? E.b : E.a, swId = ix.nodeSw[node];
+    const options = [];
+    if (swId !== undefined) {
+      const W = T.switches[swId];
+      if (cur.e === W.trunk) {
+        options.push({ e: W.normal, need: { sw: swId, state: 'N' }, extra: 0 });
+        options.push({ e: W.reverse, need: { sw: swId, state: 'R' }, extra: CFG.DIVERGE_PENALTY });
+      } else {
+        options.push({ e: W.trunk, need: { sw: swId, state: cur.e === W.normal ? 'N' : 'R' }, extra: 0 });
+      }
+    } else {
+      for (const o of ix.nodeEdges[node]) if (o !== cur.e) options.push({ e: o, need: null, extra: 0 });
+    }
+    for (const op of options) {
+      const E2 = T.edges[op.e], d2 = E2.a === node ? 1 : -1;
+      const needs = op.need ? cur.needs.concat([{ ...op.need, at: cur.dist }]) : cur.needs;
+      if (op.e === target.e) {
+        const part = d2 > 0 ? target.s : E2.len - target.s;
+        const cand = { cost: cur.cost + op.extra + part, dist: cur.dist + part, needs };
+        if (!best || cand.cost < best.cost) best = cand;
+      }
+      open.push({ cost: cur.cost + op.extra + E2.len, dist: cur.dist + E2.len, e: op.e, d: d2, needs });
+    }
+  }
+  if (best) {
+    const want = {};
+    for (const n of best.needs) { if (want[n.sw] && want[n.sw] !== n.state) return null; want[n.sw] = n.state; }
+  }
+  return best;
+}
+function leadPos(T, tr, m) {
+  if (m > 0) return tr.front;
+  return trackWalk(T, reversePos(tr.front), trainLength(tr)).pos; // rear end, facing outwards
+}
+function releaseRoute(S, tr, onlyFree) {
+  if (!tr.route) return;
+  const occ = onlyFree ? occupiedSwitches(S) : {};
+  for (const L of tr.route.locks) {
+    const W = S.track.switches[L.sw];
+    if (W.lockedBy === tr.id && occ[L.sw] === undefined) W.lockedBy = null;
+  }
+  tr.route = null;
+}
+
+// ==== Section: commands ====
+// Every player or UI action is a command: checked, then applied or refused with a reason (as an event).
+function applyCommand(S, c, ev) {
+  const P = S.player, T = S.track;
+  const tr = c.tr !== undefined ? S.trains[c.tr] : null;
+  switch (c.t) {
+    case 'walkTo':
+      P.mode = 'to'; P.tx = c.x / 100; P.tz = c.z / 100; P.use = null; P.act = null; P.run = !!c.run; break;
+    case 'walkDir':
+      P.use = null; P.act = null;
+      if (c.a === null) { if (P.mode === 'dir') P.mode = 'idle'; }
+      else { P.mode = 'dir'; P.a = c.a; P.run = !!c.run; }
+      break;
+    case 'useSwitch': {
+      const W = T.switches[c.sw];
+      if (!W) return;
+      P.mode = 'to'; P.tx = W.stand.ux; P.tz = W.stand.uz; P.use = { k: 'sw', id: c.sw }; P.act = null; P.run = false;
+      break;
+    }
+    case 'useTrain':
+      if (!tr) return;
+      P.mode = 'to'; P.use = { k: 'tr', id: c.tr }; P.act = null; P.run = false;
+      break;
+    case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
+    case 'trainRun':
+      if (!tr) return;
+      releaseRoute(S, tr, true);
+      tr.mode = 'run'; tr.m = c.dir > 0 ? 1 : -1;
+      break;
+    case 'trainStop':
+      if (!tr) return;
+      releaseRoute(S, tr, true);
+      tr.mode = 'stop';
+      break;
+    case 'trainSendTo': {
+      if (!tr) return;
+      if (tr.v > 0.01 && tr.mode !== 'route') { ev.push({ t: 'noRoute', tr: tr.id, why: 'Stop the train first.' }); return; }
+      const target = { e: c.e, s: c.s / 1000 };
+      const occ = occupiedSwitches(S);
+      let best = null;
+      for (const m of [1, -1]) {
+        const r = findRoute(T, leadPos(T, tr, m), target);
+        if (!r) continue;
+        const clash = r.needs.find(n => {
+          const W = T.switches[n.sw];
+          if (W.state === n.state) return false;
+          return occ[n.sw] !== undefined || (W.lockedBy !== null && W.lockedBy !== tr.id);
+        });
+        if (clash) continue;
+        if (!best || r.cost < best.r.cost) best = { r, m };
+      }
+      if (!best) { ev.push({ t: 'noRoute', tr: tr.id, why: 'There is no way there without reversing.' }); return; }
+      releaseRoute(S, tr, true);
+      const locks = [];
+      for (const n of best.r.needs) {
+        const W = T.switches[n.sw];
+        W.state = n.state; W.lockedBy = tr.id;
+        if (!locks.find(l => l.sw === n.sw)) locks.push({ sw: n.sw, at: n.at });
+      }
+      tr.mode = 'route'; tr.m = best.m;
+      tr.route = { total: best.r.dist, left: best.r.dist, locks };
+      ev.push({ t: 'routeSet', tr: tr.id });
+      break;
+    }
+  }
+}
+function throwSwitch(S, swId, ev) {
+  const W = S.track.switches[swId];
+  if (!W) return;
+  const why = switchLockReason(S, swId);
+  if (why) { ev.push({ t: 'switchLocked', sw: swId, why }); return; }
+  W.state = W.state === 'N' ? 'R' : 'N';
+  ev.push({ t: 'switchThrown', sw: swId, state: W.state });
+}
+
+// ==== Section: trains ====
+function trainTick(S, tr, ev) {
+  const T = S.track;
+  const L = trainLength(tr);
+  const mass = tr.consist.reduce((s, c) => s + c.mass, 0);
+  const power = tr.consist.reduce((s, c) => s + (c.power || 0), 0);
+  const accel = CFG.ACCEL_K * power / mass;
+  let vTarget = 0, stop = 0, reason = null, sw = null;
+  if (tr.mode === 'run' || tr.mode === 'route') {
+    const lead = leadPos(T, tr, tr.m);
+    const look = (tr.v * tr.v) / (2 * CFG.BRAKE) + 4;
+    const sc = trackScan(T, lead, look);
+    stop = sc.stop; reason = sc.reason; sw = sc.sw;
+    if (tr.mode === 'route' && tr.route.left < stop) { stop = tr.route.left; reason = 'target'; }
+    vTarget = CFG.LOCO_MAX * (tr.m < 0 ? CFG.TENDER_FIRST : 1);
+    // Speed limits on the track under the train and ahead of it.
+    for (const [e] of trainSegs(T, tr)) vTarget = Math.min(vTarget, T.edges[e].lim);
+    for (const l of sc.limits) vTarget = Math.min(vTarget, Math.sqrt(l.lim * l.lim + 2 * CFG.BRAKE * l.at));
+    vTarget = Math.min(vTarget, Math.sqrt(2 * CFG.BRAKE * stop));
+  }
+  if (tr.mode === 'stop' || tr.mode === 'idle') tr.v = Math.max(0, tr.v - CFG.BRAKE * DT_MIN); // ordinary braking
+  else if (tr.v < vTarget) tr.v = Math.min(vTarget, tr.v + accel * DT_MIN);
+  else tr.v = vTarget; // vTarget already follows the braking curve to the stopping point
+  let ds = tr.v * DT_MIN;
+  if (tr.mode === 'run' || tr.mode === 'route') ds = Math.min(ds, stop);
+  if (ds > 0) {
+    if (tr.m > 0) tr.front = trackWalk(T, tr.front, ds).pos;
+    else {
+      const rear = trackWalk(T, leadPos(T, tr, -1), ds).pos;
+      tr.front = trackWalk(T, reversePos(rear), L).pos;
+    }
+    if (tr.route) {
+      tr.route.left = Math.max(0, tr.route.left - ds);
+      const done = tr.route.total - tr.route.left;
+      const occ = occupiedSwitches(S);
+      for (const lk of tr.route.locks) {
+        const W = T.switches[lk.sw];
+        if (W.lockedBy === tr.id && done > lk.at + L + 1 && occ[lk.sw] === undefined) W.lockedBy = null;
+      }
+    }
+  }
+  // Status line for the panel.
+  if (tr.mode === 'route' && tr.route && tr.route.left < 1e-3) {
+    tr.v = 0; releaseRoute(S, tr, true); tr.mode = 'idle'; tr.status = 'Arrived';
+    ev.push({ t: 'trainArrived', tr: tr.id });
+  } else if (tr.mode === 'stop') {
+    if (tr.v < 1e-3) { tr.v = 0; tr.mode = 'idle'; }
+    tr.status = 'Stopped';
+  } else if ((tr.mode === 'run' || tr.mode === 'route') && stop < 1e-3) {
+    tr.v = 0;
+    tr.status = reason === 'against' ? `Waiting: switch ${sw + 1} is set against us` : reason === 'end' ? 'At the end of the track' : 'Waiting';
+  } else if (tr.mode === 'run' || tr.mode === 'route') {
+    const dir = tr.m > 0 ? 'forward' : 'back (tender first)';
+    tr.status = (tr.mode === 'route' ? 'On its way, ' : 'Running ') + dir;
+  } else if (tr.mode === 'idle' && tr.status !== 'Arrived') tr.status = 'Stopped';
+}
+
+// ==== Section: player ====
+// Rough footprint test: is (x, z) inside a vehicle (plus the player's own radius)?
+function insideTrain(poses, x, z) {
+  for (const p of poses) {
+    const fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw), dx = x - p.x, dz = z - p.z;
+    if (Math.abs(dx * fx + dz * fz) < p.len / 2 + 0.2 && Math.abs(dx * fz - dz * fx) < 0.75) return true;
+  }
+  return false;
+}
+// Nearest point on the train's centre line, and the spot beside it where the player stands.
+function trainApproach(poses, x, z) {
+  let best = null;
+  for (const p of poses) {
+    const fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
+    let t = (x - p.x) * fx + (z - p.z) * fz;
+    t = Math.max(-p.len / 2, Math.min(p.len / 2, t));
+    const cx = p.x + fx * t, cz = p.z + fz * t, dd = Math.hypot(x - cx, z - cz);
+    if (!best || dd < best.dist) {
+      const side = ((x - p.x) * fz - (z - p.z) * fx) >= 0 ? 1 : -1;
+      best = { dist: dd, x: cx + fz * 1.15 * side, z: cz - fx * 1.15 * side };
+    }
+  }
+  return best;
+}
+function playerTick(S, ev, poseCache) {
+  const P = S.player;
+  if (P.act) {
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left <= 0) { const sw = P.act.sw; P.act = null; P.mode = 'idle'; throwSwitch(S, sw, ev); }
+    return;
+  }
+  if (P.mode !== 'to' && P.mode !== 'dir') return;
+  const poses = [].concat(...S.trains.map(tr => poseCache[tr.id]));
+  const step = (P.run ? CFG.RUN : CFG.WALK) * DT_MIN;
+  let dx, dz, dist;
+  if (P.mode === 'dir') {
+    const ang = P.a / 256 * Math.PI * 2;
+    dx = Math.cos(ang); dz = Math.sin(ang); dist = step;
+  } else {
+    if (P.use && P.use.k === 'tr') {
+      const ap = trainApproach(poseCache[P.use.id], P.x, P.z);
+      if (ap.dist <= CFG.REACH) { P.mode = 'idle'; P.f = Math.atan2(ap.x - P.x, ap.z - P.z) + Math.PI; ev.push({ t: 'reachedTrain', tr: P.use.id }); P.use = null; return; }
+      P.tx = ap.x; P.tz = ap.z;
+    }
+    dx = P.tx - P.x; dz = P.tz - P.z; dist = Math.hypot(dx, dz);
+    if (dist < 1e-6) dist = 0; else { dx /= dist; dz /= dist; }
+  }
+  const go = Math.min(step, dist);
+  let nx = P.x + dx * go, nz = P.z + dz * go;
+  nx = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, nx)); nz = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, nz));
+  const blocked = insideTrain(poses, nx, nz) && !insideTrain(poses, P.x, P.z);
+  if (!blocked && go > 0) { P.x = nx; P.z = nz; P.f = Math.atan2(dx, dz); }
+  if (P.mode === 'to' && (dist <= step || blocked)) {
+    P.mode = 'idle';
+    if (P.use && P.use.k === 'sw') {
+      const W = S.track.switches[P.use.id];
+      P.f = Math.atan2(W.stand.x - P.x, W.stand.z - P.z);
+      P.act = { k: 'throw', sw: P.use.id, left: CFG.THROW_S };
+    } else if (P.use && P.use.k === 'tr') {
+      ev.push({ t: 'reachedTrain', tr: P.use.id });
+    }
+    if (blocked && !P.use) ev.push({ t: 'blocked' });
+    P.use = null;
+  }
+}
+
+// ==== Section: sim tick ====
+// One fixed step of 8 game seconds, in the system order of section 19 (the parts built so far).
+function simTick(S, cmds) {
+  const ev = [];
+  for (const c of cmds) applyCommand(S, c, ev);         // 1. commands
+  S.tick += 1; S.time += CFG.TICK_GAME_S;               // 2. time
+  for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
+  const poseCache = {};
+  for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
+  playerTick(S, ev, poseCache);                         // 7. actors
+  if (S.time % 3600 === 0) ev.push({ t: 'hour' });
+  return ev;
+}
+function simRun(S, script, ticks) {
+  const byTick = {};
+  for (const s of script || []) (byTick[s.tick] = byTick[s.tick] || []).push(s.cmd);
+  for (let i = 0; i < ticks; i++) simTick(S, byTick[S.tick] || []);
+  return S;
+}
+// Hash of the whole state: two runs that should match must give the same hash.
+function stateHash(S) {
+  const str = JSON.stringify(S);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+}
+function clockText(S) {
+  const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), sec = abs % 86400;
+  const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day % 7];
+  const season = ['Spring', 'Summer', 'Autumn', 'Winter'][Math.floor(day / 14) % 4];
+  const hh = String(Math.floor(sec / 3600)).padStart(2, '0'), mm = String(Math.floor(sec % 3600 / 60)).padStart(2, '0');
+  return `${wd}, ${season} ${day % 14 + 1}, ${1866 + Math.floor(day / 56)} · ${hh}:${mm}`;
+}
+
+// ==== Section: saving ====
+// The whole state as JSON with a schema version, gzipped, in IndexedDB. Old saves pass through migrate().
+const SAVE_KEY = 'auto';
+function migrate(save) {
+  if (!save || !save.state) throw new Error('not a Railhead save');
+  // schemaVersion 1 is the first version; future versions add their migration steps here.
+  if (save.state.schemaVersion !== 1) throw new Error('unknown save version ' + save.state.schemaVersion);
+  return save;
+}
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('railhead', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('saves');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idbDo(mode, fn) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('saves', mode), req = fn(tx.objectStore('saves'));
+    tx.oncomplete = () => { db.close(); res(req && req.result); };
+    tx.onerror = () => { db.close(); rej(tx.error); };
+  });
+}
+async function saveWrite(obj) {
+  const json = JSON.stringify(obj);
+  let rec = { gz: false, data: json };
+  if (typeof CompressionStream !== 'undefined') {
+    const buf = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+    rec = { gz: true, data: buf };
+  }
+  await idbDo('readwrite', st => st.put(rec, SAVE_KEY));
+}
+async function saveRead() {
+  const rec = await idbDo('readonly', st => st.get(SAVE_KEY));
+  if (!rec) return null;
+  const json = rec.gz
+    ? await new Response(new Blob([rec.data]).stream().pipeThrough(new DecompressionStream('gzip'))).text()
+    : rec.data;
+  return migrate(JSON.parse(json));
+}
+
+// ==== Section: models (procedural, low-poly) ====
+// Shapes follow the approved style test page. Each model is merged into one mesh with vertex colours,
+// sharing one material, so a vehicle or a body part costs one draw call.
+const PAL = { grass: '#8a9f55', dirt: '#7a5a3a', rail: '#55534f', tie: '#5b4128', wall: '#b9875a', trim: '#6e4426',
+  roof: '#7d3424', loco: '#2e2d30', brass: '#c69a2c', red: '#9e3a26', glass: '#3b3a3a', win: '#ffcf73', trunk: '#5d4027',
+  skin: '#d9a77e', shirt: '#e6dcc4', vest: '#3b302a', navy: '#25324a', trousers: '#4b4237', hair: '#4a3222', boot: '#2a2522',
+  green: '#3f8a3a' };
+const SEG = 7;
+const KIT_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
+class Kit {
+  constructor() { this.p = []; this.c = []; }
+  add(geo, hex, x, y, z, rx, ry, rz) {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)), new THREE.Vector3(1, 1, 1));
+    const pos = g.attributes.position, col = new THREE.Color(hex), v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(m); this.p.push(v.x, v.y, v.z); this.c.push(col.r, col.g, col.b); }
+    if (g !== geo) g.dispose();
+    geo.dispose();
+    return this;
+  }
+  mesh(shadow) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, KIT_MAT);
+    m.castShadow = shadow !== false; m.receiveShadow = true;
+    return m;
+  }
+}
+const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const cyl = (rt, rb, h, s) => new THREE.CylinderGeometry(rt, rb, h, s || SEG);
+const ico = (r, d) => new THREE.IcosahedronGeometry(r, d === undefined ? 1 : d);
+const RAIL_TOP = 0.21;
+
+function modelLoco() {
+  // From the style page, shifted so the vehicle centre is at x = 0; smokebox end is +x.
+  const k = new Kit(), B = RAIL_TOP, X = 0.48, H = Math.PI / 2;
+  k.add(box(3.3, 0.2, 0.9), PAL.loco, X - 0.1, B + 0.5, 0);
+  k.add(cyl(0.42, 0.42, 2.0), PAL.loco, X + 0.55, B + 1.0, 0, 0, 0, H);
+  for (const bx of [0, 1.0]) k.add(cyl(0.44, 0.44, 0.08), PAL.brass, X + bx, B + 1.0, 0, 0, 0, H);
+  k.add(cyl(0.26, 0.12, 0.7), PAL.loco, X + 1.3, B + 1.75, 0);
+  k.add(new THREE.SphereGeometry(0.2, SEG, 4), PAL.brass, X + 0.55, B + 1.45, 0);
+  k.add(box(1.0, 1.2, 1.0), PAL.red, X - 0.95, B + 1.2, 0);
+  k.add(box(1.2, 0.1, 1.15), PAL.loco, X - 0.95, B + 1.85, 0);
+  k.add(box(0.4, 0.35, 1.02), PAL.glass, X - 0.95, B + 1.4, 0);
+  k.add(box(0.28, 0.3, 0.32), PAL.brass, X + 1.5, B + 1.55, 0);
+  k.add(box(0.04, 0.2, 0.22), PAL.win, X + 1.66, B + 1.55, 0);
+  k.add(box(0.45, 0.35, 0.9), PAL.red, X + 1.85, B + 0.25, 0, 0, 0, -0.6);
+  k.add(box(1.4, 0.9, 0.95), PAL.loco, X - 2.35, B + 0.95, 0);
+  for (const zz of [-0.25, 0, 0.25]) k.add(box(1.2, 0.16, 0.22), PAL.trunk, X - 2.35, B + 1.48, zz); // cordwood load
+  const wheel = (x, r) => { for (const dz of [-0.47, 0.47]) k.add(cyl(r, r, 0.1), PAL.red, X + x, B + r, dz, H); };
+  [-0.55, 0.15, 0.85].forEach(x => wheel(x, 0.32)); wheel(1.45, 0.18); wheel(-1.95, 0.2); wheel(-2.75, 0.2);
+  return k.mesh();
+}
+function modelBoxcar() {
+  const k = new Kit(), B = RAIL_TOP, H = Math.PI / 2;
+  k.add(box(2.6, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
+  k.add(box(2.5, 1.0, 0.95), PAL.red, 0, B + 1.08, 0);
+  k.add(box(2.6, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
+  k.add(box(0.7, 0.8, 0.97), PAL.trim, 0, B + 1.05, 0);
+  for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
+  return k.mesh();
+}
+function modelCombine() {
+  // Passenger end (windows) and baggage end (door), in the style page's colours.
+  const k = new Kit(), B = RAIL_TOP, H = Math.PI / 2;
+  k.add(box(2.8, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
+  k.add(box(2.7, 1.0, 0.95), PAL.wall, 0, B + 1.08, 0);
+  for (const x of [-1.05, -0.6, -0.15]) k.add(box(0.3, 0.32, 0.97), PAL.glass, x, B + 1.2, 0);
+  k.add(box(0.6, 0.8, 0.97), PAL.trim, 0.75, B + 1.05, 0);
+  k.add(box(2.8, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
+  k.add(box(1.9, 0.14, 0.6), PAL.roof, -0.2, B + 1.73, 0);
+  for (const x of [-0.9, 0.9]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
+  return k.mesh();
+}
+// The chunky kit (character pitch 1). Faces +z. Legs and arms are separate so they can swing.
+function modelChunky() {
+  const root = new THREE.Group(), body = new Kit();
+  body.add(cyl(0.2, 0.17, 0.36, 6), PAL.shirt, 0, 0.52, 0);
+  body.add(cyl(0.21, 0.18, 0.24, 6), PAL.vest, 0, 0.46, 0);
+  body.add(ico(0.17), PAL.skin, 0, 0.86, 0);
+  body.add(box(0.04, 0.06, 0.05), PAL.skin, 0, 0.85, 0.17);
+  body.add(box(0.15, 0.035, 0.04), PAL.hair, 0, 0.8, 0.155);
+  body.add(cyl(0.17, 0.18, 0.1, 8), PAL.navy, 0, 1.01, 0);
+  body.add(box(0.22, 0.02, 0.11), PAL.boot, 0, 0.965, 0.16);
+  body.add(box(0.06, 0.04, 0.015), PAL.brass, 0, 1.02, 0.175);
+  const bodyMesh = body.mesh(); root.add(bodyMesh);
+  const limbs = {};
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(s * 0.08, 0.34, 0);
+    const lk = new Kit(); lk.add(box(0.13, 0.3, 0.15), PAL.trousers, 0, -0.15, 0); lk.add(box(0.14, 0.08, 0.2), PAL.boot, 0, -0.3, 0.02);
+    leg.add(lk.mesh()); root.add(leg);
+    const arm = new THREE.Group(); arm.position.set(s * 0.24, 0.66, 0); arm.rotation.z = s * 0.15;
+    const ak = new Kit(); ak.add(box(0.09, 0.3, 0.1), PAL.shirt, 0, -0.14, 0); ak.add(ico(0.06, 0), PAL.skin, 0, -0.31, 0);
+    if (s < 0) ak.add(box(0.1, 0.05, 0.11), PAL.red, 0, -0.08, 0);
+    arm.add(ak.mesh()); root.add(arm);
+    limbs[s < 0 ? 'legL' : 'legR'] = leg; limbs[s < 0 ? 'armL' : 'armR'] = arm;
+  }
+  root.userData = { body: bodyMesh, ...limbs, phase: 0 };
+  return root;
+}
 
 // ==== Section: renderer and camera ====
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-document.body.appendChild(renderer.domElement);
-
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+const canvas = renderer.domElement;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xc9b48a);
+scene.background = new THREE.Color('#b9d3d8');
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 300);
+const hemi = new THREE.HemisphereLight('#e8f0ff', '#7a6a50', 0.5); scene.add(hemi);
+const sun = new THREE.DirectionalLight('#fff4e0', 0.8);
+sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 120 });
+sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
+scene.add(sun); scene.add(sun.target);
 
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
-// Looking down the (1,1,1) diagonal gives the 35.264 degree isometric elevation and a 45 degree yaw.
-camera.position.set(50, 50, 50);
-camera.lookAt(0, 0, 0);
-
-function resize() {
+const cam = { yawIdx: 0, yaw: Math.PI / 4, zoom: 1.25, fx: 0, fz: 0, ox: 0, oz: 0 };
+function camYawTarget() { return Math.PI / 4 + cam.yawIdx * Math.PI / 2; }
+function placeCamera() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false);
-  const halfH = CONFIG.VIEW_HEIGHT_U / 2, halfW = halfH * (w / h);
-  camera.left = -halfW; camera.right = halfW; camera.top = halfH; camera.bottom = -halfH;
+  const half = CFG.VIEW_MIN_U / cam.zoom / 2;
+  const hw = w < h ? half : half * w / h, hh = w < h ? half * h / w : half;
+  camera.left = -hw; camera.right = hw; camera.top = hh; camera.bottom = -hh;
+  const tx = cam.fx + cam.ox, tz = cam.fz + cam.oz, r = 80, el = CFG.ISO_EL;
+  camera.position.set(tx + Math.sin(cam.yaw) * Math.cos(el) * r, 0.5 + Math.sin(el) * r, tz + Math.cos(cam.yaw) * Math.cos(el) * r);
+  camera.lookAt(tx, 0.5, tz);
   camera.updateProjectionMatrix();
+  // Sun from the south-west at about 60 degrees, shadow box following the view.
+  sun.position.set(tx + 10, 50, tz + 28); sun.target.position.set(tx, 0, tz); sun.target.updateMatrixWorld();
 }
+function resize() { renderer.setSize(window.innerWidth, window.innerHeight, false); placeCamera(); }
 window.addEventListener('resize', resize);
-resize();
 
-// ==== Section: world (placeholder) ====
-scene.add(new THREE.HemisphereLight(0xfff4e0, 0x6b5a40, 0.9));
-const sun = new THREE.DirectionalLight(0xffffff, 0.6);
-sun.position.set(20, 40, 10);
-scene.add(sun);
+// ==== Section: world rendering ====
+const view = { train: [], trainGroup: null, player: null, discs: [], ring: null, staticGroup: null };
+function buildWorld(S) {
+  if (view.staticGroup) { scene.remove(view.staticGroup); view.staticGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  const G = new THREE.Group(); view.staticGroup = G; scene.add(G);
+  const T = S.track;
+  // Ground: one slab whose top is at y = 0.
+  const ground = new THREE.Mesh(box(CFG.MAP_HALF * 2 + 40, 0.4, CFG.MAP_HALF * 2 + 40),
+    new THREE.MeshStandardMaterial({ color: PAL.grass, flatShading: true, roughness: 0.9, metalness: 0 }));
+  ground.position.y = -0.2; ground.receiveShadow = true; G.add(ground);
+  // Track: ballast ribbons and rails merged into one mesh each; ties as one instanced mesh.
+  // Diverging legs sit 4 mm higher so overlapping surfaces never flicker.
+  const ballast = [], rails = [], ties = [];
+  const tieRng = rngSeed(7);
+  const ix = trackIndex(T);
+  const quad = (arr, a, b, c, d) => arr.push(...a, ...b, ...c, ...a, ...c, ...d);
+  for (const E of T.edges) {
+    const isRev = T.switches.some(W => W.reverse === E.id);
+    const lift = isRev ? 0.004 : 0;
+    const n = E.k === 'S' ? 1 : Math.max(2, Math.ceil(E.len / 0.4));
+    const pts = [];
+    for (let i = 0; i <= n; i++) pts.push(edgeAt(T, E, E.len * i / n));
+    for (let i = 0; i < n; i++) {
+      const p = pts[i], q = pts[i + 1];
+      const off = (pt, o, y) => [pt.x - pt.tz * o, y, pt.z + pt.tx * o];
+      const yb = 0.03 + lift;
+      quad(ballast, off(p, -0.75, yb), off(q, -0.75, yb), off(q, 0.75, yb), off(p, 0.75, yb));
+      for (const side of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) {
+        const y0 = 0.11 + lift, y1 = RAIL_TOP + lift, a = side - 0.04, b = side + 0.04;
+        quad(rails, off(p, a, y1), off(q, a, y1), off(q, b, y1), off(p, b, y1));
+        quad(rails, off(p, a, y0), off(q, a, y0), off(q, a, y1), off(p, a, y1));
+        quad(rails, off(p, b, y0), off(q, b, y0), off(q, b, y1), off(p, b, y1));
+      }
+    }
+    const count = Math.max(1, Math.floor(E.len / 0.55));
+    for (let i = 0; i < count; i++) {
+      const pt = edgeAt(T, E, (i + 0.5) * E.len / count);
+      const jitter = (rngNext(tieRng) - 0.5) * 2 * Math.PI / 180;
+      ties.push({ x: pt.x, z: pt.z, y: 0.07 + lift, yaw: Math.atan2(-pt.tz, pt.tx) + jitter });
+    }
+  }
+  const ribbon = (arr, color) => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide }));
+    m.receiveShadow = true; G.add(m); return m;
+  };
+  ribbon(ballast, PAL.dirt); ribbon(rails, PAL.rail);
+  const tieMesh = new THREE.InstancedMesh(box(0.22, 0.08, 1.2), new THREE.MeshStandardMaterial({ color: PAL.tie, flatShading: true, roughness: 0.9, metalness: 0 }), ties.length);
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
+  ties.forEach((t, i) => { q.setFromAxisAngle(up, t.yaw); mtx.compose(new THREE.Vector3(t.x, t.y, t.z), q, one); tieMesh.setMatrixAt(i, mtx); });
+  tieMesh.receiveShadow = true; G.add(tieMesh);
+  // Switch stands (posts merged) and a buffer stop at each dead end.
+  const posts = new Kit();
+  for (const W of T.switches) {
+    const st = W.stand, yaw = Math.atan2(st.hx, st.hz);
+    posts.add(box(0.1, 0.7, 0.1), PAL.trim, st.x, 0.35, st.z, 0, yaw, 0);
+    posts.add(box(0.36, 0.06, 0.06), PAL.loco, st.x, 0.1, st.z, 0, yaw + Math.PI / 2, 0);
+  }
+  for (const N of T.nodes) {
+    if (ix.nodeEdges[N.id].length !== 1) continue;
+    const E = T.edges[ix.nodeEdges[N.id][0]], t = outTangent(T, E, N.id), yaw = Math.atan2(-t.z, t.x);
+    const bx = N.x - t.x * 0.2, bz = N.z - t.z * 0.2;
+    posts.add(box(0.25, 0.5, 1.1), PAL.trim, bx, 0.25, bz, 0, yaw, 0);
+    posts.add(box(0.12, 0.2, 1.3), PAL.red, bx + t.x * 0.1, 0.5, bz + t.z * 0.1, 0, yaw, 0);
+  }
+  G.add(posts.mesh());
+  // Target discs: green for normal, red for reverse.
+  view.discMat = { N: new THREE.MeshStandardMaterial({ color: PAL.green, flatShading: true, roughness: 0.8 }),
+                   R: new THREE.MeshStandardMaterial({ color: PAL.red, flatShading: true, roughness: 0.8 }) };
+  view.discs = T.switches.map(W => {
+    const d = new THREE.Mesh(cyl(0.16, 0.16, 0.04, 10), view.discMat[W.state]);
+    // Disc face turned to look along the track, so approaching crews can read it.
+    d.position.set(W.stand.x, 0.78, W.stand.z);
+    d.rotation.order = 'YXZ'; d.rotation.set(Math.PI / 2, Math.atan2(W.stand.hx, W.stand.hz), 0);
+    d.castShadow = true; G.add(d); return d;
+  });
+  // Walk target marker.
+  view.ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 16), new THREE.MeshBasicMaterial({ color: PAL.brass, side: THREE.DoubleSide }));
+  view.ring.rotation.x = -Math.PI / 2; view.ring.position.y = 0.05; view.ring.visible = false; G.add(view.ring);
+}
+function buildActors(S) {
+  if (view.trainGroup) scene.remove(view.trainGroup);
+  view.trainGroup = new THREE.Group(); scene.add(view.trainGroup);
+  view.train = S.trains.map(tr => tr.consist.map(c => {
+    const m = c.k === 'loco' ? modelLoco() : c.k === 'combine' ? modelCombine() : modelBoxcar();
+    m.userData.train = tr.id; view.trainGroup.add(m); return m;
+  }));
+  if (!view.player) { view.player = modelChunky(); scene.add(view.player); }
+}
 
-const ground = new THREE.Mesh(
-  new THREE.BoxGeometry(16, 0.5, 16),
-  new THREE.MeshStandardMaterial({ color: 0x9c8a5a, flatShading: true, roughness: 0.9 })
-);
-ground.position.y = -0.25;
-scene.add(ground);
+// ==== Section: game loop state ====
+let S = newState(CFG.SEED);
+let pending = [];             // commands waiting for the next tick
+let speed = 1, lastSpeed = 1;
+let acc = 0;
+let prevPoses = null, curPoses = null, prevPlayer = null;
+const ui = { panelTrain: null, sendMode: false };
+function snapshotPoses() { return S.trains.map(tr => trainPoses(S.track, tr)); }
+function resetViewsFromState() {
+  curPoses = snapshotPoses(); prevPoses = curPoses;
+  prevPlayer = { x: S.player.x, z: S.player.z };
+  cam.fx = S.player.x; cam.fz = S.player.z;
+}
+function doTick() {
+  prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
+  const ev = simTick(S, pending); pending = [];
+  curPoses = snapshotPoses();
+  for (const e of ev) handleEvent(e);
+}
+function send(cmd) { pending.push(cmd); }
+
+// ==== Section: HUD and panels ====
+const $ = id => document.getElementById(id);
+let toastTimer = 0;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
+function handleEvent(e) {
+  if (e.t === 'switchThrown') toast(`Switch ${e.sw + 1} set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
+  else if (e.t === 'switchLocked') toast(`Switch ${e.sw + 1} is locked: ${e.why}.`);
+  else if (e.t === 'reachedTrain') openPanel(e.tr);
+  else if (e.t === 'noRoute') toast(e.why);
+  else if (e.t === 'trainArrived') toast(`${S.trains[e.tr].name} has arrived.`);
+  else if (e.t === 'blocked') toast('Something is in the way.');
+  else if (e.t === 'hour') saveGame();
+}
+function openPanel(trId) { ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
+function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
+function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
+function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
+function updateHud() {
+  $('clock').textContent = clockText(S);
+  if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
+  $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
+}
+document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
+$('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
+$('rotR').addEventListener('click', () => { cam.yawIdx += 1; });
+$('centre').addEventListener('click', () => { cam.ox = 0; cam.oz = 0; });
+$('panelClose').addEventListener('click', closePanel);
+$('actFwd').addEventListener('click', () => { setSendMode(false); send({ t: 'trainRun', tr: ui.panelTrain, dir: 1 }); });
+$('actBack').addEventListener('click', () => { setSendMode(false); send({ t: 'trainRun', tr: ui.panelTrain, dir: -1 }); });
+$('actStop').addEventListener('click', () => { setSendMode(false); send({ t: 'trainStop', tr: ui.panelTrain }); });
+$('actSend').addEventListener('click', () => setSendMode(!ui.sendMode));
+$('bannerCancel').addEventListener('click', () => setSendMode(false));
+
+// ==== Section: input (touch first, mouse and keyboard as extras) ====
+const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function ndc(px, py) { return new THREE.Vector2(px / window.innerWidth * 2 - 1, -(py / window.innerHeight) * 2 + 1); }
+function groundAt(px, py) {
+  raycaster.setFromCamera(ndc(px, py), camera);
+  const out = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(groundPlane, out) ? out : null;
+}
+function toScreen(x, y, z) {
+  const v = new THREE.Vector3(x, y, z).project(camera);
+  return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
+}
+// What did a tap at (px, py) hit? Switch stands and the train are picked on screen with a thumb-sized margin.
+function pickAt(px, py) {
+  let best = null;
+  for (const W of S.track.switches) {
+    const p = toScreen(W.stand.x, 0.6, W.stand.z), d = Math.hypot(p.x - px, p.y - py);
+    if (d < 34 && (!best || d < best.d)) best = { k: 'sw', id: W.id, d };
+  }
+  if (best) return best;
+  raycaster.setFromCamera(ndc(px, py), camera);
+  const hits = raycaster.intersectObjects(view.trainGroup.children, false);
+  if (hits.length) return { k: 'tr', id: hits[0].object.userData.train };
+  return null;
+}
+function onTap(px, py) {
+  const g = groundAt(px, py);
+  if (ui.sendMode) {
+    if (!g) return;
+    const n = trackNearest(S.track, g.x, g.z);
+    if (n && n.dist < 1.2) { send({ t: 'trainSendTo', tr: ui.panelTrain, e: n.e, s: Math.round(n.s * 1000) }); setSendMode(false); }
+    else toast('Tap closer to a track.');
+    return;
+  }
+  const hit = pickAt(px, py);
+  if (hit && hit.k === 'sw') { send({ t: 'useSwitch', sw: hit.id }); return; }
+  if (hit && hit.k === 'tr') { send({ t: 'useTrain', tr: hit.id }); return; }
+  if (g) {
+    send({ t: 'walkTo', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
+    view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
+  }
+}
+const ptrs = new Map();
+let hold = null, pinch = null, sentDir = null, keyDir = null;
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), on: false };
+  else if (ptrs.size === 2) {
+    if (hold && hold.on) stopHoldWalk();
+    hold = null;
+    const v = [...ptrs.values()];
+    pinch = { d: Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y), mx: (v[0].x + v[1].x) / 2, my: (v[0].y + v[1].y) / 2 };
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId);
+  if (!p) return;
+  p.x = e.clientX; p.y = e.clientY;
+  if (hold && hold.id === e.pointerId) {
+    hold.x = e.clientX; hold.y = e.clientY;
+    if (Math.hypot(hold.x - hold.x0, hold.y - hold.y0) > CFG.TAP_MOVE_PX) hold.on = true;
+  }
+  if (pinch && ptrs.size === 2) {
+    const v = [...ptrs.values()], d = Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y);
+    const mx = (v[0].x + v[1].x) / 2, my = (v[0].y + v[1].y) / 2;
+    if (pinch.d > 0) cam.zoom = Math.max(CFG.ZOOM_MIN, Math.min(CFG.ZOOM_MAX, cam.zoom * d / pinch.d));
+    panBy(mx - pinch.mx, my - pinch.my);
+    pinch.d = d; pinch.mx = mx; pinch.my = my;
+  }
+});
+function pointerEnd(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (hold && hold.id === e.pointerId) {
+    if (hold.on) stopHoldWalk();
+    else if (e.type === 'pointerup') onTap(hold.x, hold.y);
+    hold = null;
+  }
+  if (ptrs.size < 2) pinch = null;
+}
+canvas.addEventListener('pointerup', pointerEnd);
+canvas.addEventListener('pointercancel', pointerEnd);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = Math.max(CFG.ZOOM_MIN, Math.min(CFG.ZOOM_MAX, cam.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); }, { passive: false });
+function panBy(dx, dy) {
+  const wpp = (camera.right - camera.left) / window.innerWidth, s = Math.sin(CFG.ISO_EL);
+  const rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw), fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw);
+  cam.ox += -rx * dx * wpp + fx * dy * wpp / s;
+  cam.oz += -rz * dx * wpp + fz * dy * wpp / s;
+}
+function angleCode(dx, dz) { return ((Math.round(Math.atan2(dz, dx) / (Math.PI * 2) * 256) % 256) + 256) % 256; }
+function sendDir(a, run) {
+  const key = a === null ? 'stop' : a + (run ? 'r' : '');
+  if (key === sentDir) return;
+  sentDir = key; send({ t: 'walkDir', a, run: !!run });
+}
+function stopHoldWalk() { sendDir(null); sentDir = null; }
+// Called every frame: while a finger is held down, walk towards it.
+function updateHoldWalk() {
+  if (hold && !hold.on && performance.now() - hold.t0 > CFG.HOLD_MS) hold.on = true;
+  if (hold && hold.on) {
+    view.ring.visible = false;
+    const g = groundAt(hold.x, hold.y);
+    if (g) {
+      const dx = g.x - S.player.x, dz = g.z - S.player.z;
+      if (Math.hypot(dx, dz) > 0.3) sendDir(angleCode(dx, dz), false);
+      else sendDir(null);
+    }
+    return;
+  }
+  // Keyboard: W A S D relative to the view, Shift to run.
+  let kx = 0, kz = 0;
+  const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
+  if (keys.has('KeyW')) { kx += fx; kz += fz; }
+  if (keys.has('KeyS')) { kx -= fx; kz -= fz; }
+  if (keys.has('KeyD')) { kx += rx; kz += rz; }
+  if (keys.has('KeyA')) { kx -= rx; kz -= rz; }
+  if (kx || kz) { keyDir = true; view.ring.visible = false; sendDir(angleCode(kx, kz), keys.has('ShiftLeft') || keys.has('ShiftRight')); }
+  else if (keyDir) { keyDir = null; stopHoldWalk(); }
+}
+const keys = new Set();
+window.addEventListener('keydown', e => {
+  keys.add(e.code);
+  if (e.code === 'KeyZ') cam.yawIdx -= 1;
+  if (e.code === 'KeyX') cam.yawIdx += 1;
+  if (e.code === 'KeyC') { cam.ox = 0; cam.oz = 0; }
+  if (e.code === 'Space') { e.preventDefault(); setSpeed(speed > 0 ? 0 : lastSpeed); }
+  if (e.code === 'Digit1') setSpeed(1);
+  if (e.code === 'Digit2') setSpeed(2);
+  if (e.code === 'Digit3') setSpeed(4);
+  if (e.code === 'Escape') closePanel();
+});
+window.addEventListener('keyup', e => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+
+// ==== Section: drawing each frame ====
+const lerp = (a, b, f) => a + (b - a) * f;
+function lerpAngle(a, b, f) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * f; }
+let lastFrame = performance.now(), animT = 0;
+function render(alpha, dt) {
+  animT += dt;
+  // Arrow keys look away from the player.
+  const pan = 12 * dt * 60;
+  if (keys.has('ArrowLeft')) panBy(pan, 0); if (keys.has('ArrowRight')) panBy(-pan, 0);
+  if (keys.has('ArrowUp')) panBy(0, pan); if (keys.has('ArrowDown')) panBy(0, -pan);
+  // Trains.
+  S.trains.forEach((tr, ti) => view.train[ti].forEach((m, vi) => {
+    const a = prevPoses[ti][vi], b = curPoses[ti][vi];
+    m.position.set(lerp(a.x, b.x, alpha), 0, lerp(a.z, b.z, alpha));
+    m.rotation.y = lerpAngle(a.yaw, b.yaw, alpha);
+  }));
+  // Player.
+  const P = S.player, pl = view.player, u = pl.userData;
+  const px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
+  const moved = Math.hypot(px - pl.position.x, pz - pl.position.z);
+  pl.position.set(px, 0, pz);
+  pl.rotation.y = lerpAngle(pl.rotation.y, P.f, 1 - Math.exp(-dt * 12));
+  u.phase += moved * 0.6 * Math.PI * 2;
+  const walking = moved > 1e-4;
+  u.swing = lerp(u.swing || 0, walking ? 1 : 0, 1 - Math.exp(-dt * 10));
+  const sw = Math.sin(u.phase) * u.swing;
+  u.legL.rotation.x = sw * 25 * Math.PI / 180; u.legR.rotation.x = -sw * 25 * Math.PI / 180;
+  u.armL.rotation.x = -sw * 20 * Math.PI / 180; u.armR.rotation.x = sw * 20 * Math.PI / 180;
+  if (P.act) { u.armR.rotation.x = -1.2 + Math.sin(animT * 4) * 0.25; u.armL.rotation.x = -1.0; }
+  u.body.position.y = Math.abs(Math.sin(u.phase)) * 0.02 * u.swing;
+  pl.scale.y = 1 + Math.sin(animT * 0.35 * Math.PI * 2) * 0.015 * (1 - u.swing);
+  // The tap marker shows until the walk it started ends.
+  if (view.ringArmed && P.mode === 'to') view.ringArmed = false;
+  if (!view.ringArmed && (P.mode !== 'to' || P.use)) view.ring.visible = false;
+  // Switch discs.
+  S.track.switches.forEach((W, i) => { view.discs[i].material = view.discMat[W.state]; });
+  // Camera: follow the player with a soft lag, ease the 90-degree turns.
+  const k = 1 - Math.exp(-dt / CFG.CAM_LAG_S);
+  cam.fx += (px - cam.fx) * k; cam.fz += (pz - cam.fz) * k;
+  cam.yaw += (camYawTarget() - cam.yaw) * (1 - Math.exp(-dt * 10));
+  placeCamera();
+  renderer.render(scene, camera);
+}
 
 // ==== Section: main loop ====
-function frame() {
-  renderer.render(scene, camera);
+function frame(now) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.25); lastFrame = now;
+  updateHoldWalk();
+  if (speed > 0) {
+    acc += dt * speed * CFG.TICKS_PER_REAL_S;
+    let n = Math.floor(acc); acc -= n;
+    n = Math.min(n, 40);
+    for (let i = 0; i < n; i++) doTick();
+  }
+  render(speed > 0 ? acc : 1, dt);
+  updateHud();
   window.__railhead.drawCalls = renderer.info.render.calls;
   requestAnimationFrame(frame);
 }
-// Read by the test scripts.
-window.__railhead = { ready: true, drawCalls: 0, threeRevision: THREE.REVISION };
-requestAnimationFrame(frame);
+async function saveGame() {
+  try { await saveWrite({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }); return true; }
+  catch (e) { console.warn('Save failed:', e && e.message); return false; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveGame(); });
+window.addEventListener('pagehide', () => { saveGame(); });
+
+// ==== Section: test hooks ====
+// Read by the check scripts in tests/. Also handy in the browser console.
+window.__railhead = {
+  ready: false, drawCalls: 0, threeRevision: THREE.REVISION,
+  get state() { return S; },
+  hash: st => stateHash(st || S),
+  send, setSpeed, saveGame,
+  step(n) { for (let i = 0; i < n; i++) doTick(); },
+  newState, simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
+  switchLockReason, occupiedSwitches, migrate,
+  toScreen: (x, z, y) => toScreen(x, y || 0, z),
+  exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
+  importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
+  camera: cam,
+};
+
+// ==== Section: start ====
+(async () => {
+  try {
+    const sv = await saveRead();
+    if (sv) {
+      S = sv.state;
+      if (sv.ui) { cam.yawIdx = sv.ui.yawIdx || 0; cam.yaw = camYawTarget(); cam.zoom = sv.ui.zoom || 1; lastSpeed = sv.ui.speed || 1; }
+    }
+  } catch (e) { console.warn('Could not load the save, starting fresh:', e && e.message); }
+  buildWorld(S); buildActors(S); resetViewsFromState();
+  setSpeed(new URLSearchParams(location.search).has('paused') ? 0 : lastSpeed); // ?paused is used by the checks
+  resize();
+  window.__railhead.ready = true;
+  requestAnimationFrame(frame);
+})();
 </script>
 </body>
 </html>

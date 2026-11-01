@@ -26,29 +26,53 @@ These override the original design document wherever they disagree. Details are 
 2. Run every check: `npm test`. It must pass before every push.
 3. Screenshots land in `test-output/`. That folder is not saved to git.
 
-The checks open `index.html` in Chromium (through Playwright) at phone size (390 x 844 portrait, 844 x 390 landscape, with touch on).
-They fail on any console error.
+The checks serve the project on a local web address (saving in the browser needs one) and open `index.html` in Chromium through Playwright.
+They use phone size (390 x 844 portrait, 844 x 390 landscape, with touch on) and fail on any console error.
+Most checks open the page with `?paused`, so the game only advances when the check steps it.
 
 Network note: the cloud test machine cannot reach cdnjs, because its network policy blocks it.
 When that happens, the test script serves the identical three.js r128 file from `node_modules/three` instead.
 The page itself still points at cdnjs.
 
 Current checks:
-- `tests/check-boot.js`: the page loads in portrait and landscape with no errors, three.js is r128, and something is drawn. It saves screenshots.
-- `tests/check-rules.js`: house rules read from the source. For now it only checks that `Math.random()` is never used.
+- `check-rules.js`: no `Math.random()` in the game.
+- `check-boot.js`: the page loads in both orientations with no errors and three.js r128, and the draw calls are reported. It saves screenshots at start and in a busy moment.
+- `check-track.js`: the test yard passes the track validator, and the validator catches a tight curve, a sharp corner and reverse curves with no straight between them.
+- `check-trains.js`: a train sent to the siding finds the way and stops on the spot. A switch under a train is locked. Switch 3 changes the path. A dead end and a switch set against the train both stop it 0.5u short. The player throws a switch.
+- `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
+- `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
+- `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
+
+Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump `SCHEMA_VERSION`, add a step to `migrate()`, and run `node tests/make-fixture.js` to add the new version's sample. Keep the old samples.
+
+## How the game works (piece 1)
+
+- **Simulation and drawing are kept apart.** The simulation advances in ticks of 8 game seconds, 10 ticks per real second at 1x. Drawing reads the state and blends between the last two ticks.
+- **Commands.** Every action is a command (`walkTo`, `walkDir`, `useSwitch`, `useTrain`, `throwSwitch`, `trainRun`, `trainStop`, `trainSendTo`), applied at the start of the next tick. Commands carry whole numbers only (positions in hundredths), so replays match exactly.
+- **Track.** The track is a graph of nodes and edges. A position is `{e, s, d}`: edge, distance from node A, and facing (+1 towards B, -1 towards A). `trackWalk` follows the switches as set. `trackScan` looks ahead for the stopping point and speed limits. A train facing a switch set against it stops 0.5u before the switch's block, not at the switch point.
+- **Trains.** A train stores only its front position. Each car's position is found by walking back along the track. This is exact because switches under a train are locked.
+- **Routes.** A* over directed edges (length plus 20u per diverging switch), trying both directions of travel. The switches are set instantly, as M0 allows, and locked. Each lock is released once the whole train has passed.
+- **Player.** The player walks in a straight line and is blocked by train bodies. A switch throw takes 0.5 game minutes at the stand. A tap on the train walks to within 1.5u of it, then opens its panel.
+- **Models.** Built in code from the style test page shapes. Each vehicle or body part is merged into one mesh with vertex colours and one shared material.
+- **Test hooks.** `window.__railhead` gives access to the state, `step(n)`, `send(cmd)`, `newState`, `simRun`, `stateHash`, `exportSave`/`importSave` and `toScreen`.
 
 ## Sections of index.html
 
-- `config`: tunable constants.
-- `renderer and camera`: WebGL renderer, isometric orthographic camera, resize.
-- `world (placeholder)`: lights and a ground slab.
-- `main loop`: the render loop. It exposes `window.__railhead` for the tests.
+config, random numbers (seeded), track graph, track validation, test yard layout, game state, routes, commands, trains, player, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, game loop state, HUD and panels, input (touch first, mouse and keyboard as extras), drawing each frame, main loop, test hooks, start.
 
 ## Draw calls
 
-- Setup build: 1 draw call.
+- Piece 1 test yard: 14 at start, 13 to 14 with the train running (shadow pass included). The phone budget is under 100.
+
+## Technical choices to know about
+
+- **Shadow map:** 1024 pixels, not the design doc's 2048, to save phone memory and time.
+- **Test yard geometry:** the switch's 30-degree diverging leg plus the 8u yard minimum radius and the 2u straight between reverse curves give a siding about 3.4u from the main line, wider than the 1.6u minimum.
+- **Speeds:** the main loop is 4.0 u/min, diverging legs 1.5 u/min, and the siding and spur 1.0 u/min (yard speed).
+- **Tender load:** the tender carries cordwood, not coal, because engines start on wood (section 2).
+- **Switch points:** the point rails do not animate yet. The target disc shows the setting.
+- **Send to:** a moving train must be stopped first.
 
 ## Next
 
-Build M0 piece 1. It is approved (answers in design-doc section 0, D7 and D8, and in the plan: https://claude.ai/artifact/5ysP6CghXJwzq9pKJ9ivTS).
-Start from `plans/handover.md`, which lists the scope, the checks to add and the gotchas.
+M0 piece 1 is built and waiting for the designer's review. After sign-off, piece 2 is laying track by finger (plan first).

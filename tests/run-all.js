@@ -2,6 +2,7 @@
 // Exits with code 1 if any check fails.
 
 const checks = {
+  'rules (no Math.random)': require('./check-rules'),
   'boot (page loads at phone size)': require('./check-boot'),
 };
 

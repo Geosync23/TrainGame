@@ -11,7 +11,7 @@ The full design is in `design-doc.md`. The original PDF it was converted from is
 
 ## Platform decisions (2026-11-01)
 
-These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0.
+These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D5).
 
 - Phones first, touch first, portrait and landscape. A computer with mouse and keyboard comes second.
 - One HTML file, three.js r128 from cdnjs. There is no build step, no TypeScript and no Preact.
@@ -33,6 +33,7 @@ The page itself still points at cdnjs.
 
 Current checks:
 - `tests/check-boot.js`: the page loads in portrait and landscape with no errors, three.js is r128, and something is drawn. It saves screenshots.
+- `tests/check-rules.js`: house rules read from the source. For now it only checks that `Math.random()` is never used.
 
 ## Sections of index.html
 

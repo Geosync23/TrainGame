@@ -6193,7 +6193,7 @@ canvas.addEventListener('pointerdown', e => {
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 1) {
     if (bt.on) { hold = null; buildDown(e.pointerId, e.clientX, e.clientY); } // build mode: one finger draws track
-    else hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), on: false };
+    else hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), ts: e.timeStamp, on: false, moved: false };
   } else if (ptrs.size === 2) {
     if (bt.on) buildAbortDrag(); // a second finger means pinch or pan, not track
     if (hold && hold.on) stopHoldWalk();
@@ -6209,7 +6209,7 @@ canvas.addEventListener('pointermove', e => {
   if (bt.on && bt.drag && bt.drag.id === e.pointerId && ptrs.size === 1) buildMove(e.clientX, e.clientY);
   if (hold && hold.id === e.pointerId) {
     hold.x = e.clientX; hold.y = e.clientY;
-    if (Math.hypot(hold.x - hold.x0, hold.y - hold.y0) > CFG.TAP_MOVE_PX) hold.on = true;
+    if (Math.hypot(hold.x - hold.x0, hold.y - hold.y0) > CFG.TAP_MOVE_PX) { hold.on = true; hold.moved = true; }
   }
   if (pinch && ptrs.size === 2) {
     const v = [...ptrs.values()], d = Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y);
@@ -6224,8 +6224,11 @@ function pointerEnd(e) {
   ptrs.delete(e.pointerId);
   if (bt.on && bt.drag && bt.drag.id === e.pointerId) { if (e.type === 'pointerup') buildUp(); else buildAbortDrag(); }
   if (hold && hold.id === e.pointerId) {
+    // A slow frame between finger down and up can turn a quick tap into a hold (the frame loop only sees the
+    // time passed). Judge by the touch's own timestamps: a short touch that never moved is still a tap.
+    const quick = !hold.moved && e.timeStamp - hold.ts <= CFG.HOLD_MS;
     if (hold.on) stopHoldWalk();
-    else if (e.type === 'pointerup') onTap(hold.x, hold.y);
+    if (e.type === 'pointerup' && (!hold.on || quick)) onTap(hold.x, hold.y);
     hold = null;
   }
   if (ptrs.size < 2) pinch = null;
@@ -6392,6 +6395,7 @@ window.__railhead = {
   get state() { return S; },
   hash: st => stateHash(st || S),
   send, setSpeed, saveGame,
+  CFG, // checks on a busy test machine may lengthen HOLD_MS (see check-handbuild.js)
   step(n) { for (let i = 0; i < n; i++) doTick(); },
   // A new game in the page's world: ?world=yard (the M0 test yard, for the checks written for it) or the real start.
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,

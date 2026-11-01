@@ -13,7 +13,7 @@ const { openGame, waitReady, screenshotPath } = require('./browser');
 
 module.exports = async function checkCarry() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   const R = (fn, arg) => page.evaluate(fn, arg);
   const settle = () => page.waitForTimeout(150);
   const camSettle = () => page.waitForTimeout(900); // the camera follows the character with a soft lag

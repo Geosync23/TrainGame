@@ -11,7 +11,8 @@ const SHOTS = [['0530', 0.5], ['1200', 7], ['1930', 14.5], ['2300', 18]]; // hou
 
 module.exports = async function checkWorld() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  // ?world=yard: these checks are about the M0 test yard's ground (the real start has check-world-start.js).
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const r = await page.evaluate(() => {
       const S = window.__railhead.state, T = S.track, out = { trackBad: [], yardBad: [], meshBad: [] };
@@ -46,7 +47,7 @@ module.exports = async function checkWorld() {
         else if (Math.abs(hit.point.y - h) > 1e-3) out.meshBad.push(`(${x}, ${z}): mesh ${hit.point.y.toFixed(3)}, terrainHeight ${h.toFixed(3)}`);
       }
       out.hillPts = hillPts;
-      out.chunks = TERRAIN.meshes.length;
+      out.chunks = TERRAIN.meshes.filter(m => m.name !== 'terrain-skirt').length; // the skirt beyond the edge is its own mesh
       // Light at a few times.
       const at = t => { const d = daylightAt(t); return { sun: d.sunI, hemi: d.hemiI, glow: d.glow, el: Math.asin(d.dir[1]) * 180 / Math.PI }; };
       out.noon = at(7 * 3600); out.night = at(18 * 3600); out.dawnish = at(1800);

@@ -56,7 +56,7 @@ const spurEnd = () => {
 };
 
 async function checkDebugBuild(problems) {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&world=yard' });
   const { touch, R, settle, scr, lookAt, drag, label } = await tools(page);
   try {
     await page.tap('#buildBtn'); await settle();
@@ -215,7 +215,7 @@ async function checkDebugBuild(problems) {
 
 // 7. Without ?debug=1 (D10): planning works, laying track instantly does not.
 async function checkPlanOnly(problems) {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   const { R, settle, lookAt, drag, label } = await tools(page);
   try {
     if (await R(() => window.__railhead.buildTool.instant)) problems.push('plan only: instant build is on without ?debug=1');

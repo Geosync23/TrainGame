@@ -14,7 +14,7 @@
 // - The town's buildings keep the section 6 clearances from every track edge and do not overlap any footprint;
 //   the walk grid blocks them; every business door is reached on foot (useBiz, reachedBiz) from the platform
 //   without entering a building.
-// - Determinism: 7 game days with a delivery, twice, give the same hash. The v6 sample save loads with the
+// - Determinism: 7 game days with a delivery, twice, give the same hash. The v7 sample save loads with the
 //   towns' opening stock.
 // Part 2, the page by real touch (portrait and landscape): the door label shows the business name and what it
 // wants, covers no button; a tap on the store's door delivers the flour (cash on screen goes up by the price);
@@ -27,13 +27,13 @@ const { openGame, waitReady, screenshotPath } = require('./browser');
 
 module.exports = async function checkTown() {
   const problems = [];
-  const v6 = fs.readFileSync(path.join(__dirname, 'fixtures', 'save-v6.json'), 'utf8');
+  const v7 = fs.readFileSync(path.join(__dirname, 'fixtures', 'save-v7.json'), 'utf8');
   // ---- Part 1: the sim ----
   {
     const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
     try {
       const t0 = Date.now();
-      const r = await page.evaluate((v6) => {
+      const r = await page.evaluate((v7) => {
         const R = window.__railhead, T = R.town, C = R.cargo, E = R.econ, out = {};
         const D = 86400, H = 3600, toTime = (day, hh) => day * D + hh * H - 5 * H; // day from 0
         const run = (st, until, cmds) => { const ev = []; let first = true; while (st.time < until) { ev.push(...R.simTick(st, first ? cmds || [] : [])); first = false; } return ev; };
@@ -139,9 +139,9 @@ module.exports = async function checkTown() {
         }
         const inB = (x, z) => town.find(fp => dist(fp, x, z) < 1e-6);
         out.doors = T.TOWN_BUSINESSES.map(B => {
-          const st = R.newState(1866); st.player.x = 0; st.player.z = 11.6; // on the platform
+          const st = R.newState(1866), pl = fps.find(f => f.id === 'platform'); st.player.x = pl.x; st.player.z = pl.z; // on the hub's platform
           let reached = -1, entered = null;
-          for (let i = 0; i < 1500 && reached < 0; i++) {
+          for (let i = 0; i < 4000 && reached < 0; i++) {
             const ev = R.simTick(st, i ? [] : [{ t: 'useBiz', biz: B.id }]);
             const b = inB(st.player.x, st.player.z); if (b && !entered) entered = b.id;
             if (ev.some(e => e.t === 'reachedBiz' && e.biz === B.id)) reached = i;
@@ -156,11 +156,11 @@ module.exports = async function checkTown() {
         const sc = [{ tick: 5, cmd: { t: 'carryPut', biz: 0 } }, { tick: 400, cmd: { t: 'useBiz', biz: 3 } }];
         const a = R.simRun(script(R.newState(1866)), sc, 7 * 10800), b = R.simRun(script(R.newState(1866)), sc, 7 * 10800);
         out.det = { a: R.stateHash(a), b: R.stateHash(b), offers: a.econ.contracts.length, used: a.items.used.length, money: E.econCheckMoney(a), cons: C.itemCheckConservation(a) };
-        // 10. The v6 sample save loads with the towns' opening stock.
-        const fx = JSON.parse(v6), sv = R.migrate(JSON.parse(fx.save));
+        // 10. The v7 sample save loads with the towns' opening stock.
+        const fx = JSON.parse(v7), sv = R.migrate(JSON.parse(fx.save));
         out.old = { schema: sv.state.schemaVersion, town: JSON.stringify(sv.state.town) === JSON.stringify(T.townNewState()) };
         return out;
-      }, v6);
+      }, v7);
 
       if (r.rates.join(' ') !== '0:beans=2550/0,clothing=510/0,coffee=850/0,cordwood=0/4000,flour=4250/0,lampoil=800/0,meat=1700/0,salt=850/0 1:beans=1500/0,clothing=300/0,coffee=500/0,cordwood=0/2000,flour=2500/0,lampoil=400/0,meat=1000/0,salt=500/0 2:lumber=2000/0,nails=500/0 3:whiskey=833/0 4:beans=667/0,coffee=133/0,cordwood=0/500,flour=667/0,lampoil=100/0,meat=333/0') problems.push('weekly rates are not the documented ones: ' + r.rates.join(' '));
       if (r.week.length) problems.push('7 days of use do not match the rates: ' + r.week.join('; '));
@@ -189,7 +189,7 @@ module.exports = async function checkTown() {
       if (r.open.length) problems.push('walk grid cells open inside town buildings: ' + [...new Set(r.open)].join(', '));
       for (const x of r.doors) if (x.reached < 0 || x.entered || x.dist > 1.5) problems.push('door of business ' + x.biz + ' not reached on foot: ' + JSON.stringify(x));
       if (r.det.a !== r.det.b || r.det.money.length || r.det.cons.length) problems.push('7 days twice: ' + JSON.stringify(r.det));
-      if (!r.old.town) problems.push('the v6 sample save did not load with the towns\' opening stock: ' + JSON.stringify(r.old));
+      if (!r.old.town) problems.push('the v7 sample save did not load with the towns\' opening stock: ' + JSON.stringify(r.old));
       console.log(`  7 days: ${r.weekUsed} units used, offers ${r.weekOffers.join(' ') || 'none'}; low coffee offer ${o.q} at ${o.price} cents (base ${o.base}); delivery paid ${d.paid} cents; doors reached in ${r.doors.map(x => x.reached).join('/')} ticks; 7 days twice ${r.det.a}; sim part ${((Date.now() - t0) / 1000).toFixed(1)} s`);
       if (errors.length) problems.push('console errors (sim part): ' + errors.join(' | '));
     } finally { await browser.close(); }
@@ -237,7 +237,7 @@ module.exports = async function checkTown() {
       const ref = await R(() => ({ toast: document.getElementById('toast').textContent, held: window.__railhead.carry.carryHeld(window.__railhead.state).length }));
       if (!/will not take the whiskey/.test(ref.toast) || ref.held !== 1) problems.push(`${orientation}: whiskey for the saloon was not refused at the store: ${JSON.stringify(ref)}`);
       // Busy: the train running past the station, the player walking down Main Street.
-      await R(() => { const R = window.__railhead; R.send({ t: 'trainRun', tr: 0, dir: 1 }); R.send({ t: 'walkTo', x: 300, z: 350 }); R.step(30); });
+      await R(() => { const R = window.__railhead; R.send({ t: 'trainRun', tr: 0, dir: 1 }); const d3 = R.town.townDoor(3); R.send({ t: 'walkTo', x: Math.round(d3.x * 100), z: Math.round((d3.z + 1) * 100) }); R.step(30); });
       await page.waitForTimeout(900);
       const dc = await R(() => window.__railhead.drawCalls);
       if (dc >= 100) problems.push(`${orientation}: ${dc} draw calls with the town in view (limit 100)`);
@@ -245,7 +245,7 @@ module.exports = async function checkTown() {
         // Export and import, then a real page reload, keep the towns.
         const ei = await R(() => { const R = window.__railhead, json = R.exportSave(), a = R.hash(); R.step(500); const b = R.hash(); R.importSave(json); const c = R.hash(); R.step(500); return { a, b, c, d: R.hash() }; });
         if (ei.a !== ei.c || ei.b !== ei.d) problems.push('export and import did not keep the towns: ' + JSON.stringify(ei));
-        const before = await R(async () => { const R = window.__railhead; R.state.player.x = 0; R.state.player.z = 11.6; await R.saveGame(); return { h: R.hash(), town: JSON.stringify(R.state.town) }; });
+        const before = await R(async () => { const R = window.__railhead; const pl = R.buildings.footprints().find(f => f.id === 'platform'); R.state.player.x = pl.x; R.state.player.z = pl.z; await R.saveGame(); return { h: R.hash(), town: JSON.stringify(R.state.town) }; });
         await page.reload(); await waitReady(page);
         const re = await R(() => ({ h: window.__railhead.hash(), town: JSON.stringify(window.__railhead.state.town) }));
         if (re.h !== before.h || re.town !== before.town) problems.push('a real reload changed the towns');

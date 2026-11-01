@@ -15,7 +15,7 @@ const { openGame, screenshotPath } = require('./browser');
 module.exports = async function checkBuildings() {
   const problems = [];
   for (const orientation of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orientation, { query: '?paused' });
+    const { browser, page, errors } = await openGame(orientation, { query: '?paused&world=yard' });
     try {
       if (orientation === 'portrait') {
         const found = await page.evaluate(() => {

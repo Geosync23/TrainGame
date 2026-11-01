@@ -10,7 +10,7 @@ const { openGame, screenshotPath } = require('./browser');
 
 module.exports = async function checkTouch() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i + 1 })) });
   const R = (fn, arg) => page.evaluate(fn, arg);

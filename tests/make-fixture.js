@@ -20,7 +20,7 @@ const { openGame, stopServer } = require('./browser');
     // From schema 4: a job staked 6u on from the spur's dead end, with a tie bundle lying beside it (on site).
     let stake = [];
     if (jobs) {
-      const T = S0.track, N = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1).sort((a, b) => a.x - b.x)[0];
+      const T = S0.track, N = T.nodes.filter(N => T.edges.filter(E => (E.a === N.id || E.b === N.id)).length === 1 && !T.edges.some(E => E.fixed && (E.a === N.id || E.b === N.id))).sort((a, b) => a.x - b.x)[0]; // not the interchange's far end
       R.cargo.itemCreate(S0, { commodity: 'ties', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null },
         { kind: 'GROUND', x: Math.round((N.x - 2) * 100), z: Math.round((N.z - 1.5) * 100) }, null);
       stake = [{ tick: 50, cmd: { t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6) * 100), tz: Math.round(N.z * 100) } }];

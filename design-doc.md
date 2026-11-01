@@ -1759,6 +1759,7 @@ Decisions still needed from the designer. Defaults in this document hold until e
 - [ ] **Train crews as visible people**: should engineers and firemen be visible in the cab (yes by default) and walk to and from the roundhouse at shift change (costly; default no)?
 - [ ] **Touch controls for panels and the context menu** (added 2026-11-01): walking and the M0 controls are decided (section 0, D6 and D7). Still open: how office panels and the inspect or context menu open on a phone (press-and-hold is taken by walking). To be proposed with M1.
 - [ ] **Controller support** (split from the touch question, 2026-11-01): still out of scope for 1.0; revisit after M7.
+- [ ] **The starting world's layout** (added 2026-11-01, M1 package 9, built provisionally): a 336u x 128u map with the hub at the west end, the interchange running off the west edge beside the hub boundary, and the 160u spur bending north in a gentle S to Willow Ford; parallel tracks 3.41u apart (section 6's switch cannot join tracks 1.6u apart); the hub has two switches (interchange and platform track) rather than the one switch stand listed in section 15; Willow Ford has one 16u platform (the kit lists two of 24u) and no freight room bays yet. Details in DEV_NOTES.md, "The real start". Keep, or change?
 
 
 ### Answered

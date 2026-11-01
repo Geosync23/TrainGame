@@ -4727,16 +4727,16 @@ function buildBuildings(G) {
     BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary));
   });
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
-  townBuildingsDraw(kit, glow); // the town's businesses and homes, in the same two meshes
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
   const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'buildingGlow'; G.add(g);
+  townBuildingsDraw(G); // the towns' businesses and homes: their own meshes per town, so a town out of view is skipped
   if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
 }
 
 // ---- Town buildings (M1 package 4, builder C5) ----
 // The businesses and homes of the section "town" lots (TOWN_LOTS, TOWN_KINDS), drawn from the same kit of parts
-// into the same two meshes as the station (KIT_MAT, and GLOW_MAT for the windows that glow at night), so the
-// town adds no draw calls. Each recipe draws in the building's own frame (local +z is the front, the street
+// as the station into one KIT_MAT mesh and one GLOW_MAT mesh (windows that glow at night) per town, so a town
+// out of view (and out of the shadow camera's view) is not drawn at all: up to 3 draw calls a town in view. Each recipe draws in the building's own frame (local +z is the front, the street
 // side) and stays inside its TOWN_KINDS extent. A dirt Main Street runs in front of the hub's businesses,
 // 1.2 cm above the ground so it never lies exactly on it.
 const TOWN_COL = { store: '#b08a5e', saloon: '#9c6a46', boarding: '#c2a27a', house: '#977757', fence: '#7a5634', lumber: '#b78b55', street: '#8d7150', sign: '#e4d6b6' };
@@ -4847,16 +4847,22 @@ const TOWN_RECIPES = {
     b.win(0.4, 0.75, 0.71, 0.42, 0.4, 'z');
   },
 };
-function townBuildingsDraw(kit, glow) {
-  townPlaced().forEach((L, i) => {
-    TOWN_RECIPES[L.kind](bldPlacer(kit, glow, { x: L.x, z: L.z, yaw: L.yaw }, bldVary(rngSeed(CFG.SEED * 37 + 211 * (i + 1)))));
-  });
-  // Main Street: in front of the hub's businesses, from the developer's yard to the saloon.
-  const hub = townPlaced().filter(L => L.townId === 0 && L.biz !== null), A = townAnchor(0);
-  const fronts = hub.map(L => { const K = TOWN_KINDS[L.kind]; return { a: townWorld(L, K.ext[0], K.ext[3]), b: townWorld(L, K.ext[1], K.ext[3]) }; });
-  if (fronts.length && !A.yaw) {
-    const x0 = Math.min(...fronts.map(f => f.a.x)) - 0.5, x1 = Math.max(...fronts.map(f => f.b.x)) + 0.5, z = Math.max(...fronts.map(f => f.a.z));
-    kit.add(box(x1 - x0, 0.02, 1.8), TOWN_COL.street, (x0 + x1) / 2, 0.002, z + 0.2 + 0.9);
+function townBuildingsDraw(G) {
+  for (const P of TOWN_PLACES) {
+    const kit = new Kit(), glow = new Kit();
+    townPlaced().forEach((L, i) => {
+      if (L.townId === P.id) TOWN_RECIPES[L.kind](bldPlacer(kit, glow, { x: L.x, z: L.z, yaw: L.yaw }, bldVary(rngSeed(CFG.SEED * 37 + 211 * (i + 1)))));
+    });
+    // Main Street: in front of the hub's businesses, from the developer's yard to the saloon.
+    const biz = townPlaced().filter(L => L.townId === P.id && L.biz !== null), A = townAnchor(P.id);
+    if (P.id === 0 && biz.length && !A.yaw) {
+      const fronts = biz.map(L => { const K = TOWN_KINDS[L.kind]; return { a: townWorld(L, K.ext[0], K.ext[3]), b: townWorld(L, K.ext[1], K.ext[3]) }; });
+      const x0 = Math.min(...fronts.map(f => f.a.x)) - 0.5, x1 = Math.max(...fronts.map(f => f.b.x)) + 0.5, z = Math.max(...fronts.map(f => f.a.z));
+      kit.add(box(x1 - x0, 0.02, 1.8), TOWN_COL.street, (x0 + x1) / 2, 0.002, z + 0.2 + 0.9);
+    }
+    if (!kit.p.length) continue;
+    const m = kit.mesh(); m.name = 'townBuildings' + P.id; G.add(m);
+    if (glow.p.length) { const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'townGlow' + P.id; G.add(g); }
   }
 }
 

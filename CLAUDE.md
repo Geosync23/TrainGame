@@ -54,3 +54,4 @@ If either file doesn't exist yet, create it in the first session and keep it cur
 - 80% is the hard cap: never go above it.
 - Warn me early when your memory is getting full, or when the next task looks big enough to fill it. Don't wait for the automatic summary.
 - To hand over: write `plans/handover.md` for a fresh session (what you built, loose ends, gotchas, how to test, open questions for me), push it, and stop. A fresh session reads the latest handover note first.
+- **Hand over on your own** (added 2026-11-01): when it is time, the lead writes and pushes the handover note, then starts the new lead session itself (on the same branch, told to read `plans/handover.md` first) without waiting to be asked, and tells me it has done so.

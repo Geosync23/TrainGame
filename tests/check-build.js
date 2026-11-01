@@ -6,12 +6,22 @@
 // - Through the sim alone: a separate loop with a passing siding and two switches, built with
 //   buildTrack commands, passes the validator, and a train sent to the siding takes the diverging route.
 // - Building over a train's track is refused with a reason.
+// Parts 1 to 6 open the page with ?debug=1, because the M0 instant build (Lay track) is parked behind it (D10).
+// - Part 7, without ?debug=1: the tool still plans (ghost and label), but there is no Lay track button, a
+//   "Plan only" note shows beside Cancel, and a buildTrack command sent through __railhead.send is refused
+//   with a buildRefused event and adds no track. Screenshot: build-plan-only-portrait.png.
 
 const { openGame, screenshotPath } = require('./browser');
 
 module.exports = async function checkBuild() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  await checkDebugBuild(problems);
+  await checkPlanOnly(problems);
+  return problems;
+};
+
+// A one-finger drag helper set for one page.
+async function tools(page) {
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i + 1 })) });
   const R = (fn, arg) => page.evaluate(fn, arg);
@@ -34,6 +44,20 @@ module.exports = async function checkBuild() {
     await touch('touchEnd', []); await settle(); await frames();
   };
   const label = () => R(() => { const el = document.getElementById('buildLabel'); return { text: el.textContent, k: el.dataset.k, hidden: el.hidden }; });
+  return { cdp, touch, R, settle, frames, scr, lookAt, drag, label };
+}
+const spurEnd = () => {
+  const T = window.__railhead.state.track;
+  const ends = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1);
+  const N = ends.sort((a, b) => a.x - b.x)[0]; // the spur end is the westmost dead end
+  const E = T.edges.find(E => E.a === N.id || E.b === N.id), O = T.nodes[E.a === N.id ? E.b : E.a];
+  const L = Math.hypot(N.x - O.x, N.z - O.z);
+  return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length };
+};
+
+async function checkDebugBuild(problems) {
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1' });
+  const { touch, R, settle, scr, lookAt, drag, label } = await tools(page);
   try {
     await page.tap('#buildBtn'); await settle();
     if (!(await R(() => window.__railhead.buildTool.on))) problems.push('Build button did not turn build mode on');
@@ -41,14 +65,7 @@ module.exports = async function checkBuild() {
     if (btnBox.width < 48 || btnBox.height < 48) problems.push('Build button is smaller than 48 px');
 
     // 1. Continue the spur from its dead end, 6u straight ahead.
-    const spur = await R(() => {
-      const T = window.__railhead.state.track;
-      const ends = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1);
-      const N = ends.sort((a, b) => a.x - b.x)[0]; // the spur end is the westmost dead end
-      const E = T.edges.find(E => E.a === N.id || E.b === N.id), O = T.nodes[E.a === N.id ? E.b : E.a];
-      const L = Math.hypot(N.x - O.x, N.z - O.z);
-      return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length };
-    });
+    const spur = await R(spurEnd);
     await lookAt(spur.x - 3, spur.z, 0.7);
     let seen = null;
     await drag(spur, { x: spur.x + spur.hx * 6, z: spur.z + spur.hz * 6 }, async () => { seen = await label(); });
@@ -193,9 +210,50 @@ module.exports = async function checkBuild() {
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
     console.log(`  spur +${after1.len && after1.len.toFixed(2)}u; switch at ${after2.node && after2.node.x.toFixed(2)}; red: "${seen && seen.text}"; ` +
       `loop arrived after ${sim.arrived} ticks; draw calls in build mode ${busyCalls}`);
-    return problems;
   } finally { await browser.close(); }
-};
+}
+
+// 7. Without ?debug=1 (D10): planning works, laying track instantly does not.
+async function checkPlanOnly(problems) {
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { R, settle, lookAt, drag, label } = await tools(page);
+  try {
+    if (await R(() => window.__railhead.buildTool.instant)) problems.push('plan only: instant build is on without ?debug=1');
+    await page.tap('#buildBtn'); await settle();
+    const spur = await R(spurEnd);
+    await lookAt(spur.x - 3, spur.z, 0.7);
+    let seen = null;
+    await drag(spur, { x: spur.x + spur.hx * 6, z: spur.z + spur.hz * 6 }, async () => { seen = await label(); });
+    if (!seen || seen.k !== 'ok') problems.push(`plan only: the plan preview was not green (${seen && seen.k}: ${seen && seen.text})`);
+    if (!(await R(() => !!window.__railhead.buildTool.ghost))) problems.push('plan only: no ghost track was drawn');
+    if (!(await page.isVisible('#buildConfirm'))) problems.push('plan only: Cancel did not appear after release');
+    if (await page.isVisible('#buildLay')) problems.push('plan only: the Lay track button appears without ?debug=1');
+    if (!(await page.isVisible('#buildPlanOnly'))) problems.push('plan only: the "Plan only" note is not shown');
+    else {
+      const t = await page.textContent('#buildPlanOnly');
+      if (!/Plan only/.test(t)) problems.push(`plan only: the note says "${t}"`);
+    }
+    const cb = await page.locator('#buildCancel').boundingBox();
+    if (!cb || cb.width < 48 || cb.height < 48) problems.push('plan only: Cancel is smaller than 48 px');
+    await page.screenshot({ path: screenshotPath('build-plan-only-portrait') });
+    // A buildTrack command through the normal intake is refused and adds no track.
+    const cmd = await R(() => window.__railhead.buildTool.cmd);
+    const res = await R((cmd) => {
+      const R = window.__railhead, e0 = R.state.track.edges.length, n0 = R.state.track.nodes.length, r0 = R.buildTool.refused.length;
+      R.send(cmd); R.step(1);
+      const ev = R.buildTool.refused.slice(r0);
+      return { added: R.state.track.edges.length - e0, nodes: R.state.track.nodes.length - n0, ev, toast: document.getElementById('toast').textContent };
+    }, cmd);
+    if (!cmd) problems.push('plan only: the drag made no buildTrack command to test with');
+    if (res.added || res.nodes) problems.push(`plan only: buildTrack added ${res.added} edges and ${res.nodes} nodes without ?debug=1`);
+    if (res.ev.length !== 1 || res.ev[0].t !== 'buildRefused' || !/switched off/.test(res.ev[0].why)) problems.push(`plan only: buildTrack was not refused with a reason (${JSON.stringify(res.ev)})`);
+    if (!/Cannot lay that track/.test(res.toast)) problems.push(`plan only: no refusal message was shown (toast "${res.toast}")`);
+    await page.tap('#buildCancel'); await settle();
+    if (await R(() => !!window.__railhead.buildTool.ghost)) problems.push('plan only: Cancel left the ghost shown');
+    if (errors.length) problems.push('plan only: console errors: ' + errors.join(' | '));
+    console.log(`  plan only: Lay track hidden, buildTrack refused: "${res.ev[0] && res.ev[0].why}"`);
+  } finally { await browser.close(); }
+}
 
 if (require.main === module) {
   module.exports().then(p => { console.log(p.length ? 'FAIL\n - ' + p.join('\n - ') : 'PASS'); require('./browser').stopServer(); process.exit(p.length ? 1 : 0); });

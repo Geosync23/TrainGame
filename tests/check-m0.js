@@ -5,6 +5,7 @@
 //    a yard move runs over it to the siding. The track is laid with buildTrack commands sent through
 //    the running game (the same commands the Lay track button sends), not by finger: drawing a whole
 //    loop with touch events is impractical in a check. check-build.js covers the touch gestures.
+//    This part opens the page with ?debug=1, because the instant build is parked behind it (D10).
 //    Also: new track is flat ground, laying track starts the delayed save, and track drawn into the
 //    depot is refused (red).
 // 2. A train given a yard move takes the correct route; changing a switch changes the path; a switch
@@ -32,7 +33,8 @@ const KEYS = [
 module.exports = async function checkM0() {
   const problems = [];
   const notes = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&crowd=200' });
+  // ?debug=1: the instant build (buildTrack through the page) is parked behind it (D10).
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&crowd=200&debug=1' });
   try {
     // ---- 2 and 3 (second half): the sim on its own, from fresh states ----
     const sim = await page.evaluate(() => {

@@ -31,6 +31,15 @@ module.exports = async function checkTouch() {
     sp = await R(([x, z]) => window.__railhead.toScreen(x, z), [p1.x - 4, p1.z]);
     await touch('touchStart', [sp]);
     await page.waitForTimeout(450);      // longer than the hold threshold, so it counts as a hold
+    // The game notices a hold during a drawn frame. On this test machine (software drawing, up to ~0.7 s
+    // a frame) that can come late, so wait, stepping one tick at a time, until the hold-walk has started.
+    let started = false;
+    for (let i = 0; i < 25 && !started; i++) {
+      await R(() => window.__railhead.step(1));
+      started = await R(() => window.__railhead.state.player.mode === 'dir');
+      if (!started) await page.waitForTimeout(200);
+    }
+    if (!started) problems.push('hold to walk: the hold was never noticed (no walking by direction after 5 s)');
     await R(() => window.__railhead.step(6));
     const p2 = await R(() => ({ ...window.__railhead.state.player }));
     await touch('touchEnd', []); await settle();

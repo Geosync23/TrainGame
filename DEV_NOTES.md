@@ -115,4 +115,10 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-All M0 pieces (1 fixes, 2 build tool, 3a terrain and day-night, 3b buildings, 4 crowd, 5 debug) are merged into `ccr-59cb4c1f-rnscv9` and `check-m0.js` passes. Next: the designer's end-of-M0 review (art style sign-off, and the provisional decisions in design-doc section 0, such as D9 and the tuned day-night brightness).
+All M0 pieces (1 fixes, 2 build tool, 3a terrain and day-night, 3b buildings, 4 crowd, 5 debug) are merged into `ccr-59cb4c1f-rnscv9`, and all 13 checks pass, `check-m0.js` included.
+Next is the designer's end-of-M0 review:
+- Review page with saved answers: https://claude.ai/artifact/ (see plans/handover.md for the link). Read the answers with ArtifactData, collection `review`, document `answers`.
+- Playable build: https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc
+Record the answers in design-doc section 0. Turn D9 and the other provisional items into decisions or changes. Then plan M1 (or the fixes first, if asked).
+
+Testing note: `check-touch` waits for the game to notice a hold, because this machine draws in software at up to about 0.7 s a frame. It is not a fixed 0.45 s wait.

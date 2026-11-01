@@ -5,7 +5,7 @@
 const { openGame } = require('./browser');
 
 module.exports = async function checkTrack() {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const r = await page.evaluate(() => {
       const R = window.__railhead, out = {};

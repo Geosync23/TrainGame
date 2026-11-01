@@ -190,6 +190,30 @@ module.exports = async function checkPassengers() {
       if (h !== r5.mid.hash) problems.push(`export/import mid-boarding changed the hash: ${h} vs ${r5.mid.hash}`);
     }
 
+    // 5b. The real line (when the world has Willow Ford): travellers board No. 1 at the hub, it runs to Willow
+    // Ford's platform, and there they step off and walk away.
+    const r5b = await R(() => {
+      const R = window.__railhead, S = R.pax.paxDebugScenario(R.newState(1866), 0, 6), T = S.track;
+      const W = R.world && R.world.stationsOf(T).find(s => s.id === 'willow');
+      if (!W) return { skip: true };
+      for (let k = 0; k < 40; k++) R.simTick(S, []);
+      const aboard = S.pax.list.filter(p => p.s === 'aboard').length;
+      const sp = W.tracks[W.stops[0]], n = R.trackNearest(T, (sp.x0 + sp.x1) / 2, (sp.z0 + sp.z1) / 2);
+      R.simTick(S, [{ t: 'trainSendTo', tr: 0, e: n.e, s: Math.round(n.s * 1000) }]);
+      let off = 0, gone = 0, at = null;
+      const offIds = new Set();
+      for (let k = 0; k < 2500 && gone < aboard; k++) for (const e of R.simTick(S, [])) {
+        if (e.t === 'paxAlighted' && e.st === 'willow') { off++; offIds.add(e.id); if (at === null) at = S.time; }
+        if (e.t === 'paxGone' && offIds.has(e.id)) gone++;
+      }
+      return { aboard, off, gone, mode: S.trains[0].mode, status: S.trains[0].status, arrived: S.pax.arrived.willow || 0 };
+    });
+    if (!r5b.skip) {
+      if (!r5b.aboard) problems.push('real line: nobody boarded No. 1 at the hub');
+      else if (r5b.off !== r5b.aboard || r5b.gone !== r5b.aboard) problems.push('real line: travellers did not step off at Willow Ford and walk away: ' + JSON.stringify(r5b));
+      console.log(`  real line: ${r5b.aboard} boarded at the hub, ${r5b.off} stepped off at Willow Ford, ${r5b.gone} walked off the map there`);
+    }
+
     // 6. Determinism: the same commands twice, with staffing and a train move, give the same hash.
     const det = await R(() => {
       const R = window.__railhead, run = () => { const S = R.pax.paxDebugScenario(R.newState(1866), 12, 6);

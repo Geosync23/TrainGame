@@ -23,7 +23,7 @@ module.exports = async function checkDebug() {
 
   // 1. Debug off.
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
     try {
       await page.waitForTimeout(300);
       const r = await page.evaluate(() => ({ rh: typeof window.rh, bar: !!document.getElementById('dbgBar'), calls: window.__railhead.drawCalls }));
@@ -36,7 +36,7 @@ module.exports = async function checkDebug() {
   }
 
   // 2. Debug on.
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&world=yard' });
   try {
     const frames = () => page.waitForTimeout(250);
     if (await page.evaluate(() => typeof window.rh) !== 'object') { problems.push('with ?debug=1, window.rh is missing'); return problems; }

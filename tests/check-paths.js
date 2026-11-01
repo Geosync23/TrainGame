@@ -18,7 +18,7 @@ const { openGame, screenshotPath } = require('./browser');
 module.exports = async function checkPaths() {
   const problems = [], notes = [];
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
     try {
       const r = await page.evaluate(() => {
         const R = window.__railhead, out = {};
@@ -228,7 +228,7 @@ module.exports = async function checkPaths() {
 
   // Screenshot: the Path overlay drawing the way round the depot.
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&world=yard' });
     try {
       const r = await page.evaluate(() => {
         const f = buildingFootprints().find(b => b.id === 'depot');

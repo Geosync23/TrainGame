@@ -1582,7 +1582,10 @@ function ttRunStep(S, run, ev) {
       if (ttUnderSpout(S, tr, st)) {
         if (run.winT === null || run.winT === undefined) run.winT = S.time;
         const full = !trainLocos(tr).some(c => c.water < CFG.WATER_U - 1e-6);
-        if (ttCrewAt(S, tr) || (!full && S.time < run.winT + TT.IN_WATER_S)) { run.why = full ? '' : TT_NEED_WHY.water; return; }
+        // Working at the train restarts the 10 minutes; someone just standing by with a cord does not hold it longer.
+        const crew = ttCrewAt(S, tr);
+        if (crew === 'work') run.winT = S.time;
+        if (crew === 'work' || ((crew === 'cord' || !full) && S.time < run.winT + TT.IN_WATER_S)) { run.why = full ? '' : TT_NEED_WHY.water; return; }
       }
       run.win = 2;
     }
@@ -1629,16 +1632,17 @@ function ttRunStep(S, run, ev) {
 }
 // Is the player working at this train (taking water at its tender or putting wood on it), walking up to do so
 // from close by, or carrying a cord of wood near a tender that has room for it? A train waiting for water on the
-// way in does not leave while they are (so wood can go on there too, from the wood stage beside the tower).
+// way in waits for them (so wood can go on there too, from the wood stage beside the tower): 'work' (at it, or
+// walking up from within 6u), 'cord' (carrying a cord within 12u of a tender with room), or false.
 function ttCrewAt(S, tr) {
   const P = S.player, a = P.act || P.use;
   if (a && (a.k === 'water' || a.k === 'fuel') && a.tr === tr.id) {
-    if (P.act) return true;
+    if (P.act) return 'work';
     const sp = ttTaskSpot(S, a);
-    if (sp && Math.hypot(sp.x - P.x, sp.z - P.z) < 6) return true;
+    if (sp && Math.hypot(sp.x - P.x, sp.z - P.z) < 6) return 'work';
   }
   const loco = ttFuelLoco(tr), t = loco && loco.fuel <= FUEL_CAP - CFG.CORD_U && ttHeldCord(S) !== null ? ttTenderAt(S, tr, loco.id) : null;
-  return !!t && Math.hypot(t.x - P.x, t.z - P.z) < 12;
+  return t && Math.hypot(t.x - P.x, t.z - P.z) < 12 ? 'cord' : false;
 }
 // The joint between the engine and its train (k as in uncouple { at: k }): behind a leading engine, ahead of a trailing one.
 function ttEngineJoint(tr) { const li = tr.consist.findIndex(c => c.k === 'loco'); return li <= 0 ? 1 : li; }

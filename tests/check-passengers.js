@@ -46,7 +46,8 @@ module.exports = async function checkPassengers() {
           }
         }
       }
-      out.ms = performance.now() - t0; out.rep = S.pax.rep.hub || 0;
+      out.ms = performance.now() - t0; out.rep = Object.values(S.pax.rep).reduce((a, b) => a + b, 0);
+      out.stations = R.pax.paxStations(T).map(K => K.id);
       return out;
     });
     const hubArr = r1.arrive.filter(a => a.from === 'hub'), outside = r1.arrive.filter(a => a.from === 'outside');
@@ -55,13 +56,15 @@ module.exports = async function checkPassengers() {
     if (r1.arrive.some(a => a.from !== 'outside' && (sod(a.time) < 6 * 3600 || sod(a.time) >= 21 * 3600))) problems.push('a traveller came outside 06:00 to 21:00');
     if (outside.length < 2 || outside.length > 6 || outside.some(a => !(sod(a.time) >= 6 * 3600 && sod(a.time) < 8 * 3600) && !(sod(a.time) >= 18 * 3600 && sod(a.time) < 20 * 3600)))
       problems.push(`Overland travellers: ${outside.length} (expected 1 to 3 at each of its 2 visits, 06:00 and 18:00): ${JSON.stringify(outside.map(a => sod(a.time) / 3600))}`);
-    if (r1.arrive.some(a => a.to !== 'willow')) problems.push('a hub traveller does not want to go to Willow Ford');
+    if (r1.arrive.some(a => (a.st === 'hub' && a.to !== 'willow') || (a.st === 'willow' && a.to !== 'hub'))) problems.push('a traveller does not want to go to the other station');
+    const wf = r1.arrive.filter(a => a.from === 'willow');
+    if (r1.stations.includes('willow') && (wf.length < 13 || wf.length > 28)) problems.push(`Willow Ford travellers 06:00 to 21:00: ${wf.length}, expected about 20 (one every 45 game minutes)`);
     if (!r1.gaveUp.length || r1.gaveUp.some(g => g.waited !== 3600)) problems.push('unticketed travellers should give up after exactly 60 game minutes: ' + JSON.stringify(r1.gaveUp.slice(0, 5)));
-    if (r1.rep !== r1.gaveUp.length) problems.push(`the hub's give-up count is ${r1.rep}, ${r1.gaveUp.length} gave up`);
+    if (r1.rep !== r1.gaveUp.length) problems.push(`the stations' give-up counts add up to ${r1.rep}, ${r1.gaveUp.length} gave up`);
     if (r1.gone < r1.gaveUp.length - 4) problems.push(`travellers who gave up should walk off the map (${r1.gone} left of ${r1.gaveUp.length})`);
     if (r1.inBld) problems.push(`travellers stood inside a building ${r1.inBld} times, e.g. ${JSON.stringify(r1.sample)}`);
     if (r1.inTrain) problems.push(`travellers stood inside a train ${r1.inTrain} times, e.g. ${JSON.stringify(r1.sample)}`);
-    console.log(`  passengers: ${r1.arrive.length} arrivals in 16 game hours (${hubArr.length} at the hub, ${outside.length} off the Overland), ${r1.gaveUp.length} gave up; sim ${r1.ms.toFixed(0)} ms for 7200 ticks`);
+    console.log(`  passengers (stations ${r1.stations.join(', ')}): ${r1.arrive.length} arrivals in 16 game hours (${hubArr.length} at the hub, ${wf.length} at Willow Ford, ${outside.length} off the Overland), ${r1.gaveUp.length} gave up; sim ${r1.ms.toFixed(0)} ms for 7200 ticks`);
 
     // 2. Fares.
     const fares = await R(() => { const P = window.__railhead.pax; return [P.paxFare('hub', 'willow'), P.paxFare('willow', 'hub'), P.paxFare('hub', 'nowhere')]; });
@@ -71,7 +74,8 @@ module.exports = async function checkPassengers() {
     // No. 1 stands on the north main line for now, clear of the platform, so the camera sees the queue.
     await R(() => {
       rh.scenario('passengers'); const R = window.__railhead, S = R.state, T = S.track;
-      const E = T.edges.filter(E => E.k === 'S' && T.nodes[E.a].z === -14 && T.nodes[E.b].z === -14).sort((a, b) => b.len - a.len)[0];
+      const K = R.pax.paxStation('hub'), mid = E => { const a = T.nodes[E.a], b = T.nodes[E.b]; return Math.hypot((a.x + b.x) / 2 - K.plat.x, (a.z + b.z) / 2 - K.plat.z); };
+      const E = T.edges.filter(E => E.k === 'S' && !E.fixed && E.len >= 12 && mid(E) > 25).sort((a, b) => b.len - a.len || a.id - b.id)[0];
       S.trains[0].front = { e: E.id, s: E.len - 1, d: 1 };
       R.importSave(JSON.stringify({ state: S }));
       R.camera.zoom = 2.2; R.camera.yawIdx = 0;
@@ -192,7 +196,14 @@ module.exports = async function checkPassengers() {
     if (det[0] !== det[1]) problems.push('same commands gave different hashes: ' + det.join(' '));
 
     // 7. Boarding screenshot: the scenario with No. 1's combine at the platform, a few ticks in.
-    await R(() => { rh.scenario('passengers'); const R = window.__railhead; R.camera.zoom = 2.2; R.camera.yawIdx = 1; R.state.player.x = -4; R.state.player.z = 12.3; R.step(12); });
+    await R(() => {
+      rh.scenario('passengers'); const R = window.__railhead, S = R.state, K = R.pax.paxStation('hub'), pc = {};
+      for (const tr of S.trains) pc[tr.id] = R.trainPoses(S.track, tr);
+      const C = R.pax.paxCarsAt(S, K, pc)[0], d = C ? C.doors[0] : [K.staff.x, K.staff.z];
+      S.player.x = d[0] - K.along[0] * 1.5 - K.out[0] * 0.6; S.player.z = d[1] - K.along[1] * 1.5 - K.out[1] * 0.6;
+      R.importSave(JSON.stringify({ state: S })); // the camera starts on the player
+      R.camera.zoom = 2.2; R.camera.yawIdx = 1; R.step(12);
+    });
     await page.waitForTimeout(1200);
     await page.screenshot({ path: screenshotPath('passengers-boarding-portrait') });
     const boarded = await R(() => window.__railhead.state.pax.list.filter(p => p.s === 'aboard').length);

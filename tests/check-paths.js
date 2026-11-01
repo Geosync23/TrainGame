@@ -7,6 +7,7 @@
 // - A switch stand behind a train: the player walks round the train and throws it from within reach.
 // - Press and hold into a wall slides along it instead of stopping dead.
 // - A player inside a building (an old save) walks out to open ground.
+// - Pushing the handcart, a walk whose shortest way runs along the platform goes round it instead.
 // - Same commands, same result twice (state hash and the whole track of positions), and a copy of the
 //   state saved part-way through a walk carries on the same (the path is never saved, only worked out).
 // - Speed: grid build, a typical and a worst-case path search (whole connected area searched).
@@ -117,6 +118,21 @@ module.exports = async function checkPaths() {
           const w = run(st, [{ tick: 0, cmd: walkTo(depot.x, depot.z - 6) }], 600, idle);
           out.escape = { left: Math.hypot(st.player.x - depot.x, st.player.z - (depot.z - 6)), stillIn: inBuilding(st.player.x, st.player.z) };
         }
+        // 7b. Pushing the handcart: a walk whose shortest way runs along the platform (the cheapest cells)
+        //     goes round the platform and the dock instead (they have steps), never entering them, and arrives.
+        {
+          const ax = -8, az = 12.3, bx = 9.2, bz = 13.6;
+          const plain = R.newState(1); plain.player.x = ax; plain.player.z = az;
+          const wp = run(plain, [{ tick: 0, cmd: walkTo(bx, bz) }], 600, idle);
+          const st = R.newState(1);
+          run(st, [{ tick: 0, cmd: { t: 'carryTool', tool: 1 } }], 300, (s2, e) => e.some(x => x.t === 'toolTaken'));
+          const took = st.player.tool === 1 && st.tools[1].k === 'cart';
+          st.player.x = ax; st.player.z = az;
+          let onNoCart = 0;
+          const w = run(st, [{ tick: 0, cmd: walkTo(bx, bz) }], 600, (s2, e, i) => { if (carryNoCartAt(s2.player.x, s2.player.z)) onNoCart++; return idle(s2, e, i); });
+          out.cart = { took, plainOnPlatform: wp.trace.filter(([x, z]) => carryNoCartAt(x / 1000, z / 1000)).length, onNoCart,
+            left: Math.hypot(st.player.x - bx, st.player.z - bz), refused: w.evs.filter(e => e.t === 'carryRefused' || e.t === 'blocked').map(e => e.why || e.t), len: w.len, plainLen: wp.len };
+        }
         // 8. Same commands twice: same positions and hash.
         {
           const once = () => {
@@ -193,6 +209,12 @@ module.exports = async function checkPaths() {
       if (!s.thrown || !(s.reach <= 1.5) || s.inT) problems.push(`switch stand behind a train: thrown ${s.thrown}, from ${s.reach}u, inside the train ${s.inT} ticks`);
       if (r.slide.inB || !(r.slide.dx > 1)) problems.push(`hold into a wall: moved ${r.slide.dx.toFixed(2)}u along it (expected > 1u), inside ${r.slide.inB} ticks`);
       if (r.escape.stillIn || !(r.escape.left < 0.01)) problems.push(`walking out of a building: ended ${r.escape.left.toFixed(2)}u from the target, still inside ${r.escape.stillIn}`);
+      const c = r.cart;
+      if (!c.took) problems.push('handcart: the player did not take the handcart');
+      if (!c.plainOnPlatform) problems.push('handcart case: without the handcart the walk did not use the platform, so the case tests nothing');
+      if (c.onNoCart) problems.push(`handcart: the player pushed it onto the platform or dock on ${c.onNoCart} ticks`);
+      if (!(c.left < 0.01) || c.refused.length) problems.push(`handcart: the walk ended ${c.left.toFixed(2)}u from the target (${c.refused.join('; ')})`);
+      notes.push(`handcart: walked ${c.len.toFixed(1)}u round the platform (${c.plainLen.toFixed(1)}u along it by hand, ${c.plainOnPlatform} ticks on it)`);
       if (!r.same) problems.push('the same commands twice gave different positions or hashes');
       if (!r.resume) problems.push('a copy of the state saved part-way through a walk did not carry on the same (or the walk did not end)');
       if (r.typical.ms > 5 || r.worst.ms > 50) problems.push(`path search too slow: typical ${r.typical.ms.toFixed(2)} ms, worst ${r.worst.ms.toFixed(1)} ms`);

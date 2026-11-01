@@ -13,7 +13,7 @@ Status: approved by the designer (survey answers recorded as D12, 2026-11-01). R
 | A | W5 | Integrator: merge W1, W2, W3, W4 into ccr-59cb4c1f-rnscv9, npm test, push | any, to fix merges |
 | B | B1 | Hand-building track, game rules: Stake it, construction jobs, materials on site, tie/rail/spike work, track joins on completion, cancel; SCHEMA_VERSION 4 | new "construction jobs"; build tool (Stake it); commands |
 | B | B2 | Hand-building track, drawing: stakes and string, job sign, ties, rails and spikes appearing, hammer swing and carry poses | construction drawing in models / world rendering |
-| B | B3 | Larger platform 20u x 2.4u, canopy over the middle 10u | buildings |
+| B | B3 | Larger platform 20u x 2.4u, canopy over the middle 10u. Merged, npm test passed (16 checks) | buildings |
 | B | B4 | Interchange track, the Overland setting out and picking up cars at 06:00 and 18:00, loading and unloading cars by hand; SCHEMA_VERSION 5 after B1 | test yard layout (interchange track); trains (Overland); carrying at car doors |
 | B | W5 | Integrator | any, to fix merges |
 | C | | Money and telegraph, Willow Ford and timetable, placeholder town, passengers | after approval |

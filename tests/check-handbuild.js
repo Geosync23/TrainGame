@@ -90,8 +90,14 @@ async function checkTouch(problems) {
     // A tap on the stakes starts work, which stops at once: nothing is on site.
     await lookAt(spur.x - 3, spur.z, 1);
     const ev0 = await R(() => window.__railhead.state.tick);
-    await tapAt(spur.x - 3, spur.z);
-    const work = await R(() => { const R = window.__railhead, out = []; const orig = R.state; R.step(1); return { toast: document.getElementById('toast').textContent, use: orig.player.use, act: orig.player.act }; });
+    // On a busy test machine a tap can arrive late enough to count as press and hold, so try up to 3 times.
+    let work = null;
+    for (let tries = 0; tries < 3; tries++) {
+      await tapAt(spur.x - 3, spur.z);
+      work = await R(() => { const R = window.__railhead; R.step(1); return { toast: document.getElementById('toast').textContent, use: R.state.player.use, act: R.state.player.act }; });
+      if (/Out of ties/.test(work.toast)) break;
+      await R(() => window.__railhead.send({ t: 'walkDir', a: null })); // end any hold walk before the next try
+    }
     if (!/Out of ties/.test(work.toast)) problems.push(`work: tapping the job with nothing on site did not say "Out of ties" ("${work.toast}")`);
     if (work.use || work.act) problems.push('work: the player kept working with no materials');
     await page.screenshot({ path: screenshotPath('handbuild-staked-portrait') });

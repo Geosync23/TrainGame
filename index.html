@@ -101,17 +101,21 @@
   #telBody button { font-size: 14px; padding: 0 8px; }
   #telSend { background: var(--edge); color: var(--paper); }
   #telSend:disabled { opacity: 0.45; }
-  .jobSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
+  .jobSign, .townSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
     background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-left-width: 7px; border-radius: 8px;
     padding: 3px 3px 3px 9px; font-size: 14px; line-height: 1.25; display: flex; gap: 8px; align-items: center; }
-  .jobSign .txt { flex: 1 1 auto; min-width: 0; max-width: 150px; }
-  .jobSign b { display: block; font-size: 14px; }
-  .jobSign span:empty { display: none; }
+  .jobSign .txt, .townSign .txt { flex: 1 1 auto; min-width: 0; max-width: 150px; }
+  .jobSign b, .townSign b { display: block; font-size: 14px; }
+  .jobSign span:empty, .townSign span:empty { display: none; }
   .jobSign button { pointer-events: auto; flex: none; font-size: 14px; padding: 0 8px; min-width: 48px; min-height: 48px; max-width: 86px; line-height: 1.1; }
   .jobSign button[data-armed] { background: var(--accent); color: #fff; }
   .jobSign[data-k="need"] { border-left-color: var(--accent); }
   .jobSign[data-k="ready"] { border-left-color: var(--green); }
   .jobSign[data-k="work"] { border-left-color: #c69a2c; }
+  .townSign .txt { max-width: 190px; }
+  .townSign[data-k="want"] { border-left-color: var(--accent); }
+  .townSign[data-k="deliver"] { border-left-color: var(--green); }
+  .townSign[data-k="offer"] { border-left-color: #c69a2c; }
   /* Passengers (C4): the staffing readout and the ticket window's button. */
   #paxDesk { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 122px); max-width: min(78vw, 340px);
     box-sizing: border-box; display: flex; gap: 8px; align-items: center; background: var(--paper); border: 2px solid var(--edge);
@@ -184,7 +188,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 9,
+  SCHEMA_VERSION: 10,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -669,6 +673,7 @@ function newState(seed, world) {
     jobs: jobNewStore(),             // staked construction jobs (section "construction jobs")
     tt: ttNewState(),                // train services, runs and line reservations (section "timetable")
     econ: econNewState(0),           // cash, market, orders, contracts and the ledger (section "economy")
+    town: townNewState(),            // the placeholder towns' businesses: stock and use (section "town")
     pax: paxNewStore(seed),          // travellers at the stations and aboard (section "passengers")
   };
 }
@@ -829,6 +834,7 @@ function applyCommand(S, c, ev) {
     case 'contractDecline': econContractCmd(S, c, ev, false); break;
     case 'creditDraw': econCreditCmd(S, c, ev, true); break;
     case 'creditRepay': econCreditCmd(S, c, ev, false); break;
+    case 'useBiz': townUseCmd(S, c, ev); break;          // town: walk to a business door
     case 'staffWindow': paxStaffCmd(S, c, ev); break;   // passengers: staff a station's ticket window
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'trainRun': {
@@ -2538,6 +2544,287 @@ function jobDebugScenario(S) {
   return S;
 }
 
+// ==== Section: town ====
+// Owner: M1 package 4 (builder C5). Placeholder towns (design-doc 9 "Local delivery", 11 "Consumption per
+// person per week", 12 "Town businesses", 15 "Starting hub", 21 "Starting world"): the businesses of the hub
+// and Willow Ford as stock holders that use goods up at fixed weekly rates, offer contracts by telegraph when
+// they run low, and take deliveries at their doors. M2 replaces this with real citizens.
+// Pure simulation: no three.js, no page elements. Whole numbers only; businesses and goods in sorted order.
+//
+// TOWN_BUSINESSES is the one list of businesses (the economy's ECON_BUSINESSES is the same array).
+// Each: { id, name, short, townId, kind (its building recipe), uses: { commodity: milli-units a week },
+// winter: { commodity: milli-units a week, winter only } }. Rates: section 11 for the people each serves,
+// section 12 for the boarding house and the saloon (DEV_NOTES "Town" lists the provisional numbers).
+//
+// S.town.biz[id] (index = business id):
+//   shelf   { c: n }   opening stock, counted but not items (a new game has no items; section 21 starts with none
+//                      in the warehouse). Used up first, then the delivered items.
+//   acc     { c: n }   what has been used since the last whole unit, in milli-units x hours (a unit is 1000 x 168)
+//   short   { c: n }   units wanted when nothing was in stock (unmet need, for M2's satisfaction)
+//   offered { c: t }   when this business last offered a contract for c (game seconds), or null
+// Delivered goods are real items at { kind: 'BUSINESS', businessId } (the cargo section's place) until used.
+//
+// Each game hour every business uses its rates (acc += rate; a whole unit at 1000 x 168): first from the shelf,
+// then the oldest delivered item (itemConsume, reason 'business', logged), else counted as short.
+// Each day at 07:00 a business low on a good (stock plus what open contracts and offers still bring is under
+// 4 days of use) offers a delivery contract by telegraph (the economy's contractOffer): enough for 2 weeks,
+// due by the end of the 4th day after, priced at the delivered price plus up to 30% when it has none
+// (section 10 scarcity). At most one offer per good every 3 days.
+//
+// Buildings: TOWN_LOTS, placed from the hub depot's position (townAnchor; C2's station data when it lands)
+// with the section 6 clearances. townFootprints() joins buildingFootprints(), so the walk grid, the build tool
+// and the crowd keep out of them; each has a door spot (townDoor) just outside its front, where it is used.
+//
+// Delivery (section 9): carry an item to a business door and put it down there (carryPut { biz }, 0.2 game
+// minutes, by hand, hand truck or handcart). Only items addressed to that business are taken (townDeliverWhy);
+// the item moves to { kind: 'BUSINESS', businessId } and the economy's contractDeliver pays for it under its
+// contract. With more items for the same business, the next one is put down straight after.
+// Commands: { t: 'useBiz', biz } walk to the door (event reachedBiz); { t: 'carryPut', biz } deliver the top item.
+// Events: reachedBiz { biz }, bizDelivered { biz, id, paid, contract, why }, contractOffered (economy).
+const TOWN = {
+  UNIT: 1000 * 168,         // acc per whole unit used: rates are milli-units a week, added once a game hour
+  OFFER_SOD: 7 * 3600,      // offers are looked at once a day, at 07:00
+  LOW_DAYS: 4, TARGET_DAYS: 14, OPEN_DAYS: 10, DUE_DAYS: 4, OFFER_GAP_S: 3 * 86400, SCARCE_PCT: 30,
+  DOOR_OUT: 0.6,            // the door spot, this far out from the front wall
+  SIGN_NEAR: 9,             // the door label shows when the player is this close (page side)
+};
+// Who lives where (provisional, section 15 and 21): hub 25 people in 9 households, 8 of them boarders;
+// Willow Ford 10 people in 4 households.
+const TOWN_PLACES = [
+  { id: 0, name: 'Hub', people: 25, households: 9, boarders: 8 },
+  { id: 1, name: 'Willow Ford', people: 10, households: 4, boarders: 0 },
+];
+// Section 11 weekly use per person (milli-units): food and clothing; per household: lamp oil, and cordwood in winter.
+const TOWN_PER_PERSON = { flour: 250, beans: 150, meat: 100, coffee: 50, salt: 50, clothing: 30 };
+const TOWN_PER_HOUSEHOLD = { lampoil: 100 };
+const TOWN_PER_HOUSEHOLD_WINTER = { cordwood: 500 };
+function townStoreRates(people, households) {
+  const uses = {}, winter = {};
+  for (const c of Object.keys(TOWN_PER_PERSON).sort()) uses[c] = TOWN_PER_PERSON[c] * people;
+  for (const c of Object.keys(TOWN_PER_HOUSEHOLD).sort()) uses[c] = TOWN_PER_HOUSEHOLD[c] * households;
+  for (const c of Object.keys(TOWN_PER_HOUSEHOLD_WINTER).sort()) winter[c] = TOWN_PER_HOUSEHOLD_WINTER[c] * households;
+  return { uses, winter };
+}
+// The general store serves everyone but the boarders (17 people, 8 households at the hub); the boarding house
+// feeds its 8 boarders at section 12's rate (1 flour, 1 beans, 0.5 meat, 0.2 coffee per 12 residents a week)
+// and lights and heats itself as one household; the saloon takes 1 barrel of whiskey per 30 people; the
+// developer's yard uses building materials at a placeholder rate until it builds real projects (M2).
+const TOWN_BUSINESSES = (() => {
+  const H = TOWN_PLACES[0], W = TOWN_PLACES[1], hubStore = townStoreRates(H.people - H.boarders, H.households - 1), wfStore = townStoreRates(W.people, W.households);
+  const per12 = (n, b) => Math.round(n * b / 12);
+  return [
+    { id: 0, name: 'Hub General Store', short: 'general store', townId: 0, kind: 'store', ...hubStore },
+    { id: 1, name: 'Willow Ford General Store', short: 'general store', townId: 1, kind: 'tradingpost', ...wfStore },
+    { id: 2, name: 'Hub Developer\'s Yard', short: 'developer\'s yard', townId: 0, kind: 'devyard', uses: { lumber: 2000, nails: 500 }, winter: {} },
+    { id: 3, name: 'Hub Saloon', short: 'saloon', townId: 0, kind: 'saloon', uses: { whiskey: Math.round(1000 * H.people / 30) }, winter: {} },
+    { id: 4, name: 'Hub Boarding House', short: 'boarding house', townId: 0, kind: 'boarding',
+      uses: { beans: per12(1000, H.boarders), coffee: per12(200, H.boarders), flour: per12(1000, H.boarders), lampoil: 100, meat: per12(500, H.boarders) }, winter: { cordwood: 500 } },
+  ];
+})();
+const townBiz = id => TOWN_BUSINESSES.find(b => b.id === id) || null;
+// Every good a business ever uses, sorted.
+const townGoods = B => Object.keys(Object.assign({}, B.uses, B.winter)).sort();
+const townWinter = day => Math.floor(day / 14) % 4 === 3; // seasons as in clockText: 14 days each, spring first
+function townRate(B, c, winter) { return (B.uses[c] || 0) + (winter ? B.winter[c] || 0 : 0); }
+
+// ---- Buildings: plan sizes, doors and lots (plain data; the drawing is in "buildings") ----
+// Plan extent in the building's own frame [minX, maxX, minZ, maxZ]; local +z is the front (the street side).
+// door: the door's local x on the front; sign: where the name board is (local x, y, z), for the door label.
+const TOWN_KINDS = {
+  store: { ext: [-1.9, 1.9, -1.3, 2.0], door: 0, sign: [0, 2.15, 1.4] },          // general store, false front, porch
+  saloon: { ext: [-1.7, 1.7, -1.3, 2.0], door: 0, sign: [0, 2.45, 1.4] },         // saloon, taller stepped false front
+  boarding: { ext: [-2.3, 2.3, -1.4, 2.0], door: -0.9, sign: [-0.9, 1.75, 1.95] }, // two storeys, small porch
+  devyard: { ext: [-3.0, 3.0, -2.2, 2.2], door: 0, sign: [1.3, 1.25, 2.25] },     // fenced yard, gate at the front
+  tradingpost: { ext: [-1.4, 1.4, -1.1, 1.4], door: 0, sign: [0, 1.75, 1.42] },   // Willow Ford: canvas store tent
+  house: { ext: [-0.9, 0.9, -0.75, 0.75], door: -0.35, sign: null },             // a shanty home (4 at the hub)
+};
+// Lots: kind, business (null for homes), town, and the position from the town's anchor (dx, dz in the anchor's
+// frame, yaw added to it; a world may give its own, as start: { dx, dz }). Both worlds have their station on the
+// track side of the depot, so the hub's lots are the same from its depot in each: a Main Street behind the depot
+// (z about 3.5 on the test yard, -14 in the real start), the four businesses on its far side facing it, the
+// shanties on a back lane behind them, clear of the depot's back (the yard's build tool check plans along
+// x = -2.4), of the track (section 6: 1.2u from main, 1.0u from yard) and, in the real start, inside the hub
+// boundary. Willow Ford's general store stands beside its depot, west of the platform, among the settlers' cabins.
+const TOWN_LOTS = [
+  { id: 'store', kind: 'store', biz: 0, townId: 0, dx: 8.9, dz: -9.2, yaw: 0 },
+  { id: 'saloon', kind: 'saloon', biz: 3, townId: 0, dx: 14.0, dz: -9.2, yaw: 0 },
+  { id: 'boarding', kind: 'boarding', biz: 4, townId: 0, dx: -6.0, dz: -9.2, yaw: 0 },
+  { id: 'devyard', kind: 'devyard', biz: 2, townId: 0, dx: -12.8, dz: -9.4, yaw: 0 },
+  { id: 'house1', kind: 'house', biz: null, townId: 0, dx: -8.6, dz: -14.6, yaw: 0 },
+  { id: 'house2', kind: 'house', biz: null, townId: 0, dx: -4.2, dz: -14.6, yaw: 0 },
+  { id: 'house3', kind: 'house', biz: null, townId: 0, dx: 8.2, dz: -14.6, yaw: 0 },
+  { id: 'house4', kind: 'house', biz: null, townId: 0, dx: 12.4, dz: -14.6, yaw: 0 },
+  { id: 'wfstore', kind: 'tradingpost', biz: 1, townId: 1, dx: 0, dz: 0, yaw: 0, start: { dx: -8.1, dz: 0.4 } },
+];
+// Where each town is laid out from, in the world in use (worldUse points BLD_LAYOUT at it): the hub from its
+// depot; Willow Ford from its depot in the real start, and in the M0 test yard (which has no Willow Ford) from a
+// spot inside the yard's east loop, clear of the track.
+const TOWN_WILLOW_SPOT = { x: 23.4, z: -2.0, yaw: 0 };
+function townAnchor(townId) {
+  const d = BLD_LAYOUT.find(a => a.id === (townId === 0 ? 'depot' : 'wfdepot'));
+  return d ? { x: d.x, z: d.z, yaw: d.yaw || 0 } : TOWN_WILLOW_SPOT;
+}
+// Local (lx, lz) in a frame at (x, z, yaw) to world, as the buildings section does (local +z faces the front).
+function townWorld(at, lx, lz) { const c = Math.cos(at.yaw), s = Math.sin(at.yaw); return { x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c }; }
+let townLotCache = null;
+// The lots placed in the world in use: { ...lot, x, z, yaw } (worked out on first use per world, as the buildings
+// section comes later in the file).
+function townPlaced() {
+  const w = typeof worldCur === 'string' ? worldCur : 'yard';
+  if (townLotCache && townLotCache.w === w) return townLotCache.list;
+  const list = TOWN_LOTS.map(L => { const A = townAnchor(L.townId), o = L[w] || L, p = townWorld(A, o.dx, o.dz); return { ...L, x: p.x, z: p.z, yaw: A.yaw + L.yaw }; });
+  townLotCache = { w, list };
+  return list;
+}
+// Plan rectangles in buildingFootprints()' form (none is flush: all block walking, except at the door spot outside).
+function townFootprints() {
+  return townPlaced().map(L => {
+    const [x0, x1, z0, z1] = TOWN_KINDS[L.kind].ext, p = townWorld(L, (x0 + x1) / 2, (z0 + z1) / 2);
+    return { id: L.id, kind: L.kind, x: p.x, z: p.z, w: x1 - x0, d: z1 - z0, yaw: L.yaw, flush: false, town: L.townId, biz: L.biz };
+  });
+}
+const townLotOf = bizId => townPlaced().find(L => L.biz === bizId) || null;
+// The door spot of a business (or of a lot): where the player stands to use it, TOWN.DOOR_OUT outside the front.
+function townDoor(bizId) {
+  const L = typeof bizId === 'object' ? bizId : townLotOf(bizId);
+  if (!L) return null;
+  const K = TOWN_KINDS[L.kind];
+  return townWorld(L, K.door, K.ext[3] + TOWN.DOOR_OUT);
+}
+// The name board, for the door label: { x, y, z } (null for homes).
+function townSignSpot(bizId) {
+  const L = townLotOf(bizId), K = L && TOWN_KINDS[L.kind];
+  if (!K || !K.sign) return null;
+  const p = townWorld(L, K.sign[0], K.sign[2]);
+  return { x: p.x, y: K.sign[1], z: p.z };
+}
+
+// ---- State ----
+function townNewState() {
+  return { biz: TOWN_BUSINESSES.map(B => {
+    const st = { id: B.id, shelf: {}, acc: {}, short: {}, offered: {} };
+    for (const c of townGoods(B)) {
+      // Opening stock: about 10 days of the year-round rate, at least 1 of anything used year-round.
+      const r = B.uses[c] || 0;
+      st.shelf[c] = r ? Math.max(1, Math.round(r * TOWN.OPEN_DAYS / 7 / 1000)) : 0;
+      st.acc[c] = 0; st.short[c] = 0; st.offered[c] = null;
+    }
+    return st;
+  }) };
+}
+// Delivered items of a good at a business, oldest first.
+function townItems(S, bizId, c) { return itemsAt(S, { kind: 'BUSINESS', businessId: bizId }).filter(id => S.items.waybill[id].commodity === c); }
+// Stock of a good: the opening shelf plus delivered items not yet used.
+function townStock(S, bizId, c) { const st = S.town && S.town.biz[bizId]; return (st && st.shelf[c] || 0) + townItems(S, bizId, c).length; }
+// Still coming under offers and open contracts of this business for this good (this period).
+function townPending(S, bizId, c) {
+  let n = 0;
+  for (const k of S.econ ? S.econ.contracts : []) if (k.counterparty === bizId && k.commodity === c && /^(OFFERED|ACTIVE|LATE)$/.test(k.status)) n += Math.max(0, k.quantity - k.delivered);
+  return n;
+}
+// Use one unit: the shelf first, then the oldest delivered item, else it counts as short.
+function townUseOne(S, bizId, c, ev) {
+  const st = S.town.biz[bizId];
+  if (st.shelf[c] > 0) { st.shelf[c] -= 1; return; }
+  const ids = townItems(S, bizId, c);
+  if (ids.length) { itemConsume(S, ids[0], 'business', ev); return; }
+  st.short[c] += 1;
+}
+// Step 8b of the sim tick: once a game hour, use goods; at 07:00, offer contracts for goods running low.
+function townTick(S, ev) {
+  if (!S.town || S.time % 3600 !== 0) return;
+  const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), winter = townWinter(day);
+  for (const B of TOWN_BUSINESSES) {
+    const st = S.town.biz[B.id];
+    for (const c of townGoods(B)) {
+      st.acc[c] += townRate(B, c, winter);
+      while (st.acc[c] >= TOWN.UNIT) { st.acc[c] -= TOWN.UNIT; townUseOne(S, B.id, c, ev); }
+    }
+  }
+  if (abs % 86400 === TOWN.OFFER_SOD) townOffers(S, day, winter, ev);
+}
+// Once a day: a business low on a good offers a delivery contract for it (section 10 contracts by telegraph).
+function townOffers(S, day, winter, ev) {
+  if (!S.econ) return;
+  for (const B of TOWN_BUSINESSES) {
+    const st = S.town.biz[B.id];
+    for (const c of townGoods(B)) {
+      const r = townRate(B, c, winter);
+      if (!r) continue;
+      if (S.econ.contracts.some(k => k.counterparty === B.id && k.commodity === c && k.status === 'OFFERED')) continue;
+      if (st.offered[c] !== null && S.time - st.offered[c] < TOWN.OFFER_GAP_S) continue;
+      const low = Math.max(1, Math.ceil(r * TOWN.LOW_DAYS / 7 / 1000)), stock = townStock(S, B.id, c), have = stock + townPending(S, B.id, c);
+      if (have >= low) continue;
+      const quantity = Math.max(1, Math.ceil(r * TOWN.TARGET_DAYS / 7 / 1000) - have);
+      // Scarcity (section 10): up to +30% on the delivered price when the business has none.
+      const pct = Math.floor(TOWN.SCARCE_PCT * Math.max(0, low - stock) / low);
+      const pricePerUnit = Math.round(econDeliveredPrice(S.econ, c, B.townId) * (100 + pct) / 100);
+      const due = (day + 1 + TOWN.DUE_DAYS) * 86400 - CFG.DAY_START_S;
+      const res = contractOffer(S, { kind: 'DELIVERY', counterparty: B.id, commodity: c, quantity, due, pricePerUnit }, ev);
+      if (res.ok) st.offered[c] = S.time;
+    }
+  }
+}
+
+// ---- Delivery at the door (section 9 "Local delivery") ----
+// Why this business will not take this item, in plain words, or null when it will.
+function townDeliverWhy(S, id, bizId) {
+  const B = townBiz(bizId);
+  if (!B || !townLotOf(bizId)) return 'There is no such business here';
+  const I = S.items;
+  if (!Number.isInteger(id) || id < 0 || id >= I.next || !I.alive[id]) return 'There is no such item';
+  const wb = I.waybill[id], k = wb.consignee, what = COMMODITIES[wb.commodity] ? COMMODITIES[wb.commodity].name.toLowerCase() : 'this';
+  if (k.kind === 'BUSINESS' && k.id === bizId) return null;
+  const to = k.kind === 'BUSINESS' ? (townBiz(k.id) ? 'the ' + townBiz(k.id).name : 'another business')
+    : k.kind === 'WAREHOUSE' ? 'the hub warehouse (our own stock, not sold to anyone)'
+    : k.kind === 'CONSTRUCTION' || k.kind === 'CAMP' ? 'our own track work' : k.kind === 'OUTSIDE' ? 'Outside, on the Overland' : 'somewhere else';
+  return `The ${B.short} will not take the ${what}: its waybill says it is for ${to}`;
+}
+function townUseCmd(S, c, ev) {
+  const d = Number.isInteger(c.biz) && townBiz(c.biz) ? townDoor(c.biz) : null;
+  if (!d) return carryRefuse(ev, 'There is no such business here');
+  carryWalkTo(S, d.x, d.z, { k: 'biz', id: c.biz });
+}
+// After a put-down (carrying calls this): an item put down at a business door is handed over. The economy pays
+// for it under its contract; then, with more items for the same business, the next one goes straight after.
+function townAfterCarry(S, a, ev) {
+  if (a.k !== 'put' || !a.dest || a.dest.kind !== 'BUSINESS') return;
+  let id = null;
+  for (let i = ev.length - 1; i >= 0; i--) if (ev[i].t === 'carryPut') { id = ev[i].id; break; }
+  const biz = a.dest.businessId, w = id === null ? null : S.items.where[id];
+  if (!w || w.kind !== 'BUSINESS' || w.businessId !== biz) return;
+  const r = contractDeliver(S, id, ev);
+  ev.push({ t: 'bizDelivered', biz, id, paid: r.ok ? r.amount : 0, contract: r.ok ? r.id : null, why: r.ok ? null : r.why });
+  const held = carryHeld(S), d = townDoor(biz), P = S.player;
+  if (held.length && !townDeliverWhy(S, held[held.length - 1], biz) && Math.hypot(d.x - P.x, d.z - P.z) <= CFG.REACH) P.act = { k: 'put', dest: { kind: 'BUSINESS', businessId: biz }, left: CFG.CARRY_S };
+}
+// Shape check for the saved towns (used when a save is loaded). Throws on damage.
+function townCheckSaveShape(st) {
+  const T = st.town, int = Number.isInteger, bad = () => { throw new Error('damaged save: towns'); };
+  if (!T || !Array.isArray(T.biz) || T.biz.length !== TOWN_BUSINESSES.length) bad();
+  T.biz.forEach((b, i) => {
+    if (!b || b.id !== i || !b.shelf || !b.acc || !b.short || !b.offered) bad();
+    for (const c of townGoods(TOWN_BUSINESSES[i])) if (!int(b.shelf[c]) || b.shelf[c] < 0 || !int(b.acc[c]) || !int(b.short[c]) || !(b.offered[c] === null || int(b.offered[c]))) bad();
+  });
+}
+// Debug only (rh.scenario('town')): accepted contracts for the general store's flour and the saloon's whiskey,
+// a sack of flour in the player's hands at the general store, and whiskey for the saloon on the ground nearby.
+function townDebugScenario(S) {
+  const ev = [], E = S.econ;
+  const k = E.contracts.find(k => k.counterparty === 0 && k.commodity === 'flour');
+  k.status = 'ACTIVE';
+  const w = contractOffer(S, { kind: 'DELIVERY', counterparty: 3, commodity: 'whiskey', quantity: 2, due: 4 * 86400 - CFG.DAY_START_S }, ev);
+  E.contracts[w.id].status = 'ACTIVE';
+  const wb = (c, biz, kid) => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'BUSINESS', id: biz }, contractId: kid, due: E.contracts[kid].due });
+  const d = townDoor(0);
+  itemCreate(S, wb('flour', 0, k.id), { kind: 'CARRIED', actorId: 'player', carrier: 'HAND', slot: 0 }, ev);
+  const s = townDoor(3);
+  for (let i = 0; i < 2; i++) itemCreate(S, wb('whiskey', 3, w.id), { kind: 'GROUND', x: Math.round((s.x - 2.6 - i * 0.6) * 100), z: Math.round((s.z + 0.9) * 100) }, ev);
+  S.player.x = d.x - 1.5; S.player.z = d.z + 1.2; S.player.f = Math.PI;
+  if (S.overland) S.overland.phase = 'off';
+  return S;
+}
+
 // ==== Section: economy ====
 // Owner: M1 package 3 (builder C1). Cash, the Overland market, import orders by telegraph, contracts, the
 // credit line and the ledger (design-doc 10, 16, 19, 20, 21). Pure simulation: no three.js, no page elements.
@@ -2595,15 +2882,9 @@ const ECON_CATEGORIES = ['delivered', 'haulage', 'fares', 'mail', 'lotFees', 'ex
 const ECON_CATEGORY_NAMES = { delivered: 'Delivered sales', haulage: 'Haulage', fares: 'Fares', mail: 'Mail', lotFees: 'Lot fees',
   exports: 'Sold Outside', imports: 'Imports', wages: 'Wages', rollingStock: 'Rolling stock', construction: 'Construction',
   land: 'Land', interest: 'Interest', upkeep: 'Upkeep', credit: 'Credit line' };
-// Placeholder businesses until the placeholder towns package (C5) builds real ones. Ids match the Overland's
+// The businesses are the town section's (TOWN_BUSINESSES, builder C5): one list. Ids match the Overland's
 // test delivery (business 0 at the hub, 1 at Willow Ford). Town ids are CARGO_TOWNS ids.
-const ECON_BUSINESSES = [
-  { id: 0, name: 'Hub General Store', townId: 0 },
-  { id: 1, name: 'Willow Ford General Store', townId: 1 },
-  { id: 2, name: 'Hub Developer\'s Yard', townId: 0 },
-  { id: 3, name: 'Hub Saloon', townId: 0 },
-  { id: 4, name: 'Hub Boarding House', townId: 0 },
-];
+const ECON_BUSINESSES = TOWN_BUSINESSES;
 const ECON_TOWN_MILES = { 0: 0, 1: 12 };                      // provisional: miles from the hub (16u a mile)
 const ECON_OWN_USE = ['ties', 'rails', 'spikes', 'hardware'];  // ordered for our own track work: addressed to construction
 // What can be ordered: traded goods that are items (bulk needs gondolas; mail is not bought). Section 21 order.
@@ -3388,6 +3669,7 @@ function carrySpot(w) {
   if (!w) return null;
   if (w.kind === 'GROUND') return { x: w.x / 100, z: w.z / 100 };
   if (w.kind === 'BAY') { const B = BLD_BAYS[w.buildingId], p = B && B.bays[w.bay]; return p ? { x: p.x, z: p.z } : null; }
+  if (w.kind === 'BUSINESS') return townDoor(w.businessId); // its door spot (section "town")
   return null;
 }
 function carryRefuse(ev, why) { ev.push({ t: 'carryRefused', why }); }
@@ -3421,6 +3703,12 @@ function carryPutCmd(S, c, ev) {
   if (!held.length) return carryRefuse(ev, 'You are not carrying anything');
   let dest;
   if (c.b !== undefined) dest = { kind: 'BAY', buildingId: c.b, bay: c.bay };
+  else if (c.biz !== undefined) {
+    // A business door (section "town"): only goods addressed to that business are taken.
+    const no = townDeliverWhy(S, held[held.length - 1], c.biz);
+    if (no) return carryRefuse(ev, no);
+    dest = { kind: 'BUSINESS', businessId: c.biz };
+  }
   else if (Number.isInteger(c.stock)) {
     const no = carryCarWhy(S, c.stock);
     if (no) return carryRefuse(ev, no);
@@ -3457,13 +3745,14 @@ function carryToggleTool(S, id, ev) {
 function carryArrive(S, ev, use, evFrom) {
   const P = S.player;
   const spot = use.k === 'pick' ? carrySpotIn(S, S.items.where[use.id]) : use.k === 'put' ? carrySpotIn(S, use.dest)
-    : use.k === 'car' ? carryCarDoor(S, use.stock, P.x, P.z) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
+    : use.k === 'car' ? carryCarDoor(S, use.stock, P.x, P.z) : use.k === 'biz' ? townDoor(use.id) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
   P.mode = 'idle'; P.use = null;
   if (!spot || Math.hypot(spot.x - P.x, spot.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
   for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1); // in reach: not blocked after all
   if (Math.hypot(spot.x - P.x, spot.z - P.z) > 1e-6) P.f = Math.atan2(spot.x - P.x, spot.z - P.z);
   if (use.k === 'tool') { carryToggleTool(S, use.id, ev); return; }
   if (use.k === 'car') { ev.push({ t: 'reachedCar', stock: use.stock }); return; }
+  if (use.k === 'biz') { ev.push({ t: 'reachedBiz', biz: use.id }); return; }
   P.act = use.k === 'pick' ? { k: 'pick', id: use.id, left: CFG.CARRY_S } : { k: 'put', dest: use.dest, left: CFG.CARRY_S };
 }
 // The end of a pick-up or put-down: the item moves (or the move is refused, if something changed meanwhile).
@@ -3483,12 +3772,14 @@ function carryFinish(S, a, ev) {
   } else {
     const held = carryHeld(S);
     if (!held.length) return;
-    const id = held[held.length - 1], r = itemMove(S, id, a.dest, ev);
+    const id = held[held.length - 1];
+    if (a.dest.kind === 'BUSINESS') { const no = townDeliverWhy(S, id, a.dest.businessId); if (no) return carryRefuse(ev, no); }
+    const r = itemMove(S, id, a.dest, ev);
     if (!r.ok) return carryRefuse(ev, carryWhy(r.why));
     ev.push({ t: 'carryPut', id });
   }
 }
-const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1 };
+const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1, biz: 1 };
 // ---- Car doors (M1 package 2, builder B4): loading and unloading cars by hand (design-doc 9) ----
 // The player works a car from beside it: a boxcar at the door in the middle of its side, a combine at its
 // baggage door, a flatcar from the nearest point of its side (the edge of the deck). The spot is on the side
@@ -3545,7 +3836,7 @@ function carryActorTick(S, ev, poseCache) {
   const P = S.player;
   if (P.act && (P.act.k === 'pick' || P.act.k === 'put')) {
     P.act.left -= CFG.TICK_GAME_S;
-    if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; carryFinish(S, a, ev); jobAfterCarry(S, a, ev); }
+    if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; carryFinish(S, a, ev); jobAfterCarry(S, a, ev); townAfterCarry(S, a, ev); }
     return;
   }
   const use = P.use && CARRY_USES[P.use.k] ? P.use : null, x0 = P.x, z0 = P.z, evFrom = ev.length;
@@ -4004,6 +4295,7 @@ function simTick(S, cmds) {
   const tel = econTelBefore(S, ev);
   ttActorTick(S, ev, poseCache);                        // 7. actors (the player: walking in playerTick; carrying, job work and train tasks around it)
   econTick(S, ev, tel);                                 // 8. economy: reaching the telegraph key, market Mondays, contracts due
+  townTick(S, ev);                                      // 8b. towns: businesses use goods each hour, offer contracts at 07:00
   paxTick(S, ev, poseCache);                            // 8. travellers: arriving, the ticket queue, boarding and stepping off (section "passengers")
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
@@ -4085,6 +4377,11 @@ function migrate(save) {
     st.pax = paxNewStore(st.seed);
     st.schemaVersion = 9;
   }
+  if (st.schemaVersion === 9) {
+    // 9 -> 10 (placeholder towns): the businesses start with their opening stock, nothing used or offered yet.
+    st.town = townNewState();
+    st.schemaVersion = 10;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -4118,6 +4415,7 @@ function checkSaveShape(st) {
   overlandCheckSaveShape(st);
   ttCheckSaveShape(st);
   econCheckSaveShape(st);
+  townCheckSaveShape(st);
   paxCheckSaveShape(st);
 }
 function idbOpen() {
@@ -5603,7 +5901,7 @@ function buildingFootprints() {
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95], false); rect('freightdock', [-2.3, 2.3, 0.95, ext[3]], true); }
     else rect(at.id, ext, kind === 'platform' || kind === 'wfplatform');
   }
-  return out;
+  return out.concat(townFootprints()); // the town's businesses and homes (section "town")
 }
 // The hub boundary (design-doc 15), drawn subtly: a pale dashed line 1 cm above the ground (below the 3 cm
 // ballast where it crosses track) with a short survey stake at each corner and every 16u. In the merged mesh.
@@ -5633,7 +5931,141 @@ function buildBuildings(G) {
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
   const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'buildingGlow'; G.add(g);
+  townBuildingsDraw(G); // the towns' businesses and homes: their own meshes per town, so a town out of view is skipped
   if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
+}
+
+// ---- Town buildings (M1 package 4, builder C5) ----
+// The businesses and homes of the section "town" lots (TOWN_LOTS, TOWN_KINDS), drawn from the same kit of parts
+// as the station into one KIT_MAT mesh and one GLOW_MAT mesh (windows that glow at night) per town, so a town
+// out of view (and out of the shadow camera's view) is not drawn at all: up to 3 draw calls a town in view. Each recipe draws in the building's own frame (local +z is the front, the street
+// side) and stays inside its TOWN_KINDS extent. A dirt Main Street runs in front of the hub's businesses,
+// 1.2 cm above the ground so it never lies exactly on it.
+const TOWN_COL = { store: '#b08a5e', saloon: '#9c6a46', boarding: '#c2a27a', house: '#977757', fence: '#7a5634', lumber: '#b78b55', street: '#8d7150', sign: '#e4d6b6' };
+// A porch across the front: floor, roof on posts. z0: the front wall; w: its width.
+function townPorch(b, w, z0, h) {
+  b.add(box(w, 0.12, 0.66), PAL.trim, 0, 0.1, z0 + 0.34);
+  b.add(box(w + 0.1, 0.06, 0.74), PAL.roof, 0, h, z0 + 0.36);
+  for (const x of [-w / 2 + 0.1, w / 2 - 0.1]) b.add(cyl(0.05, 0.05, h - 0.12), PAL.trim, x, (h + 0.12) / 2, z0 + 0.62);
+}
+const TOWN_RECIPES = {
+  // General store: a gable building end-on to the street behind a false front with the name board, a porch,
+  // two big shop windows and goods on the porch.
+  store(b) {
+    b.add(box(3.7, 0.22, 2.7), PAL.trim, 0, 0.07, 0);
+    b.add(box(3.6, 1.6, 2.6), TOWN_COL.store, 0, 0.85, 0);
+    b.add(bldPrism(2.9, 3.9, 0.75), PAL.roof, 0, 1.65, -0.05, 0, Math.PI / 2);
+    b.add(box(3.7, 1.0, 0.08), TOWN_COL.store, 0, 2.1, 1.33);
+    b.add(box(3.8, 0.08, 0.16), PAL.trim, 0, 2.63, 1.33);
+    b.add(box(2.6, 0.42, 0.04), PAL.trim, 0, 2.15, 1.38);
+    b.add(box(2.46, 0.3, 0.05), TOWN_COL.sign, 0, 2.15, 1.39);
+    b.add(box(0.62, 1.05, 0.05), PAL.trim, 0, 0.68, 1.31);
+    b.win(-1.1, 0.95, 1.31, 0.75, 0.6, 'z'); b.win(1.1, 0.95, 1.31, 0.75, 0.6, 'z');
+    b.win(1.81, 1.0, -0.2, 0.55, 0.5, 'x'); b.win(-1.81, 1.0, -0.2, 0.55, 0.5, 'x', -1);
+    townPorch(b, 3.8, 1.3, 1.55);
+    b.add(cyl(0.17, 0.17, 0.42), BLD_COL.tank, 1.45, 0.37, 1.72);
+    b.add(box(0.36, 0.3, 0.36), PAL.tie, -1.45, 0.31, 1.7);
+  },
+  // Saloon: taller false front stepped at the top, swinging half doors, a balcony rail over the porch.
+  saloon(b) {
+    b.add(box(3.3, 0.22, 2.7), PAL.trim, 0, 0.07, 0);
+    b.add(box(3.2, 1.8, 2.6), TOWN_COL.saloon, 0, 0.95, 0);
+    b.add(bldPrism(2.9, 3.5, 0.7), PAL.roof, 0, 1.85, -0.05, 0, Math.PI / 2);
+    b.add(box(3.3, 1.0, 0.08), TOWN_COL.saloon, 0, 2.3, 1.33);
+    b.add(box(1.6, 0.35, 0.08), TOWN_COL.saloon, 0, 2.97, 1.33);
+    b.add(box(3.4, 0.08, 0.16), PAL.trim, 0, 2.82, 1.33);
+    b.add(box(1.7, 0.08, 0.16), PAL.trim, 0, 3.17, 1.33);
+    b.add(box(2.3, 0.42, 0.04), PAL.trim, 0, 2.45, 1.38);
+    b.add(box(2.16, 0.3, 0.05), TOWN_COL.sign, 0, 2.45, 1.39);
+    for (const x of [-0.17, 0.17]) b.add(box(0.3, 0.5, 0.05), PAL.trim, x, 0.75, 1.36);
+    b.add(box(0.7, 1.15, 0.03), PAL.loco, 0, 0.73, 1.31);
+    b.win(-1.0, 1.05, 1.31, 0.6, 0.6, 'z'); b.win(1.0, 1.05, 1.31, 0.6, 0.6, 'z');
+    b.win(1.61, 1.1, -0.3, 0.5, 0.5, 'x');
+    townPorch(b, 3.4, 1.3, 1.7);
+    b.add(box(3.4, 0.22, 0.04), PAL.trim, 0, 1.86, 1.98);
+  },
+  // Boarding house: two storeys under a gable along the street, a small porch at its door, a chimney.
+  boarding(b) {
+    b.add(box(4.5, 0.22, 2.9), PAL.trim, 0, 0.07, 0);
+    b.add(box(4.4, 2.6, 2.8), TOWN_COL.boarding, 0, 1.35, 0);
+    b.add(bldPrism(4.8, 3.2, 1.0), PAL.roof, 0, 2.65, 0);
+    b.add(box(0.36, 0.8, 0.36), PAL.red, 1.4, 3.15, -0.4);
+    b.add(box(1.5, 0.36, 0.04), PAL.trim, -0.9, 1.75, 1.42);
+    b.add(box(1.36, 0.25, 0.05), TOWN_COL.sign, -0.9, 1.75, 1.43);
+    b.add(box(0.6, 1.0, 0.05), PAL.trim, -0.9, 0.65, 1.41);
+    b.win(0.6, 0.95, 1.41, 0.55, 0.55, 'z'); b.win(1.6, 0.95, 1.41, 0.55, 0.55, 'z');
+    for (const x of [-1.6, -0.55, 0.55, 1.6]) b.win(x, 2.1, 1.41, 0.5, 0.55, 'z');
+    for (const x of [-1.2, 1.2]) b.win(x, 2.1, -1.41, 0.5, 0.55, 'z', -1);
+    b.win(2.21, 0.95, 0, 0.5, 0.55, 'x'); b.win(-2.21, 2.1, 0, 0.5, 0.55, 'x', -1);
+    b.add(box(1.4, 0.12, 0.5), PAL.trim, -0.9, 0.1, 1.68);
+    b.add(box(1.5, 0.06, 0.6), PAL.roof, -0.9, 1.42, 1.72);
+    for (const x of [-1.5, -0.3]) b.add(cyl(0.05, 0.05, 1.3), PAL.trim, x, 0.77, 1.9);
+  },
+  // Developer's yard: a post-and-rail fence round the yard with a gate gap at the front, a lean-to shed at the
+  // back, stacks of lumber, a sawhorse, and the name board on two posts beside the gate.
+  devyard(b) {
+    const X = 2.9, Z0 = -2.1, Z1 = 2.1, gate = 0.8;
+    const rail = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), ry = Math.atan2(-(z1 - z0), x1 - x0);
+      for (const y of [0.35, 0.7]) b.add(box(len, 0.06, 0.05), TOWN_COL.fence, (x0 + x1) / 2, y, (z0 + z1) / 2, 0, ry);
+    };
+    rail(-X, Z0, X, Z0); rail(-X, Z0, -X, Z1); rail(X, Z0, X, Z1); rail(-X, Z1, -gate, Z1); rail(gate, Z1, X, Z1);
+    for (const [x, z] of [[-X, Z0], [0, Z0], [X, Z0], [-X, 0], [X, 0], [-X, Z1], [-gate, Z1], [gate, Z1], [X, Z1]]) b.add(box(0.1, 0.85, 0.1), TOWN_COL.fence, x, 0.425, z);
+    // The lean-to shed, open to the yard, with a sloping roof.
+    b.add(box(3.0, 1.5, 0.08), PAL.wall, -1.2, 0.75, -1.85);
+    for (const x of [-2.6, 0.2]) b.add(box(0.08, 1.2, 1.2), PAL.wall, x, 0.6, -1.3);
+    b.add(box(3.2, 0.06, 1.5), BLD_COL.tin, -1.2, 1.38, -1.25, 0.22);
+    // Lumber stacks and a sawhorse.
+    for (let i = 0; i < 3; i++) b.add(box(2.2, 0.12, 0.7), TOWN_COL.lumber, -1.2, 0.08 + i * 0.13, -1.25);
+    for (let i = 0; i < 2; i++) b.add(box(0.7, 0.12, 2.0), TOWN_COL.lumber, 1.9, 0.08 + i * 0.13, -0.6);
+    b.add(box(1.0, 0.07, 0.08), PAL.tie, 0.7, 0.5, 0.9);
+    for (const x of [0.3, 1.1]) for (const s of [-1, 1]) b.add(box(0.05, 0.5, 0.05), PAL.tie, x, 0.25, 0.9 + s * 0.12, s * 0.35);
+    for (const x of [0.8, 1.8]) b.add(box(0.08, 1.4, 0.08), PAL.trim, x, 0.7, 2.18);
+    b.add(box(1.25, 0.42, 0.04), PAL.trim, 1.3, 1.25, 2.22);
+    b.add(box(1.12, 0.3, 0.05), TOWN_COL.sign, 1.3, 1.25, 2.23);
+  },
+  // Willow Ford's general store: a canvas wall tent on a plank floor, a plank counter at the open front under
+  // a fly, and a lantern; the name board on two posts.
+  tradingpost(b) {
+    b.add(box(2.7, 0.12, 2.1), PAL.trim, 0, 0.06, 0);
+    b.add(box(2.6, 0.9, 2.0), BLD_COL.canvas, 0, 0.55, 0);
+    b.add(bldPrism(2.7, 2.2, 0.75), BLD_COL.canvas, 0, 1.0, 0, 0, Math.PI / 2);
+    b.add(box(2.6, 0.04, 0.5), BLD_COL.canvas, 0, 1.1, 1.22, -0.25);
+    b.add(box(1.6, 0.08, 0.4), PAL.trim, 0, 0.72, 1.2);
+    for (const x of [-0.7, 0.7]) b.add(box(0.08, 0.7, 0.3), PAL.trim, x, 0.36, 1.2);
+    for (const x of [-1.25, 1.25]) b.add(cyl(0.04, 0.04, 1.75), PAL.trim, x, 0.88, 1.37);
+    b.add(box(1.5, 0.4, 0.04), PAL.trim, 0, 1.75, 1.39);
+    b.add(box(1.38, 0.28, 0.05), TOWN_COL.sign, 0, 1.75, 1.4);
+    b.glow(box(0.14, 0.18, 0.14), -0.55, 0.88, 1.2);
+    b.add(box(0.36, 0.3, 0.36), PAL.tie, 0.95, 0.27, 0.6);
+  },
+  // A shanty home: board walls, a gable roof, a door, one window and a stovepipe.
+  house(b) {
+    b.add(box(1.8, 0.16, 1.5), PAL.trim, 0, 0.05, 0);
+    b.add(box(1.7, 1.15, 1.4), TOWN_COL.house, 0, 0.67, 0);
+    b.add(bldPrism(1.95, 1.75, 0.55), PAL.roof, 0, 1.24, 0);
+    b.add(cyl(0.05, 0.05, 0.5), PAL.loco, 0.5, 1.7, -0.3);
+    b.add(box(0.5, 0.9, 0.05), PAL.trim, -0.35, 0.55, 0.71);
+    b.win(0.4, 0.75, 0.71, 0.42, 0.4, 'z');
+  },
+};
+function townBuildingsDraw(G) {
+  for (const P of TOWN_PLACES) {
+    const kit = new Kit(), glow = new Kit();
+    townPlaced().forEach((L, i) => {
+      if (L.townId === P.id) TOWN_RECIPES[L.kind](bldPlacer(kit, glow, { x: L.x, z: L.z, yaw: L.yaw }, bldVary(rngSeed(CFG.SEED * 37 + 211 * (i + 1)))));
+    });
+    // Main Street: in front of the hub's businesses, from the developer's yard to the saloon.
+    const biz = townPlaced().filter(L => L.townId === P.id && L.biz !== null), A = townAnchor(P.id);
+    if (P.id === 0 && biz.length && !A.yaw) {
+      const fronts = biz.map(L => { const K = TOWN_KINDS[L.kind]; return { a: townWorld(L, K.ext[0], K.ext[3]), b: townWorld(L, K.ext[1], K.ext[3]) }; });
+      const x0 = Math.min(...fronts.map(f => f.a.x)) - 0.5, x1 = Math.max(...fronts.map(f => f.b.x)) + 0.5, z = Math.max(...fronts.map(f => f.a.z));
+      kit.add(box(x1 - x0, 0.02, 1.8), TOWN_COL.street, (x0 + x1) / 2, 0.002, z + 0.2 + 0.9);
+    }
+    if (!kit.p.length) continue;
+    const m = kit.mesh(); m.name = 'townBuildings' + P.id; G.add(m);
+    if (glow.p.length) { const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'townGlow' + P.id; G.add(g); }
+  }
 }
 
 // ==== Section: people (crowd) ====
@@ -6925,6 +7357,9 @@ const DBG_SCENARIOS = {
     st.player.x = 3.5; st.player.z = 22.5;
     return st;
   },
+  // Town (C5): accepted contracts for the general store's flour and the saloon's whiskey, a flour sack in hand
+  // beside the general store and two barrels of whiskey on the ground by the saloon.
+  town: () => townDebugScenario(newState(CFG.SEED)),
   // The timetable (C3): the M0 test yard at 07:20 on day 1, No. 1 at the test hub on the timetable, cordwood at its wood stage.
   timetable: () => ttDebugScenario(newState(CFG.SEED, 'yard')),
   // Hand-building: a 20u siding with a switch staked off the north main line, all its materials beside it.
@@ -7093,6 +7528,7 @@ function handleEvent(e) {
   else if (e.t === 'toolLeft') toast(`${TOOL_KINDS[S.tools[e.tool].k].name} left at its spot.`);
   else if (/^job/.test(e.t)) jobOnEvent(e);
   else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
+  else if (e.t === 'reachedBiz' || e.t === 'bizDelivered') townOnEvent(e);
   else if (/^(desk|pax)/.test(e.t)) paxOnEvent(e);
   else ttOnEvent(e);
 }
@@ -7161,7 +7597,7 @@ function telDraftLines() { return ECON_ORDERABLE.filter(c => telUi.draft[c] > 0)
 function telContractLeft(k) {
   let n = k.quantity - k.delivered;
   for (const o of S.econ.orders) for (const l of o.lines) if (l.contract === k.id) n -= l.n;
-  for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && S.items.waybill[i].contractId === k.id) n -= 1;
+  for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && S.items.waybill[i].contractId === k.id && !k.items.includes(i)) n -= 1; // delivered ones (at the business) are counted already
   return Math.max(0, n);
 }
 function telContractText(k) {
@@ -7322,6 +7758,71 @@ function jobSignHud() {
   }
   for (const id of Object.keys(jobSigns)) if (!live[id]) { jobSigns[id].el.remove(); delete jobSigns[id]; }
 }
+// The town's door labels (builder C5): a small card above each business's name board saying its name and what
+// it wants (its open contracts), that an offer of its waits at the telegraph, or that it is stocked up; while
+// the player carries goods for it, how many to deliver. The same card as the job signs (no buttons, below the
+// buttons and panels, hidden where it would overlap one). Shown for businesses within TOWN.SIGN_NEAR of the
+// player and for any business the player carries goods for; nearest first, a card that would overlap a nearer
+// one is hidden.
+const townSigns = {};
+const townGoodName = c => COMMODITIES[c].name.replace(/ \(.*\)$/, '').toLowerCase();
+function townSignText(S, bizId) {
+  const B = townBiz(bizId), E = S.econ, mine = carryHeld(S).filter(id => !townDeliverWhy(S, id, bizId));
+  const ks = E ? E.contracts.filter(k => k.counterparty === bizId) : [];
+  const wants = ks.filter(k => k.status === 'ACTIVE' || k.status === 'LATE').map(k => `${k.quantity - k.delivered} ${townGoodName(k.commodity)}`);
+  const offers = ks.filter(k => k.status === 'OFFERED').map(k => townGoodName(k.commodity));
+  const k = mine.length ? 'deliver' : wants.length ? 'want' : offers.length ? 'offer' : 'ok';
+  const body = k === 'deliver' ? `Tap the door to deliver ${mine.length > 1 ? mine.length + ' items' : 'the ' + townGoodName(S.items.waybill[mine[0]].commodity)}` + (wants.length ? '. Wants ' + wants.join(', ') : '')
+    : k === 'want' ? 'Wants ' + wants.join(', ') : k === 'offer' ? `Low on ${offers.join(', ')}: an offer waits at the telegraph` : 'Stocked up';
+  return { k, title: B.name, body, mine: mine.length };
+}
+function townSignHud() {
+  const P = S.player, W = window.innerWidth, H = window.innerHeight, shown = [];
+  const list = TOWN_BUSINESSES.map(B => ({ B, d: townDoor(B.id), sp: townSignSpot(B.id) })).filter(o => o.d && o.sp)
+    .map(o => ({ ...o, dist: Math.hypot(o.d.x - P.x, o.d.z - P.z) })).sort((a, b) => a.dist - b.dist || a.B.id - b.B.id);
+  for (const { B, sp, dist } of list) {
+    let L = townSigns[B.id];
+    if (!L) {
+      const el = document.createElement('div');
+      el.className = 'hud townSign'; el.dataset.biz = B.id;
+      el.innerHTML = '<div class="txt"><b></b><span></span></div>';
+      document.body.appendChild(el);
+      L = townSigns[B.id] = { el, sig: '', x: -1e9, y: -1e9, w: 0, h: 0, b: el.querySelector('b'), s: el.querySelector('span') };
+    }
+    const tx = townSignText(S, B.id), want = dist <= TOWN.SIGN_NEAR || tx.mine > 0;
+    if (!want) { if (L.el.style.display !== 'none') L.el.style.display = 'none'; continue; }
+    if (L.el.style.display === 'none') { L.el.style.display = ''; L.w = 0; }
+    const sig = tx.k + tx.title + tx.body;
+    if (sig !== L.sig) { L.sig = sig; L.el.dataset.k = tx.k; L.b.textContent = tx.title; L.s.textContent = tx.body; L.w = 0; }
+    const p = toScreen(sp.x, sp.y + 0.35, sp.z);
+    if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; L.x = -1e9; }
+    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), y = p.y;
+    if (Math.abs(x - L.x) >= 0.5 || Math.abs(y - L.y) >= 0.5) { L.x = x; L.y = y; L.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`; }
+    const r = { l: x - L.w / 2, r: x + L.w / 2, t: y - L.h, b: y };
+    let show = p.x > 0 && p.x < W && r.t > 0 && r.b < H;
+    for (const id of JOB_SIGN_AVOID.concat(['paxDesk'])) {
+      if (!show) break;
+      const e = $(id);
+      if (!e || e.hidden || !e.getClientRects().length) continue;
+      const q = e.getBoundingClientRect();
+      if (r.l < q.right + 4 && r.r > q.left - 4 && r.t < q.bottom + 4 && r.b > q.top - 4) show = false;
+    }
+    if (show && shown.some(q => r.l < q.r + 4 && r.r > q.l - 4 && r.t < q.b + 4 && r.b > q.t - 4)) show = false;
+    if (show) shown.push(r);
+    L.el.style.visibility = show ? 'visible' : 'hidden';
+  }
+}
+// Messages for the town's events.
+function townOnEvent(e) {
+  const B = townBiz(e.biz);
+  if (!B) return;
+  if (e.t === 'reachedBiz') { const tx = townSignText(S, e.biz); toast(`${B.name}: ${tx.body}.`); }
+  else if (e.t === 'bizDelivered') {
+    const what = townGoodName(S.items.waybill[e.id].commodity), k = e.contract !== null ? S.econ.contracts[e.contract] : null;
+    toast(e.paid ? `Delivered the ${what} to the ${B.short}: ${econMoney(e.paid)}` + (k && k.kind === 'STANDING' ? ', paid on Saturday' : '') + (k && k.status === 'DONE' ? '. The contract is done.' : '.')
+      : `The ${B.short} takes the ${what} into stock; no open contract pays for it.`);
+  }
+}
 // ---- Passengers (M1 package 5, builder C4): the ticket window and the staffing readout ----
 // The readout (bottom left, above the carry readout) shows while the player walks to or staffs a ticket window,
 // with a Leave button. While travellers queue and nobody staffs the window, a "Tickets (n)" button stands at the
@@ -7395,6 +7896,7 @@ function updateHud() {
   cashHud();
   carryHud();
   jobSignHud();
+  townSignHud();
   paxHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
@@ -7529,6 +8031,7 @@ function onTap(px, py) {
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
   if (econTelTap(px, py)) return;
+  if (townTap(px, py)) return;
   if (paxTap(px, py)) return;
   if (carryTap(px, py, g)) return;
   if (jobTap(g)) return;
@@ -7591,6 +8094,27 @@ function carryTap(px, py, g) {
     return true;
   }
   return false;
+}
+// A business (town, builder C5): a tap on its building, or near its door, walks to the door; carrying goods,
+// it puts the top one down there (the sim refuses goods for another business, with the reason). Picked on the
+// ground and at two heights up the walls, so a tap on the front wall or the roof counts too. Homes are not used.
+function townTap(px, py) {
+  let best = null;
+  for (const f of townFootprints()) {
+    if (f.biz === null) continue;
+    const d = townDoor(f.biz), dp = toScreen(d.x, 0.5, d.z), dd = Math.hypot(dp.x - px, dp.y - py);
+    let hit = dd < 30 ? dd : null;
+    for (const y of [0, 0.9, 1.8]) {
+      const g = groundAtY(px, py, y);
+      if (!g) continue;
+      const c = Math.cos(f.yaw), s = Math.sin(f.yaw), lx = (g.x - f.x) * c - (g.z - f.z) * s, lz = (g.x - f.x) * s + (g.z - f.z) * c;
+      if (Math.abs(lx) <= f.w / 2 + 0.2 && Math.abs(lz) <= f.d / 2 + 0.2) hit = hit === null ? 40 : Math.min(hit, 40);
+    }
+    if (hit !== null && (!best || hit < best.d)) best = { biz: f.biz, d: hit };
+  }
+  if (!best) return false;
+  send(carryHeld(S).length ? { t: 'carryPut', biz: best.biz } : { t: 'useBiz', biz: best.biz });
+  return true;
 }
 // Train taps (C3). A tap on the gap between two vehicles (within 24 px of the joint on screen) uncouples there; a tap
 // on an engine while carrying a cord of wood puts it on the tender; a tap on a water tower's spout takes water.
@@ -7850,6 +8374,8 @@ window.__railhead = {
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   econ: { ECON, ECON_CATEGORIES, ECON_BUSINESSES, ECON_ORDERABLE, econNewState, econPost, econCheckMoney, econTelegraphKey, econNextVisit, econPack,
     contractOffer, contractDeliver, econLotFee, econSoldOutside, econMoney, econWhen, econDeliveredPrice, panel: telUi },
+  town: { TOWN, TOWN_BUSINESSES, TOWN_KINDS, TOWN_LOTS, townNewState, townPlaced, townFootprints, townDoor, townSignSpot, townStock, townPending,
+    townDeliverWhy, townRate, townGoods, townDebugScenario, townSignText: id => townSignText(S, id), get signs() { return townSigns; } },
   carry: { TOOL_KINDS, get TOOL_PARK() { return TOOL_PARK; }, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
   interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, withTestDelivery: st => { st.overland.testDelivery = true; return st; }, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },

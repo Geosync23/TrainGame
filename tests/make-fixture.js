@@ -25,6 +25,11 @@ const { openGame, stopServer } = require('./browser');
         { kind: 'GROUND', x: Math.round((N.x - 2) * 100), z: Math.round((N.z - 1.5) * 100) }, null);
       stake = [{ tick: 50, cmd: { t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6) * 100), tz: Math.round(N.z * 100) } }];
     }
+    // From schema 7 (towns): a sack of flour already delivered to the hub's general store, and its shelf lower.
+    if (S0.town) {
+      R.cargo.itemCreate(S0, { commodity: 'flour', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null }, { kind: 'BUSINESS', businessId: 0 }, null);
+      S0.town.biz[0].shelf.flour = 2;
+    }
     const S = R.simRun(S0, [
       { tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } },
       { tick: 2, cmd: { t: 'useSwitch', sw: 0 } },

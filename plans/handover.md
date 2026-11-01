@@ -37,4 +37,4 @@ Watch out: worktrees can start from the empty first commit. Every builder must f
 - The cloud test machine draws without a graphics chip (up to about 0.7 s a frame). Frame times there say nothing about phones; checks must not depend on frame timing.
 - cdnjs is blocked on the test machine; tests serve the identical three.js r128 from node_modules.
 - Draw calls are counted over both passes (shadows included): about 31 busy, 62 with 200 walkers. Budget under 100.
-- Known gaps: the player walks through buildings and cannot walk round a long train (path-finding is M1 work); crossover and ladder presets not built.
+- Known gaps: crossover and ladder presets not built. (Path-finding round buildings and trains was added in M1 package 1; see DEV_NOTES "Player".)

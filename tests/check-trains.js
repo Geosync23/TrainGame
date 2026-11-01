@@ -155,11 +155,15 @@ module.exports = async function checkTrains() {
         const e3 = R.simTick(st3, [{ t: 'trainSendTo', tr: 0, e: 2, s: 999999 }]);
         out.badSpotRefused = e3.some(x => x.t === 'noRoute') && st3.trains[0].mode === 'idle';
       }
-      // 10. Throw only within reach: a train between the player and the stand blocks the walk; no throw.
+      // 10. Throw only within reach: with a train between the player and the stand, and the stand walled off
+      //     (a ring of blocked walk-grid cells 2u to 2.6u round it, so path-finding cannot go round), the
+      //     walk ends short; no throw. (Walking round a train to a stand is in check-paths.js.)
       {
         const st = R.newState(1), W = st.track.switches[0];
         st.trains[0].front = { e: 0, s: 7.8, d: 1 };
         st.player.x = W.stand.ux; st.player.z = 14 + (14 - W.stand.uz);
+        const G = walkGrid(st.track);
+        for (let i = 0; i < G.cost.length; i++) { const [x, z] = walkCentre(i), d = Math.hypot(x - W.stand.x, z - W.stand.z); if (d >= 2 && d <= 2.6) G.cost[i] = 0; }
         const e10 = runUntil(st, [{ t: 'useSwitch', sw: 0 }], 200);
         out.farThrow = e10.some(x => x.t === 'switchThrown');
         out.farBlocked = e10.some(x => x.t === 'blocked');

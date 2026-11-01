@@ -3690,6 +3690,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Digit3') setSpeed(4);
   if (e.code === 'Escape') { closePanel(); if (bt.on) { buildClear(); buildHint(); } }
   if (e.code === 'KeyB') setBuildMode(!bt.on);
+  if (e.code === 'KeyF' && !$('carry').hidden && !$('carryPut').hidden) $('carryPut').click(); // put down (section 5)
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());

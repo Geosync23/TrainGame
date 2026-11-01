@@ -663,7 +663,9 @@ function playerTick(S, ev, poseCache) {
   const go = Math.min(step, dist);
   let nx = P.x + dx * go, nz = P.z + dz * go;
   nx = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, nx)); nz = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, nz));
-  const blocked = insideTrain(poses, nx, nz) && !insideTrain(poses, P.x, P.z);
+  // Trains block the player, and so do the hills: M0 walking stays on the flat ground (height 0).
+  const blocked = (insideTrain(poses, nx, nz) && !insideTrain(poses, P.x, P.z))
+    || (go > 0 && !terrainFlatAt(S.track, nx, nz) && terrainFlatAt(S.track, P.x, P.z));
   if (!blocked && go > 0) { P.x = nx; P.z = nz; P.f = Math.atan2(dx, dz); }
   if (P.mode === 'to' && (dist <= step || blocked)) {
     P.mode = 'idle';
@@ -864,6 +866,8 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// three.js clears its draw counts after the shadow pass; count by hand so a frame's figure covers both passes.
+renderer.info.autoReset = false;
 document.body.prepend(renderer.domElement);
 const canvas = renderer.domElement;
 const scene = new THREE.Scene();
@@ -1041,8 +1045,15 @@ function terrainCompute(T) {
     const v = hills * smooth01(C.FLAT_R, C.BLEND_R, d) * smooth01(0, C.EDGE_FADE, edge);
     h[j * V + i] = v < 0.02 ? 0 : Math.round(v * 100) / 100;
   }
-  C.h = h;
+  C.h = h; C.hTrack = T; C.hEdges = T ? T.edges.length : -1;
   return h;
+}
+// Pure math (no three.js): is the ground at height 0 here, for this track? Works out the heights first
+// if they were last worked out for another track. The sim uses it to keep the player off the hills.
+function terrainFlatAt(T, x, z) {
+  const C = TERRAIN;
+  if (!C.h || C.hTrack !== T || C.hEdges !== (T ? T.edges.length : -1)) terrainCompute(T);
+  return terrainHeight(x, z) === 0;
 }
 // Ground height at a world point, on the same two triangles per tile that the mesh draws. 0 off the map.
 function terrainHeight(x, z) {
@@ -1605,27 +1616,46 @@ function crowdGrid() {
       }
     }
   }
+  // Code 2: never walk here. Station buildings (with a 0.3u margin) and hills (walkers stay at height 0).
+  const fps = buildingFootprints(), M = 0.3;
+  for (let gz = 0; gz < h; gz++) for (let gx = 0; gx < w; gx++) {
+    const x = gx * cell + A.x0, z = gz * cell + A.z0;
+    let no = !terrainFlatAt(T, x, z);
+    for (let k = 0; !no && k < fps.length; k++) {
+      const f = fps[k], c = Math.cos(f.yaw), sn = Math.sin(f.yaw), dx = x - f.x, dz = z - f.z;
+      no = Math.abs(dx * c - dz * sn) <= f.w / 2 + M && Math.abs(dx * sn + dz * c) <= f.d / 2 + M;
+    }
+    if (no) bad[gz * w + gx] = 2;
+  }
   crowd.grid = { track: T, n: T.edges.length, w, h, cell, bad };
   return crowd.grid;
 }
-function crowdOnBallast(g, x, z) {
+// 0 free, 1 track ballast (avoided where possible), 2 building or hill (never entered).
+function crowdCell(g, x, z) {
   const A = CROWD.AREA, gx = Math.round((x - A.x0) / g.cell), gz = Math.round((z - A.z0) / g.cell);
-  return gx >= 0 && gz >= 0 && gx < g.w && gz < g.h && g.bad[gz * g.w + gx] === 1;
+  return gx >= 0 && gz >= 0 && gx < g.w && gz < g.h ? g.bad[gz * g.w + gx] : 0;
 }
-function crowdClear(g, x0, z0, x1, z1) {
+function crowdOnBallast(g, x, z) { return crowdCell(g, x, z) !== 0; }
+// The worst cell on the straight path from (x0, z0) to (x1, z1).
+function crowdPathCost(g, x0, z0, x1, z1) {
   const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.4);
-  for (let i = 1; i <= n; i++) if (crowdOnBallast(g, x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n)) return false;
-  return true;
+  let worst = 0;
+  for (let i = 1; i <= n && worst < 2; i++) worst = Math.max(worst, crowdCell(g, x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n));
+  return worst;
 }
-// A new target 3 to 15u away whose straight path keeps off the ballast; after 10 tries the walker crosses anyway.
+function crowdClear(g, x0, z0, x1, z1) { return crowdPathCost(g, x0, z0, x1, z1) === 0; }
+// A new target 3 to 15u away whose straight path keeps off the ballast; after 10 tries the walker crosses
+// the track anyway, but never a building or a hill: then it stays put and tries again next time.
 function crowdTarget(w) {
   const g = crowdGrid(), A = CROWD.AREA;
-  let tx = w.x, tz = w.z;
+  let tx = w.x, tz = w.z, cost = 2;
   for (let k = 0; k < 10; k++) {
     const ang = rngNext(w.rng) * Math.PI * 2, d = 3 + rngNext(w.rng) * 12;
     tx = Math.max(A.x0, Math.min(A.x1, w.x + Math.cos(ang) * d)); tz = Math.max(A.z0, Math.min(A.z1, w.z + Math.sin(ang) * d));
-    if (!crowdOnBallast(g, tx, tz) && crowdClear(g, w.x, w.z, tx, tz)) break;
+    cost = Math.max(crowdCell(g, tx, tz), crowdPathCost(g, w.x, w.z, tx, tz));
+    if (cost === 0) break;
   }
+  if (cost === 2) { tx = w.x; tz = w.z; }
   w.tx = tx; w.tz = tz; w.mode = 1; w.wait = 0;
 }
 function crowdTrainPoses() { return curPoses ? [].concat(...curPoses) : []; }
@@ -2280,6 +2310,7 @@ function render(alpha, dt) {
   applyDaylight(S, dt);
   updateCrowd(dt);
   debugUpdate(dt);
+  renderer.info.reset(); // once per frame: drawCalls then counts the shadow pass and the main pass
   renderer.render(scene, camera);
 }
 

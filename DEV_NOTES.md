@@ -45,7 +45,7 @@ Current checks:
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
 - `check-buildings.js`: every station footprint keeps the section 6 clearance from every track edge (platform and dock flush at 0.9u, others 1.2u from main, 1.0u from yard), the platform top is 0.3u, the buildings are 2 meshes, draw calls stay under 100, and screenshots of the station.
 
-Buildings (piece 3b): `BLD_LAYOUT` places a platform, depot (agent's office bay), telegraph shanty, water tower, freight shed with dock, and 4 lamps inside the oval beside the bottom main line (z = 14). All are merged into one KIT_MAT mesh plus one GLOW_MAT mesh. `buildingFootprints()` gives plan rectangles; `buildingLights()` gives lamp positions. No collision yet: the player walks through buildings.
+Buildings (piece 3b): `BLD_LAYOUT` places a platform, depot (agent's office bay), telegraph shanty, water tower, freight shed with dock, and 4 lamps inside the oval beside the bottom main line (z = 14). All are merged into one KIT_MAT mesh plus one GLOW_MAT mesh. `buildingFootprints()` gives plan rectangles; `buildingLights()` gives lamp positions. No collision for the player yet: the player walks through buildings. Crowd walkers keep 0.3u clear of every footprint.
 - `check-world.js`: the ground is flat under the track and in the yard, hills exist, the drawn ground matches `terrainHeight`, noon brightness is kept, night is readable, and lamps glow. It saves screenshots at 05:30, 12:00, 19:30 and 23:00.
 - `check-people.js`: with `?crowd=200`, all three kits, women and children are present, draw calls (shadow pass included) stay under 100, the crowd update stays under 4 ms a frame, walkers move and freeze when paused. Frame times are reported; the 50 ms limit only applies on a machine with a real graphics chip.
 
@@ -77,14 +77,17 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 
 ## Draw calls
 
-- Crowd (piece 4): 15 instanced meshes (3 kits x 5 body parts), 30 draw calls with the shadow pass, whatever the number of walkers. Note: three.js's own counter (`__railhead.drawCalls`) leaves out the shadow pass; the true frame total with 200 walkers is 56.
-- Crowd triangles: about 570 per person per pass (hidden variant shapes such as hats and skirts are folded away in the shader but still sent), about 115,000 per pass for 200 walkers.
+`__railhead.drawCalls` (and `rh.drawCalls`) counts a whole frame: the shadow pass plus the main pass. three.js clears its own counter after the shadow pass, so the page sets `renderer.info.autoReset = false` and calls `renderer.info.reset()` once per frame just before drawing. Earlier figures in these notes (14, 16 to 18) counted the main pass only and were too low. The phone budget is under 100 in a busy scene.
 
-- Piece 1 test yard: 14 at start, 13 to 14 with the train running (shadow pass included). The phone budget is under 100.
-- With terrain chunks (piece 3a): 15 to 17 in the test yard, 16 at every time of day.
+- Test yard with terrain, buildings and the train, no crowd: 30 to 33 (portrait and landscape).
+- With 200 walkers (`?crowd=200`): about 61. The crowd is 15 instanced meshes (3 kits x 5 body parts), 30 draw calls with the shadow pass, whatever the number of walkers.
+- Debug overlays add 1 each (main pass only).
+- Crowd triangles: about 570 per person per pass (hidden variant shapes such as hats and skirts are folded away in the shader but still sent), about 115,000 per pass for 200 walkers.
 
 ## Technical choices to know about
 
+- **Crowd speed is checked by update time, not frame rate:** the test machine draws in software (SwiftShader, no graphics chip), so its frame times say nothing about a phone. `check-people.js` limits the crowd's own update to 4 ms a frame and applies the 50 ms frame limit only on a real graphics chip.
+- **Hills and walking:** the player, trains and the tap-to-walk ground plane are at height 0. The sim keeps the player on flat ground with `terrainFlatAt(track, x, z)` (pure math, no three.js; it works out the heights for the given track if needed). Walking onto a hill is blocked like walking into a train. Crowd walkers never target or cross hills or buildings.
 - **Crowd:** `?crowd=N` or `__railhead.setCrowd(n)` (default 0). Walkers are render-side only, with their own seeded random numbers, not in the save. One shader colours each person (skin, hair, top, lower, hat, vest packed per instance) and hides the shapes they lack (bit mask). Women: chunky or lanky with a skirt and a bonnet or bun; children: chunky at 0.7.
 
 - **Shadow map:** 1024 pixels, not the design doc's 2048, to save phone memory and time.

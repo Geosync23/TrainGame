@@ -18,13 +18,9 @@ module.exports = async function checkPeople() {
     console.log(`  kits: chunky ${info.kits.chunky}, lanky ${info.kits.lanky}, stocky ${info.kits.stocky}; women ${info.women}, children ${info.children}`);
     console.log(`  roles: ${Object.entries(info.roles).map(([k, v]) => `${k} ${v}`).join(', ')}`);
 
-    // Draw calls of one whole frame, shadow pass included. (three.js resets its counter after the
-    // shadow pass, so the game's own drawCalls figure counts the main pass only.)
+    // Draw calls of one whole frame, shadow pass included (the game's drawCalls figure counts both passes).
     const frameCalls = () => page.evaluate(() => new Promise((resolve) => {
-      requestAnimationFrame(() => {
-        renderer.info.autoReset = false; renderer.info.reset();
-        requestAnimationFrame(() => { const c = renderer.info.render.calls, t = renderer.info.render.triangles; renderer.info.autoReset = true; resolve({ c, t }); });
-      });
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve({ c: window.__railhead.drawCalls, t: renderer.info.render.triangles })));
     }));
     // Frame time over about 3 seconds of real time (the first frame is left out).
     const frameTime = () => page.evaluate(() => new Promise((resolve) => {

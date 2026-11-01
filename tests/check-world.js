@@ -74,7 +74,7 @@ module.exports = async function checkWorld() {
       await page.waitForTimeout(100);
       await page.screenshot({ path: screenshotPath('world-' + name + '-portrait') });
       calls.push(`${name.slice(0, 2)}:${name.slice(2)} ${dc}`);
-      if (dc > 100) problems.push(`${name}: ${dc} draw calls (budget 100)`);
+      if (dc >= 100) problems.push(`${name}: ${dc} draw calls (budget under 100)`);
     }
     // A wide view at noon, zoomed out, to show the hills.
     const wide = await page.evaluate(() => new Promise((res) => {
@@ -84,7 +84,7 @@ module.exports = async function checkWorld() {
     await page.waitForTimeout(100);
     await page.screenshot({ path: screenshotPath('world-wide-portrait') });
     console.log(`  draw calls: ${calls.join(', ')}, zoomed out ${wide}`);
-    if (wide > 100) problems.push(`zoomed out: ${wide} draw calls (budget 100)`);
+    if (wide >= 100) problems.push(`zoomed out: ${wide} draw calls (budget under 100)`);
     if (errors.length) problems.push(`console errors: ${errors.join(' | ')}`);
   } finally {
     await browser.close();

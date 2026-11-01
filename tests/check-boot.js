@@ -20,7 +20,7 @@ module.exports = async function checkBoot() {
       const busy = await page.evaluate(() => window.__railhead.drawCalls);
       await page.screenshot({ path: screenshotPath('busy-' + orientation) });
       if (errors.length) problems.push(`${orientation}: console errors after running: ${errors.join(' | ')}`);
-      if (busy > 100) problems.push(`${orientation}: ${busy} draw calls in a busy scene (budget 100)`);
+      if (busy >= 100) problems.push(`${orientation}: ${busy} draw calls in a busy scene (budget under 100)`);
       console.log(`  ${orientation}: draw calls ${info.drawCalls} at start, ${busy} with the train running`);
     } finally {
       await browser.close();

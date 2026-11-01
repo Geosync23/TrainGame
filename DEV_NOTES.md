@@ -11,12 +11,13 @@ The full design is in `design-doc.md`. The original PDF it was converted from is
 
 ## Platform decisions (2026-11-01)
 
-These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D6).
+These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D8).
 
 - Phones first, touch first, portrait and landscape. A computer with mouse and keyboard comes second.
 - One HTML file, three.js r128 from cdnjs. There is no build step, no TypeScript and no Preact.
 - The camera turns in 90-degree steps. The elevation is fixed at the true isometric angle.
-- Avatar game: tap to walk there, press and hold to walk in the direction of the finger. Walking is part of M0 piece 1.
+- Avatar game: tap to walk there; press and hold walks towards the finger (D6, D7). Walking is part of M0 piece 1.
+- Piece 1 uses the final low-poly models for the character, train, track and switch stands (D8).
 - Size and speed targets are scaled down for phones (see design-doc section 0).
 
 ## How to test
@@ -49,7 +50,5 @@ Current checks:
 
 ## Next
 
-The plan for M0 piece 1 (your character walking, test yard, switches, one train, yard moves, clock, saving) is waiting for the designer's review:
-https://claude.ai/artifact/5ysP6CghXJwzq9pKJ9ivTS
-The questions are also on an interactive survey page that saves answers: https://claude.ai/artifact/Rff43eTxzRrdcunq21MC16
-Read saved answers with ArtifactData (collection "survey", document "answers"), plus the plan's table and comments. Do not build until approved.
+Build M0 piece 1. It is approved (answers in design-doc section 0, D7 and D8, and in the plan: https://claude.ai/artifact/5ysP6CghXJwzq9pKJ9ivTS).
+Start from `plans/handover.md`, which lists the scope, the checks to add and the gotchas.

@@ -154,4 +154,4 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-M1 has started. The plan is in `plans/m1-team-plan.md` (and on the plan page linked there), waiting for the designer's answers. Round A (park the instant build, cargo items, carrying, path-finding) is being built by a team; rounds B to D wait for approval.
+M1 round A (park the instant build, cargo, carrying, path-finding) is merged. The designer approved the M1 plan (D12) and will review once at the end of M1. Round B (hand-building track, larger platform, interchange) is being built; see `plans/m1-team-plan.md`.

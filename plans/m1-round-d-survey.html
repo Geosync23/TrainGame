@@ -52,7 +52,7 @@ button:disabled { opacity: .5; cursor: default; }
 
 <div class="wrap">
   <h1>Railhead M1, round D: your answers</h1>
-  <p class="lead">Seven questions before the last round of M1 (panels, telegrams, tutorial). Pick an option for each and add a note if you like. My suggestion is marked. Answers save on this page as you go. The <a href="https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu" target="_blank" rel="noopener">M1 plan</a> has the background.</p>
+  <p class="lead">Ten questions before the last round of M1 (panels, telegrams, tutorial, and three from a test week of play). Pick an option for each and add a note if you like. My suggestion is marked. Answers save on this page as you go. The <a href="https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu" target="_blank" rel="noopener">M1 plan</a> has the background.</p>
   <div id="qs"></div>
 </div>
 <div class="bar"><div class="bar-in"><span id="status">Connecting...</span><button id="save" type="button">Save answers</button></div></div>
@@ -73,6 +73,12 @@ const QS = [
     o: [['yes', 'Yes, 8 cords stacked at the wood stage', 1], ['no', 'No, ordering wood is part of the job']] },
   { id: 'link', q: 'Do you want a playable link of M1 so far, to try on your phone before the end-of-M1 review?',
     o: [['yes', 'Yes, update the playable link now', 1], ['no', 'No, wait for the end of M1']] },
+  { id: 'travel', q: 'How should you get between the hub and Willow Ford?', ctx: 'A test player played a full week. Walking the 10 miles takes about 93 game minutes each way, so a day loses about 6 hours to walking. Tap-to-walk cannot run on a phone.',
+    o: [['ride', 'Ride your own train as a passenger (sit in the combine, step off at the other end)', 1], ['run', 'Let the player run on a phone (for example a Run toggle button)'], ['both', 'Both']] },
+  { id: 'cordwood', q: 'Cordwood is heavy work: cords are long bundles carried one at a time by hand. Should that change?', ctx: 'The test player carried about 5 cords a day about 40u from the interchange to the engine.',
+    o: [['cart', 'Let cords go on the handcart (up to 6), not the hand truck', 1], ['hand', 'Keep it by hand only; it is part of the job'], ['stage', 'Deliver cords straight to the wood stage when ordered']] },
+  { id: 'wftickets', q: 'Willow Ford has no one selling tickets while you are at the hub. What should travellers there do?', ctx: 'In the test week 94 travellers gave up at Willow Ford and 59 at the hub, against 82 tickets sold.',
+    o: [['honor', 'At an unstaffed station they board anyway and pay the fare on arrival', 1], ['giveup', 'Keep it as it is: they give up, and you feel the need to hire an agent later'], ['other', 'Something else (in my note)']] },
   { id: 'else', q: 'Anything else for round D?', o: [] },
 ];
 const answers = {};

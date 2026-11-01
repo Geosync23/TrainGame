@@ -13,7 +13,7 @@ const { openGame, waitReady, screenshotPath } = require('./browser');
 
 module.exports = async function checkCargo() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const out = await page.evaluate(() => {
       const R = window.__railhead, C = R.cargo, bad = [];
@@ -133,7 +133,7 @@ module.exports = async function checkCargo() {
   // The props at phone size, with draw calls: the cargo scenario (35 items drawn: 19 in bays, 15 on the ground,
   // 1 in hand, 2 in the boxcar not drawn), calm and with the train running.
   for (const orientation of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orientation, { query: '?paused&debug=1' });
+    const { browser, page, errors } = await openGame(orientation, { query: '?paused&debug=1&world=yard' });
     try {
       const base = await page.evaluate(async () => {
         for (const n of ['blocks', 'locks', 'routes', 'path']) rh.overlay(n, false);

@@ -22,7 +22,7 @@ module.exports = async function checkInterchange() {
   const problems = [];
   // ---- Part 1: the sim alone (no drawing): visits, pick-up, building refused, determinism ----
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
     try {
       const r = await page.evaluate(() => {
         const R = window.__railhead, X = R.interchange, out = {};
@@ -137,7 +137,7 @@ module.exports = async function checkInterchange() {
 
   // ---- Part 2: the running page: unloading by hand, the car panel by touch, walking round, screenshots ----
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&world=yard' });
     const R = (fn, arg) => page.evaluate(fn, arg);
     const settle = () => page.waitForTimeout(150);
     const camSettle = () => page.waitForTimeout(900);
@@ -253,7 +253,7 @@ module.exports = async function checkInterchange() {
 
   // ---- Part 3: a real save in the browser mid-visit, reloaded; and a landscape screenshot ----
   {
-    const { browser, page, errors } = await openGame('landscape', { query: '?paused' });
+    const { browser, page, errors } = await openGame('landscape', { query: '?paused&world=yard' });
     try {
       await page.evaluate(() => { const R = window.__railhead; R.step(450 + 120); R.camera.zoom = 1.4; });
       const before = await page.evaluate(async () => { const R = window.__railhead; await R.saveGame(); return { h: R.hash(), ph: R.state.overland.phase, tick: R.state.tick }; });

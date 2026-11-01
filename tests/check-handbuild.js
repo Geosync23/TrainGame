@@ -27,7 +27,7 @@ module.exports = async function checkHandbuild() {
 };
 
 async function checkTouch(problems) {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, i) => ({ x: p.x, y: p.y, id: i + 1 })) });
   const R = (fn, arg) => page.evaluate(fn, arg);
@@ -108,7 +108,7 @@ async function checkTouch(problems) {
 
 // The rules, through the sim on copies of the state (no drawing).
 async function checkRules(problems) {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const r = await page.evaluate(() => {
       const R = window.__railhead, J = R.jobs, out = {};
@@ -270,7 +270,7 @@ async function checkRules(problems) {
 
 // Save and reload mid-job: export/import and a real page reload, then the same ticks give the same hash.
 async function checkSaveReload(problems) {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const a = await page.evaluate(async () => {
       const R = window.__railhead, S = R.jobs.jobDebugScenario(R.newState(1866));
@@ -298,7 +298,7 @@ async function checkSaveReload(problems) {
 }
 
 async function checkScreenshot(problems) {
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&scenario=handbuild' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&scenario=handbuild&world=yard' });
   try {
     const r = await page.evaluate(async () => {
       const R = window.__railhead, out = {};

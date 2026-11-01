@@ -34,7 +34,7 @@ module.exports = async function checkM0() {
   const problems = [];
   const notes = [];
   // ?debug=1: the instant build (buildTrack through the page) is parked behind it (D10).
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&crowd=200&debug=1' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&crowd=200&debug=1&world=yard' });
   try {
     // ---- 2 and 3 (second half): the sim on its own, from fresh states ----
     const sim = await page.evaluate(() => {
@@ -226,7 +226,7 @@ module.exports = async function checkM0() {
 
   // ---- 6: screenshots of the full scene, noon and night, both orientations ----
   for (const orientation of ['portrait', 'landscape']) {
-    const g = await openGame(orientation, { query: '?paused&crowd=200' });
+    const g = await openGame(orientation, { query: '?paused&crowd=200&world=yard' });
     try {
       const calls = [];
       for (const [name, t] of [['noon', 7 * 3600], ['night', 18 * 3600]]) {

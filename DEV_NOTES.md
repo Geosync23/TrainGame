@@ -11,7 +11,7 @@ The full design is in `design-doc.md`. The original PDF it was converted from is
 
 ## Platform decisions (2026-11-01)
 
-These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D8).
+These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D10).
 
 - Phones first, touch first, portrait and landscape. A computer with mouse and keyboard comes second.
 - One HTML file, three.js r128 from cdnjs. There is no build step, no TypeScript and no Preact.
@@ -115,10 +115,4 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-All M0 pieces (1 fixes, 2 build tool, 3a terrain and day-night, 3b buildings, 4 crowd, 5 debug) are merged into `ccr-59cb4c1f-rnscv9`, and all 13 checks pass, `check-m0.js` included.
-Next is the designer's end-of-M0 review:
-- Review page with saved answers: https://claude.ai/artifact/2BKv74G9z2oFJSfWRchyU9. Read the answers with ArtifactData, collection `review`, document `answers`.
-- Playable build: https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc
-Record the answers in design-doc section 0. Turn D9 and the other provisional items into decisions or changes. Then plan M1 (or the fixes first, if asked).
-
-Testing note: `check-touch` waits for the game to notice a hold, because this machine draws in software at up to about 0.7 s a frame. It is not a fixed 0.45 s wait.
+Start from `plans/handover.md`. M0 is built and waiting for the designer's review answers. The newest decision is D10: track is built by hand, spike by spike, in M1, and the instant build is parked behind ?debug=1. Next job: the M1 plan, for review before building.

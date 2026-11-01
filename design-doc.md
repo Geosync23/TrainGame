@@ -18,6 +18,7 @@ Oct 31, 2026 · @Geo Ma
 | D7 | 2026-11-01 | **Touch controls for M0 piece 1.** Press and hold steers towards the spot the finger is pressing (not a joystick). Tap a switch stand: walk to it and throw it. Tap the train: walk to it and open its panel (Forward, Back, Stop, Send to track); after Send to track, tap a track to send the train there. Pinch zooms 0.6x to 4x. A two-finger drag looks away from the character, and a Centre button brings the camera back. Two buttons at the bottom left turn the camera 90 degrees. Buttons at the top left set pause, 1x, 2x and 4x. On-screen buttons are at least 48 by 48 pixels. | Section 23 open question "Touch control scheme, the rest" (for these controls; panels and the context menu stay open). |
 | D8 | 2026-11-01 | **M0 is built in five pieces, and the final look comes early.** 1: the player character walking, a test yard, switches, one train, yard moves, clock and saving, using the final low-poly models for the character (chunky kit), the 4-4-0, the cars, track and switch stands, matched to the style test page. 2: laying track by finger. 3: ground with hills, day and night, buildings. 4: all three character kits and 200 walkers. 5: debug tools and the M0 acceptance check. | Section 22 M0 work package order (the packages themselves are unchanged). |
 | D9 (provisional, for the M0 review; piece 2) | 2026-11-01 | **Build tool gestures (provisional, for the M0 review).** A Build button (top right) switches one-finger drags from walking to drawing track; pinch and two-finger pan still work, and Build again goes back to walking. Where the drag starts decides what it does: on a track end (marked with a brass ring in build mode) it continues that track; on a straight it places a switch there, facing the way the finger moves and turning off to the finger's side; on open ground it starts a free piece whose heading is the first drag direction. The ghost preview is green, amber or red, with a short label at the top saying the length and curve, or why not. Letting go shows Lay track and Cancel at the bottom. Starting on a curve shows red ("Switches go on straight track only"). Laying track while paused runs one game tick so it appears at once. | Section 6 "Build tool" steps 1 to 4 (the Alt key for free angles has no touch equivalent yet; tooltips become the label). |
+| D10 | 2026-11-01 | **Track is built by hand, spike by spike, and that is a main mechanic.** The build tool only plans: a confirmed plan becomes a construction job marked on the ground with stakes and string, never instant track. The job is built physically and visibly: ties carried and set one at a time, rails carried and dropped on them, and spikes driven one by one with a hammer swing, by the player first and by hired crews later. Materials (tie bundles, rail bundles, spike kegs) are real items that must be at the work site. This comes in M1: hand-building hub track, with materials arriving on the interchange trains like any other freight. Line construction with crews, camps and the stockpile stays in M4, at the same spike-by-spike detail. **Cut (parked, not deleted): the M0 instant build** (2026-11-01, designer: "laying track should never work this way"); its code stays but only works with ?debug=1. | Section 6 build tool step 5 (adds the detail level); section 13 "Track laying" (gang rates become visible tie, rail and spike work); section 22 M1 (adds hand-built hub track). |
 
 ## 1. Overview
 
@@ -307,6 +308,8 @@ A **diamond crossing** (two tracks crossing at 30 to 90 degrees) is available in
 | Minimum clearance to buildings | 1.2u from centerline | 1.0u (platforms sit flush at 0.9u) |
 
 ### Build tool
+
+> **Changed 2026-11-01:** the build tool plans only; building is physical, spike by spike. The M0 instant build is parked behind ?debug=1. See section 0, decision D10.
 
 1. Start from an existing node (continuing its tangent) or a free point (tangent set by the first drag direction).
 2. Drag to a target. If the target is straight ahead within 1 degree, the tool proposes one straight. Otherwise it proposes an arc tangent to the start followed by a straight to the target, choosing the arc radius as large as possible but at least the minimum. If the end must meet an existing node's tangent, it proposes an S-curve (arc, straight, arc).
@@ -1631,6 +1634,8 @@ Acceptance criteria:
 
 Goal: a 20-minute session working the hub and Willow Ford alone is fun.
 
+> **Changed 2026-11-01:** M1 also includes hand-building hub track spike by spike from planned jobs, with materials from the interchange. See section 0, decision D10.
+
 Work packages:
 
 1. **Player** (after M0): character creation (minimal), movement, click-to-move pathing on a walk grid, interaction system, carrying, hand truck and handcart.
@@ -1752,6 +1757,8 @@ Decisions still needed from the designer. Defaults in this document hold until e
 - [ ] **Train crews as visible people**: should engineers and firemen be visible in the cab (yes by default) and walk to and from the roundhouse at shift change (costly; default no)?
 - [ ] **Touch controls for panels and the context menu** (added 2026-11-01): walking and the M0 controls are decided (section 0, D6 and D7). Still open: how office panels and the inspect or context menu open on a phone (press-and-hold is taken by walking). To be proposed with M1.
 - [ ] **Controller support** (split from the touch question, 2026-11-01): still out of scope for 1.0; revisit after M7.
+
+- [ ] **How hand-building feels** (added 2026-11-01, from D10): how long each tie, rail and spike takes the player, how many spikes are shown per tie, and whether the player can hand the work to someone before M3. To be proposed in the M1 plan.
 
 ### Answered
 

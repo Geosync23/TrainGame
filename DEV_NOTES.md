@@ -146,7 +146,7 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 
 ## Team mode (from 2026-11-01)
 
-The designer asked for a team: the lead session hands out work to up to 6 workers, and an integrator merges it.
+The designer asked for a team: the lead session hands out work to up to 6 workers (5 for M1), and an integrator merges it. Workers are helpers inside the lead session, never separate sessions (designer, 2026-11-01). Questions for the designer always go on an interactive survey page whose answers are saved in the page database (see CLAUDE.md).
 The designer chose to review once, when all of M0 is done, instead of after every piece. The plans are recorded in `plans/m0-team-plan.md`.
 Each builder owns one section of `index.html` (terrain, day and night, buildings, people (crowd), build tool, debug) and works on its own branch.
 Each builder adds its own check file in `tests/` and one line to `tests/run-all.js`.

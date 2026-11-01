@@ -1,6 +1,7 @@
 # M1 team plan (2026-11-01)
 
-Plan page for the designer (with the answers table): https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu
+Plan page for the designer: https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu
+Survey with the questions (answers saved in its database, collection `answers`, doc `m1-plan`): https://claude.ai/artifact/VaTAWnL2ycb8JqzZJSJyfA (source: `plans/m1-plan-survey.html`)
 Status: waiting for the designer's answers. Round A started at once because the designer said "start M1"; it only covers work the design doc already specifies.
 
 | Round | Worker | Piece | Owned sections of index.html |

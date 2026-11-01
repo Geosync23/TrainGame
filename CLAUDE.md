@@ -46,6 +46,8 @@ If either file doesn't exist yet, create it in the first session and keep it cur
 - **Cut things are parked, never deleted.** When something is cut, mark it cut in `design-doc.md` (with the date and my reason) and keep it on record. Code already built for it stays switched off; taking it out is its own reviewed step.
 - **Every page you publish for me leaves room for my answer.** A plan, survey or results page has a place on the page itself for me to comment and answer its questions, so nothing I write there is lost.
 - **Don't create pull requests unless I ask.**
+- **Questions for me always come as an interactive survey** (added 2026-11-01): a published page with a choice per question (your suggestion marked) and a note box, with my answers saved on the page so they are not lost. Always do this.
+- **Workers stay inside the lead session** (added 2026-11-01): hire them as helpers within the session, not as separate sessions.
 
 ## Memory and handover
 - From about 60% of your context, judge case by case whether to hand over: if a big task is coming up, hand over before starting it; otherwise keep working a little longer.

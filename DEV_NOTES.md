@@ -42,6 +42,7 @@ Current checks:
 - `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
 - `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
+- `check-build.js`: the build tool with real touch events: continue the spur from its dead end, place a switch on a straight, a red "Curve too tight" preview with Lay track disabled, pinch still zooming in build mode, walking back after leaving it. Then, through the sim alone, a separate loop with a passing siding and two switches built by `buildTrack` commands passes the validator, and a train sent to the siding takes the turn-off and arrives. A switch under a train, and one with no room, are refused. Screenshots: `build-ghost-switch-portrait.png`, `build-ghost-red-portrait.png`.
 
 Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump `SCHEMA_VERSION`, add a step to `migrate()`, and run `node tests/make-fixture.js` to add the new version's sample. Keep the old samples.
 
@@ -54,6 +55,7 @@ Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump 
 - **Routes.** A* over directed edges (length plus 20u per diverging switch), trying both directions of travel. The switches are set instantly, as M0 allows, and locked. Each lock is released once the whole train has passed.
 - **Player.** The player walks in a straight line and is blocked by train bodies. A switch throw takes 0.5 game minutes at the stand. A tap on the train walks to within 1.5u of it, then opens its panel.
 - **Models.** Built in code from the style test page shapes. Each vehicle or body part is merged into one mesh with vertex colours and one shared material.
+- **Build tool (piece 2, M0 instant build).** The Build button (top right, or the B key) turns on build mode: one finger draws track instead of walking; pinch and two-finger pan still work. A drag that starts on a track end (brass ring) continues it; one that starts on a straight places a switch there (5u through leg, radius 10u 30-degree diverging leg, on the side the finger moves to) and carries on from the diverging leg; one that starts on open ground starts a free piece heading the first drag direction (snapped to 15 degrees). The plan follows section 6: straight within 1 degree, else arc then straight (largest radius, 15-degree straights, nearby straight track's heading first, ends snapped to 1.6u parallel offsets); an end within 0.5u of a track end joins it with a straight, arc, arc + straight, straight + arc or S-curve. The ghost is green (valid), amber (ground more than 0.3u off the bed: needs earthwork) or red with the reason in the label. Red covers: radius by class, reverse curves without the straight, closer than 1.6u to other track or crossing it, building clearance (if `buildingFootprints()` exists), off the map, a train on the track, too little straight for a switch, and anything `trackValidate` finds. On release, Lay track / Cancel appear; Lay track sends `{t:'buildTrack', ...}` (whole numbers only), which re-checks and applies or refuses with an event. If the game is paused, Lay track runs one tick so the track appears at once. Splitting an edge keeps its id (it is shortened) and appends the rest.
 - **Test hooks.** `window.__railhead` gives access to the state, `step(n)`, `send(cmd)`, `newState`, `simRun`, `stateHash`, `exportSave`/`importSave` and `toScreen`.
 
 ## Sections of index.html
@@ -63,6 +65,7 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 ## Draw calls
 
 - Piece 1 test yard: 14 at start, 13 to 14 with the train running (shadow pass included). The phone budget is under 100.
+- Build mode adds 2 (the ghost and the track-end rings): 13 to 16 with the train running, a ghost showing and the rings on.
 
 ## Technical choices to know about
 

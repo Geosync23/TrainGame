@@ -11,11 +11,12 @@ The full design is in `design-doc.md`. The original PDF it was converted from is
 
 ## Platform decisions (2026-11-01)
 
-These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D5).
+These override the original design document wherever they disagree. Details are in `design-doc.md`, section 0 (decisions D1 to D6).
 
 - Phones first, touch first, portrait and landscape. A computer with mouse and keyboard comes second.
 - One HTML file, three.js r128 from cdnjs. There is no build step, no TypeScript and no Preact.
 - The camera turns in 90-degree steps. The elevation is fixed at the true isometric angle.
+- Avatar game: tap to walk there, press and hold to walk in the direction of the finger. Walking is part of M0 piece 1.
 - Size and speed targets are scaled down for phones (see design-doc section 0).
 
 ## How to test
@@ -48,6 +49,6 @@ Current checks:
 
 ## Next
 
-The plan for M0 piece 1 (test yard, switches, one train, yard moves, clock, saving) is waiting for the designer's review:
+The plan for M0 piece 1 (your character walking, test yard, switches, one train, yard moves, clock, saving) is waiting for the designer's review:
 https://claude.ai/artifact/5ysP6CghXJwzq9pKJ9ivTS
 Read the answers in its "Questions for you" table and any comments on it. Do not build it until it is approved.

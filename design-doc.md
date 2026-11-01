@@ -14,6 +14,7 @@ Oct 31, 2026 · @Geo Ma
 | D3 | 2026-11-01 | **Camera.** Yaw turns in 90-degree steps; the elevation is fixed at the true isometric angle (35.264 degrees), as in section 5. On a phone, rotation is by on-screen buttons and zoom is by pinch. The zoom range stays at 0.6x to 4x until the designer says otherwise. | Nothing: confirms section 5 for phones. |
 | D4 | 2026-11-01 | **Working title is Railhead.** | Section 23 open question "Game name". |
 | D5 | 2026-11-01 | **Performance targets scaled for phones.** These are starting targets, set as a technical judgement, and will be revised with real measurements. Frame rate: 60 fps on a mid-range phone from about 2021, never below 30 fps. Draw calls: under 100 in a busy scene. Triangles: under 150,000 visible. Visible characters: up to about 120. Memory: under 300 MB. Pixel ratio capped at 2. The simulation sizes (1,200 citizens, the 512 x 512 tile map) are kept for now, measured on a phone at M2 and M5, and brought back to the designer if they need cutting. | Section 19 "Performance budgets" (desktop targets). |
+| D6 | 2026-11-01 | **Avatar-based touch controls.** You play one person in the world, and one finger always moves them. Tap the ground to walk there. Press and hold to walk in the direction of your finger, and let go to stop. Tapping an interactable (switch stand, train) walks to it and uses it, as in section 5. The player character and walking are brought forward from M1 into the first piece of M0. | Section 23 open question "Touch control scheme" (in part); section 22 order of M0 and M1 (walking only). |
 
 ## 1. Overview
 
@@ -1746,10 +1747,11 @@ Decisions still needed from the designer. Defaults in this document hold until e
 - [ ] **Ending**: is reaching Silver City the right soft ending, and should there be a second region after 1.0?
 - [ ] **Hand-placed vs generated map**: one handmade region for 1.0 (default), or a seeded generator for replay?
 - [ ] **Train crews as visible people**: should engineers and firemen be visible in the cab (yes by default) and walk to and from the roundhouse at shift change (costly; default no)?
-- [ ] **Touch control scheme** (added 2026-11-01): which gesture does what on a phone? For example: tap the ground to walk there, tap an object to use it, press and hold for the context menu, drag with one finger to pan, pinch to zoom, and buttons to turn the camera. To be proposed in the M0 plan for review.
+- [ ] **Touch control scheme, the rest** (added 2026-11-01): walking is decided (section 0, D6). Still open: whether press-and-hold steers towards the finger or works like a joystick, and the gestures for camera, panels and the context menu. Proposed in the M0 piece 1 plan.
 - [ ] **Controller support** (split from the touch question, 2026-11-01): still out of scope for 1.0; revisit after M7.
 
 ### Answered
 
+- **Touch walking** (answered 2026-11-01): tap to walk there, press and hold to walk in the direction of your finger. See section 0, decision D6.
 - **Game name** (answered 2026-11-01): keep "Railhead" as the working title. See section 0, decision D4.
 - **Touch support** (answered 2026-11-01): phones and touch come first, not after M7. See section 0, decision D1.

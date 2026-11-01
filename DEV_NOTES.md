@@ -42,6 +42,7 @@ Current checks:
 - `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
 - `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
+- `check-world.js`: the ground is flat under the track and in the yard, hills exist, the drawn ground matches `terrainHeight`, noon brightness is kept, night is readable, and lamps glow. It saves screenshots at 05:30, 12:00, 19:30 and 23:00.
 
 Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump `SCHEMA_VERSION`, add a step to `migrate()`, and run `node tests/make-fixture.js` to add the new version's sample. Keep the old samples.
 
@@ -63,6 +64,7 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 ## Draw calls
 
 - Piece 1 test yard: 14 at start, 13 to 14 with the train running (shadow pass included). The phone budget is under 100.
+- With terrain chunks (piece 3a): 15 to 17 in the test yard, 16 at every time of day.
 
 ## Technical choices to know about
 
@@ -72,6 +74,8 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 - **Tender load:** the tender carries cordwood, not coal, because engines start on wood (section 2).
 - **Switch points:** the point rails do not animate yet. The target disc shows the setting.
 - **Send to:** a moving train must be stopped first.
+- **Terrain (piece 3a):** 64 x 64 tiles of 2u, 2 x 2 chunks of 32 x 32 tiles, one shared vertex-colour material (up to 4 draw calls), plus a flat skirt beyond the map edge. Hills come from seeded value noise (up to about 5.5u). The ground is held at height 0 within 7u of every track corner sample and over x -25..25, z -20..24, and fades to flat at the map edge. The heights are worked out again from the current track each time `buildTerrain` runs. `terrainHeight(x, z)` uses the same triangles as the mesh. The terrain receives shadows but does not cast them.
+- **Day and night (piece 3a):** `daylightAt(time)` gives the light for a game time (no three.js); `applyDaylight` applies it. Colours and sun elevations follow design-doc 17. The intensities are tuned rather than copied from the doc (provisional, for the designer's review): noon stays at the approved sun 0.8 and sky 0.5, while dawn, dusk and night are lifted so the scene stays readable on a phone. Sunrise and sunset: spring and autumn 06:00 to 19:00, summer 05:00 to 21:00, winter 07:00 to 17:00. Because the game starts at 05:00, the first minutes are in dawn twilight. `GLOW_MAT` glows from just before sunset until just after sunrise.
 
 ## Team mode (from 2026-11-01)
 

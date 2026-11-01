@@ -11,6 +11,7 @@ const checks = {
   'same start, same result': require('./check-determinism'),
   'saving and loading': require('./check-save'),
   'touch controls': require('./check-touch'),
+  'ground and light (terrain, day and night)': require('./check-world'),
 };
 
 (async () => {

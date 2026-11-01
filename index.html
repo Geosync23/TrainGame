@@ -73,6 +73,13 @@
   #carPanel .row { display: flex; gap: 6px; align-items: center; }
   #carPanel .grow { flex: 1; min-width: 0; }
   #carPanel h2 { margin: 0; font-size: 18px; color: var(--ink); }
+#panelLoco { font-size: 13px; margin: 2px 0 4px; color: #4a3a28; }
+#panelTt { margin-top: 6px; }
+#panel.sending #panelLoco, #panel.sending #panelTt { display: none; }
+#ttCard { position: fixed; left: 0; top: 0; z-index: 1; pointer-events: none; background: rgba(40, 30, 20, 0.86); color: #f3e7cf;
+  border-radius: 8px; padding: 6px 9px; font-size: 12px; line-height: 1.35; max-width: 250px; }
+#ttCard b { display: block; font-size: 13px; }
+#ttCard .sig { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
   #carInfo, #carHeld { font-size: 14px; color: #5a4a3a; }
   #carItems { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
   #carItems button { font-size: 14px; padding: 0 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -148,10 +155,13 @@
 <div id="panel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="panelTitle">No. 1</h2><button id="panelClose" aria-label="Close">X</button></div>
   <div id="panelStatus"></div>
+  <div id="panelLoco"></div>
   <div class="acts">
     <button id="actFwd">Forward</button><button id="actBack">Back</button><button id="actStop">Stop</button><button id="actSend">Send to</button>
   </div>
+  <div class="acts" id="panelTt"><button id="ttToggle">Timetable: off</button><button id="ttHighball" hidden>Highball</button></div>
 </div>
+<div id="ttCard" class="hud" hidden><b id="ttCardTitle"></b><div id="ttCardLines"></div></div>
 <div id="telPanel" class="hud" hidden>
   <div class="row"><h2 class="grow">Telegraph</h2><button id="telClose" aria-label="Close">X</button></div>
   <div id="telTabs" role="group" aria-label="Telegraph"><button data-tab="order">Order</button><button data-tab="contracts">Contracts</button><button data-tab="ledger">Ledger</button></div>
@@ -170,7 +180,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 8,
+  SCHEMA_VERSION: 9,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -193,6 +203,14 @@ const CFG = {
   CAM_LAG_S: 0.2,
   HOLD_MS: 220, TAP_MOVE_PX: 10,
   MAP_HALF: 60,              // the test yard's map (each world's own bounds are in WORLDS, "starting world layout")
+  // Coupling, locomotive state and the timetable (M1 package 6, builder C3; section "timetable").
+  UNCOUPLE_S: 30,            // a person at the joint uncouples in 0.5 game minutes (section 7)
+  COUPLE_S: 60,              // coupling on contact: the train stands 1.0 game minute while the crew couples up
+  CORD_U: 120,               // one cord of wood runs 7.5 miles (120u); a full tender of 4 cords is 30 miles (section 7)
+  TENDER_CORDS: 4,
+  WATER_U: 320,              // a full tank runs 20 miles (section 7)
+  WATER_S: 120,              // taking water at the tower spout: 2 game minutes (provisional)
+  FUEL_RESERVE_U: 32,        // a timetable train leaves only with the next leg plus 2 miles of wood and water
 };
 const DT_MIN = CFG.TICK_GAME_S / 60; // one tick in game minutes
 
@@ -624,7 +642,7 @@ const stationsOf = T => STATIONS[worldId(T)];
 
 // ==== Section: game state ====
 const CONSIST_NO1 = [
-  { k: 'loco', len: 5.2, mass: 3, power: 10 },
+  { k: 'loco', len: 5.2, mass: 3, power: 10, fuel: CFG.CORD_U * CFG.TENDER_CORDS, water: CFG.WATER_U },
   { k: 'combine', len: 2.8, mass: 0.8 },
   { k: 'boxcar', len: 2.6, mass: 0.5 },
 ];
@@ -645,6 +663,7 @@ function newState(seed, world) {
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
     jobs: jobNewStore(),             // staked construction jobs (section "construction jobs")
+    tt: ttNewState(),                // train services, runs and line reservations (section "timetable")
     econ: econNewState(0),           // cash, market, orders, contracts and the ledger (section "economy")
     town: townNewState(),            // the placeholder towns' businesses: stock and use (section "town")
   };
@@ -661,7 +680,7 @@ function trainPoses(T, tr) {
     const inset = Math.min(0.6, c.len / 3);
     const pf = trackWalk(T, back, off + inset).pos, pr = trackWalk(T, back, off + c.len - inset).pos;
     const a = edgeAt(T, T.edges[pf.e], pf.s), b = edgeAt(T, T.edges[pr.e], pr.s);
-    out.push({ k: c.k, len: c.len, x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, yaw: Math.atan2(-(a.z - b.z), a.x - b.x) });
+    out.push({ k: c.k, len: c.len, x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, yaw: Math.atan2(-(a.z - b.z), a.x - b.x) + (c.rev ? Math.PI : 0) });
     off += c.len + COUPLER_GAP;
   }
   return out;
@@ -687,15 +706,17 @@ function switchLockReason(S, swId, occ) {
 // ==== Section: routes ====
 // Shortest way for the train's leading end to reach a point, without reversing (section 8: A* over the
 // track graph, cost = length plus 20u for each diverging switch). Returns the switch settings it needs.
-function findRoute(T, start, target) {
+// avoid (optional): a Set of edge ids the route may not enter (track occupied by other trains, used by the
+// timetable). The result also gives the edges in order (path) and the facing on arrival (dEnd).
+function findRoute(T, start, target, avoid) {
   const ix = trackIndex(T);
   const E0 = T.edges[start.e];
   if (start.e === target.e && (start.d > 0 ? target.s >= start.s : target.s <= start.s)) {
-    return { cost: Math.abs(target.s - start.s), dist: Math.abs(target.s - start.s), needs: [] };
+    return { cost: Math.abs(target.s - start.s), dist: Math.abs(target.s - start.s), needs: [], path: [start.e], dEnd: start.d };
   }
   const open = [], seen = new Set();
   const first = start.d > 0 ? E0.len - start.s : start.s;
-  open.push({ cost: first, dist: first, e: start.e, d: start.d, needs: [] });
+  open.push({ cost: first, dist: first, e: start.e, d: start.d, needs: [], path: [start.e] });
   let best = null;
   while (open.length) {
     open.sort((p, q) => p.cost - q.cost || p.e - q.e || p.d - q.d);
@@ -718,14 +739,16 @@ function findRoute(T, start, target) {
       for (const o of ix.nodeEdges[node]) if (o !== cur.e) options.push({ e: o, need: null, extra: 0 });
     }
     for (const op of options) {
+      if (avoid && avoid.has(op.e)) continue;
       const E2 = T.edges[op.e], d2 = E2.a === node ? 1 : -1;
       const needs = op.need ? cur.needs.concat([{ ...op.need, at: cur.dist }]) : cur.needs;
+      const path = cur.path.concat([op.e]);
       if (op.e === target.e) {
         const part = d2 > 0 ? target.s : E2.len - target.s;
-        const cand = { cost: cur.cost + op.extra + part, dist: cur.dist + part, needs };
+        const cand = { cost: cur.cost + op.extra + part, dist: cur.dist + part, needs, path, dEnd: d2 };
         if (!best || cand.cost < best.cost) best = cand;
       }
-      open.push({ cost: cur.cost + op.extra + E2.len, dist: cur.dist + E2.len, e: op.e, d: d2, needs });
+      open.push({ cost: cur.cost + op.extra + E2.len, dist: cur.dist + E2.len, e: op.e, d: d2, needs, path });
     }
   }
   if (best) {
@@ -757,6 +780,8 @@ function applyCommand(S, c, ev) {
   const tr = c.tr !== undefined ? S.trains[c.tr] : null;
   // The Overland and the cars it sets out are not the player's to drive (section "trains", the Overland).
   if (tr && tr.owner && /^(useTrain|trainRun|trainStop|trainSendTo)$/.test(c.t)) { ev.push({ t: 'notYourTrain', tr: tr.id, why: overlandNotYours(tr) }); return; }
+  // A train running to the timetable drives itself (section "timetable"): take it off the timetable first.
+  if (tr && /^(trainRun|trainStop|trainSendTo)$/.test(c.t) && ttRunOf(S, tr.id)) { ev.push({ t: 'noRoute', tr: tr.id, why: `${tr.name} is running to the timetable: take it off the timetable first.` }); return; }
   switch (c.t) {
     case 'walkTo':
       // Targets beyond the map edge are pulled back onto the map, so the walk can end.
@@ -789,6 +814,11 @@ function applyCommand(S, c, ev) {
     case 'jobWork': jobWorkCmd(S, c, ev); break;
     case 'jobCancel': jobCancelCmd(S, c, ev); break;
     case 'setBayTag': setBayTag(S, c.b, c.bay, c.tag, ev); break;
+    case 'uncouple': ttUncoupleCmd(S, c, ev); break;      // coupling, refuelling and the timetable (section "timetable")
+    case 'fuelTender': ttFuelCmd(S, c, ev); break;
+    case 'takeWater': ttWaterCmd(S, c, ev); break;
+    case 'ttAssign': ttAssignCmd(S, c, ev); break;
+    case 'ttHighball': ttHighballCmd(S, c, ev); break;
     case 'useTelegraph': { const k = econTelegraphKey(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'tel' }; P.act = null; P.run = false; break; }
     case 'econOrder': econOrderCmd(S, c, ev); break;     // economy: orders, contracts and the credit line by telegraph
     case 'contractAccept': econContractCmd(S, c, ev, true); break;
@@ -815,7 +845,7 @@ function applyCommand(S, c, ev) {
       if (!tr) return;
       const tE = Number.isInteger(c.e) ? T.edges[c.e] : null;
       if (!tE || !Number.isFinite(c.s) || c.s < 0 || c.s / 1000 > tE.len) { ev.push({ t: 'noRoute', tr: tr.id, why: 'That is not a place on the track.' }); return; }
-      if (tE.fixed) { ev.push({ t: 'noRoute', tr: tr.id, why: 'That is the Overland\'s interchange track: it is not joined to our line yet.' }); return; }
+      if (tE.fixed && (typeof worldId !== 'function' || worldId(T) === 'yard')) { ev.push({ t: 'noRoute', tr: tr.id, why: 'That is the Overland\'s interchange track: it is not joined to our line yet.' }); return; }
       const target = { e: c.e, s: c.s / 1000 };
       const occ = occupiedSwitches(S);
       // A moving train may only take a route in the direction it is already going.
@@ -832,10 +862,12 @@ function applyCommand(S, c, ev) {
         if (clash) continue;
         if (moving && m !== tr.m) { otherWay = true; continue; }
         // Compare by estimated time: tender-first running is capped at 60% speed.
-        const time = r.cost / (CFG.LOCO_MAX * (m < 0 ? CFG.TENDER_FIRST : 1));
+        const time = r.cost / (CFG.LOCO_MAX * (tenderFirst(tr, m) ? CFG.TENDER_FIRST : 1));
         if (!best || time < best.time) best = { r, m, time };
       }
       if (!best) { ev.push({ t: 'noRoute', tr: tr.id, why: otherWay ? 'Stop the train first.' : 'There is no way there without reversing.' }); return; }
+      const held = ttReservedBy(S, best.r.path, tr.id);
+      if (held !== null) { ev.push({ t: 'noRoute', tr: tr.id, why: `The line is reserved for ${S.trains[held].name}: wait until it has passed.` }); return; }
       releaseRoute(S, tr);
       const locks = [];
       for (const n of best.r.needs) {
@@ -845,6 +877,8 @@ function applyCommand(S, c, ev) {
       }
       tr.mode = 'route'; tr.m = best.m;
       tr.route = { total: best.r.dist, left: best.r.dist, locks };
+      // Sent onto a standing cut of cars: run up to it and couple it (section "trains", coupling).
+      if (S.trains.some(o => o !== tr && trainCanCouple(o) && trainSegs(T, o).some(([e, a, b]) => e === c.e && target.s >= a - 0.3 && target.s <= b + 0.3))) tr.route.couple = true;
       ev.push({ t: 'routeSet', tr: tr.id });
       break;
     }
@@ -875,14 +909,19 @@ function throwSwitch(S, swId, ev) {
 
 // ==== Section: trains ====
 function trainTick(S, tr, ev) {
-  if (trainOff(tr) || tr.owner === 'interchange') return; // away, or standing cars with no engine
+  if (trainOff(tr) || tr.owner === 'interchange' || !trainPower(tr)) return; // away, or standing cars with no engine
   const T = S.track;
+  // Coupling up (section "timetable", coupling): the train stands while the crew couples.
+  if (tr.cw > 0) { tr.cw -= CFG.TICK_GAME_S; tr.v = 0; tr.status = 'Coupling up'; if (tr.cw <= 0) { delete tr.cw; tr.status = 'Coupled'; } return; }
   const L = trainLength(tr);
   const mass = tr.consist.reduce((s, c) => s + c.mass, 0);
-  const power = tr.consist.reduce((s, c) => s + (c.power || 0), 0);
+  const power = trainPower(tr);
   const accel = CFG.ACCEL_K * power / mass;
-  let vTarget = 0, stop = 0, reason = null, sw = null, sc = null;
+  let vTarget = 0, stop = 0, reason = null, sw = null, sc = null, obst = null;
   const driving = tr.mode === 'run' || tr.mode === 'route';
+  // A player's move ('run', Forward or Back) or a coupling route runs into a standing cut of cars to couple it;
+  // any other move stops 0.5u short of another train.
+  const coupling = tr.mode === 'run' || (tr.mode === 'route' && tr.route && tr.route.couple);
   // Look ahead whenever the train moves, also while it brakes ('stop', 'turn'), so it never rolls
   // onto a switch set against it or past the gap at a dead end.
   if (driving || tr.v > 0) {
@@ -890,10 +929,19 @@ function trainTick(S, tr, ev) {
     const look = (tr.v * tr.v) / (2 * CFG.BRAKE) + 4;
     sc = trackScan(T, lead, look);
     stop = sc.stop; reason = sc.reason; sw = sc.sw;
+    // Other trains ahead. The Overland runs up to its own set-out cars (its crew couples them, "The Overland").
+    const ob = trainObstacle(S, tr, lead, look + 1);
+    if (ob) {
+      const own = tr.owner === 'overland' && ob.other.owner === 'interchange';
+      const couples = !tr.owner && coupling && trainCanCouple(ob.other);
+      const at = Math.max(0, ob.gap - (couples || own ? COUPLER_GAP : CFG.STOP_GAP));
+      if (at < stop) { stop = at; reason = couples ? 'couple' : 'train'; obst = couples ? ob.other : null; }
+    }
   }
   if (driving) {
-    if (tr.mode === 'route' && tr.route.left < stop) { stop = tr.route.left; reason = 'target'; }
-    vTarget = CFG.LOCO_MAX * (tr.m < 0 ? CFG.TENDER_FIRST : 1);
+    if (tr.mode === 'route' && tr.route.left < stop) { stop = tr.route.left; reason = 'target'; obst = null; }
+    vTarget = CFG.LOCO_MAX * (tenderFirst(tr, tr.m) ? CFG.TENDER_FIRST : 1);
+    if (trainOutOf(tr)) vTarget = Math.min(vTarget, CFG.LIM.yard); // out of wood or water: creeping at yard speed
     // Speed limits on the track under the train and ahead of it.
     for (const [e] of trainSegs(T, tr)) vTarget = Math.min(vTarget, T.edges[e].lim);
     for (const l of sc.limits) vTarget = Math.min(vTarget, Math.sqrt(l.lim * l.lim + 2 * CFG.BRAKE * l.at));
@@ -924,7 +972,10 @@ function trainTick(S, tr, ev) {
         if (W.lockedBy === tr.id && done > lk.at + L + 1 && occ[lk.sw] === undefined) W.lockedBy = null;
       }
     }
+    if (!tr.owner) trainBurn(tr, ds); // wood and water drop with running (section "timetable")
   }
+  // Touching a standing cut of cars at the end of a coupling move: couple it.
+  if (obst && reason === 'couple' && stop - ds < 1e-3) { trainCouple(S, tr, obst, ev); return; }
   // Status line for the panel.
   if (tr.mode === 'route' && tr.route && tr.route.left < 1e-3) {
     tr.v = 0; releaseRoute(S, tr); tr.mode = 'idle'; tr.status = 'Arrived';
@@ -938,11 +989,104 @@ function trainTick(S, tr, ev) {
     tr.status = 'Stopping to change direction';
   } else if ((tr.mode === 'run' || tr.mode === 'route') && stop < 1e-3) {
     tr.v = 0;
-    tr.status = reason === 'against' ? 'Waiting: the switch ahead is set against us' : reason === 'end' ? 'At the end of the track' : 'Waiting';
+    tr.status = reason === 'against' ? 'Waiting: the switch ahead is set against us' : reason === 'end' ? 'At the end of the track'
+      : reason === 'train' ? 'Waiting: a train is in the way' : 'Waiting';
   } else if (tr.mode === 'run' || tr.mode === 'route') {
-    const dir = tr.m > 0 ? 'forward' : 'back (tender first)';
+    const dir = (tr.m > 0 ? 'forward' : 'back') + (tenderFirst(tr, tr.m) ? ' (tender first)' : '');
     tr.status = (tr.mode === 'route' ? 'On its way, ' : 'Running ') + dir;
   } else if (tr.mode === 'idle' && tr.status !== 'Arrived') tr.status = 'Stopped';
+}
+
+// ---- Coupling, uncoupling and locomotive state (M1 package 6, builder C3; design-doc 7) ----
+// Pure simulation. Each vehicle in tr.consist is listed front to back; a vehicle turned round relative to the
+// train's front has rev: true (an engine moved to the other end by a run-around still faces the old way).
+// An engine's smokebox faces the train's front unless rev. Running with the tender leading is capped at 60%.
+// Each engine (not the Overland's) carries fuel (wood, as u of range left) and water (u of range left).
+// Coupling: a player's move (Forward or Back) or a coupling route that runs into a standing cut of cars
+// (a train with no engine) slows to touch it and couples it; the train then stands 1.0 game minute ('Coupling
+// up'). The joined train keeps the mover's id; the cut's entry stays in S.trains with no cars (ids never change).
+// Any other train ahead makes a moving train stop 0.5u short of it. Uncoupling needs a person at the joint
+// (section "timetable", ttUncoupleCmd); the part with the engine keeps the train's id, the other part becomes a
+// cut: the interchange's cut entry if it stands on the interchange and that entry is empty, else an empty
+// 'cut' entry, else a new one appended.
+const trainPower = tr => tr.consist.reduce((s, c) => s + (c.power || 0), 0);
+// Which way the (first) engine's smokebox faces: +1 towards the train's front, -1 towards its rear.
+function trainFacing(tr) { const c = tr.consist.find(c => c.k === 'loco'); return c && c.rev ? -1 : 1; }
+function tenderFirst(tr, m) { return m !== trainFacing(tr); }
+const trainLocos = tr => tr.consist.filter(c => c.k === 'loco' && typeof c.fuel === 'number');
+function trainOutOf(tr) { return trainLocos(tr).some(c => c.fuel <= 0 || c.water <= 0); }
+// Wood and water burn with the weight hauled (provisional): 1u of range per u run for 6 tons (an engine and three
+// loaded cars), so No. 1 with its combine and boxcar burns 72% and a light engine shunting 50%.
+const trainBurnRate = tr => tr.consist.reduce((s, c) => s + c.mass, 0) / 6;
+function trainBurn(tr, ds) {
+  const k = ds * trainBurnRate(tr);
+  for (const c of trainLocos(tr)) { c.fuel = Math.max(0, c.fuel - k); c.water = Math.max(0, c.water - k); }
+}
+const FUEL_CAP = CFG.CORD_U * CFG.TENDER_CORDS;
+function locoFull() { return { fuel: FUEL_CAP, water: CFG.WATER_U }; }
+// The stretches of track ahead of a position, in travel order: { e, from, to, at (distance from pos to from), d }.
+function trackAhead(T, pos, maxDist) {
+  let e = pos.e, s = pos.s, d = pos.d, run = 0;
+  const out = [];
+  for (let guard = 0; guard < 1000; guard++) {
+    const E = T.edges[e], avail = d > 0 ? E.len - s : s, take = Math.min(avail, maxDist - run);
+    out.push({ e, from: s, to: s + d * take, at: run, d });
+    run += take;
+    if (run >= maxDist - 1e-12) break;
+    const node = d > 0 ? E.b : E.a, nx = nextEdge(T, node, e);
+    if (nx.blocked) break;
+    const E2 = T.edges[nx.e];
+    e = nx.e; d = E2.a === node ? 1 : -1; s = d > 0 ? 0 : E2.len;
+  }
+  return out;
+}
+// The nearest other train ahead of `lead` within maxDist: { gap, other }, or null.
+function trainObstacle(S, tr, lead, maxDist) {
+  const T = S.track, ahead = trackAhead(T, lead, maxDist);
+  let best = null;
+  for (const o of S.trains) {
+    if (o === tr || trainOff(o)) continue;
+    for (const [e, a, b] of trainSegs(T, o)) for (const p of ahead) {
+      if (p.e !== e) continue;
+      const lo = Math.min(p.from, p.to), hi = Math.max(p.from, p.to);
+      if (b < lo - 1e-9 || a > hi + 1e-9) continue;
+      const gap = p.at + (p.d > 0 ? Math.max(0, a - p.from) : Math.max(0, p.from - b));
+      if (!best || gap < best.gap - 1e-12 || (Math.abs(gap - best.gap) <= 1e-12 && o.id < best.other.id)) best = { gap, other: o };
+    }
+  }
+  return best;
+}
+// A cut of standing cars with no engine, not the Overland's train.
+function trainCanCouple(o) { return !trainOff(o) && o.owner !== 'overland' && !trainPower(o) && o.v === 0; }
+function trainFlip(cs) { return cs.slice().reverse().map(c => { const n = { ...c }; if (n.rev) delete n.rev; else n.rev = true; return n; }); }
+// The mover X touches the standing cut Y with its leading end: Y's cars join X, in order along the track.
+function trainCouple(S, X, Y, ev) {
+  const T = S.track, lead = leadPos(T, X, X.m), yRear = leadPos(T, Y, -1);
+  const at = p => edgeAt(T, T.edges[p.e], p.s), pl = at(lead), pf = at(Y.front), pr = at(yRear);
+  const touchedFront = Math.hypot(pl.x - pf.x, pl.z - pf.z) <= Math.hypot(pl.x - pr.x, pl.z - pr.z);
+  const n = Y.consist.length;
+  if (X.m > 0) { X.consist = (touchedFront ? trainFlip(Y.consist) : Y.consist).concat(X.consist); X.front = touchedFront ? yRear : { ...Y.front }; }
+  else X.consist = X.consist.concat(touchedFront ? Y.consist : trainFlip(Y.consist));
+  Y.consist = []; Y.v = 0; Y.mode = 'idle'; Y.route = null; Y.status = 'Coupled';
+  releaseRoute(S, X);
+  X.v = 0; X.mode = 'idle'; X.status = 'Coupling up'; X.cw = CFG.COUPLE_S;
+  ev.push({ t: 'coupled', tr: X.id, from: Y.id, cars: n });
+}
+// Split a standing train between consist[k - 1] and consist[k]. Returns the cut (the part without the engine).
+function trainSplit(S, tr, k, ev) {
+  const T = S.track, A = tr.consist.slice(0, k), B = tr.consist.slice(k);
+  const backFront = reversePos(trackWalk(T, reversePos(tr.front), trainLength({ consist: A }) + COUPLER_GAP).pos);
+  const keepBack = !A.some(c => c.k === 'loco') && B.some(c => c.k === 'loco');
+  const cars = keepBack ? A : B, carsFront = keepBack ? { ...tr.front } : backFront;
+  tr.consist = keepBack ? B : A; if (keepBack) tr.front = backFront;
+  let cut = null;
+  const ich = interchangeCut(S);
+  if (ich && !ich.consist.length && T.edges[carsFront.e].fixed) cut = ich;
+  if (!cut) cut = S.trains.find(t => t.owner === 'cut' && !t.consist.length) || null;
+  if (!cut) { cut = { id: S.trains.length, name: 'Cut of cars', owner: 'cut', front: null, v: 0, mode: 'idle', m: 1, route: null, status: 'Standing', consist: [] }; S.trains.push(cut); }
+  cut.consist = cars; cut.front = carsFront; cut.v = 0; cut.mode = 'idle'; cut.route = null; cut.status = 'Standing'; cut.m = 1;
+  ev.push({ t: 'uncoupled', tr: tr.id, cut: cut.id, cars: cars.length });
+  return cut;
 }
 
 // ---- The Overland (M1 package 2, builder B4): design-doc 9 "The interchange" ----
@@ -993,6 +1137,7 @@ function overlandNewTrains(T, firstId) {
 const overlandTrain = S => S.trains.find(t => t.owner === 'overland') || null;
 const interchangeCut = S => S.trains.find(t => t.owner === 'interchange') || null;
 function overlandNotYours(tr) {
+  if (tr.owner === 'cut') return 'Those cars have no engine: couple an engine to them to move them';
   return tr.owner === 'overland' ? 'That is the Overland\'s train: its own crew drives it' : 'Those are the Overland\'s cars: tap one to load or unload it';
 }
 // Does the Overland take this standing car away? Empty, or only goods addressed Outside.
@@ -1087,6 +1232,601 @@ function overlandCheckSaveShape(st) {
   if (!O || typeof O.phase !== 'string' || !Number.isInteger(O.nextStock) || !Number.isFinite(O.wait)) throw new Error('damaged save: the Overland');
   if (!tr || !cut || !tr.consist.length || st.trains.some((t, i) => t.id !== i)) throw new Error('damaged save: the Overland\'s trains');
   if (!st.track.edges[tr.front.e] || !st.track.edges[tr.front.e].fixed) throw new Error('damaged save: the interchange track');
+}
+
+// ==== Section: timetable ====
+// Owner: M1 package 6 (builder C3). Train services and timetables, dispatch on single track, run-arounds, refuelling
+// and the person tasks for coupling (design-doc 7, 8 and 20). Pure simulation: no three.js, no page elements.
+//
+// Stations are plain data (the station interface). The real start's stations come from stationsOf(T) (builder C2,
+// "starting world layout"), turned into this shape by ttFromWorld; the M0 test yard (world 'yard', which has no
+// stations of its own) uses TT_TEST_STATIONS, two stations on its oval. Each station:
+//   { id, name, tags: [CARGO_TAGS codes for goods addressed here], track: { x0, z0, x1, z1 } (the stopping track:
+//     two points on one track edge; a train stops wholly between them, its leading end at the far one),
+//     alt: [{ x0, z0, x1, z1 }] (optional: other tracks a train may stop on when the first is taken, such as a passing
+//     loop: this is where trains meet), area: [x0, x1, z0, z1] (where goods waiting to be loaded lie), board: { x, z } (the train order board),
+//     water: { x, z, sx, sz } | null (the tower spout over the track at x, z; the player works it from sx, sz),
+//     wood: { x, z } | null (the wood stage: cordwood is any cordwood item, this only says where it is stacked),
+//     ra: [{ x, z }, { x, z }] | null (run-around: where the engine stands clear beyond each end of the passing track) }
+//
+// S.tt holds:
+//   services: [{ id, name, cls (1 passenger .. 5 work), train (train id, or null when not on the timetable), days (bit
+//     per weekday, Mon = 1), last (game day of the last run started), stops: [{ st (station id), arr, dep (seconds of
+//     the day, or null), acts: ['work' | 'water' | 'wood'], turn: 'runaround' (optional) }] }]
+//   runs: the running instances, one per service at most: { svc, day, i (stop), ph ('go' to stop i, 'at' stop i),
+//     arr (game time it arrived), hb (highball: the player waved it off), ra (run-around steps), why (what it waits for) }
+//   res: the line reservations of section 8: [{ tr, blocks }], blocks in route order, released as the tail clears.
+// Dispatch (ttTick, step 3 of the sim tick, before the trains move): runs start 30 game minutes before the first
+// departure; a train at a stop leaves when its time has come, its stop actions are done (work: no goods for this
+// station still aboard and none for its later stops waiting in the station's area; water: tank full; wood: no room
+// for another cord), and it has wood and water for the next leg plus 2 miles. Then it asks for the reservation of
+// every block on its route (section 8: granted only if none is reserved by another train or occupied by one); a
+// train never moves for the timetable without it, so two timetable trains never meet head-on. Runs are handled in
+// order of class, then scheduled departure. A run more than 6 game hours late is cancelled.
+// Commands: uncouple { tr, at } (a person at the joint, 0.5 game minutes), fuelTender { tr } (put the carried cord
+// of wood on the tender), takeWater {} (fill the tender under a tower spout, 2 game minutes), ttAssign { tr, on }
+// (put the train on the timetable or take it off), ttHighball { tr } (wave it off without its stop actions).
+// Events: ttStarted, ttArrived, ttDeparted, ttDone, ttCancelled, ttAssigned, ttHighball, ttRefused, uncoupled,
+// coupled, tenderFuelled, waterTaken.
+const TT = { START_EARLY_S: 1800, CANCEL_S: 6 * 3600, TOUCH: 0.35, SPOUT_MOVE: 40, BESIDE: 1.15, TENDER_AT: -1.87, SPOUT_REACH: 1.2 };
+const TT_TEST_STATIONS = [
+  { id: 'hub', name: 'Hub (test)', tags: ['HUB', 'HUBWH'], track: { x0: 16, z0: -14, x1: -2, z1: -14 }, area: [-4, 18, -13, -9],
+    board: { x: 17.2, z: -12.6 }, water: null, wood: { x: 8, z: -11.6 }, ra: null },
+  { id: 'willow', name: 'Willow Ford (test)', tags: ['WILLOW'], track: { x0: -6.6, z0: 14, x1: 6.6, z1: 14 }, area: [-20, 20, 7, 13],
+    board: { x: 10.9, z: 12.95 }, water: { x: 14.6, z: 14, sx: 13.3, sz: 12.9 }, wood: null, ra: [{ x: 19.6, z: 14 }, { x: -18.4, z: 14 }] },
+];
+const TT_TOWN_TAGS = { 0: ['HUB', 'HUBWH'], 1: ['WILLOW'] };
+// A station of the world's STATIONS table in the timetable's shape. Provisional choices: the stopping track is the
+// first of its stops; the area for goods is the stopping track plus 4u at each end and 9u to each side; the order
+// board stands 2.5u before the west end of the stopping track, 2.2u to its north (the station side); the water
+// tower and wood stage are the world's buildings of those kinds within 30u of the stopping track (the spout is over
+// the nearest track, worked from 1.3u west of the tower, between it and the track); the run-around ends are the
+// headshunt's far end (0.6u short) and 6.7u (an engine and 1.5u) beyond the loop's other switch.
+function ttFromWorld(T, st) {
+  const k = st.tracks[st.stops[0]], cx = (k.x0 + k.x1) / 2, cz = (k.z0 + k.z1) / 2;
+  const lay = typeof BLD_LAYOUTS !== 'undefined' ? BLD_LAYOUTS[worldId(T)] || [] : [];
+  const near = kind => lay.filter(a => (a.kind || a.id.replace(/\d+$/, '')) === kind && Math.hypot(a.x - cx, a.z - cz) < 30 + Math.abs(k.x1 - k.x0) / 2)
+    .sort((a, b) => Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz))[0] || null;
+  const tw = near('watertower'), ws = near('woodstage');
+  let water = null;
+  if (tw) { const n = trackNearest(T, tw.x, tw.z); water = { x: n.x, z: n.z, sx: tw.x - 1.3, sz: tw.z + 1.1 }; }
+  let ra = null;
+  if (st.runAround && st.tracks[st.runAround.headshunt]) {
+    const h = st.tracks[st.runAround.headshunt], sws = st.runAround.switches.map(i => T.switches[i]).filter(Boolean);
+    if (sws.length === 2) {
+      const lx = (T.nodes[sws[0].node].x + T.nodes[sws[1].node].x) / 2, lz = (T.nodes[sws[0].node].z + T.nodes[sws[1].node].z) / 2;
+      const far = Math.hypot(h.x0 - lx, h.z0 - lz) > Math.hypot(h.x1 - lx, h.z1 - lz) ? [h.x0, h.z0, h.x1, h.z1] : [h.x1, h.z1, h.x0, h.z0];
+      const hl = Math.hypot(far[2] - far[0], far[3] - far[1]) || 1;
+      const p1 = { x: far[0] + (far[2] - far[0]) / hl * 0.6, z: far[1] + (far[3] - far[1]) / hl * 0.6 };
+      const other = sws.map(W => T.nodes[W.node]).sort((a, b) => Math.hypot(b.x - far[0], b.z - far[1]) - Math.hypot(a.x - far[0], a.z - far[1]))[0];
+      const ol = Math.hypot(other.x - lx, other.z - lz) || 1;
+      ra = [p1, { x: other.x + (other.x - lx) / ol * 6.7, z: other.z + (other.z - lz) / ol * 6.7 }];
+    }
+  }
+  const tags = TT_TOWN_TAGS[st.town] || [], skip = [st.stops[0], 'interchange', st.runAround && st.runAround.headshunt];
+  const alt = Object.keys(st.tracks).filter(n => !skip.includes(n)).map(n => st.tracks[n]);
+  return { id: st.id, name: st.name, tags, track: k, alt,
+    area: [Math.min(k.x0, k.x1) - 4, Math.max(k.x0, k.x1) + 4, Math.min(k.z0, k.z1) - 9, Math.max(k.z0, k.z1) + 9],
+    board: { x: Math.min(k.x0, k.x1) - 2.5, z: cz - 2.2 }, water, wood: ws ? { x: ws.x, z: ws.z } : null, ra };
+}
+function ttStationDefs(T) {
+  const w = typeof stationsOf === 'function' ? stationsOf(T) : null;
+  return w && w.length ? w.map(st => ttFromWorld(T, st)) : TT_TEST_STATIONS;
+}
+// The stations resolved onto the track (edge and distance), cached per track and its size.
+const ttStationCache = new WeakMap();
+function ttStations(S) {
+  const T = S.track, sig = T.edges.length + '/' + T.nodes.length, c = ttStationCache.get(T);
+  if (c && c.sig === sig) return c.list;
+  const pt = p => { const n = trackNearest(T, p.x, p.z); return n && n.dist < 0.3 ? { e: n.e, s: n.s } : null; };
+  const list = ttStationDefs(T).map(d => {
+    const a = pt({ x: d.track.x0, z: d.track.z0 }), b = pt({ x: d.track.x1, z: d.track.z1 });
+    // Each end is looked up 0.3u inside the span, so an end exactly on a node finds the span's own edge.
+    const span = k => {
+      const l = Math.hypot(k.x1 - k.x0, k.z1 - k.z0) || 1, ux = (k.x1 - k.x0) / l * 0.3, uz = (k.z1 - k.z0) / l * 0.3;
+      const a = pt({ x: k.x0 + ux, z: k.z0 + uz }), b = pt({ x: k.x1 - ux, z: k.z1 - uz }); return a && b && a.e === b.e ? { e: a.e, s0: Math.min(a.s, b.s), s1: Math.max(a.s, b.s) } : null; };
+    const trk = span(d.track), ra = d.ra ? d.ra.map(pt) : null;
+    const trks = trk ? [trk].concat((d.alt || []).map(span).filter(Boolean)) : [];
+    return { ...d, trk, trks, raPts: ra && ra.every(Boolean) ? ra : null };
+  });
+  ttStationCache.set(T, { sig, list });
+  return list;
+}
+function ttStation(S, id) { return ttStations(S).find(s => s.id === id) || null; }
+function ttDefaultServices() {
+  const H = 3600;
+  const M = 60;
+  const run = (id, name, t0) => ({ id, name, cls: 3, train: null, days: 127, last: -1, stops: [
+    { st: 'hub', arr: null, dep: t0, acts: ['work', 'wood', 'water'] },
+    { st: 'willow', arr: t0 + 80 * M, dep: t0 + 170 * M, acts: ['work', 'water'], turn: 'runaround' },
+    { st: 'hub', arr: t0 + 290 * M, dep: null, acts: ['work'] }] });
+  return [run(0, 'Willow Ford Mixed, morning', 8 * H), run(1, 'Willow Ford Mixed, afternoon', 13 * H + 30 * M)];
+}
+function ttNewState() { return { services: ttDefaultServices(), runs: [], res: [] }; }
+const ttAt = (day, sod) => day * 86400 + sod - CFG.DAY_START_S;          // a time of a game day, as S.time
+const ttClock = sod => String(Math.floor(sod / 3600) % 24).padStart(2, '0') + ':' + String(Math.floor(sod % 3600 / 60)).padStart(2, '0');
+function ttRunOf(S, trId) { return S.tt ? S.tt.runs.find(r => S.tt.services[r.svc].train === trId) || null : null; }
+// Blocks of a route's edges, in order, each once.
+function ttPathBlocks(T, path) { const ix = trackIndex(T), out = []; for (const e of path) { const b = ix.block[e]; if (!out.includes(b)) out.push(b); } return out; }
+// Which train (other than trId) holds a reservation on any block of the path, or null.
+function ttReservedBy(S, path, trId) {
+  if (!S.tt || !path) return null;
+  const bl = ttPathBlocks(S.track, path);
+  for (const r of S.tt.res) if (r.tr !== trId && r.blocks.some(b => bl.includes(b))) return r.tr;
+  return null;
+}
+function ttOccupied(S, skip) {
+  const ix = trackIndex(S.track), blocks = new Set(), edges = new Set();
+  for (const o of S.trains) if (!skip.includes(o.id)) for (const [e, a, b] of trainSegs(S.track, o)) if (b - a > 1e-6) { blocks.add(ix.block[e]); edges.add(e); }
+  return { blocks, edges };
+}
+// The best route for the train's leading end to one of the targets ([{ e, s, d }]: d is the facing it must arrive
+// with, or 0 for any), over m in ms, avoiding track other trains stand on (except the train `except`).
+function ttPlan(S, tr, targets, ms, except) {
+  const T = S.track, occ = ttOccupied(S, [tr.id, except === undefined ? -1 : except]), sw = occupiedSwitches(S);
+  let best = null;
+  for (const m of ms) for (const t of targets) {
+    const r = findRoute(T, leadPos(T, tr, m), t, occ.edges);
+    if (!r || (t.d && r.dEnd !== t.d)) continue;
+    if (r.needs.some(n => T.switches[n.sw].state !== n.state && ((sw[n.sw] !== undefined && sw[n.sw] !== tr.id) || (T.switches[n.sw].lockedBy !== null && T.switches[n.sw].lockedBy !== tr.id)))) continue;
+    const time = r.cost / (CFG.LOCO_MAX * (tenderFirst(tr, m) ? CFG.TENDER_FIRST : 1));
+    if (!best || time < best.time - 1e-9) best = { r, m, time };
+  }
+  return best;
+}
+// Plan to stop wholly on a station track: the leading end at the far end of the track in the arriving direction.
+// The first track (in the station's order) that has a way in wins.
+function ttPlanStop(S, tr, st) {
+  if (!st || !st.trk) return { why: 'The station track is not found' };
+  const fits = st.trks.filter(k => trainLength(tr) <= k.s1 - k.s0 + 1e-6);
+  if (!fits.length) return { why: `${tr.name} is too long for the ${st.name} track` };
+  for (const k of fits) {
+    const best = ttPlan(S, tr, [{ e: k.e, s: k.s1, d: 1 }, { e: k.e, s: k.s0, d: -1 }], [1, -1]);
+    if (best) return { best };
+  }
+  return { why: `No way to ${st.name} now` };
+}
+const ttAtStation = (S, tr, st) => st.trks.some(k => ttAtTrack(S, tr, k));
+// Grant the reservation (section 8) and set the route. False if any block is reserved by, or occupied by, another
+// train (except the train `except`, the cut a run-around couples to).
+function ttGrant(S, tr, best, couple, except) {
+  const blocks = ttPathBlocks(S.track, best.r.path), occ = ttOccupied(S, [tr.id, except === undefined ? -1 : except]).blocks;
+  if (ttReservedBy(S, best.r.path, tr.id) !== null || blocks.some(b => occ.has(b))) return false;
+  releaseRoute(S, tr);
+  const locks = [];
+  for (const n of best.r.needs) {
+    const W = S.track.switches[n.sw];
+    W.state = n.state; W.lockedBy = tr.id;
+    if (!locks.find(l => l.sw === n.sw)) locks.push({ sw: n.sw, at: n.at });
+  }
+  tr.mode = 'route'; tr.m = best.m;
+  tr.route = { total: best.r.dist, left: best.r.dist, locks };
+  if (couple) tr.route.couple = true;
+  S.tt.res = S.tt.res.filter(r => r.tr !== tr.id).concat([{ tr: tr.id, blocks }]);
+  return true;
+}
+// Release blocks behind the train's tail; drop a reservation once its move is over.
+function ttReleaseRes(S) {
+  const ix = trackIndex(S.track);
+  S.tt.res = S.tt.res.filter(r => {
+    const tr = S.trains[r.tr];
+    if (!tr || tr.mode !== 'route') return false;
+    const occ = new Set(trainSegs(S.track, tr).filter(([, a, b]) => b - a > 1e-6).map(([e]) => ix.block[e]));
+    const k = r.blocks.findIndex(b => occ.has(b));
+    if (k > 0) r.blocks = r.blocks.slice(k);
+    return true;
+  });
+}
+function ttAtTrack(S, tr, k) {
+  if (!k || tr.v > 0) return false;
+  const segs = trainSegs(S.track, tr);
+  return segs.length > 0 && segs.every(([e, a, b]) => b - a < 1e-6 || (e === k.e && a >= k.s0 - 0.05 && b <= k.s1 + 0.05));
+}
+// Goods for this station still aboard, or goods in its area waiting for a later stop of this service.
+function ttWorkDone(S, tr, svc, i, st) {
+  const I = S.items, cars = new Set(tr.consist.map(c => c.id)), later = new Set();
+  for (const p of svc.stops.slice(i + 1)) { const s2 = ttStation(S, p.st); if (s2 && s2.id !== st.id) for (const t of s2.tags) later.add(t); }
+  const [x0, x1, z0, z1] = st.area || [0, 0, 0, 0];
+  for (let id = 0; id < I.next; id++) {
+    const w = I.where[id];
+    if (!I.alive[id] || !w) continue;
+    const tag = itemTag(I.waybill[id]);
+    if (w.kind === 'CAR' && cars.has(w.stockId) && st.tags.includes(tag)) return false;
+    if ((w.kind === 'GROUND' || w.kind === 'BAY') && later.has(tag)) {
+      const p = carrySpot(w);
+      if (p && p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1) return false;
+    }
+  }
+  return true;
+}
+function ttStopNeeds(S, run, tr, st, stop) {
+  if (run.hb) return [];
+  const svc = S.tt.services[run.svc], out = [], L = trainLocos(tr), acts = stop.acts || [];
+  if (acts.includes('work') && !ttWorkDone(S, tr, svc, run.i, st)) out.push('work');
+  if (acts.includes('water') && !run.watered && !run.dry && L.some(c => c.water < CFG.WATER_U - 1e-6)) out.push('water');
+  if (acts.includes('wood') && L.some(c => c.fuel <= FUEL_CAP - CFG.CORD_U)) out.push('wood');
+  return out;
+}
+const TT_NEED_WHY = { work: 'Waiting: the station work is not done', water: 'Waiting: take water at the tower', wood: 'Waiting: load wood on the tender' };
+function ttEnd(S, run, ev, kind, why) {
+  run.ph = 'done';
+  const tr = S.trains[S.tt.services[run.svc].train];
+  S.tt.res = S.tt.res.filter(r => !tr || r.tr !== tr.id);
+  ev.push({ t: kind === 'done' ? 'ttDone' : 'ttCancelled', svc: run.svc, why: why || '' });
+}
+// Step 3: the timetable dispatcher.
+function ttTick(S, ev) {
+  const D = S.tt;
+  if (!D) return;
+  const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), sod = abs % 86400;
+  for (const svc of D.services) {
+    if (svc.train === null || svc.last === day || !((svc.days >> (day % 7)) & 1)) continue;
+    const d0 = svc.stops[0].dep;
+    if (sod < d0 - TT.START_EARLY_S) continue;
+    if (sod > d0 + TT.CANCEL_S) { svc.last = day; ev.push({ t: 'ttCancelled', svc: svc.id, why: 'too late to start' }); continue; }
+    if (D.runs.some(r => D.services[r.svc].train === svc.train)) continue; // its engine is still on another run
+    svc.last = day;
+    D.runs.push({ svc: svc.id, day, i: 0, ph: 'go', arr: null, hb: false, ra: null, why: '' });
+    ev.push({ t: 'ttStarted', svc: svc.id });
+  }
+  ttReleaseRes(S);
+  const depOf = r => { const st = D.services[r.svc].stops[r.i]; return st.dep === null ? Infinity : ttAt(r.day, st.dep); };
+  const order = D.runs.slice().sort((a, b) => D.services[a.svc].cls - D.services[b.svc].cls || depOf(a) - depOf(b) || a.svc - b.svc);
+  for (const run of order) ttRunStep(S, run, ev);
+  D.runs = D.runs.filter(r => r.ph !== 'done');
+}
+function ttRunStep(S, run, ev) {
+  const svc = S.tt.services[run.svc], tr = svc.train === null ? null : S.trains[svc.train];
+  if (!tr || trainOff(tr) || !trainPower(tr)) return ttEnd(S, run, ev, 'cancelled', 'no engine');
+  const stop = svc.stops[run.i], st = ttStation(S, stop.st);
+  if (!st || !st.trk) return ttEnd(S, run, ev, 'cancelled', 'no such station');
+  const busy = tr.mode === 'route' || tr.v > 0 || tr.cw > 0;
+  if (run.ph === 'go') {
+    if (stop.arr !== null && S.time > ttAt(run.day, stop.arr) + TT.CANCEL_S) return ttEnd(S, run, ev, 'cancelled', 'more than 6 hours late');
+    if (busy) { run.why = ''; return; }
+    if (ttAtStation(S, tr, st)) {
+      run.ph = 'at'; run.arr = S.time; run.hb = false; run.ra = null; run.why = ''; run.watered = false; run.dry = false;
+      S.tt.res = S.tt.res.filter(r => r.tr !== tr.id);
+      ev.push({ t: 'ttArrived', svc: svc.id, i: run.i, tr: tr.id, st: st.id, late: stop.arr === null ? 0 : S.time - ttAt(run.day, stop.arr) });
+      return;
+    }
+    const p = ttPlanStop(S, tr, st);
+    if (!p.best) { run.why = 'Waiting: ' + p.why.charAt(0).toLowerCase() + p.why.slice(1); return; }
+    run.why = ttGrant(S, tr, p.best, false) ? '' : 'Hold for orders: the line is not clear';
+    return;
+  }
+  // At the stop.
+  if (stop.turn === 'runaround' && !(run.ra && run.ra.done) && run.i < svc.stops.length - 1) return ttRunAround(S, run, tr, st, ev);
+  if (busy) return;
+  const depT = stop.dep === null ? null : ttAt(run.day, stop.dep);
+  const need = ttStopNeeds(S, run, tr, st, stop);
+  // Water: the train first moves so a tender stands under the tower's spout (it leaves from there).
+  if (need.includes('water') && st.water && !ttUnderSpout(S, tr, st)) {
+    const b = ttPlanSpout(S, tr, st, [tr.m, -tr.m]);
+    if (!b) run.dry = true;               // no way to the spout: the stop goes without water
+    else if (ttGrant(S, tr, b, false)) { run.why = 'Running to the water tower'; return; }
+    else { run.why = 'Hold for orders: the line is not clear'; return; }
+  }
+  if (run.i === svc.stops.length - 1) { if (need.length) run.why = TT_NEED_WHY[need[0]]; else ttEnd(S, run, ev, 'done'); return; }
+  if (S.time > depT + TT.CANCEL_S) return ttEnd(S, run, ev, 'cancelled', 'more than 6 hours late');
+  if (need.length) { run.why = TT_NEED_WHY[need[0]]; return; }
+  if (S.time < depT) { run.why = 'Waiting for its time, ' + ttClock(stop.dep); return; }
+  const next = ttStation(S, svc.stops[run.i + 1].st), p = ttPlanStop(S, tr, next);
+  if (!p.best) { run.why = 'Waiting: ' + p.why.charAt(0).toLowerCase() + p.why.slice(1); return; }
+  const legU = (p.best.r.dist + CFG.FUEL_RESERVE_U) * trainBurnRate(tr), L = trainLocos(tr);
+  if (L.some(c => c.fuel < legU)) { run.why = 'Waiting: low on wood'; return; }
+  if (L.some(c => c.water < legU)) { run.why = 'Waiting: low on water'; return; }
+  if (!ttGrant(S, tr, p.best, false)) { run.why = 'Hold for orders: the line is not clear'; return; }
+  ev.push({ t: 'ttDeparted', svc: svc.id, i: run.i, tr: tr.id, st: st.id, late: S.time - depT });
+  run.i += 1; run.ph = 'go'; run.ra = null; run.hb = false; run.why = '';
+}
+// The joint between the engine and its train (k as in uncouple { at: k }): behind a leading engine, ahead of a trailing one.
+function ttEngineJoint(tr) { const li = tr.consist.findIndex(c => c.k === 'loco'); return li <= 0 ? 1 : li; }
+// An engineless cut whose end touches an end of the train: { cut, atFront }, or null.
+function ttTouching(S, tr) {
+  const T = S.track, at = p => edgeAt(T, T.edges[p.e], p.s), f = at(tr.front), r = at(leadPos(T, tr, -1));
+  for (const o of S.trains) {
+    if (o === tr || trainOff(o) || trainPower(o) || o.owner === 'overland') continue;
+    for (const q of [at(o.front), at(leadPos(T, o, -1))]) {
+      if (Math.hypot(q.x - f.x, q.z - f.z) < TT.TOUCH) return { cut: o, atFront: true };
+      if (Math.hypot(q.x - r.x, q.z - r.z) < TT.TOUCH) return { cut: o, atFront: false };
+    }
+  }
+  return null;
+}
+// The run-around (design-doc 7): the player uncouples the engine; it runs clear beyond one end of the passing track,
+// back through the passing track to beyond the other end, and forward onto the cars, coupling on contact.
+// The engine still faces the old way, so the next leg is tender first. Each move takes a reservation like any other.
+function ttRunAround(S, run, tr, st, ev) {
+  if (!run.ra) run.ra = { step: 0, cut: -1, m: 1, pt: -1, done: false };
+  const ra = run.ra;
+  if (tr.mode === 'route' || tr.v > 0 || tr.cw > 0) return;
+  if (!st.raPts) { ra.done = true; return; } // no passing track: the train leaves tender first
+  const wait = why => { run.why = why; };
+  if (ra.step === 0) {
+    // Only an engine that came in at the head of its train runs round it; one that came in pushing is already at
+    // the end it needs for the way back.
+    if (tr.consist.length > 1 && ttEngineJoint(tr) === (tr.m > 0 ? tr.consist.length - 1 : 1)) { ra.done = true; return; }
+    if (tr.consist.some(c => c.k !== 'loco')) return wait('Waiting: uncouple the engine to run around');
+    const t = ttTouching(S, tr);
+    if (!t) { ra.done = true; return; } // an engine with no cars needs no run-around
+    ra.cut = t.cut.id; ra.m = t.atFront ? -1 : 1; ra.step = 1;
+    ev.push({ t: 'ttRunAround', tr: tr.id, cut: ra.cut });
+    // Water at this stop: on the way, the engine first stops with its tender under the tower's spout.
+    const stop = S.tt.services[run.svc].stops[run.i];
+    if (st.water && (stop.acts || []).includes('water') && !run.hb && trainLocos(tr).some(c => c.water < CFG.WATER_U - 1e-6)) ra.step = 5;
+  }
+  if (ra.step === 5) {
+    const best = ttPlanSpout(S, tr, st, [ra.m]);
+    if (!best) { ra.step = 1; }
+    else if (!ttGrant(S, tr, best, false, ra.cut)) return wait('Hold for orders: the line is not clear');
+    else { ra.step = 6; run.why = 'Running to the water tower'; return; }
+  }
+  if (ra.step === 6) {
+    if (!run.hb && !run.watered && trainLocos(tr).some(c => c.water < CFG.WATER_U - 1e-6)) return wait(TT_NEED_WHY.water);
+    ra.step = 1;
+  }
+  if (ra.step === 1 || ra.step === 2) {
+    const m = ra.step === 1 ? ra.m : -ra.m, pts = st.raPts.map((p, i) => ({ ...p, d: 0, i })).filter(p => p.i !== ra.pt);
+    let best = null, which = -1;
+    for (const p of pts) { const b = ttPlan(S, tr, [p], [m]); if (b && (!best || b.time < best.time - 1e-9)) { best = b; which = p.i; } }
+    if (!best) return wait('Waiting: no way round the cars');
+    if (!ttGrant(S, tr, best, false, ra.cut)) return wait('Hold for orders: the line is not clear');
+    ra.pt = which; ra.step += 1; run.why = 'Running round the train';
+    return;
+  }
+  const cut = S.trains[ra.cut];
+  if (ra.step === 4 && tr.consist.some(c => c.k !== 'loco')) { ra.done = true; run.why = ''; return; }
+  if (!cut || trainOff(cut)) { ra.done = true; return; }
+  // Step 3 (or again after a coupling move that did not touch): forward onto the cars.
+  const ends = [cut.front, leadPos(S.track, cut, -1)].map(p => ({ e: p.e, s: p.s, d: 0 }));
+  const best = ttPlan(S, tr, ends, [ra.m], ra.cut);
+  if (!best) return wait('Waiting: no way back to the cars');
+  if (!ttGrant(S, tr, best, true, ra.cut)) return wait('Hold for orders: the line is not clear');
+  ra.step = 4; run.why = 'Running round the train';
+}
+// A route that stops the train with its (first) engine's tender under the station's tower spout, moving m in ms;
+// only a short move within the station (TT.SPOUT_MOVE), never a trip round the line.
+function ttPlanSpout(S, tr, st, ms) {
+  const T = S.track, n = trackNearest(T, st.water.x, st.water.z), li = tr.consist.findIndex(c => c.k === 'loco');
+  if (!n || li < 0) return null;
+  const loco = tr.consist[li], occ = ttOccupied(S, [tr.id]), L = trainLength(tr);
+  let off = loco.len / 2 + (loco.rev ? TT.TENDER_AT : -TT.TENDER_AT);
+  for (let i = 0; i < li; i++) off += tr.consist[i].len + COUPLER_GAP;
+  let best = null;
+  for (const m of ms) {
+    const r0 = findRoute(T, leadPos(T, tr, m), { e: n.e, s: n.s }, occ.edges);
+    if (!r0) continue;
+    // Walk on past the spout; a switch set against the walk is set the other way for the look (and put back: the
+    // route sets it for real).
+    const flipped = [];
+    let w = trackWalk(T, { e: n.e, s: n.s, d: r0.dEnd }, m > 0 ? off : L - off);
+    while (w.blocked === 'against' && flipped.length < 4) { const W = T.switches[w.sw]; W.state = W.state === 'N' ? 'R' : 'N'; flipped.push(W); w = trackWalk(T, { e: n.e, s: n.s, d: r0.dEnd }, m > 0 ? off : L - off); }
+    for (const W of flipped.reverse()) W.state = W.state === 'N' ? 'R' : 'N';
+    if (w.blocked) continue;
+    const b = ttPlan(S, tr, [{ e: w.pos.e, s: w.pos.s, d: w.pos.d }], [m]);
+    if (b && b.r.dist <= TT.SPOUT_MOVE && (!best || b.time < best.time - 1e-9)) best = b;
+  }
+  return best;
+}
+// Is a tender of this train under the station's spout?
+function ttUnderSpout(S, tr, st) {
+  return !!st.water && trainLocos(tr).some(c => { const t = ttTenderAt(S, tr, c.id); return t && Math.hypot(t.x - st.water.x, t.z - st.water.z) <= TT.SPOUT_REACH; });
+}
+// After the trains move: a timetable train standing still shows what it waits for.
+function ttStatus(S) {
+  if (!S.tt) return;
+  for (const run of S.tt.runs) {
+    const tr = S.trains[S.tt.services[run.svc].train];
+    if (tr && tr.mode === 'idle' && !(tr.cw > 0) && run.why) tr.status = run.why;
+  }
+}
+
+// ---- Person tasks at a train: uncoupling, putting wood on the tender, taking water ----
+function ttStanding(tr) { return !!tr && !trainOff(tr) && tr.v === 0 && (tr.mode === 'idle' || tr.mode === 'stop') && !(tr.cw > 0); }
+// The joint between consist[k - 1] and consist[k]: { x, z, fx, fz } (fx, fz along the track).
+function ttJointAt(S, tr, k) {
+  let off = -COUPLER_GAP / 2;
+  for (let i = 0; i < k; i++) off += tr.consist[i].len + COUPLER_GAP;
+  const p = trackWalk(S.track, reversePos(tr.front), off).pos, q = edgeAt(S.track, S.track.edges[p.e], p.s);
+  return { x: q.x, z: q.z, fx: q.tx, fz: q.tz };
+}
+// The middle of an engine's tender.
+function ttTenderAt(S, tr, stockId) {
+  const i = tr.consist.findIndex(c => c.id === stockId), p = i >= 0 ? trainPoses(S.track, tr)[i] : null;
+  if (!p) return null;
+  const fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
+  return { x: p.x + fx * TT.TENDER_AT, z: p.z + fz * TT.TENDER_AT, fx, fz };
+}
+// Walk to the spot beside the track at (x, z) on the player's side (the other side if that one is blocked).
+function ttWalkBeside(S, at, use) {
+  const P = S.player, G = walkGrid(S.track), nx = at.fz, nz = -at.fx;
+  let side = ((P.x - at.x) * nx + (P.z - at.z) * nz) >= 0 ? 1 : -1;
+  const spot = sd => ({ x: clampX(at.x + nx * TT.BESIDE * sd), z: clampZ(at.z + nz * TT.BESIDE * sd) }); // map bounds of the world in use
+  if (!G.cost[walkCell(spot(side).x, spot(side).z)] && G.cost[walkCell(spot(-side).x, spot(-side).z)]) side = -side;
+  const sp = spot(side);
+  P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = use; P.act = null; P.run = false;
+}
+function ttRefuse(ev, why) { ev.push({ t: 'ttRefused', why }); }
+function ttUncoupleCmd(S, c, ev) {
+  const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null;
+  if (!tr || trainOff(tr)) return ttRefuse(ev, 'There is no such train here');
+  if (tr.owner === 'overland' || tr.owner === 'interchange') return ttRefuse(ev, tr.owner === 'overland' ? 'The Overland\'s crew works its own couplings' : 'Those are the Overland\'s cars: couple an engine to them first');
+  if (!Number.isInteger(c.at) || c.at < 1 || c.at >= tr.consist.length) return ttRefuse(ev, 'There is no coupling there');
+  if (!ttStanding(tr)) return ttRefuse(ev, 'Wait until the train has stopped');
+  ttWalkBeside(S, ttJointAt(S, tr, c.at), { k: 'cut', tr: tr.id, a: tr.consist[c.at - 1].id, b: tr.consist[c.at].id });
+}
+function ttHeldCord(S) {
+  const held = carryHeld(S), id = held[held.length - 1];
+  return held.length && S.items.waybill[id].commodity === 'cordwood' ? id : null;
+}
+function ttFuelLoco(tr) { return tr ? trainLocos(tr).find(c => c.fuel <= FUEL_CAP - CFG.CORD_U) || trainLocos(tr)[0] || null : null; }
+function ttFuelCmd(S, c, ev) {
+  const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null, loco = ttFuelLoco(tr);
+  if (!tr || trainOff(tr) || tr.owner || !loco) return ttRefuse(ev, 'That is not an engine we fuel');
+  if (ttHeldCord(S) === null) return ttRefuse(ev, 'Bring a cord of wood from the wood stage first');
+  if (loco.fuel > FUEL_CAP - CFG.CORD_U) return ttRefuse(ev, 'The tender is full of wood');
+  if (!ttStanding(tr)) return ttRefuse(ev, 'Wait until the train has stopped');
+  ttWalkBeside(S, ttTenderAt(S, tr, loco.id), { k: 'fuel', tr: tr.id, stock: loco.id });
+}
+// The tower spout nearest the player, and the engine whose tender stands under it (or null).
+function ttSpout(S) {
+  const P = S.player;
+  let best = null;
+  for (const st of ttStations(S)) if (st.water) { const d = Math.hypot(st.water.sx - P.x, st.water.sz - P.z); if (!best || d < best.d) best = { st, d }; }
+  if (!best) return null;
+  const w = best.st.water;
+  for (const tr of S.trains) {
+    if (tr.owner || trainOff(tr)) continue;
+    for (const loco of trainLocos(tr)) {
+      const t = ttTenderAt(S, tr, loco.id);
+      if (t && Math.hypot(t.x - w.x, t.z - w.z) <= TT.SPOUT_REACH) return { st: best.st, tr, loco };
+    }
+  }
+  return { st: best.st, tr: null, loco: null };
+}
+function ttWaterCmd(S, c, ev) {
+  const sp = ttSpout(S);
+  if (!sp) return ttRefuse(ev, 'There is no water tower here');
+  if (!sp.tr) return ttRefuse(ev, 'Bring an engine\'s tender under the spout first');
+  if (sp.loco.water >= CFG.WATER_U - 1e-6) return ttRefuse(ev, 'The tank is already full');
+  if (!ttStanding(sp.tr)) return ttRefuse(ev, 'Wait until the train has stopped');
+  const P = S.player, w = sp.st.water;
+  P.mode = 'to'; P.tx = w.sx; P.tz = w.sz; P.use = { k: 'water', st: sp.st.id, tr: sp.tr.id, stock: sp.loco.id }; P.act = null; P.run = false;
+}
+function ttAssignCmd(S, c, ev) {
+  const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null;
+  if (!tr || tr.owner || !trainPower(tr)) return ttRefuse(ev, 'Only our own engines run to the timetable');
+  const D = S.tt;
+  if (c.on) {
+    let n = 0;
+    for (const svc of D.services) if (svc.train === null && (c.svc === undefined || c.svc === svc.id)) { svc.train = tr.id; n++; }
+    ev.push({ t: 'ttAssigned', tr: tr.id, on: true, services: n });
+    return;
+  }
+  for (const run of D.runs.filter(r => D.services[r.svc].train === tr.id)) ttEnd(S, run, ev, 'cancelled', 'taken off the timetable');
+  D.runs = D.runs.filter(r => r.ph !== 'done');
+  for (const svc of D.services) if (svc.train === tr.id) svc.train = null;
+  if (tr.mode === 'route') { releaseRoute(S, tr); tr.mode = 'stop'; }
+  ev.push({ t: 'ttAssigned', tr: tr.id, on: false });
+}
+function ttHighballCmd(S, c, ev) {
+  const run = Number.isInteger(c.tr) ? ttRunOf(S, c.tr) : null;
+  if (!run || run.ph !== 'at') return ttRefuse(ev, 'That train is not waiting at a stop');
+  run.hb = true;
+  ev.push({ t: 'ttHighball', tr: c.tr, svc: run.svc });
+}
+const TT_ACTS = { cut: CFG.UNCOUPLE_S, fuel: CFG.CARRY_S, water: CFG.WATER_S };
+// Where a person task is worked from (within reach), or null when it is gone.
+function ttTaskSpot(S, a) {
+  const tr = S.trains[a.tr];
+  if (!ttStanding(tr)) return null;
+  if (a.k === 'cut') { const k = tr.consist.findIndex((c, i) => i > 0 && tr.consist[i - 1].id === a.a && c.id === a.b); return k > 0 ? ttJointAt(S, tr, k) : null; }
+  if (a.k === 'fuel') return ttTenderAt(S, tr, a.stock);
+  const st = ttStation(S, a.st), t = ttTenderAt(S, tr, a.stock);
+  if (!st || !st.water || !t || Math.hypot(t.x - st.water.x, t.z - st.water.z) > TT.SPOUT_REACH) return null;
+  return { x: st.water.sx, z: st.water.sz };
+}
+function ttTaskDone(S, a, ev) {
+  const P = S.player, sp = ttTaskSpot(S, a), tr = S.trains[a.tr];
+  if (!sp || Math.hypot(sp.x - P.x, sp.z - P.z) > CFG.REACH + 0.25) return ttRefuse(ev, a.k === 'cut' ? 'The coupling is gone or the train moved' : 'The engine moved away');
+  if (a.k === 'cut') { trainSplit(S, tr, tr.consist.findIndex(c => c.id === a.b), ev); return; }
+  const loco = tr.consist.find(c => c.id === a.stock);
+  if (a.k === 'water') {
+    loco.water = CFG.WATER_U;
+    const run = ttRunOf(S, tr.id);
+    if (run && run.ph === 'at') run.watered = true;
+    ev.push({ t: 'waterTaken', tr: tr.id }); return;
+  }
+  const id = ttHeldCord(S);
+  if (id === null) return ttRefuse(ev, 'You are not carrying wood');
+  if (loco.fuel > FUEL_CAP - CFG.CORD_U) return ttRefuse(ev, 'The tender is full of wood');
+  if (!itemConsume(S, id, 'fuel', ev).ok) return;
+  loco.fuel = Math.min(FUEL_CAP, loco.fuel + CFG.CORD_U);
+  ev.push({ t: 'tenderFuelled', tr: tr.id, cords: Math.floor(loco.fuel / CFG.CORD_U + 1e-9) });
+}
+// Step 7 for the player, outermost: a person task in progress, or everything else (job work, carrying, walking).
+function ttActorTick(S, ev, poseCache) {
+  const P = S.player;
+  if (P.act && TT_ACTS[P.act.k]) {
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; ttTaskDone(S, a, ev); }
+    return;
+  }
+  const use = P.use && TT_ACTS[P.use.k] ? P.use : null, evFrom = ev.length;
+  jobActorTick(S, ev, poseCache);
+  if (!use || P.use !== null || P.mode !== 'idle') return;
+  const sp = ttTaskSpot(S, use);
+  if (!sp) { ttRefuse(ev, 'The train moved'); return; }
+  if (Math.hypot(sp.x - P.x, sp.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
+  for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1);
+  if (Math.hypot(sp.x - P.x, sp.z - P.z) > 1e-6) P.f = Math.atan2(sp.x - P.x, sp.z - P.z);
+  P.act = { ...use, left: TT_ACTS[use.k], total: TT_ACTS[use.k] };
+}
+
+// ---- The train order board (section 8): what each station's board shows ----
+// signal: 'green' while a timetable train is leaving this station on its reservation (proceed), else 'red' (hold).
+// lines: the next departures from this station (up to 3): { time, name, to, state }.
+function ttSignal(S, stId) {
+  const D = S.tt;
+  if (D) for (const run of D.runs) {
+    const tr = S.trains[D.services[run.svc].train], prev = run.i > 0 ? D.services[run.svc].stops[run.i - 1] : null;
+    if (tr && run.ph === 'go' && prev && prev.st === stId && tr.mode === 'route' && D.res.some(r => r.tr === tr.id)) return 'green';
+  }
+  return 'red';
+}
+function ttBoard(S, stId) {
+  const D = S.tt, out = { signal: ttSignal(S, stId), lines: [] };
+  if (!D || !ttStation(S, stId)) return out;
+  const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), sod = abs % 86400;
+  const rows = [];
+  for (const svc of D.services) svc.stops.forEach((p, i) => {
+    if (p.st !== stId || p.dep === null) return;
+    const run = D.runs.find(r => r.svc === svc.id), to = ttStation(S, svc.stops[i + 1].st);
+    let state;
+    if (run && run.i === i && run.ph === 'at') state = run.why || 'Departing';
+    else if (run && run.i <= i) state = 'On its way here';
+    else if (run || svc.last === day) return;            // already left today
+    else if (svc.train === null) state = 'No engine on the timetable';
+    else if (sod > p.dep + TT.CANCEL_S) return;
+    else state = sod > p.dep ? 'Late' : 'On time';
+    rows.push({ time: ttClock(p.dep), sod: p.dep, name: svc.name, to: to ? to.name : '?', state });
+  });
+  rows.sort((a, b) => a.sod - b.sod || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  out.lines = rows.slice(0, 3).map(({ time, name, to, state }) => ({ time, name, to, state }));
+  return out;
+}
+
+// ---- Saving and the debug scenario ----
+// Saves from before the timetable (schema 5 and older): the default services (no train on them), and full wood
+// and water for our own engines.
+function ttMigrate(st) {
+  st.tt = ttNewState();
+  if (Array.isArray(st.trains)) for (const tr of st.trains) if (tr && !tr.owner && Array.isArray(tr.consist)) for (const c of tr.consist) {
+    if (c && c.k === 'loco' && typeof c.fuel !== 'number') { c.fuel = FUEL_CAP; c.water = CFG.WATER_U; }
+  }
+}
+function ttCheckSaveShape(st) {
+  const D = st.tt, bad = () => { throw new Error('damaged save: the timetable'); };
+  if (!D || !Array.isArray(D.services) || !Array.isArray(D.runs) || !Array.isArray(D.res)) bad();
+  for (const [i, s] of D.services.entries()) if (!s || s.id !== i || !Array.isArray(s.stops) || s.stops.length < 2 || (s.train !== null && !st.trains[s.train])) bad();
+  for (const r of D.runs) if (!r || !D.services[r.svc] || !Number.isInteger(r.i) || !D.services[r.svc].stops[r.i]) bad();
+  for (const r of D.res) if (!r || !st.trains[r.tr] || !Array.isArray(r.blocks)) bad();
+  for (const tr of st.trains) if (!tr.owner) for (const c of tr.consist) if (c.k === 'loco' && (typeof c.fuel !== 'number' || typeof c.water !== 'number')) bad();
+}
+// rh.scenario('timetable') (in the M0 test yard): 07:20 on day 1. No. 1 stands at the test hub (north main line, heading east), on the
+// timetable; 6 cords of wood lie at the hub's wood stage; the player stands by the hub's order board. The Overland's
+// visits are off (it would bring goods that the station work then waits for).
+function ttDebugScenario(st) {
+  const hub = ttStation(st, 'hub'), tr = st.trains[0], k = hub.trk;
+  tr.front = { e: k.e, s: k.s0, d: -1 }; tr.mode = 'idle'; tr.v = 0; tr.m = 1; tr.status = 'Stopped';
+  st.time = 2 * 3600 + 20 * 60;
+  for (const svc of st.tt.services) svc.train = 0;
+  const w = hub.wood;
+  for (let i = 0; i < 6; i++) itemCreate(st, { commodity: 'cordwood', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null },
+    { kind: 'GROUND', x: Math.round((w.x + (i % 3) * 0.6) * 100), z: Math.round((w.z + Math.floor(i / 3) * 0.7) * 100) }, null);
+  st.player.x = hub.board.x - 1.7; st.player.z = hub.board.z + 0.6; st.overland.phase = 'off';
+  return st;
 }
 
 // ==== Section: cargo (items and waybills) ====
@@ -3120,11 +3860,13 @@ function simTick(S, cmds) {
   for (const c of cmds) applyCommand(S, c, ev);         // 1. commands
   S.tick += 1; S.time += CFG.TICK_GAME_S;               // 2. time
   overlandTick(S, ev);                                  // 3. dispatch: the Overland's visits (section "trains")
+  ttTick(S, ev);                                        // 3. dispatch: timetable trains and reservations (section "timetable")
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
+  ttStatus(S);
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
   const tel = econTelBefore(S, ev);
-  jobActorTick(S, ev, poseCache);                       // 7. actors (the player: walking in playerTick, carrying and job work around it)
+  ttActorTick(S, ev, poseCache);                        // 7. actors (the player: walking in playerTick; carrying, job work and train tasks around it)
   econTick(S, ev, tel);                                 // 8. economy: reaching the telegraph key, market Mondays, contracts due
   townTick(S, ev);                                      // 8b. towns: businesses use goods each hour, offer contracts at 07:00
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
@@ -3198,9 +3940,14 @@ function migrate(save) {
     st.schemaVersion = 7;
   }
   if (st.schemaVersion === 7) {
-    // 7 -> 8 (placeholder towns): the businesses start with their opening stock, nothing used or offered yet.
-    st.town = townNewState();
+    // 7 -> 8 (timetable): the default train services with no engine on them, and full wood and water for our engines.
+    ttMigrate(st);
     st.schemaVersion = 8;
+  }
+  if (st.schemaVersion === 8) {
+    // 8 -> 9 (placeholder towns): the businesses start with their opening stock, nothing used or offered yet.
+    st.town = townNewState();
+    st.schemaVersion = 9;
   }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
@@ -3225,7 +3972,7 @@ function checkSaveShape(st) {
   for (const tr of st.trains) {
     if (!tr || !tr.front || !edgeOk(tr.front.e) || !num(tr.front.s) || Math.abs(tr.front.d) !== 1) bad('train position');
     if (!num(tr.v) || Math.abs(tr.m) !== 1 || typeof tr.mode !== 'string') bad('train motion');
-    if (!arr(tr.consist) || (!tr.consist.length && tr.owner !== 'interchange') || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
+    if (!arr(tr.consist) || (!tr.consist.length && tr.owner !== 'interchange' && tr.owner !== 'cut') || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
   }
   const P = st.player;
   if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
@@ -3233,6 +3980,7 @@ function checkSaveShape(st) {
   carryCheckSaveShape(st);
   jobCheckSaveShape(st);
   overlandCheckSaveShape(st);
+  ttCheckSaveShape(st);
   econCheckSaveShape(st);
   townCheckSaveShape(st);
 }
@@ -3680,10 +4428,30 @@ function buildWorld(S) {
     d.rotation.order = 'YXZ'; d.rotation.set(Math.PI / 2, Math.atan2(W.stand.hx, W.stand.hz), 0);
     d.castShadow = true; G.add(d); return d;
   });
+  ttBuildBoards(G, S);
   // Walk target marker.
   view.ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 16), new THREE.MeshBasicMaterial({ color: PAL.brass, side: THREE.DoubleSide }));
   view.ring.rotation.x = -Math.PI / 2; view.ring.position.y = 0.05; view.ring.visible = false; G.add(view.ring);
 }
+// Train order boards (C3, section 8): a post with a board and a lamp at each station. Posts and boards are one merged
+// mesh; each lamp is a small disc sharing a red or a green material, swapped when the signal changes.
+const ttView = { lamps: [], mats: null };
+function ttBuildBoards(G, S) {
+  if (!ttView.mats) ttView.mats = { red: new THREE.MeshBasicMaterial({ color: '#d6402a' }), green: new THREE.MeshBasicMaterial({ color: '#3fbf4a' }) };
+  const k = new Kit(), list = ttStations(S).filter(st => st.board);
+  ttView.lamps = [];
+  for (const st of list) {
+    const b = st.board;
+    k.add(box(0.1, 1.9, 0.1), PAL.trim, b.x, 0.95, b.z);
+    k.add(box(0.5, 0.36, 0.05), '#e8dcc0', b.x, 1.55, b.z + 0.06);
+    k.add(box(0.56, 0.42, 0.04), PAL.trim, b.x, 1.55, b.z + 0.03);
+    const lamp = new THREE.Mesh(cyl(0.11, 0.11, 0.04, 10), ttView.mats.red);
+    lamp.position.set(b.x, 2.0, b.z + 0.07); lamp.rotation.x = Math.PI / 2;
+    lamp.userData.st = st.id; G.add(lamp); ttView.lamps.push(lamp);
+  }
+  if (list.length) G.add(k.mesh());
+}
+function ttDrawBoards(S) { for (const l of ttView.lamps) { const m = ttView.mats[ttSignal(S, l.userData.st)]; if (l.material !== m) l.material = m; } }
 // Which vehicles each train has (and the state object): the drawn meshes are rebuilt when this changes.
 const trainViewIds = new WeakMap();
 let trainViewN = 0;
@@ -6092,6 +6860,8 @@ const DBG_SCENARIOS = {
   // Town (C5): accepted contracts for the general store's flour and the saloon's whiskey, a flour sack in hand
   // beside the general store and two barrels of whiskey on the ground by the saloon.
   town: () => townDebugScenario(newState(CFG.SEED)),
+  // The timetable (C3): the M0 test yard at 07:20 on day 1, No. 1 at the test hub on the timetable, cordwood at its wood stage.
+  timetable: () => ttDebugScenario(newState(CFG.SEED, 'yard')),
   // Hand-building: a 20u siding with a switch staked off the north main line, all its materials beside it.
   handbuild: () => jobDebugScenario(newState(CFG.SEED, 'yard')),
   // Switch 3 is set for the spur and the train is running towards it on the north main line.
@@ -6221,7 +6991,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland|^(orderPlaced|contract|credit)/.test(e.t));
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland|^(orderPlaced|contract|credit)|^(un)?coupled$|^tt(Assigned|Departed|Arrived|Done)$|^waterTaken$|^tenderFuelled$/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -6257,6 +7027,7 @@ function handleEvent(e) {
   else if (/^job/.test(e.t)) jobOnEvent(e);
   else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
   else if (e.t === 'reachedBiz' || e.t === 'bizDelivered') townOnEvent(e);
+  else ttOnEvent(e);
 }
 // The carry readout (bottom left, above the turn buttons): what the player carries, and a Put down button.
 // Hidden while the train panel or the build tool use that part of the screen.
@@ -6413,7 +7184,7 @@ function cashHud() {
   cashHudText = t; $('cash').textContent = t;
   if (c < 0) $('cash').dataset.neg = ''; else delete $('cash').dataset.neg;
 }
-function openPanel(trId) { closeCarPanel(); closeTelPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
+function openPanel(trId) { closeCarPanel(); closeTelPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; ttPanelSig = ''; updateHud(); }
 // The job signs' labels (hand-building, builder B2): one small card per staked job, standing on its sign board,
 // saying what the job still needs ("Bring 2 tie bundles and 1 spike keg"), or that it is ready or being built.
 // Words from jobNeeds through jobNeedsText (build tool section). Below the buttons (z-index 1, no taps), and
@@ -6550,11 +7321,13 @@ function townOnEvent(e) {
   }
 }
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
-function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
+function setSendMode(on) { ui.sendMode = on; $('panel').classList.toggle('sending', on); $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
 function updateHud() {
   $('clock').textContent = clockText(S);
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
+  ttPanelUpdate();
+  ttCardHud();
   $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
   carPanelUpdate();
   telPanelUpdate();
@@ -6573,6 +7346,78 @@ $('actBack').addEventListener('click', () => { setSendMode(false); send({ t: 'tr
 $('actStop').addEventListener('click', () => { setSendMode(false); send({ t: 'trainStop', tr: ui.panelTrain }); });
 $('actSend').addEventListener('click', () => setSendMode(!ui.sendMode));
 $('bannerCancel').addEventListener('click', () => setSendMode(false));
+// The timetable parts of the train panel (C3): wood and water, Timetable on or off, Highball at a stop.
+let ttPanelSig = '';
+function ttPanelUpdate() {
+  if (ui.panelTrain === null) return;
+  const tr = S.trains[ui.panelTrain], L = trainLocos(tr), run = ttRunOf(S, tr.id), on = S.tt.services.some(s => s.train === tr.id);
+  const loco = L[0];
+  const txt = loco ? `Wood ${Math.floor(loco.fuel / CFG.CORD_U * 10) / 10} of ${CFG.TENDER_CORDS} cords, water ${Math.round(loco.water / CFG.WATER_U * 100)}%`
+    + (run ? `. ${S.tt.services[run.svc].name}` : '') : '';
+  const sig = txt + '|' + on + '|' + (run ? run.ph : '');
+  if (sig === ttPanelSig) return;
+  ttPanelSig = sig;
+  $('panelLoco').textContent = txt;
+  $('panelTt').hidden = !loco || !!tr.owner;
+  $('ttToggle').textContent = on ? 'Timetable: on' : 'Timetable: off';
+  $('ttToggle').setAttribute('aria-pressed', String(on));
+  $('ttHighball').hidden = !(run && run.ph === 'at');
+}
+$('ttToggle').addEventListener('click', () => {
+  if (ui.panelTrain === null) return;
+  send({ t: 'ttAssign', tr: ui.panelTrain, on: !S.tt.services.some(s => s.train === ui.panelTrain) });
+  if (speed === 0) doTick();
+});
+$('ttHighball').addEventListener('click', () => { if (ui.panelTrain !== null) send({ t: 'ttHighball', tr: ui.panelTrain }); });
+function ttOnEvent(e) {
+  const nm = id => (S.trains[id] ? S.trains[id].name : 'The train');
+  const stn = id => { const st = ttStation(S, id); return st ? st.name : 'the station'; };
+  if (e.t === 'ttRefused') toast(e.why + '.');
+  else if (e.t === 'uncoupled') toast(`Uncoupled: ${e.cars} car${e.cars > 1 ? 's' : ''} left standing.`);
+  else if (e.t === 'coupled') toast(`${nm(e.tr)} coupled up ${e.cars} car${e.cars > 1 ? 's' : ''}.`);
+  else if (e.t === 'tenderFuelled') toast(`A cord of wood on the tender: ${e.cords} of ${CFG.TENDER_CORDS}.`);
+  else if (e.t === 'waterTaken') toast('The tank is full.');
+  else if (e.t === 'ttAssigned') toast(e.on ? `${nm(e.tr)} is on the timetable.` : `${nm(e.tr)} is off the timetable.`);
+  else if (e.t === 'ttDeparted') toast(`${nm(e.tr)} leaves ${stn(e.st)}` + (e.late >= 60 ? `, ${Math.round(e.late / 60)} minutes late.` : ' on time.'));
+  else if (e.t === 'ttArrived') toast(`${nm(e.tr)} is in at ${stn(e.st)}.`);
+  else if (e.t === 'ttRunAround') toast('The engine runs round its train.');
+  else if (e.t === 'ttCancelled' && e.why !== 'taken off the timetable') toast(`${S.tt.services[e.svc].name} is cancelled: ${e.why}.`);
+}
+// The train order board card (C3): shown above a station's board while the player is within 12u of it, listing
+// the next departures. The board's lamp in the world is red (hold) or green (a train is leaving on its reservation).
+const ttCardUi = { st: null, sig: '', w: 0, h: 0 };
+function ttCardHud() {
+  const P = S.player;
+  let near = null;
+  for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 && (!near || d < near.d)) near = { st, d }; }
+  const card = $('ttCard');
+  const hide = !near || ui.panelTrain !== null || carUi.stock !== null || (typeof bt !== 'undefined' && bt.on);
+  if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
+  const b = ttBoard(S, near.st.id);
+  const sig = near.st.id + b.signal + b.lines.map(l => l.time + l.name + l.state).join('|');
+  if (sig !== ttCardUi.sig) {
+    ttCardUi.sig = sig;
+    $('ttCardTitle').innerHTML = `<span class="sig" style="background:${b.signal === 'green' ? '#3fbf4a' : '#d6402a'}"></span>`;
+    $('ttCardTitle').appendChild(document.createTextNode(`${near.st.name}: train orders`));
+    const box = $('ttCardLines'); box.textContent = '';
+    if (!b.lines.length) { const d = document.createElement('div'); d.textContent = 'No more departures today'; box.appendChild(d); }
+    for (const l of b.lines) { const d = document.createElement('div'); d.textContent = `${l.time} to ${l.to}: ${l.state}`; box.appendChild(d); }
+    card.hidden = false; ttCardUi.w = card.offsetWidth; ttCardUi.h = card.offsetHeight;
+  }
+  const p = toScreen(near.st.board.x, 1.9, near.st.board.z), W = window.innerWidth;
+  const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2)), y = Math.max(64, p.y - ttCardUi.h - 6);
+  card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  // Hidden where it would cover a button or panel (as the job signs are).
+  let show = p.x > 0 && p.x < W && p.y > 0 && p.y < window.innerHeight;
+  for (const id of JOB_SIGN_AVOID) {
+    if (!show) break;
+    const e = $(id);
+    if (!e || e.hidden || !e.getClientRects().length) continue;
+    const q = e.getBoundingClientRect();
+    if (x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4) show = false;
+  }
+  card.style.visibility = show ? 'visible' : 'hidden';
+}
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -6610,9 +7455,10 @@ function onTap(px, py) {
   }
   const hit = pickAt(px, py);
   if (hit && hit.k === 'sw') { send({ t: 'useSwitch', sw: hit.id }); return; }
+  if (ttTap(px, py, hit)) return;
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner) {
-    // The Overland's set-out cars: walk to the car's door and see what is in it. The Overland itself: a message.
-    if (S.trains[hit.id].owner === 'interchange') send({ t: 'useCar', stock: hit.stock });
+    // The Overland's set-out cars (and any cut of cars): walk to the car's door and see what is in it. The Overland itself: a message.
+    if (S.trains[hit.id].owner === 'interchange' || S.trains[hit.id].owner === 'cut') send({ t: 'useCar', stock: hit.stock });
     else toast(overlandNotYours(S.trains[hit.id]) + '.');
     return;
   }
@@ -6698,6 +7544,32 @@ function townTap(px, py) {
   send(carryHeld(S).length ? { t: 'carryPut', biz: best.biz } : { t: 'useBiz', biz: best.biz });
   return true;
 }
+// Train taps (C3). A tap on the gap between two vehicles (within 24 px of the joint on screen) uncouples there; a tap
+// on an engine while carrying a cord of wood puts it on the tender; a tap on a water tower's spout takes water.
+// Returns true when the tap was used.
+function ttJointHit(px, py) {
+  let best = null;
+  S.trains.forEach(tr => {
+    if (trainOff(tr) || tr.owner === 'overland' || tr.owner === 'interchange' || tr.consist.length < 2) return;
+    for (let k = 1; k < tr.consist.length; k++) {
+      const j = ttJointAt(S, tr, k), p = toScreen(j.x, 0.7, j.z), d = Math.hypot(p.x - px, p.y - py);
+      if (d < 24 && (!best || d < best.d)) best = { tr: tr.id, at: k, d };
+    }
+  });
+  return best;
+}
+function ttTap(px, py, hit) {
+  const j = ttJointHit(px, py);
+  if (j) { send({ t: 'uncouple', tr: j.tr, at: j.at }); return true; }
+  if (hit && hit.k === 'tr' && S.trains[hit.id] && !S.trains[hit.id].owner && ttHeldCord(S) !== null && trainLocos(S.trains[hit.id]).length) {
+    send({ t: 'fuelTender', tr: hit.id }); return true;
+  }
+  for (const st of ttStations(S)) if (st.water) {
+    const p = toScreen(st.water.x, 2.4, st.water.z - 0.9), q = toScreen(st.water.x, 1.2, st.water.z);
+    if (Math.hypot(p.x - px, p.y - py) < 36 || Math.hypot(q.x - px, q.y - py) < 30) { send({ t: 'takeWater' }); return true; }
+  }
+  return false;
+}
 // The telegraph key (economy): a tap on the depot's office bay window walks there and opens the telegraph panel.
 function econTelTap(px, py) {
   const k = econTelegraphKey(), p = toScreen(k.wx, k.wy, k.wz);
@@ -6717,7 +7589,7 @@ canvas.addEventListener('pointerdown', e => {
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 1) {
     if (bt.on) { hold = null; buildDown(e.pointerId, e.clientX, e.clientY); } // build mode: one finger draws track
-    else hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), on: false };
+    else hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), ts: e.timeStamp, on: false, moved: false };
   } else if (ptrs.size === 2) {
     if (bt.on) buildAbortDrag(); // a second finger means pinch or pan, not track
     if (hold && hold.on) stopHoldWalk();
@@ -6733,7 +7605,7 @@ canvas.addEventListener('pointermove', e => {
   if (bt.on && bt.drag && bt.drag.id === e.pointerId && ptrs.size === 1) buildMove(e.clientX, e.clientY);
   if (hold && hold.id === e.pointerId) {
     hold.x = e.clientX; hold.y = e.clientY;
-    if (Math.hypot(hold.x - hold.x0, hold.y - hold.y0) > CFG.TAP_MOVE_PX) hold.on = true;
+    if (Math.hypot(hold.x - hold.x0, hold.y - hold.y0) > CFG.TAP_MOVE_PX) { hold.on = true; hold.moved = true; }
   }
   if (pinch && ptrs.size === 2) {
     const v = [...ptrs.values()], d = Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y);
@@ -6748,8 +7620,11 @@ function pointerEnd(e) {
   ptrs.delete(e.pointerId);
   if (bt.on && bt.drag && bt.drag.id === e.pointerId) { if (e.type === 'pointerup') buildUp(); else buildAbortDrag(); }
   if (hold && hold.id === e.pointerId) {
+    // A slow frame between finger down and up can turn a quick tap into a hold (the frame loop only sees the
+    // time passed). Judge by the touch's own timestamps: a short touch that never moved is still a tap.
+    const quick = !hold.moved && e.timeStamp - hold.ts <= CFG.HOLD_MS;
     if (hold.on) stopHoldWalk();
-    else if (e.type === 'pointerup') onTap(hold.x, hold.y);
+    if (e.type === 'pointerup' && (!hold.on || quick)) onTap(hold.x, hold.y);
     hold = null;
   }
   if (ptrs.size < 2) pinch = null;
@@ -6853,6 +7728,7 @@ function render(alpha, dt) {
   // The tap marker shows until the walk it started ends.
   if (view.ringArmed && P.mode === 'to') view.ringArmed = false;
   if (!view.ringArmed && (P.mode !== 'to' || P.use)) view.ring.visible = false;
+  ttDrawBoards(S);
   // Switch discs.
   S.track.switches.forEach((W, i) => { view.discs[i].material = view.discMat[W.state]; });
   // Camera: follow the player with a soft lag, ease the 90-degree turns.
@@ -6916,6 +7792,7 @@ window.__railhead = {
   get state() { return S; },
   hash: st => stateHash(st || S),
   send, setSpeed, saveGame,
+  CFG, // checks on a busy test machine may lengthen HOLD_MS (see check-handbuild.js)
   step(n) { for (let i = 0; i < n; i++) doTick(); },
   // A new game in the page's world: ?world=yard (the M0 test yard, for the checks written for it) or the real start.
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
@@ -6933,6 +7810,8 @@ window.__railhead = {
   jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,
   trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.isInstancedMesh && o.geometry.parameters && o.geometry.parameters.depth === 1.2 ? o.count : 0), 0),
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
+  tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState,
+    ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; } },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },

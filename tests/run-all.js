@@ -26,6 +26,7 @@ const checks = {
   'economy (cash, orders by telegraph, contracts, ledger)': require('./check-economy'),
   'towns (businesses, contracts offered, delivery at the door)': require('./check-town'),
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
+  'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
 };
 
 (async () => {

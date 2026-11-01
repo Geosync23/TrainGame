@@ -36,7 +36,7 @@ async function checkTouch(problems) {
   const scr = (x, z, y) => R(([x, z, y]) => window.__railhead.toScreen(x, z, y || 0), [x, z, y]);
   const lookAt = async (x, z, zoom) => {
     await R(([x, z, zoom]) => { const R = window.__railhead, P = R.state.player; R.camera.zoom = zoom; R.camera.ox = x - P.x; R.camera.oz = z - P.z; R.camera.fx = P.x; R.camera.fz = P.z; }, [x, z, zoom]);
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(200); await frames(); // a frame can take over 200 ms on a busy test machine
   };
   const drag = async (a, b, hold) => {
     const p0 = await scr(a.x, a.z, 0.2), p1 = await scr(b.x, b.z, 0);
@@ -55,6 +55,10 @@ async function checkTouch(problems) {
       const E = T.edges.find(E => E.a === N.id || E.b === N.id), O = T.nodes[E.a === N.id ? E.b : E.a], L = Math.hypot(N.x - O.x, N.z - O.z);
       return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length };
     });
+    // This check is about jobs, not about telling a tap from press and hold (check-touch covers that). On a
+    // heavily loaded test machine a touch can reach the page more than 220 ms after it starts, which the game
+    // rightly reads as a hold; so this page allows a longer hold time.
+    await R(() => { window.__railhead.CFG.HOLD_MS = 1500; });
     await page.tap('#buildBtn'); await settle();
     await lookAt(spur.x - 4, spur.z, 0.7);
     // An amber plan: 20u on from the spur end runs onto the hills.

@@ -905,6 +905,15 @@ function buildTrackCmd(S, c, ev) {
 // Add a checked plan's track to the network: the instant build, and a construction job when its last spike is in.
 function trackLayPlan(S, p, ev) {
   const e0 = S.track.edges.length, r = bMutate(S.track, p.G);
+  // A switch split a straight edge (bPlaceSwitch: the edge keeps its id up to the first cut, the rest are new
+  // edges running the same way): a train standing beyond the first cut moves onto the piece it stands on.
+  if (r.split) for (const tr of S.trains) {
+    const f = tr.front, { e, cuts, pieces } = r.split;
+    if (!f || f.e !== e || f.s <= cuts[0] + 1e-9) continue;
+    let k = 0;
+    while (k + 1 < cuts.length && f.s > cuts[k + 1] + 1e-9) k++;
+    tr.front = { e: pieces[k + 1], s: f.s - cuts[k], d: f.d };
+  }
   trackIndexCache.delete(S.track); walkGridCache.delete(S.track);
   ev.push({ t: 'trackBuilt', edges: S.track.edges.length - e0, sw: r.sw, len: Math.round(p.len * 100) });
   return r;
@@ -1267,19 +1276,25 @@ function overlandCheckSaveShape(st) {
 //   runs: the running instances, one per service at most: { svc, day, i (stop), ph ('go' to stop i, 'at' stop i),
 //     arr (game time it arrived), hb (highball: the player waved it off), ra (run-around steps), why (what it waits for) }
 //   res: the line reservations of section 8: [{ tr, blocks }], blocks in route order, released as the tail clears.
-// Dispatch (ttTick, step 3 of the sim tick, before the trains move): runs start 30 game minutes before the first
+// Dispatch (ttTick, step 3 of the sim tick, before the trains move): runs start 60 game minutes before the first
 // departure; a train at a stop leaves when its time has come, its stop actions are done (work: no goods for this
-// station still aboard and none for its later stops waiting in the station's area; water: tank full; wood: no room
-// for another cord), and it has wood and water for the next leg plus 2 miles. Then it asks for the reservation of
+// station still aboard and none for its later stops waiting in the station's area; water: tank full, or short by
+// no more than a move within the station burns; wood: enough for the run up to the next station with a wood stage
+// plus 2 miles, or no room for another cord; once met at a stop it stays met there), and it has wood and water for
+// the next leg plus 2 miles. Water on the way in: when a run's last stop takes water, the train runs first to the
+// station's water tower, stops with its tender under the spout and waits there up to 10 game minutes (longer while
+// the player is working at it) for the player to take water, then runs on to the stop. Then it asks for the reservation of
 // every block on its route (section 8: granted only if none is reserved by another train or occupied by one); a
 // train never moves for the timetable without it, so two timetable trains never meet head-on. Runs are handled in
 // order of class, then scheduled departure. A run more than 6 game hours late is cancelled.
+// Runs also keep: wood (the wood action was met at this stop), win (water on the way in: 1 running to or standing
+// at the spout, 2 done or given up), winT (game time it stopped under the spout).
 // Commands: uncouple { tr, at } (a person at the joint, 0.5 game minutes), fuelTender { tr } (put the carried cord
 // of wood on the tender), takeWater {} (fill the tender under a tower spout, 2 game minutes), ttAssign { tr, on }
 // (put the train on the timetable or take it off), ttHighball { tr } (wave it off without its stop actions).
 // Events: ttStarted, ttArrived, ttDeparted, ttDone, ttCancelled, ttAssigned, ttHighball, ttRefused, uncoupled,
 // coupled, tenderFuelled, waterTaken.
-const TT = { START_EARLY_S: 1800, CANCEL_S: 6 * 3600, TOUCH: 0.35, SPOUT_MOVE: 40, BESIDE: 1.15, TENDER_AT: -1.87, SPOUT_REACH: 1.2 };
+const TT = { START_EARLY_S: 3600, IN_WATER_S: 600, CANCEL_S: 6 * 3600, TOUCH: 0.35, SPOUT_MOVE: 40, BESIDE: 1.15, TENDER_AT: -1.87, SPOUT_REACH: 1.2 };
 const TT_TEST_STATIONS = [
   { id: 'hub', name: 'Hub (test)', tags: ['HUB', 'HUBWH'], track: { x0: 16, z0: -14, x1: -2, z1: -14 }, area: [-4, 18, -13, -9],
     board: { x: 17.2, z: -12.6 }, water: null, wood: { x: 8, z: -11.6 }, ra: null },
@@ -1288,7 +1303,8 @@ const TT_TEST_STATIONS = [
 ];
 const TT_TOWN_TAGS = { 0: ['HUB', 'HUBWH'], 1: ['WILLOW'] };
 // A station of the world's STATIONS table in the timetable's shape. Provisional choices: the stopping track is the
-// first of its stops; the area for goods is the stopping track plus 4u at each end and 9u to each side; the order
+// first of its stops; the area for goods is the stopping track plus 4u at each end and 9u to each side, widened to
+// take in the bays of the station's freight shed (one within 30u of the stopping track) with 1u round each; the order
 // board stands 2.5u before the west end of the stopping track, 2.2u to its north (the station side); the water
 // tower and wood stage are the world's buildings of those kinds within 30u of the stopping track (the spout is over
 // the nearest track, worked from 1.3u west of the tower, between it and the track); the run-around ends are the
@@ -1316,8 +1332,12 @@ function ttFromWorld(T, st) {
   }
   const tags = TT_TOWN_TAGS[st.town] || [], skip = [st.stops[0], 'interchange', st.runAround && st.runAround.headshunt];
   const alt = Object.keys(st.tracks).filter(n => !skip.includes(n)).map(n => st.tracks[n]);
+  const area = [Math.min(k.x0, k.x1) - 4, Math.max(k.x0, k.x1) + 4, Math.min(k.z0, k.z1) - 9, Math.max(k.z0, k.z1) + 9];
+  // The freight shed's bays (goods sorted there for a later stop hold the train like goods on the ground).
+  const shed = near('freightshed'), bays = shed && typeof BLD_BAYS_BY !== 'undefined' && BLD_BAYS_BY[worldId(T)] ? BLD_BAYS_BY[worldId(T)][shed.id] : null;
+  if (bays) for (const b of bays.bays) { area[0] = Math.min(area[0], b.x - 1); area[1] = Math.max(area[1], b.x + 1); area[2] = Math.min(area[2], b.z - 1); area[3] = Math.max(area[3], b.z + 1); }
   return { id: st.id, name: st.name, tags, track: k, alt,
-    area: [Math.min(k.x0, k.x1) - 4, Math.max(k.x0, k.x1) + 4, Math.min(k.z0, k.z1) - 9, Math.max(k.z0, k.z1) + 9],
+    area,
     board: { x: Math.min(k.x0, k.x1) - 2.5, z: cz - 2.2 }, water, wood: ws ? { x: ws.x, z: ws.z } : null, ra };
 }
 function ttStationDefs(T) {
@@ -1344,16 +1364,24 @@ function ttStations(S) {
   return list;
 }
 function ttStation(S, id) { return ttStations(S).find(s => s.id === id) || null; }
-function ttDefaultServices() {
+// The default services. Since round D (D4) the run back to the hub takes water on the way in (its last stop has
+// 'water'), so trains leave the hub from the platform, not the spout 24u on: the run out to Willow Ford is timed
+// 90 minutes (was 80) and the run back 130 (was 120, for the water stop); the afternoon run leaves the hub at 14:00
+// (was 13:30) and comes back at 18:30 (was 18:20; 50 minutes at Willow Ford, where it has no run-around), so the
+// player has an hour between the morning train's return (13:00, was 12:50) and the afternoon departure.
+// old: the services as they were before (for the save migration step, so old saves load unchanged).
+function ttDefaultServices(old) {
   const H = 3600;
   const M = 60;
-  const run = (id, name, t0) => ({ id, name, cls: 3, train: null, days: 127, last: -1, stops: [
+  // t0: leaves the hub; a, d: arrives at and leaves Willow Ford; b: back at the hub (game minutes after t0).
+  const run = (id, name, t0, a, d, b) => ({ id, name, cls: 3, train: null, days: 127, last: -1, stops: [
     { st: 'hub', arr: null, dep: t0, acts: ['work', 'wood', 'water'] },
-    { st: 'willow', arr: t0 + 80 * M, dep: t0 + 170 * M, acts: ['work', 'water'], turn: 'runaround' },
-    { st: 'hub', arr: t0 + 290 * M, dep: null, acts: ['work'] }] });
-  return [run(0, 'Willow Ford Mixed, morning', 8 * H), run(1, 'Willow Ford Mixed, afternoon', 13 * H + 30 * M)];
+    { st: 'willow', arr: t0 + a * M, dep: t0 + d * M, acts: ['work', 'water'], turn: 'runaround' },
+    { st: 'hub', arr: t0 + b * M, dep: null, acts: old ? ['work'] : ['work', 'water'] }] });
+  if (old) return [run(0, 'Willow Ford Mixed, morning', 8 * H, 80, 170, 290), run(1, 'Willow Ford Mixed, afternoon', 13 * H + 30 * M, 80, 170, 290)];
+  return [run(0, 'Willow Ford Mixed, morning', 8 * H, 90, 170, 300), run(1, 'Willow Ford Mixed, afternoon', 14 * H, 90, 140, 270)];
 }
-function ttNewState() { return { services: ttDefaultServices(), runs: [], res: [] }; }
+function ttNewState(old) { return { services: ttDefaultServices(old), runs: [], res: [] }; }
 const ttAt = (day, sod) => day * 86400 + sod - CFG.DAY_START_S;          // a time of a game day, as S.time
 const ttClock = sod => String(Math.floor(sod / 3600) % 24).padStart(2, '0') + ':' + String(Math.floor(sod % 3600 / 60)).padStart(2, '0');
 function ttRunOf(S, trId) { return S.tt ? S.tt.runs.find(r => S.tt.services[r.svc].train === trId) || null : null; }
@@ -1450,12 +1478,66 @@ function ttWorkDone(S, tr, svc, i, st) {
   }
   return true;
 }
+// Water: a tank short by no more than a move within the station burns (TT.SPOUT_MOVE) counts as full, so water
+// taken on the way in still counts after the short run from the spout to the platform.
+const ttWaterLow = (tr, c) => c.water < CFG.WATER_U - TT.SPOUT_MOVE * trainBurnRate(tr) - 1e-6;
+// Route length (u) from a stop's stopping track to another station's, ignoring trains; cached per track.
+const ttLegCache = new WeakMap();
+function ttLegU(S, a, b) {
+  const T = S.track, sig = T.edges.length + '/' + T.nodes.length;
+  let c = ttLegCache.get(T);
+  if (!c || c.sig !== sig) { c = { sig, m: {} }; ttLegCache.set(T, c); }
+  const key = a.id + '>' + b.id;
+  if (c.m[key] === undefined) {
+    let best = Infinity;
+    if (a.trk && b.trk) for (const d of [1, -1]) for (const t of [{ e: b.trk.e, s: b.trk.s1 }, { e: b.trk.e, s: b.trk.s0 }]) {
+      const r = findRoute(T, { e: a.trk.e, s: (a.trk.s0 + a.trk.s1) / 2, d }, t);
+      if (r && r.dist < best) best = r.dist;
+    }
+    c.m[key] = best;
+  }
+  return c.m[key];
+}
+// Wood a train needs at stop i of its service (u of range): the route from where it stands to the next stop, the
+// legs after that up to the next station with a wood stage (or the end of the run), twice the run-around length at
+// each run-around stop on the way, and 2 miles spare (FUEL_RESERVE_U), at its burn rate.
+function ttWoodNeedU(S, svc, i, tr) {
+  const stops = svc.stops;
+  if (i >= stops.length - 1) return 0;
+  let u = CFG.FUEL_RESERVE_U, prev = null;
+  for (let k = i + 1; k < stops.length; k++) {
+    const st = ttStation(S, stops[k].st);
+    if (!st) break;
+    if (k === i + 1) {
+      let best = Infinity;
+      for (const m of [1, -1]) for (const t of st.trk ? [{ e: st.trk.e, s: st.trk.s1 }, { e: st.trk.e, s: st.trk.s0 }] : []) {
+        const r = findRoute(S.track, leadPos(S.track, tr, m), t);
+        if (r && r.dist < best) best = r.dist;
+      }
+      u += Number.isFinite(best) ? best : 0;
+    } else u += Number.isFinite(ttLegU(S, prev, st)) ? ttLegU(S, prev, st) : 0;
+    if (k === stops.length - 1 || st.wood) break;
+    if (stops[k].turn === 'runaround' && st.raPts) {
+      const T = S.track, [a, b] = st.raPts.map(p => edgeAt(T, T.edges[p.e], p.s));
+      u += 2 * Math.hypot(a.x - b.x, a.z - b.z);
+    }
+    prev = st;
+  }
+  return u * trainBurnRate(tr);
+}
 function ttStopNeeds(S, run, tr, st, stop) {
   if (run.hb) return [];
   const svc = S.tt.services[run.svc], out = [], L = trainLocos(tr), acts = stop.acts || [];
   if (acts.includes('work') && !ttWorkDone(S, tr, svc, run.i, st)) out.push('work');
-  if (acts.includes('water') && !run.watered && !run.dry && L.some(c => c.water < CFG.WATER_U - 1e-6)) out.push('water');
-  if (acts.includes('wood') && L.some(c => c.fuel <= FUEL_CAP - CFG.CORD_U)) out.push('wood');
+  // (A run's last stop takes its water on the way in, see ttRunStep, not at the stop.)
+  if (acts.includes('water') && run.i < svc.stops.length - 1 && !run.watered && !run.dry && L.some(c => ttWaterLow(tr, c))) out.push('water');
+  // Wood: enough for the way to the next wood stage, or no room for another cord. Once met at this stop it stays
+  // met (a move to the spout burns a little; the departure check below still wants the next leg plus 2 miles).
+  if (acts.includes('wood') && !run.wood) {
+    const need = ttWoodNeedU(S, svc, run.i, tr);
+    if (L.some(c => c.fuel < need && c.fuel <= FUEL_CAP - CFG.CORD_U)) out.push('wood');
+    else run.wood = true;
+  }
   return out;
 }
 const TT_NEED_WHY = { work: 'Waiting: the station work is not done', water: 'Waiting: take water at the tower', wood: 'Waiting: load wood on the tender' };
@@ -1495,8 +1577,21 @@ function ttRunStep(S, run, ev) {
   if (run.ph === 'go') {
     if (stop.arr !== null && S.time > ttAt(run.day, stop.arr) + TT.CANCEL_S) return ttEnd(S, run, ev, 'cancelled', 'more than 6 hours late');
     if (busy) { run.why = ''; return; }
-    if (ttAtStation(S, tr, st)) {
+    // Water on the way in (the last stop takes water): stopped with a tender under the spout, wait for the player.
+    if (run.win === 1) {
+      if (ttUnderSpout(S, tr, st)) {
+        if (run.winT === null || run.winT === undefined) run.winT = S.time;
+        const full = !trainLocos(tr).some(c => c.water < CFG.WATER_U - 1e-6);
+        // Working at the train restarts the 10 minutes; someone just standing by with a cord does not hold it longer.
+        const crew = ttCrewAt(S, tr);
+        if (crew === 'work') run.winT = S.time;
+        if (crew === 'work' || ((crew === 'cord' || !full) && S.time < run.winT + TT.IN_WATER_S)) { run.why = full ? '' : TT_NEED_WHY.water; return; }
+      }
+      run.win = 2;
+    }
+    if (ttAtStation(S, tr, st) || (run.i === 0 && ttUnderSpout(S, tr, st))) {
       run.ph = 'at'; run.arr = S.time; run.hb = false; run.ra = null; run.why = ''; run.watered = false; run.dry = false;
+      run.wood = false; run.win = 0; run.winT = null;
       S.tt.res = S.tt.res.filter(r => r.tr !== tr.id);
       ev.push({ t: 'ttArrived', svc: svc.id, i: run.i, tr: tr.id, st: st.id, late: stop.arr === null ? 0 : S.time - ttAt(run.day, stop.arr) });
       return;
@@ -1522,14 +1617,32 @@ function ttRunStep(S, run, ev) {
   if (S.time > depT + TT.CANCEL_S) return ttEnd(S, run, ev, 'cancelled', 'more than 6 hours late');
   if (need.length) { run.why = TT_NEED_WHY[need[0]]; return; }
   if (S.time < depT) { run.why = 'Waiting for its time, ' + ttClock(stop.dep); return; }
-  const next = ttStation(S, svc.stops[run.i + 1].st), p = ttPlanStop(S, tr, next);
+  const next = ttStation(S, svc.stops[run.i + 1].st);
+  // To a last stop that takes water: first to the spout of its water tower (water on the way in), when there is a way.
+  const inWater = run.i + 1 === svc.stops.length - 1 && next && next.water && (svc.stops[run.i + 1].acts || []).includes('water');
+  const wb = inWater ? ttPlanSpout(S, tr, next, [1, -1], Infinity) : null;
+  const p = wb ? { best: wb } : ttPlanStop(S, tr, next);
   if (!p.best) { run.why = 'Waiting: ' + p.why.charAt(0).toLowerCase() + p.why.slice(1); return; }
   const legU = (p.best.r.dist + CFG.FUEL_RESERVE_U) * trainBurnRate(tr), L = trainLocos(tr);
   if (L.some(c => c.fuel < legU)) { run.why = 'Waiting: low on wood'; return; }
   if (L.some(c => c.water < legU)) { run.why = 'Waiting: low on water'; return; }
   if (!ttGrant(S, tr, p.best, false)) { run.why = 'Hold for orders: the line is not clear'; return; }
   ev.push({ t: 'ttDeparted', svc: svc.id, i: run.i, tr: tr.id, st: st.id, late: S.time - depT });
-  run.i += 1; run.ph = 'go'; run.ra = null; run.hb = false; run.why = '';
+  run.i += 1; run.ph = 'go'; run.ra = null; run.hb = false; run.why = ''; run.win = wb ? 1 : 0; run.winT = null;
+}
+// Is the player working at this train (taking water at its tender or putting wood on it), walking up to do so
+// from close by, or carrying a cord of wood near a tender that has room for it? A train waiting for water on the
+// way in waits for them (so wood can go on there too, from the wood stage beside the tower): 'work' (at it, or
+// walking up from within 6u), 'cord' (carrying a cord within 12u of a tender with room), or false.
+function ttCrewAt(S, tr) {
+  const P = S.player, a = P.act || P.use;
+  if (a && (a.k === 'water' || a.k === 'fuel') && a.tr === tr.id) {
+    if (P.act) return 'work';
+    const sp = ttTaskSpot(S, a);
+    if (sp && Math.hypot(sp.x - P.x, sp.z - P.z) < 6) return 'work';
+  }
+  const loco = ttFuelLoco(tr), t = loco && loco.fuel <= FUEL_CAP - CFG.CORD_U && ttHeldCord(S) !== null ? ttTenderAt(S, tr, loco.id) : null;
+  return t && Math.hypot(t.x - P.x, t.z - P.z) < 12 ? 'cord' : false;
 }
 // The joint between the engine and its train (k as in uncouple { at: k }): behind a leading engine, ahead of a trailing one.
 function ttEngineJoint(tr) { const li = tr.consist.findIndex(c => c.k === 'loco'); return li <= 0 ? 1 : li; }
@@ -1597,8 +1710,9 @@ function ttRunAround(S, run, tr, st, ev) {
   ra.step = 4; run.why = 'Running round the train';
 }
 // A route that stops the train with its (first) engine's tender under the station's tower spout, moving m in ms;
-// only a short move within the station (TT.SPOUT_MOVE), never a trip round the line.
-function ttPlanSpout(S, tr, st, ms) {
+// only a short move within the station (TT.SPOUT_MOVE), never a trip round the line, unless maxU says how far
+// (the run in to a last stop that takes water on the way in).
+function ttPlanSpout(S, tr, st, ms, maxU) {
   const T = S.track, n = trackNearest(T, st.water.x, st.water.z), li = tr.consist.findIndex(c => c.k === 'loco');
   if (!n || li < 0) return null;
   const loco = tr.consist[li], occ = ttOccupied(S, [tr.id]), L = trainLength(tr);
@@ -1616,7 +1730,7 @@ function ttPlanSpout(S, tr, st, ms) {
     for (const W of flipped.reverse()) W.state = W.state === 'N' ? 'R' : 'N';
     if (w.blocked) continue;
     const b = ttPlan(S, tr, [{ e: w.pos.e, s: w.pos.s, d: w.pos.d }], [m]);
-    if (b && b.r.dist <= TT.SPOUT_MOVE && (!best || b.time < best.time - 1e-9)) best = b;
+    if (b && b.r.dist <= (maxU === undefined ? TT.SPOUT_MOVE : maxU) && (!best || b.time < best.time - 1e-9)) best = b;
   }
   return best;
 }
@@ -1812,7 +1926,7 @@ function ttBoard(S, stId) {
 // Saves from before the timetable (schema 5 and older): the default services (no train on them), and full wood
 // and water for our own engines.
 function ttMigrate(st) {
-  st.tt = ttNewState();
+  st.tt = ttNewState(true);           // the services as they were then (old saves load unchanged)
   if (Array.isArray(st.trains)) for (const tr of st.trains) if (tr && !tr.owner && Array.isArray(tr.consist)) for (const c of tr.consist) {
     if (c && c.k === 'loco' && typeof c.fuel !== 'number') { c.fuel = FUEL_CAP; c.water = CFG.WATER_U; }
   }
@@ -1921,10 +2035,14 @@ const cargoName = t => ({ crate: 'crate', sack: 'sack', keg: 'keg', barrel: 'bar
   mailSack: 'mail sack', pallet: 'pallet', machinery: 'machinery', bulk: 'bulk load' })[t] || t;
 
 function cargoNewStore() { return { next: 0, waybill: [], where: [], alive: [], used: [] }; }
-// Every freight shed's bays start with these tags (section 9 examples), one per bay.
-function cargoDefaultBayTags() {
-  const out = {};
-  for (const b of Object.keys(BLD_BAYS).sort()) out[b] = BLD_BAYS[b].bays.map((_, i) => ['WILLOW', 'HUBWH', 'OUTSIDE', 'ANY'][i] || 'ANY');
+// Every freight shed's bays start with these tags (section 9 examples), one per bay. Since round D (D4) the second
+// bay is for Hub goods (deliveries to the hub's businesses, most imports), not the hub warehouse: goods for the
+// warehouse (ordered without a contract) cannot be delivered to a door yet, so they share the Any bay.
+// CARGO_OLD_BAY_TAGS: the tags before that, which the save migration step gives saves from before cargo.
+const CARGO_BAY_TAGS = ['WILLOW', 'HUB', 'OUTSIDE', 'ANY'], CARGO_OLD_BAY_TAGS = ['WILLOW', 'HUBWH', 'OUTSIDE', 'ANY'];
+function cargoDefaultBayTags(list) {
+  const out = {}, L = list || CARGO_BAY_TAGS;
+  for (const b of Object.keys(BLD_BAYS).sort()) out[b] = BLD_BAYS[b].bays.map((_, i) => L[i] || 'ANY');
   return out;
 }
 const cargoInt = v => Number.isInteger(v);
@@ -2584,7 +2702,7 @@ function jobDebugScenario(S) {
 const TOWN = {
   UNIT: 1000 * 168,         // acc per whole unit used: rates are milli-units a week, added once a game hour
   OFFER_SOD: 7 * 3600,      // offers are looked at once a day, at 07:00
-  LOW_DAYS: 4, TARGET_DAYS: 14, OPEN_DAYS: 10, DUE_DAYS: 4, OFFER_GAP_S: 3 * 86400, SCARCE_PCT: 30,
+  LOW_DAYS: 4, TARGET_DAYS: 14, OPEN_DAYS: 5, DUE_DAYS: 4, OFFER_GAP_S: 3 * 86400, SCARCE_PCT: 30, // OPEN_DAYS 5 (was 10, D4): first offers about day 3 (provisional)
   DOOR_OUT: 0.6,            // the door spot, this far out from the front wall
   SIGN_NEAR: 9,             // the door label shows when the player is this close (page side)
 };
@@ -2700,13 +2818,15 @@ function townSignSpot(bizId) {
 }
 
 // ---- State ----
-function townNewState() {
+// openDays: days of opening stock (TOWN.OPEN_DAYS; the save migration step passes the 10 days of before).
+function townNewState(openDays) {
+  const days = openDays === undefined ? TOWN.OPEN_DAYS : openDays;
   return { biz: TOWN_BUSINESSES.map(B => {
     const st = { id: B.id, shelf: {}, acc: {}, short: {}, offered: {} };
     for (const c of townGoods(B)) {
-      // Opening stock: about 10 days of the year-round rate, at least 1 of anything used year-round.
+      // Opening stock: about `days` days of the year-round rate, at least 1 of anything used year-round.
       const r = B.uses[c] || 0;
-      st.shelf[c] = r ? Math.max(1, Math.round(r * TOWN.OPEN_DAYS / 7 / 1000)) : 0;
+      st.shelf[c] = r ? Math.max(1, Math.round(r * days / 7 / 1000)) : 0;
       st.acc[c] = 0; st.short[c] = 0; st.offered[c] = null;
     }
     return st;
@@ -4335,7 +4455,7 @@ function migrate(save) {
     let id = 0;
     if (Array.isArray(st.trains)) for (const tr of st.trains) if (tr && Array.isArray(tr.consist)) for (const c of tr.consist) if (c && typeof c === 'object') c.id = id++;
     st.items = cargoNewStore();
-    st.bayTags = cargoDefaultBayTags();
+    st.bayTags = cargoDefaultBayTags(CARGO_OLD_BAY_TAGS); // the tags new games had then
     st.schemaVersion = 2;
   }
   if (st.schemaVersion === 2) {
@@ -4379,7 +4499,7 @@ function migrate(save) {
   }
   if (st.schemaVersion === 9) {
     // 9 -> 10 (placeholder towns): the businesses start with their opening stock, nothing used or offered yet.
-    st.town = townNewState();
+    st.town = townNewState(10);   // the opening stock new games had then (10 days)
     st.schemaVersion = 10;
   }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
@@ -6599,7 +6719,7 @@ const BUILD = {
   EARTH: 0.3,          // amber if the ground is more than 0.3u off the bed height
   AHEAD_DEG: 1,        // straight if the target is within 1 degree of straight ahead
   HEAD_STEP: 15,       // straights snap to 15-degree headings
-  SW_THROUGH: 5, SW_R: 10, SW_DEG: 30, SW_END_SNAP: 0.3,
+  SW_THROUGH: 5, SW_R: 10, SW_DEG: 30, SW_END_SNAP: 0.3, SW_CLEAR: 1.5,
   MIN_LEN: 0.5, R_TOP: 120, R_STEP: 0.25,
 };
 const B_TAU = Math.PI * 2, B_D2R = Math.PI / 180;
@@ -6796,12 +6916,21 @@ function bStart(S, c) {
     if (E.fixed) return { why: B_FIXED_WHY };
     if (E.k !== 'S') return { why: 'Switches go on straight track only' };
     if (ix.legSw[E.id] !== undefined) return { why: 'Too close to another switch' };
-    for (const tr of S.trains) if (trainSegs(T, tr).some(sg => sg[0] === E.id)) return { why: 'A train is on that track' };
     const fwd = c.fwd > 0 ? 1 : -1, turn = c.side > 0 ? 1 : -1;
     let s = c.s / 1000, room = fwd > 0 ? E.len - s : s;
     if (Math.abs(room - BUILD.SW_THROUGH) <= BUILD.SW_END_SNAP) { s = fwd > 0 ? E.len - BUILD.SW_THROUGH : BUILD.SW_THROUGH; room = BUILD.SW_THROUGH; }
     if (room < BUILD.SW_THROUGH) return { why: `A switch needs 5u of straight: only ${bFmt(Math.max(0, room))}u here` };
     if ((fwd > 0 ? s : E.len - s) < BUILD.SW_END_SNAP) return { why: 'Too close to a joint: start the switch further along' };
+    // Trains on this track: refused while one moves on it, or stands over the switch's own length (its through leg,
+    // which the turnout's diverging leg runs beside) plus SW_CLEAR at each end. A train standing elsewhere on the
+    // track keeps its place when the track is split (trackLayPlan).
+    const lo = Math.min(s, s + BUILD.SW_THROUGH * fwd) - BUILD.SW_CLEAR, hi = Math.max(s, s + BUILD.SW_THROUGH * fwd) + BUILD.SW_CLEAR;
+    for (const tr of S.trains) {
+      const on = trainSegs(T, tr).filter(sg => sg[0] === E.id);
+      if (!on.length) continue;
+      if (tr.v > 0 || /^(run|route|turn)$/.test(tr.mode)) return { why: 'A train is moving on that track' };
+      if (on.some(([, a, b]) => b > lo && a < hi)) return { why: 'A train is standing where the switch would go' };
+    }
     const A = T.nodes[E.a], B = T.nodes[E.b], dx = (B.x - A.x) / E.len, dz = (B.z - A.z) / E.len;
     const px = A.x + dx * s, pz = A.z + dz * s;
     const d = bArcEnd(px, pz, dx * fwd, dz * fwd, BUILD.SW_R, turn, BUILD.SW_DEG);
@@ -6875,12 +7004,12 @@ function bPlaceSwitch(T, w) {
   T.edges[normal].cls = 'switch';
   const d = trackArc(T, swNode, dx * w.fwd, dz * w.fwd, BUILD.SW_R, w.turn, BUILD.SW_DEG, 'switch', CFG.LIM.diverge);
   const sw = trackSwitch(T, swNode, trunk, normal, d.e);
-  return { node: d.node, hx: d.hx, hz: d.hz, sw };
+  return { node: d.node, hx: d.hx, hz: d.hz, sw, split: { e: E.id, cuts, pieces } };
 }
 // Apply a plan's geometry to a track (the real one, or a copy for the preview).
 function bMutate(T, G) {
-  let cur, hx = G.st.hx, hz = G.st.hz, sw = null;
-  if (G.st.sw) { const r = bPlaceSwitch(T, G.st.sw); cur = r.node; hx = r.hx; hz = r.hz; sw = r.sw; }
+  let cur, hx = G.st.hx, hz = G.st.hz, sw = null, split = null;
+  if (G.st.sw) { const r = bPlaceSwitch(T, G.st.sw); cur = r.node; hx = r.hx; hz = r.hz; sw = r.sw; split = r.split; }
   else if (G.st.node !== null) cur = G.st.node;
   else cur = trackNode(T, G.st.x, G.st.z);
   const contFrom = T.edges.length;
@@ -6895,7 +7024,7 @@ function bMutate(T, G) {
     }
   });
   trackIndexCache.delete(T);
-  return { sw, contFrom };
+  return { sw, contFrom, split };
 }
 function bEdgeDist(T, E, x, z) {
   const A = T.nodes[E.a], B = T.nodes[E.b];
@@ -8385,7 +8514,7 @@ window.__railhead = {
   pax: { PAX, paxStations: T => paxStations(T || S.track), paxStation: (id, T) => paxStation(T || S.track, id), paxQueueSlots, paxFare, paxCarsAt, stationDepartures, paxTrainServes, paxDebugScenario, paxNewStore, paxLook, paxPlaceName,
     get view() { return paxView; }, get kits() { return crowd.kits; } },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
-  tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState,
+  tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState, ttStopNeeds, ttWoodNeedU,
     ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; } },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),

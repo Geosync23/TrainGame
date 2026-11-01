@@ -158,7 +158,7 @@ module.exports = async function checkTown() {
         out.det = { a: R.stateHash(a), b: R.stateHash(b), offers: a.econ.contracts.length, used: a.items.used.length, money: E.econCheckMoney(a), cons: C.itemCheckConservation(a) };
         // 10. The v9 sample save loads with the towns' opening stock.
         const fx = JSON.parse(vPrev), sv = R.migrate(JSON.parse(fx.save));
-        out.old = { schema: sv.state.schemaVersion, town: JSON.stringify(sv.state.town) === JSON.stringify(T.townNewState()) };
+        out.old = { schema: sv.state.schemaVersion, town: JSON.stringify(sv.state.town) === JSON.stringify(T.townNewState(10)) }; // the 10 days of opening stock new games had then (D4: 5 now)
         return out;
       }, vPrev);
 

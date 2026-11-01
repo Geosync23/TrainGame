@@ -193,6 +193,35 @@ async function checkDebugBuild(problems) {
       out.refusedTrain = (ref.find(e => e.t === 'buildRefused') || {}).why;
       const ref2 = R.simTick(S2, [{ t: 'buildTrack', from: 'switch', e: 0, s: 6000, fwd: 1, side: -1, tx: -1000, tz: 1100 }]);
       out.refusedRoom = (ref2.find(e => e.t === 'buildRefused') || {}).why;
+      // (D4) The real start: a switch on the platform track while No. 1 stands on it elsewhere is allowed (and No. 1
+      // keeps its place when the track is split); one where No. 1 stands, or while it moves on that track, is refused.
+      {
+        const S3 = R.newState(1866, 'start'), T3 = S3.track, tr3 = S3.trains[0];
+        const E = T3.edges.find(E => E.cls === 'yard' && E.k === 'S' && T3.nodes[E.b].x === -36);
+        const at = s => { const A = T3.nodes[E.a], B = T3.nodes[E.b]; return { x: A.x + (B.x - A.x) * s / E.len, z: A.z + (B.z - A.z) * s / E.len }; };
+        const sw = (S, s, side) => { const p = at(s); return { t: 'buildTrack', from: 'switch', e: E.id, s: Math.round(s * 1000), fwd: 1, side, tx: Math.round(p.x * 100), tz: Math.round(p.z * 100) }; };
+        const why = ev => (ev.find(e => e.t === 'buildRefused') || {}).why || null;
+        out.d4 = { trainS: [tr3.front.s] };
+        out.d4.under = why(R.simTick(JSON.parse(JSON.stringify(S3)), [sw(S3, tr3.front.s + 2, 1)]));
+        const Sm = JSON.parse(JSON.stringify(S3)); Sm.trains[0].mode = 'run'; Sm.trains[0].v = 0.5;
+        out.d4.moving = why(R.simTick(Sm, [sw(Sm, 45, 1)]));
+        // East of the train (s 3: the train stands beyond the cut, on a new piece) and west of it (s 45).
+        for (const s of [3, 45]) {
+          let res = null;
+          for (const side of [1, -1]) {
+            const Sx = JSON.parse(JSON.stringify(S3)), before = R.trainPoses(Sx.track, Sx.trains[0]).map(p => [p.x.toFixed(3), p.z.toFixed(3)].join()).join(';');
+            const ev = R.simTick(Sx, [sw(Sx, s, side)]);
+            if (!ev.some(e => e.t === 'trackBuilt')) { res = res || { why: why(ev) }; continue; }
+            const after = R.trainPoses(Sx.track, Sx.trains[0]).map(p => [p.x.toFixed(3), p.z.toFixed(3)].join()).join(';');
+            res = { built: true, side, same: before === after, edge: Sx.trains[0].front.e, oldEdge: E.id, errs: R.trackValidate(Sx.track).length,
+              stable: R.stateHash(JSON.parse(JSON.stringify(Sx))) === R.stateHash(Sx) };
+            for (let i = 0; i < 20; i++) R.simTick(Sx, []);
+            res.stillSame = after === R.trainPoses(Sx.track, Sx.trains[0]).map(p => [p.x.toFixed(3), p.z.toFixed(3)].join()).join(';');
+            break;
+          }
+          out.d4['s' + s] = res;
+        }
+      }
       return out;
     });
     if (!sim.ok) problems.push('sim loop: a build step was refused: ' + JSON.stringify(sim.steps));
@@ -206,6 +235,17 @@ async function checkDebugBuild(problems) {
     if (!sim.hashStable) problems.push('sim loop: the built track does not survive a save round trip');
     if (!/train/.test(sim.refusedTrain || '')) problems.push(`refusal: a switch under the train was not refused (${sim.refusedTrain})`);
     if (!/5u of straight/.test(sim.refusedRoom || '')) problems.push(`refusal: a switch with no room was not refused (${sim.refusedRoom})`);
+    {
+      const d = sim.d4;
+      if (!/standing where the switch would go/.test(d.under || '')) problems.push('a switch where No. 1 stands on the platform track should be refused: ' + JSON.stringify(d));
+      if (!/moving on that track/.test(d.moving || '')) problems.push('a switch on a track a train is moving on should be refused: ' + JSON.stringify(d));
+      for (const k of ['s3', 's45']) {
+        const r = d[k];
+        if (!r || !r.built || !r.same || !r.stillSame || !r.stable) problems.push(`a switch on the platform track clear of No. 1 (${k}) should be built, with No. 1 keeping its place: ` + JSON.stringify(d));
+      }
+      if (d.s3 && d.s3.built && d.s3.edge === d.s3.oldEdge) problems.push('No. 1 should have moved onto the split-off piece of the platform track: ' + JSON.stringify(d.s3));
+      console.log(`  switch on the platform track with No. 1 home: under it "${d.under}", moving "${d.moving}", east ${JSON.stringify(d.s3)}, west ${JSON.stringify(d.s45)}`);
+    }
 
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
     console.log(`  spur +${after1.len && after1.len.toFixed(2)}u; switch at ${after2.node && after2.node.x.toFixed(2)}; red: "${seen && seen.text}"; ` +

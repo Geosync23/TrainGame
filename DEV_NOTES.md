@@ -42,6 +42,7 @@ Current checks:
 - `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
 - `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
+- `check-people.js`: with `?crowd=200`, all three kits, women and children are present, draw calls (shadow pass included) stay under 100, the crowd update stays under 4 ms a frame, walkers move and freeze when paused. Frame times are reported; the 50 ms limit only applies on a machine with a real graphics chip.
 
 Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump `SCHEMA_VERSION`, add a step to `migrate()`, and run `node tests/make-fixture.js` to add the new version's sample. Keep the old samples.
 
@@ -62,9 +63,14 @@ config, random numbers (seeded), track graph, track validation, test yard layout
 
 ## Draw calls
 
+- Crowd (piece 4): 15 instanced meshes (3 kits x 5 body parts), 30 draw calls with the shadow pass, whatever the number of walkers. Note: three.js's own counter (`__railhead.drawCalls`) leaves out the shadow pass; the true frame total with 200 walkers is 56.
+- Crowd triangles: about 570 per person per pass (hidden variant shapes such as hats and skirts are folded away in the shader but still sent), about 115,000 per pass for 200 walkers.
+
 - Piece 1 test yard: 14 at start, 13 to 14 with the train running (shadow pass included). The phone budget is under 100.
 
 ## Technical choices to know about
+
+- **Crowd:** `?crowd=N` or `__railhead.setCrowd(n)` (default 0). Walkers are render-side only, with their own seeded random numbers, not in the save. One shader colours each person (skin, hair, top, lower, hat, vest packed per instance) and hides the shapes they lack (bit mask). Women: chunky or lanky with a skirt and a bonnet or bun; children: chunky at 0.7.
 
 - **Shadow map:** 1024 pixels, not the design doc's 2048, to save phone memory and time.
 - **Test yard geometry:** the switch's 30-degree diverging leg plus the 8u yard minimum radius and the 2u straight between reverse curves give a siding about 3.4u from the main line, wider than the 1.6u minimum.

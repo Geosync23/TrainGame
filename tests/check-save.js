@@ -98,7 +98,7 @@ async function checkBadSave(problems) {
     await plantAndOpen(page, url, JSON.stringify(a), JSON.stringify(b));
     const r = await page.evaluate(() => ({ tick: window.__railhead.state.tick, trains: window.__railhead.state.trains.length }));
     const keys = await storedKeys(page);
-    if (r.tick !== 0 || r.trains !== 1) problems.push(`with damaged saves the game did not start fresh (tick ${r.tick})`);
+    if (r.tick !== 0 || r.trains !== 3) problems.push(`with damaged saves the game did not start fresh (tick ${r.tick})`); // a fresh game: No. 1, the Overland and its (empty) set-out cars
     if (!keys.idb.some(k => /^broken-\d+$/.test(k)) || keys.idb.includes('auto')) problems.push('the damaged IndexedDB save was not kept as broken-<time>: ' + JSON.stringify(keys.idb));
     if (!keys.ls.some(k => /^railhead-broken-\d+$/.test(k)) || keys.ls.includes('railhead-quicksave')) problems.push('the damaged quick save was not kept as railhead-broken-<time>: ' + JSON.stringify(keys.ls));
     // The fresh game runs.

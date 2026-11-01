@@ -60,7 +60,17 @@
   #buildConfirm.planOnly { width: max-content; }
   #buildPlanOnly { display: flex; align-items: center; flex: 0 0 auto; width: 200px; min-height: 56px; box-sizing: border-box; padding: 6px 12px;
     background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-radius: 8px; font-size: 15px; line-height: 1.25; }
+  /* The car panel (loading and unloading a set-out car): same place and look as the train panel. */
+  #carPanel { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); width: min(94vw, 380px); max-height: 52vh;
+    overflow-y: auto; box-sizing: border-box; background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
+  #carPanel .row { display: flex; gap: 6px; align-items: center; }
+  #carPanel .grow { flex: 1; min-width: 0; }
+  #carPanel h2 { margin: 0; font-size: 18px; color: var(--ink); }
+  #carInfo, #carHeld { font-size: 14px; color: #5a4a3a; }
+  #carItems { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  #carItems button { font-size: 14px; padding: 0 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (orientation: landscape) and (max-height: 500px) {
+    #carPanel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: 76vh; }
     #buildLabel { top: calc(env(safe-area-inset-top) + 10px); max-width: 340px; }
     #buildConfirm { bottom: calc(env(safe-area-inset-bottom) + 10px); }
     #panel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 66px); width: 340px; }
@@ -99,13 +109,19 @@
     <button id="actFwd">Forward</button><button id="actBack">Back</button><button id="actStop">Stop</button><button id="actSend">Send to</button>
   </div>
 </div>
+<div id="carPanel" class="hud" hidden>
+  <div class="row"><h2 class="grow" id="carTitle">Car</h2><button id="carClose" aria-label="Close">X</button></div>
+  <div id="carInfo"></div>
+  <div id="carItems"></div>
+  <div class="row"><span class="grow" id="carHeld"></span><button id="carPutIn">Put in</button></div>
+</div>
 <script>
 'use strict';
 
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 4,
+  SCHEMA_VERSION: 5,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -115,7 +131,7 @@ const CFG = {
   BRAKE: 3.0,                // u/min^2
   TENDER_FIRST: 0.6,         // speed cap factor running tender-first
   LOCO_MAX: 4.0,             // mainline maximum
-  LIM: { main: 4.0, yard: 1.0, diverge: 1.5 },
+  LIM: { main: 4.0, yard: 1.0, diverge: 1.5, interchange: 2.0 },
   STOP_GAP: 0.5,             // trains stop 0.5u before a block they may not enter
   THROW_S: 30,               // throwing a switch takes 0.5 game minutes
   CARRY_S: 12,               // picking up or putting down an item takes 0.2 game minutes (section 9)
@@ -392,8 +408,23 @@ function buildTestYard() {
   trackSwitch(T, s1, eW, e1t, d1.e);
   trackSwitch(T, s2, eE, e2t, d2.e);
   trackSwitch(T, s3, eN, e3t, d3.e);
+  interchangeAdd(T);
   return T;
 }
+// The interchange track (design-doc 9 and 15): the Overland's own siding, inbound and outbound on one track
+// for now. A straight along z = 20 from a dead end at x = 2 (east of the station, south of the passing
+// siding) out past the east map edge (x = 60) to x = 140, so the Overland can stand off the map, out of
+// sight. It is not joined to the player's track (No. 1 moves set-out cars only once coupling comes, M1
+// round C), and it is not editable: its edge has fixed: true, which the build tool refuses to touch.
+// Positions along it: s = x - 2 (node A is the dead end, node B is off the map).
+const ICH = { X0: 2, X1: 140, Z: 20, EDGE_S: 58, ENTER_S: 62, FIT_S: 46 };
+function interchangeAdd(T) {
+  const a = trackNode(T, ICH.X0, ICH.Z), b = trackNode(T, ICH.X1, ICH.Z);
+  const e = trackStraight(T, a, b, 'yard', CFG.LIM.interchange);
+  T.edges[e].fixed = true;
+  return e;
+}
+function interchangeEdge(T) { const E = T.edges.find(E => E.fixed); return E ? E.id : -1; }
 
 // ==== Section: game state ====
 const CONSIST_NO1 = [
@@ -409,7 +440,8 @@ function newState(seed) {
     seed, rng: rngSeed(seed), tick: 0, time: 0,
     track: T,
     trains: [{ id: 0, name: 'No. 1', front: { e: 2, s: 12, d: 1 }, v: 0, mode: 'idle', m: 1,
-      route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }],
+      route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }].concat(overlandNewTrains(T)),
+    overland: overlandNewState(),    // the Overland's visits to the interchange (section "trains")
     player: { x: -10.5, z: 11.2, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null },
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
@@ -417,9 +449,12 @@ function newState(seed) {
     jobs: jobNewStore(),             // staked construction jobs (section "construction jobs")
   };
 }
-function trainLength(tr) { return tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1); }
+function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
+// A train that is not on the map: the Overland while it is away, or the interchange cars when none stand there.
+function trainOff(tr) { return !!tr.away || !tr.consist.length; }
 // Where each vehicle is: centre, heading and length, worked out by walking back from the front.
 function trainPoses(T, tr) {
+  if (trainOff(tr)) return [];
   const out = [], back = reversePos(tr.front);
   let off = 0;
   for (const c of tr.consist) {
@@ -432,7 +467,7 @@ function trainPoses(T, tr) {
   return out;
 }
 // The stretches of track the train covers, as [edge, sFrom, sTo].
-function trainSegs(T, tr) { const segs = []; trackWalk(T, reversePos(tr.front), trainLength(tr), segs); return segs; }
+function trainSegs(T, tr) { const segs = []; if (!trainOff(tr)) trackWalk(T, reversePos(tr.front), trainLength(tr), segs); return segs; }
 function occupiedSwitches(S) {
   const T = S.track, ix = trackIndex(T), occ = {};
   for (const tr of S.trains) for (const [e, a, b] of trainSegs(T, tr)) {
@@ -520,6 +555,8 @@ function releaseRoute(S, tr) {
 function applyCommand(S, c, ev) {
   const P = S.player, T = S.track;
   const tr = c.tr !== undefined ? S.trains[c.tr] : null;
+  // The Overland and the cars it sets out are not the player's to drive (section "trains", the Overland).
+  if (tr && tr.owner && /^(useTrain|trainRun|trainStop|trainSendTo)$/.test(c.t)) { ev.push({ t: 'notYourTrain', tr: tr.id, why: overlandNotYours(tr) }); return; }
   switch (c.t) {
     case 'walkTo':
       // Targets beyond the map edge are pulled back onto the map, so the walk can end.
@@ -546,6 +583,7 @@ function applyCommand(S, c, ev) {
     case 'carryPick': carryPickCmd(S, c, ev); break;
     case 'carryPut': carryPutCmd(S, c, ev); break;
     case 'carryTool': carryToolCmd(S, c, ev); break;
+    case 'useCar': carryUseCarCmd(S, c, ev); break;
     case 'buildTrack': buildTrackCmd(S, c, ev); break;
     case 'stakeJob': jobStakeCmd(S, c, ev); break;   // construction jobs: Stake it, work, cancel
     case 'jobWork': jobWorkCmd(S, c, ev); break;
@@ -570,6 +608,7 @@ function applyCommand(S, c, ev) {
       if (!tr) return;
       const tE = Number.isInteger(c.e) ? T.edges[c.e] : null;
       if (!tE || !Number.isFinite(c.s) || c.s < 0 || c.s / 1000 > tE.len) { ev.push({ t: 'noRoute', tr: tr.id, why: 'That is not a place on the track.' }); return; }
+      if (tE.fixed) { ev.push({ t: 'noRoute', tr: tr.id, why: 'That is the Overland\'s interchange track: it is not joined to our line yet.' }); return; }
       const target = { e: c.e, s: c.s / 1000 };
       const occ = occupiedSwitches(S);
       // A moving train may only take a route in the direction it is already going.
@@ -630,6 +669,7 @@ function throwSwitch(S, swId, ev) {
 
 // ==== Section: trains ====
 function trainTick(S, tr, ev) {
+  if (trainOff(tr) || tr.owner === 'interchange') return; // away, or standing cars with no engine
   const T = S.track;
   const L = trainLength(tr);
   const mass = tr.consist.reduce((s, c) => s + c.mass, 0);
@@ -697,6 +737,147 @@ function trainTick(S, tr, ev) {
     const dir = tr.m > 0 ? 'forward' : 'back (tender first)';
     tr.status = (tr.mode === 'route' ? 'On its way, ' : 'Running ') + dir;
   } else if (tr.mode === 'idle' && tr.status !== 'Arrived') tr.status = 'Stopped';
+}
+
+// ---- The Overland (M1 package 2, builder B4): design-doc 9 "The interchange" ----
+// Pure simulation. The Overland's train (S.trains entry with owner 'overland') arrives twice a day, at 06:00
+// and 18:00 game time: at that tick it comes in from beyond the east map edge on the interchange track
+// (section "test yard layout", ICH), pushing its cars ahead of the engine. It sets them out (uncouples them)
+// at the dead end, and leaves off the map edge again. The cars it set out are one standing train with no
+// engine (owner 'interchange'), which blocks walking like any train and holds items at CAR locations.
+// Pick-up (one track serves inbound and outbound for now): when cars stand there, the Overland couples to
+// them (1.0 game minute). If any standing car is empty, or holds only goods addressed Outside, it takes
+// those cars: it pulls the whole string off the map, where its crew drops them (their Outside goods are
+// logged as sold Outside), then pushes the rest back in and sets them out with its new cars.
+// Everything is in S.overland and the two trains; a visit is driven by game ticks only, so it is the same
+// every time and a save taken mid-visit resumes exactly. The player cannot drive either train.
+// Room: set-out cars must end by s = ICH.FIT_S (x = 48). Cars that do not fit stay on the Overland and come
+// back next visit; while it has cars like that aboard it brings no new delivery.
+// Events: overlandArriving, overlandCoupled, overlandPickedUp, overlandSetOut, overlandLeft.
+const OVERLAND = { FIRST_STOCK: 100, DUE: [6 * 3600, 18 * 3600], COUPLE_S: 60, UNCOUPLE_S: 30 };
+const OVERLAND_LOCO = { k: 'loco', len: 5.2, mass: 3, power: 10, look: 'overland' };
+const OVERLAND_CARS = { flatcar: { k: 'flatcar', len: 2.6, mass: 0.5 }, boxcar: { k: 'boxcar', len: 2.6, mass: 0.5 } };
+// The fixed test delivery, until money and import orders exist (M1 round C). Each line is
+// [commodity, destination town (CARGO_TOWNS id), consignee kind, consignee id, how many]. Track materials go to
+// CONSTRUCTION (id 0, the hub's own track work); town goods to placeholder businesses (id 0 at the hub,
+// id 1 at Willow Ford). Morning: 4 tie bundles, 2 rail bundles and a hardware crate (switch parts) on a
+// flatcar, and 2 spike kegs with town goods in a boxcar. Evening: a boxcar of town goods and the mail.
+const OVERLAND_DELIVERY = {
+  morning: [
+    { car: 'flatcar', items: [['ties', 0, 'CONSTRUCTION', 0, 4], ['rails', 0, 'CONSTRUCTION', 0, 2], ['hardware', 0, 'CONSTRUCTION', 0, 1]] },
+    { car: 'boxcar', items: [['spikes', 0, 'CONSTRUCTION', 0, 2], ['flour', 1, 'BUSINESS', 1, 2], ['coffee', 1, 'BUSINESS', 1, 1],
+      ['tinned', 0, 'BUSINESS', 0, 1], ['lampoil', 0, 'BUSINESS', 0, 1], ['clothing', 0, 'BUSINESS', 0, 1]] },
+  ],
+  evening: [
+    { car: 'boxcar', items: [['flour', 0, 'BUSINESS', 0, 2], ['beans', 1, 'BUSINESS', 1, 1], ['salt', 1, 'BUSINESS', 1, 1],
+      ['whiskey', 0, 'BUSINESS', 0, 1], ['mail', 1, 'BUSINESS', 1, 1]] },
+  ],
+};
+function overlandNewState() { return { phase: 'away', wait: 0, visits: 0, nextStock: OVERLAND.FIRST_STOCK + 1, took: 0 }; }
+// The Overland (away, off the map) and its set-out cars (none yet). ids follow the trains already there.
+function overlandNewTrains(T, firstId) {
+  const e = interchangeEdge(T), id = firstId === undefined ? 1 : firstId;
+  return [
+    { id, name: 'The Overland', owner: 'overland', away: true, front: { e, s: ICH.ENTER_S + 6, d: 1 }, v: 0, mode: 'idle', m: 1,
+      route: null, status: 'Away', consist: [{ id: OVERLAND.FIRST_STOCK, ...OVERLAND_LOCO }] },
+    { id: id + 1, name: 'Interchange cars', owner: 'interchange', front: { e, s: CFG.STOP_GAP, d: 1 }, v: 0, mode: 'idle', m: 1,
+      route: null, status: 'Standing', consist: [] },
+  ];
+}
+const overlandTrain = S => S.trains.find(t => t.owner === 'overland') || null;
+const interchangeCut = S => S.trains.find(t => t.owner === 'interchange') || null;
+function overlandNotYours(tr) {
+  return tr.owner === 'overland' ? 'That is the Overland\'s train: its own crew drives it' : 'Those are the Overland\'s cars: tap one to load or unload it';
+}
+// Does the Overland take this standing car away? Empty, or only goods addressed Outside.
+function overlandTakes(S, car) {
+  return car.k !== 'loco' && itemsAt(S, { kind: 'CAR', stockId: car.id }).every(id => itemTag(S.items.waybill[id]) === 'OUTSIDE');
+}
+// Run the Overland along the interchange so its leading end (front for m = +1, rear for m = -1) stops at s.
+function overlandGo(S, tr, m, s) {
+  const lead = leadPos(S.track, tr, m), dist = Math.max(0, m > 0 ? s - lead.s : lead.s - s);
+  tr.m = m; tr.mode = 'route'; tr.route = { total: dist, left: dist, locks: [] };
+}
+// Step 3 (dispatch) for the Overland: once per tick, before the trains move.
+function overlandTick(S, ev) {
+  const O = S.overland, tr = overlandTrain(S), cut = interchangeCut(S);
+  if (!O || !tr || !cut || O.phase === 'off') return; // 'off': debug scenarios that test other things (never in play)
+  const sod = (S.time + CFG.DAY_START_S) % 86400;
+  if (O.phase === 'away') {
+    if (!OVERLAND.DUE.includes(sod)) return;
+    O.visits += 1;
+    let cars = 0, items = 0;
+    const held = tr.consist.length - 1;
+    if (!held) for (const d of OVERLAND_DELIVERY[sod === OVERLAND.DUE[0] ? 'morning' : 'evening']) {
+      const car = { id: O.nextStock++, ...OVERLAND_CARS[d.car] };
+      tr.consist.push(car); cars++;
+      for (const [commodity, town, kind, cid, n] of d.items) for (let i = 0; i < n; i++) {
+        const wb = { commodity, originTownId: 'OUTSIDE', destTownId: town, consignee: { kind, id: cid }, contractId: null, due: null };
+        if (itemCreate(S, wb, { kind: 'CAR', stockId: car.id }, ev).ok) items++;
+      }
+    }
+    tr.away = false; tr.v = 0;
+    tr.front = { e: interchangeEdge(S.track), s: ICH.ENTER_S + trainLength(tr), d: 1 };
+    O.phase = 'in'; O.wait = 0;
+    overlandGo(S, tr, -1, cut.consist.length ? cut.front.s + COUPLER_GAP : CFG.STOP_GAP);
+    ev.push({ t: 'overlandArriving', cars, items, held });
+    return;
+  }
+  if (O.wait > 0) { O.wait -= CFG.TICK_GAME_S; if (O.wait > 0) return; O.wait = 0; }
+  if (tr.mode !== 'idle' || tr.v > 0) return; // still running in or out
+  if (O.phase === 'in') {
+    if (cut.consist.length) { O.phase = 'couple'; O.wait = OVERLAND.COUPLE_S; tr.status = 'Coupling up'; }
+    else { O.phase = 'setout'; O.wait = OVERLAND.UNCOUPLE_S; tr.status = 'Setting out cars'; }
+  } else if (O.phase === 'couple') {
+    const n = cut.consist.length;
+    tr.consist = tr.consist.concat(cut.consist); cut.consist = [];
+    ev.push({ t: 'overlandCoupled', cars: n });
+    if (tr.consist.some(c => overlandTakes(S, c))) { O.phase = 'out'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 + trainLength(tr)); }
+    else { O.phase = 'setout'; O.wait = OVERLAND.UNCOUPLE_S; tr.status = 'Setting out cars'; }
+  } else if (O.phase === 'out') {
+    // Off the map: the crew drops the cars it takes; their Outside goods are sold Outside (money: round C).
+    const take = tr.consist.filter(c => overlandTakes(S, c)), gone = new Set(take.map(c => c.id));
+    let sold = 0;
+    for (const c of take) for (const id of itemsAt(S, { kind: 'CAR', stockId: c.id })) if (itemConsume(S, id, 'soldOutside', ev).ok) sold++;
+    tr.consist = tr.consist.filter(c => !gone.has(c.id));
+    O.took += take.length;
+    ev.push({ t: 'overlandPickedUp', cars: take.length, stock: take.map(c => c.id), sold });
+    if (tr.consist.length > 1) { O.phase = 'back'; overlandGo(S, tr, -1, CFG.STOP_GAP); }
+    else { O.phase = 'leave'; tr.route = null; }
+  } else if (O.phase === 'back') {
+    O.phase = 'setout'; O.wait = OVERLAND.UNCOUPLE_S; tr.status = 'Setting out cars';
+  } else if (O.phase === 'setout') {
+    // Uncouple every car behind the engine that fits on the interchange; the rest stay aboard.
+    const rearS = leadPos(S.track, tr, -1).s;
+    let k = 1;
+    while (k < tr.consist.length && rearS + trainLength({ consist: tr.consist.slice(k) }) > ICH.FIT_S + 1e-9) k++;
+    const out = tr.consist.slice(k);
+    if (out.length) {
+      cut.consist = out; cut.front = { e: tr.front.e, s: rearS + trainLength(cut), d: 1 };
+      cut.v = 0; cut.mode = 'idle'; cut.route = null; cut.status = 'Standing';
+    }
+    tr.consist = tr.consist.slice(0, k);
+    ev.push({ t: 'overlandSetOut', cars: out.length, stock: out.map(c => c.id), held: k - 1 });
+    O.phase = 'leave'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 + trainLength(tr));
+  } else if (O.phase === 'leave') {
+    tr.away = true; tr.route = null; tr.status = 'Away'; tr.m = 1;
+    O.phase = 'away';
+    ev.push({ t: 'overlandLeft', held: tr.consist.length - 1 });
+  }
+}
+// Saves from before the interchange (schema 4 and older): the interchange track is added to their track
+// (old saves keep all their own track), with the Overland away and no cars set out yet.
+function overlandMigrate(st) {
+  if (!st.track || !Array.isArray(st.track.edges) || !Array.isArray(st.track.nodes)) return; // the shape check reports it
+  if (interchangeEdge(st.track) < 0) interchangeAdd(st.track);
+  if (Array.isArray(st.trains) && !st.trains.some(t => t && t.owner)) st.trains = st.trains.concat(overlandNewTrains(st.track, st.trains.length));
+  st.overland = overlandNewState();
+}
+function overlandCheckSaveShape(st) {
+  const O = st.overland, tr = st.trains.find(t => t.owner === 'overland'), cut = st.trains.find(t => t.owner === 'interchange');
+  if (!O || typeof O.phase !== 'string' || !Number.isInteger(O.nextStock) || !Number.isFinite(O.wait)) throw new Error('damaged save: the Overland');
+  if (!tr || !cut || !tr.consist.length || st.trains.some((t, i) => t.id !== i)) throw new Error('damaged save: the Overland\'s trains');
+  if (!st.track.edges[tr.front.e] || !st.track.edges[tr.front.e].fixed) throw new Error('damaged save: the interchange track');
 }
 
 // ==== Section: cargo (items and waybills) ====
@@ -1400,6 +1581,7 @@ function jobDebugScenario(S) {
   for (const id of itemsAt(S, { kind: 'GROUND' })) jobDeliver(S, id, ev);
   const q = jobPoint(job, 0);
   S.player.x = q.x - q.tz * job.side * 3; S.player.z = q.z + q.tx * job.side * 3;
+  if (S.overland) S.overland.phase = 'off'; // B4: no Overland visits in this test scenario, so its counts stay its own
   return S;
 }
 
@@ -1797,7 +1979,7 @@ function carryWalkTo(S, x, z, use) {
 }
 // Section 9 wording for the common refusals; the cargo section's reason otherwise.
 function carryWhy(why) {
-  if (/long bundle/.test(why)) return 'A long bundle is carried by hand only, never on a hand truck or handcart';
+  if (/long bundle (never goes on|is carried by hand)/.test(why)) return 'A long bundle is carried by hand only, never on a hand truck or handcart';
   return why.charAt(0).toUpperCase() + why.slice(1);
 }
 function carryToolName(S) { return TOOL_KINDS[S.tools[S.player.tool].k].name.toLowerCase(); }
@@ -1805,11 +1987,13 @@ function carryPickCmd(S, c, ev) {
   const I = S.items, id = c.id;
   if (!Number.isInteger(id) || id < 0 || id >= I.next || !I.alive[id]) return carryRefuse(ev, 'There is no such item');
   const w = I.where[id];
-  if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY')) return carryRefuse(ev, 'That item cannot be picked up from there');
+  if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY' && w.kind !== 'CAR')) return carryRefuse(ev, 'That item cannot be picked up from there');
+  if (w.kind === 'CAR') { const no = carryCarWhy(S, w.stockId); if (no) return carryRefuse(ev, no); }
   const slot = carryFreeSlot(S), carrier = carryCarrier(S);
   if (slot < 0) return carryRefuse(ev, carrier === 'HAND' ? 'Your hands are full: put that down first' : `The ${carryToolName(S)} is full (${CARGO_CARRY_CAP[carrier]} items)`);
   const why = itemCanMove(S, id, { kind: 'CARRIED', actorId: 'player', carrier, slot });
   if (why) return carryRefuse(ev, carryWhy(why));
+  if (w.kind === 'CAR') return carryWalkToCar(S, w.stockId, { k: 'pick', id });
   const p = carrySpot(w);
   carryWalkTo(S, p.x, p.z, { k: 'pick', id });
 }
@@ -1818,10 +2002,16 @@ function carryPutCmd(S, c, ev) {
   if (!held.length) return carryRefuse(ev, 'You are not carrying anything');
   let dest;
   if (c.b !== undefined) dest = { kind: 'BAY', buildingId: c.b, bay: c.bay };
+  else if (Number.isInteger(c.stock)) {
+    const no = carryCarWhy(S, c.stock);
+    if (no) return carryRefuse(ev, no);
+    dest = { kind: 'CAR', stockId: c.stock };
+  }
   else if (Number.isInteger(c.x) && Number.isInteger(c.z)) dest = { kind: 'GROUND', x: c.x, z: c.z };
   else return carryRefuse(ev, 'That is not a place to put things');
   const why = itemCanMove(S, held[held.length - 1], dest);
   if (why) return carryRefuse(ev, carryWhy(why));
+  if (dest.kind === 'CAR') return carryWalkToCar(S, dest.stockId, { k: 'put', dest });
   const p = carrySpot(dest);
   carryWalkTo(S, p.x, p.z, { k: 'put', dest });
 }
@@ -1847,16 +2037,24 @@ function carryToggleTool(S, id, ev) {
 // Arrived (or stopped) next to what a carry command walked to: start the action if it is within reach.
 function carryArrive(S, ev, use, evFrom) {
   const P = S.player;
-  const spot = use.k === 'pick' ? carrySpot(S.items.where[use.id]) : use.k === 'put' ? carrySpot(use.dest) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
+  const spot = use.k === 'pick' ? carrySpotIn(S, S.items.where[use.id]) : use.k === 'put' ? carrySpotIn(S, use.dest)
+    : use.k === 'car' ? carryCarDoor(S, use.stock, P.x, P.z) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
   P.mode = 'idle'; P.use = null;
   if (!spot || Math.hypot(spot.x - P.x, spot.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
   for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1); // in reach: not blocked after all
   if (Math.hypot(spot.x - P.x, spot.z - P.z) > 1e-6) P.f = Math.atan2(spot.x - P.x, spot.z - P.z);
   if (use.k === 'tool') { carryToggleTool(S, use.id, ev); return; }
+  if (use.k === 'car') { ev.push({ t: 'reachedCar', stock: use.stock }); return; }
   P.act = use.k === 'pick' ? { k: 'pick', id: use.id, left: CFG.CARRY_S } : { k: 'put', dest: use.dest, left: CFG.CARRY_S };
 }
 // The end of a pick-up or put-down: the item moves (or the move is refused, if something changed meanwhile).
 function carryFinish(S, a, ev) {
+  // A car must still stand at the player's hand: the Overland may have taken it, or the train moved off.
+  const carW = a.k === 'pick' ? S.items.where[a.id] : a.dest;
+  if (carW && carW.kind === 'CAR') {
+    const no = carryCarWhy(S, carW.stockId), door = no ? null : carryCarDoor(S, carW.stockId, S.player.x, S.player.z);
+    if (no || !door || Math.hypot(door.x - S.player.x, door.z - S.player.z) > CFG.REACH + 0.25) return carryRefuse(ev, no || 'The car is out of reach now');
+  }
   if (a.k === 'pick') {
     const slot = carryFreeSlot(S);
     if (slot < 0) return carryRefuse(ev, 'Your hands are full');
@@ -1871,7 +2069,57 @@ function carryFinish(S, a, ev) {
     ev.push({ t: 'carryPut', id });
   }
 }
-const CARRY_USES = { pick: 1, put: 1, tool: 1 };
+const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1 };
+// ---- Car doors (M1 package 2, builder B4): loading and unloading cars by hand (design-doc 9) ----
+// The player works a car from beside it: a boxcar at the door in the middle of its side, a combine at its
+// baggage door, a flatcar from the nearest point of its side (the edge of the deck). The spot is on the side
+// the player is on, 0.8u out from the car's centre line; the walk ends 0.5u further out. Pick-up and put-down
+// take 0.2 game minutes each, as everywhere, and every move goes through the cargo section's itemMove, so its
+// rules apply: a boxcar holds 16 and takes no long bundles; a flatcar takes long bundles, crates and pallets
+// only (24 units); a long bundle is carried by hand only (never on the hand truck or handcart).
+// Only a standing car the player may work: not the Overland's own train (its crew works it), and not a
+// train that is moving. Commands: { t: 'useCar', stock } walks to the car's door and gives 'reachedCar'
+// (the page then shows what is in it); carryPick { id } takes an item from a car; carryPut { stock } puts the
+// top carried item into a car.
+const CARRY_DOOR = { OUT: 0.8, WALK: 0.5, FLAT_END: 0.35, COMBINE_DOOR: 0.75 };
+function carryCarOf(S, stockId) {
+  for (const tr of S.trains) { const i = tr.consist.findIndex(c => c.id === stockId); if (i >= 0) return { tr, i, car: tr.consist[i] }; }
+  return null;
+}
+// Why the player cannot load or unload this car now, or null.
+function carryCarWhy(S, stockId) {
+  const f = Number.isInteger(stockId) ? carryCarOf(S, stockId) : null;
+  if (!f || trainOff(f.tr)) return 'There is no such car here';
+  if (!CARGO_CAR_RULES[f.car.k]) return 'An engine carries no freight';
+  if (f.tr.owner === 'overland') return 'The Overland\'s crew is working that car';
+  if (f.tr.v > 0 || (f.tr.mode !== 'idle' && f.tr.mode !== 'stop')) return 'Wait until the train has stopped';
+  return null;
+}
+// The door spot of a car for a player at (px, pz): { x, z, ox, oz } (ox, oz: the outward direction), or null.
+function carryCarDoor(S, stockId, px, pz) {
+  const f = carryCarOf(S, stockId);
+  if (!f || trainOff(f.tr)) return null;
+  const p = trainPoses(S.track, f.tr)[f.i], fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
+  const dx = px - p.x, dz = pz - p.z, side = (dx * fz - dz * fx) >= 0 ? 1 : -1;
+  let t = 0;
+  if (f.car.k === 'combine') t = CARRY_DOOR.COMBINE_DOOR;
+  else if (f.car.k === 'flatcar') { const m = p.len / 2 - CARRY_DOOR.FLAT_END; t = Math.max(-m, Math.min(m, dx * fx + dz * fz)); }
+  const ox = fz * side, oz = -fx * side;
+  return { x: p.x + fx * t + ox * CARRY_DOOR.OUT, z: p.z + fz * t + oz * CARRY_DOOR.OUT, ox, oz };
+}
+function carryWalkToCar(S, stockId, use) {
+  const P = S.player, d = carryCarDoor(S, stockId, P.x, P.z);
+  if (!d) return carryRefuse([], 'There is no such car here');
+  P.mode = 'to'; P.tx = clampMap(d.x + d.ox * CARRY_DOOR.WALK); P.tz = clampMap(d.z + d.oz * CARRY_DOOR.WALK);
+  P.use = use; P.act = null; P.run = false;
+}
+// Where a place is for walking to and reach, cars included.
+function carrySpotIn(S, w) { return w && w.kind === 'CAR' ? carryCarDoor(S, w.stockId, S.player.x, S.player.z) : carrySpot(w); }
+function carryUseCarCmd(S, c, ev) {
+  const no = carryCarWhy(S, c.stock);
+  if (no) return carryRefuse(ev, no);
+  carryWalkToCar(S, c.stock, { k: 'car', stock: c.stock });
+}
 // Step 7 for the player: a carry action in progress, or walking (playerTick), then what carrying adds:
 // arriving to use an item, a bay or a tool, and keeping a handcart off the platform and the dock.
 function carryActorTick(S, ev, poseCache) {
@@ -1911,6 +2159,7 @@ function simTick(S, cmds) {
   const ev = [];
   for (const c of cmds) applyCommand(S, c, ev);         // 1. commands
   S.tick += 1; S.time += CFG.TICK_GAME_S;               // 2. time
+  overlandTick(S, ev);                                  // 3. dispatch: the Overland's visits (section "trains")
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
@@ -1967,6 +2216,12 @@ function migrate(save) {
     st.jobs = jobNewStore();
     st.schemaVersion = 4;
   }
+  if (st.schemaVersion === 4) {
+    // 4 -> 5 (interchange): the interchange track is added to the saved track, the Overland (away) and its
+    // set-out cars (none) join the trains, and the Overland's visit state starts fresh.
+    overlandMigrate(st);
+    st.schemaVersion = 5;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -1989,13 +2244,14 @@ function checkSaveShape(st) {
   for (const tr of st.trains) {
     if (!tr || !tr.front || !edgeOk(tr.front.e) || !num(tr.front.s) || Math.abs(tr.front.d) !== 1) bad('train position');
     if (!num(tr.v) || Math.abs(tr.m) !== 1 || typeof tr.mode !== 'string') bad('train motion');
-    if (!arr(tr.consist) || !tr.consist.length || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
+    if (!arr(tr.consist) || (!tr.consist.length && tr.owner !== 'interchange') || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
   }
   const P = st.player;
   if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
   cargoCheckSaveShape(st);
   carryCheckSaveShape(st);
   jobCheckSaveShape(st);
+  overlandCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -2080,24 +2336,37 @@ const cyl = (rt, rb, h, s) => new THREE.CylinderGeometry(rt, rb, h, s || SEG);
 const ico = (r, d) => new THREE.IcosahedronGeometry(r, d === undefined ? 1 : d);
 const RAIL_TOP = 0.21;
 
-function modelLoco() {
+function modelLoco(look) {
   // From the style page, shifted so the vehicle centre is at x = 0; smokebox end is +x.
+  // look 'overland': the Overland's engine, with a blue-grey cab and wheels so it is told apart from No. 1.
   const k = new Kit(), B = RAIL_TOP, X = 0.48, H = Math.PI / 2;
+  const RED = look === 'overland' ? '#4a5f78' : PAL.red;
   k.add(box(3.3, 0.2, 0.9), PAL.loco, X - 0.1, B + 0.5, 0);
   k.add(cyl(0.42, 0.42, 2.0), PAL.loco, X + 0.55, B + 1.0, 0, 0, 0, H);
   for (const bx of [0, 1.0]) k.add(cyl(0.44, 0.44, 0.08), PAL.brass, X + bx, B + 1.0, 0, 0, 0, H);
   k.add(cyl(0.26, 0.12, 0.7), PAL.loco, X + 1.3, B + 1.75, 0);
   k.add(new THREE.SphereGeometry(0.2, SEG, 4), PAL.brass, X + 0.55, B + 1.45, 0);
-  k.add(box(1.0, 1.2, 1.0), PAL.red, X - 0.95, B + 1.2, 0);
+  k.add(box(1.0, 1.2, 1.0), RED, X - 0.95, B + 1.2, 0);
   k.add(box(1.2, 0.1, 1.15), PAL.loco, X - 0.95, B + 1.85, 0);
   k.add(box(0.4, 0.35, 1.02), PAL.glass, X - 0.95, B + 1.4, 0);
   k.add(box(0.28, 0.3, 0.32), PAL.brass, X + 1.5, B + 1.55, 0);
   k.add(box(0.04, 0.2, 0.22), PAL.win, X + 1.66, B + 1.55, 0);
-  k.add(box(0.45, 0.35, 0.9), PAL.red, X + 1.85, B + 0.25, 0, 0, 0, -0.6);
+  k.add(box(0.45, 0.35, 0.9), RED, X + 1.85, B + 0.25, 0, 0, 0, -0.6);
   k.add(box(1.4, 0.9, 0.95), PAL.loco, X - 2.35, B + 0.95, 0);
   for (const zz of [-0.25, 0, 0.25]) k.add(box(1.2, 0.16, 0.22), PAL.trunk, X - 2.35, B + 1.48, zz); // cordwood load
-  const wheel = (x, r) => { for (const dz of [-0.47, 0.47]) k.add(cyl(r, r, 0.1), PAL.red, X + x, B + r, dz, H); };
+  const wheel = (x, r) => { for (const dz of [-0.47, 0.47]) k.add(cyl(r, r, 0.1), RED, X + x, B + r, dz, H); };
   [-0.55, 0.15, 0.85].forEach(x => wheel(x, 0.32)); wheel(1.45, 0.18); wheel(-1.95, 0.2); wheel(-2.75, 0.2);
+  return k.mesh();
+}
+// Flatcar (M1 package 2): a plank deck on a centre sill, with stake posts along the sides. The deck top is at
+// FLAT_DECK; the cargo drawing lays long bundles along it and stands crates at its ends.
+const FLAT_DECK = RAIL_TOP + 0.58;
+function modelFlatcar() {
+  const k = new Kit(), B = RAIL_TOP, H = Math.PI / 2;
+  k.add(box(2.6, 0.16, 1.0), PAL.trim, 0, B + 0.5, 0);
+  k.add(box(2.4, 0.14, 0.3), PAL.loco, 0, B + 0.35, 0);
+  for (const x of [-1.25, -0.42, 0.42, 1.25]) for (const dz of [-0.47, 0.47]) k.add(box(0.06, 0.2, 0.06), PAL.trunk, x, B + 0.68, dz);
+  for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
   return k.mesh();
 }
 function modelBoxcar() {
@@ -2352,13 +2621,23 @@ function buildWorld(S) {
   view.ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 16), new THREE.MeshBasicMaterial({ color: PAL.brass, side: THREE.DoubleSide }));
   view.ring.rotation.x = -Math.PI / 2; view.ring.position.y = 0.05; view.ring.visible = false; G.add(view.ring);
 }
+// Which vehicles each train has (and the state object): the drawn meshes are rebuilt when this changes.
+const trainViewIds = new WeakMap();
+let trainViewN = 0;
+function trainViewSig(S) {
+  if (!trainViewIds.has(S)) trainViewIds.set(S, ++trainViewN);
+  return trainViewIds.get(S) + ':' + S.trains.map(tr => tr.consist.map(c => c.id).join(',')).join('|');
+}
 function buildActors(S) {
-  if (view.trainGroup) scene.remove(view.trainGroup);
+  if (view.trainGroup) { scene.remove(view.trainGroup); view.trainGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   view.trainGroup = new THREE.Group(); scene.add(view.trainGroup);
+  view.byStock = {};
   view.train = S.trains.map(tr => tr.consist.map(c => {
-    const m = c.k === 'loco' ? modelLoco() : c.k === 'combine' ? modelCombine() : modelBoxcar();
-    m.userData.train = tr.id; view.trainGroup.add(m); return m;
+    const m = c.k === 'loco' ? modelLoco(c.look) : c.k === 'combine' ? modelCombine() : c.k === 'flatcar' ? modelFlatcar() : modelBoxcar();
+    m.userData.train = tr.id; m.userData.stock = c.id; m.visible = false; view.trainGroup.add(m); view.byStock[c.id] = m; return m;
   }));
+  view.trainSig = trainViewSig(S);
+  if (typeof cargoView !== 'undefined') cargoView.dirty = true;
   if (!view.player) { view.player = modelChunky(); scene.add(view.player); }
 }
 
@@ -2565,10 +2844,40 @@ function cargoSetItem(S, id, p) {
   const cell = CARGO_TAG_CODES.indexOf(itemTag(S.items.waybill[id])), cols = cargoView.tagMat.cols, rows = cargoView.tagMat.rows;
   t.geometry.attributes.aCell.setXY(j, cell % cols, rows - 1 - Math.floor(cell / cols));
 }
+// Poses of items on flatcars, from the car meshes as drawn this frame (B4). Long bundles lie along the deck,
+// two across and two along, in layers; crates and pallets stand at the two ends of the deck, two across.
+const cargoFlatV = new THREE.Vector3();
+function cargoFlatPoses(S) {
+  const I = S.items, out = {}, byCar = {};
+  if (!view.byStock) return out;
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i];
+    if (w && w.kind === 'CAR') (byCar[w.stockId] = byCar[w.stockId] || []).push(i);
+  }
+  for (const sid of Object.keys(byCar)) {
+    const m = view.byStock[sid];
+    if (!m || !m.visible) continue;
+    const f = carryCarOf(S, +sid);
+    if (!f || f.car.k !== 'flatcar') continue;
+    m.updateMatrixWorld();
+    let nl = 0, nc = 0;
+    for (const id of byCar[sid]) {
+      const long = itemType(S, id) === 'longBundle';
+      let lx, lz, ly, yaw;
+      if (long) { const r = nl++, layer = r >> 2; lx = (((r >> 1) & 1) - 0.5) * 0.96; lz = ((r & 1) - 0.5) * 0.36; ly = FLAT_DECK + 0.004 + layer * 0.176; yaw = Math.PI / 2; }
+      else { const r = nc++, layer = r >> 2; lx = ((r >> 1) & 1 ? 1 : -1) * 1.1; lz = ((r & 1) - 0.5) * 0.4; ly = FLAT_DECK + 0.004 + layer * 0.351; yaw = 0; }
+      cargoFlatV.set(lx, ly, lz); m.localToWorld(cargoFlatV);
+      out[id] = { x: cargoFlatV.x, y: cargoFlatV.y, z: cargoFlatV.z, yaw: m.rotation.y + yaw };
+    }
+  }
+  return out;
+}
 function cargoDraw(S) {
   if (!cargoView.group) { cargoView.group = new THREE.Group(); cargoView.group.name = 'cargo'; scene.add(cargoView.group); cargoView.shapes = itemPropShapes(); }
   const I = S.items, carried = [];
-  for (let i = 0; i < I.next; i++) if (I.where[i] && I.where[i].kind === 'CARRIED') carried.push(i);
+  // Items on a flatcar follow the car every frame, like carried items (cargoFlatPoses, B4); boxcar loads are inside.
+  const flat = cargoFlatPoses(S);
+  for (let i = 0; i < I.next; i++) if (I.where[i] && (I.where[i].kind === 'CARRIED' || flat[i])) carried.push(i);
   const changed = cargoView.dirty || cargoView.S !== S || cargoView.yawIdx !== cam.yawIdx;
   if (!changed && !carried.length) return;
   // Bays and the ground only change with item events; carried items move every frame.
@@ -2577,7 +2886,7 @@ function cargoDraw(S) {
   let total = 0;
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
-    if (!w || !(poses[i] || w.kind === 'CARRIED')) continue;
+    if (!w || !(poses[i] || w.kind === 'CARRIED' || flat[i])) continue;
     const t = ITEM_PROP_OF[itemType(S, i)][0];
     need[t] = (need[t] || 0) + 1; total++;
   }
@@ -2587,7 +2896,7 @@ function cargoDraw(S) {
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
     if (!w) continue;
-    const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId)) : poses[i];
+    const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId)) : w.kind === 'CAR' ? flat[i] : poses[i];
     if (p) cargoSetItem(S, i, p);
   }
   for (const m of Object.values(cargoView.meshes).concat(cargoView.tag)) {
@@ -3629,12 +3938,14 @@ function bPlanJoin(st, Q, He, out, g) {
   return { pieces: best.pieces };
 }
 // Where the new track starts, its heading, the curve behind it, and its class.
+const B_FIXED_WHY = 'That is the Overland\'s interchange track: it cannot be changed';
 function bStart(S, c) {
   const T = S.track, ix = trackIndex(T);
   if (c.from === 'node') {
     const N = T.nodes[c.n];
     if (!N || ix.nodeEdges[c.n].length !== 1) return { why: 'Start from the end of a track' };
     const E = T.edges[ix.nodeEdges[c.n][0]], t = outTangent(T, E, c.n), b = bBeyond(T, c.n, E);
+    if (E.fixed) return { why: B_FIXED_WHY };
     const main = E.cls === 'main' || (E.cls === 'switch' && E.lim >= CFG.LIM.main);
     return { node: c.n, x: N.x, z: N.z, hx: -t.x, hz: -t.z, inTurn: -b.turn, inGap: b.gap, cls: main ? 'main' : 'yard' };
   }
@@ -3645,6 +3956,7 @@ function bStart(S, c) {
   if (c.from === 'switch') {
     const E = T.edges[c.e];
     if (!E) return { why: 'There is no track there' };
+    if (E.fixed) return { why: B_FIXED_WHY };
     if (E.k !== 'S') return { why: 'Switches go on straight track only' };
     if (ix.legSw[E.id] !== undefined) return { why: 'Too close to another switch' };
     for (const tr of S.trains) if (trainSegs(T, tr).some(sg => sg[0] === E.id)) return { why: 'A train is on that track' };
@@ -3670,7 +3982,7 @@ function bGeom(S, c) {
   let Q = { x: c.tx / 100, z: c.tz / 100 }, endNode = null, r;
   let snap = null;
   for (const N of T.nodes) {
-    if (ix.nodeEdges[N.id].length !== 1 || N.id === st.node) continue;
+    if (ix.nodeEdges[N.id].length !== 1 || N.id === st.node || T.edges[ix.nodeEdges[N.id][0]].fixed) continue; // never join the interchange
     const d = Math.hypot(N.x - Q.x, N.z - Q.z);
     if (d <= BUILD.NODE_SNAP && (!snap || d < snap.d)) snap = { n: N.id, d };
   }
@@ -3883,7 +4195,7 @@ function buildClear() {
 // Small rings on every track end, so it is clear where a drag can start.
 function buildEndMarkers() {
   if (bt.ends) { scene.remove(bt.ends); bt.ends.geometry.dispose(); bt.ends = null; }
-  const T = S.track, ix = trackIndex(T), ends = T.nodes.filter(N => ix.nodeEdges[N.id].length === 1);
+  const T = S.track, ix = trackIndex(T), ends = T.nodes.filter(N => ix.nodeEdges[N.id].length === 1 && !T.edges[ix.nodeEdges[N.id][0]].fixed);
   const geo = new THREE.RingGeometry(0.32, 0.46, 20); geo.rotateX(-Math.PI / 2);
   const m = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: PAL.brass }), Math.max(1, ends.length));
   const mtx = new THREE.Matrix4();
@@ -4192,6 +4504,14 @@ const DBG_SCENARIOS = {
   },
   // Cargo testing: items in the freight shed bays, on the ground by the dock, in the boxcar and in hand.
   cargo: () => cargoDebugItems(newState(CFG.SEED)),
+  // The interchange (B4): 05:50 on day 1, ten minutes before the Overland is due; the player waits by the
+  // interchange track's dead end, east of the station.
+  interchange: () => {
+    const st = newState(CFG.SEED);
+    st.time = 50 * 60;
+    st.player.x = 3.5; st.player.z = 22.5;
+    return st;
+  },
   // Hand-building: a 20u siding with a switch staked off the north main line, all its materials beside it.
   handbuild: () => jobDebugScenario(newState(CFG.SEED)),
   // Switch 3 is set for the spur and the train is running towards it on the north main line.
@@ -4318,7 +4638,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$/.test(e.t));
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -4338,7 +4658,13 @@ function handleEvent(e) {
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
   else if (e.t === 'reachedTrain') openPanel(e.tr);
   else if (e.t === 'noRoute') toast(e.why);
-  else if (e.t === 'trainArrived') toast(`${S.trains[e.tr].name} has arrived.`);
+  else if (e.t === 'trainArrived') { if (!S.trains[e.tr].owner) toast(`${S.trains[e.tr].name} has arrived.`); }
+  else if (e.t === 'notYourTrain') toast(e.why + '.');
+  else if (e.t === 'reachedCar') openCarPanel(e.stock);
+  else if (e.t === 'overlandArriving') toast(e.cars ? `The Overland is coming in with ${e.cars} car${e.cars > 1 ? 's' : ''} for the interchange.` : 'The Overland is coming in on the interchange track.');
+  else if (e.t === 'overlandSetOut' && e.cars) toast(`The Overland set out ${e.cars} car${e.cars > 1 ? 's' : ''} on the interchange track.` + (e.held ? ` ${e.held} did not fit and stay aboard.` : ''));
+  else if (e.t === 'overlandPickedUp' && e.cars) toast(`The Overland took away ${e.cars} car${e.cars > 1 ? 's' : ''} from the interchange.`);
+  else if (e.t === 'overlandLeft') toast('The Overland has left.');
   else if (e.t === 'blocked') toast('Something is in the way.');
   else if (e.t === 'trackBuilt') buildOnBuilt(e);
   else if (e.t === 'buildRefused') toast(`Cannot lay that track: ${e.why}.`);
@@ -4356,7 +4682,7 @@ function carryHud() {
   let text = '';
   if (carrier === 'HAND') text = held.length ? 'Carrying: ' + held.map(label).join(', ') : '';
   else text = `${TOOL_KINDS[S.tools[P.tool].k].name} ${held.length}/${CARGO_CARRY_CAP[carrier]}` + (held.length ? ': ' + held.map(label).join(', ') : '');
-  const hide = !text || ui.panelTrain !== null || (typeof bt !== 'undefined' && bt.on);
+  const hide = !text || ui.panelTrain !== null || carUi.stock !== null || (typeof bt !== 'undefined' && bt.on);
   const sig = (hide ? '-' : text) + '|' + held.length;
   if (sig === carryHudSig) return;
   carryHudSig = sig;
@@ -4368,7 +4694,34 @@ $('carryPut').addEventListener('click', () => {
   const x = hand ? P.x + fx * 0.6 : P.x - fz * 0.8, z = hand ? P.z + fz * 0.6 : P.z + fx * 0.8;
   send({ t: 'carryPut', x: Math.round(x * 100), z: Math.round(z * 100) });
 });
-function openPanel(trId) { ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
+// The car panel (B4): what is in a set-out car, opened when the player reaches its door (useCar, 'reachedCar').
+// Each item is a button: tap it to take it (0.2 game minutes). Put in loads the top item the player carries.
+// It closes when the player walks more than 3u from the door, or the car is taken or moves off.
+const carUi = { stock: null, sig: '' };
+const CAR_NAMES = { boxcar: 'Boxcar', flatcar: 'Flatcar', combine: 'Combine' };
+function openCarPanel(stock) { closePanel(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
+function closeCarPanel() { carUi.stock = null; carUi.sig = ''; $('carPanel').hidden = true; }
+function carPanelUpdate() {
+  if (carUi.stock === null) return;
+  const P = S.player, f = carryCarOf(S, carUi.stock), door = f && !carryCarWhy(S, carUi.stock) ? carryCarDoor(S, carUi.stock, P.x, P.z) : null;
+  if (!door || Math.hypot(door.x - P.x, door.z - P.z) > 3) { closeCarPanel(); return; }
+  const ids = itemsAt(S, { kind: 'CAR', stockId: carUi.stock }), held = carryHeld(S), R = CARGO_CAR_RULES[f.car.k];
+  const sig = ids.join(',') + '|' + held.join(',') + '|' + carryCarrier(S);
+  if (sig === carUi.sig) return;
+  carUi.sig = sig;
+  const label = id => { const wb = S.items.waybill[id], C = COMMODITIES[wb.commodity], T = CARGO_TAGS[itemTag(wb)]; return `${C ? C.name : wb.commodity} (${T ? T.letter : '?'})`; };
+  const used = ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0);
+  $('carTitle').textContent = `${CAR_NAMES[f.car.k] || 'Car'} ${f.car.id}` + (f.tr.owner === 'interchange' ? ', interchange' : '');
+  $('carInfo').textContent = ids.length ? `${ids.length} item${ids.length > 1 ? 's' : ''}, ${Math.round(used * 100 / R.cap)}% full. Tap one to take it.` : 'Empty.';
+  const box = $('carItems'); box.textContent = '';
+  for (const id of ids) { const b = document.createElement('button'); b.textContent = label(id); b.dataset.id = id; box.appendChild(b); }
+  $('carHeld').textContent = held.length ? 'You carry: ' + label(held[held.length - 1]) + (held.length > 1 ? ` and ${held.length - 1} more` : '') : '';
+  $('carPutIn').hidden = !held.length;
+}
+$('carItems').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.id !== undefined) send({ t: 'carryPick', id: Number(b.dataset.id) }); });
+$('carPutIn').addEventListener('click', () => { if (carUi.stock !== null) send({ t: 'carryPut', stock: carUi.stock }); });
+$('carClose').addEventListener('click', closeCarPanel);
+function openPanel(trId) { closeCarPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
 function setSendMode(on) { ui.sendMode = on; $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
@@ -4376,6 +4729,7 @@ function updateHud() {
   $('clock').textContent = clockText(S);
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
   $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
+  carPanelUpdate();
   carryHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
@@ -4410,8 +4764,8 @@ function pickAt(px, py) {
   }
   if (best) return best;
   raycaster.setFromCamera(ndc(px, py), camera);
-  const hits = raycaster.intersectObjects(view.trainGroup.children, false);
-  if (hits.length) return { k: 'tr', id: hits[0].object.userData.train };
+  const hits = raycaster.intersectObjects(view.trainGroup.children, false).filter(h => h.object.visible);
+  if (hits.length) return { k: 'tr', id: hits[0].object.userData.train, stock: hits[0].object.userData.stock };
   return null;
 }
 function onTap(px, py) {
@@ -4425,6 +4779,12 @@ function onTap(px, py) {
   }
   const hit = pickAt(px, py);
   if (hit && hit.k === 'sw') { send({ t: 'useSwitch', sw: hit.id }); return; }
+  if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner) {
+    // The Overland's set-out cars: walk to the car's door and see what is in it. The Overland itself: a message.
+    if (S.trains[hit.id].owner === 'interchange') send({ t: 'useCar', stock: hit.stock });
+    else toast(overlandNotYours(S.trains[hit.id]) + '.');
+    return;
+  }
   if (hit && hit.k === 'tr') {
     // Tell the sim which way the camera looks from, so the player stands on the side we can see.
     const yw = camYawTarget();
@@ -4601,8 +4961,13 @@ function render(alpha, dt) {
   if (keys.has('ArrowLeft')) panBy(pan, 0); if (keys.has('ArrowRight')) panBy(-pan, 0);
   if (keys.has('ArrowUp')) panBy(0, pan); if (keys.has('ArrowDown')) panBy(0, -pan);
   // Trains.
+  // The Overland sets out and picks up cars, so the vehicles to draw can change: rebuild them when they do.
+  if (view.trainSig !== trainViewSig(S)) buildActors(S);
   S.trains.forEach((tr, ti) => view.train[ti].forEach((m, vi) => {
-    const a = prevPoses[ti][vi], b = curPoses[ti][vi];
+    const b = curPoses[ti] && curPoses[ti][vi], pa = prevPoses[ti] && prevPoses[ti][vi];
+    m.visible = !!b;
+    if (!b) return;
+    const a = pa && prevPoses[ti].length === curPoses[ti].length ? pa : b; // a car just set out: no blend
     m.position.set(lerp(a.x, b.x, alpha), 0, lerp(a.z, b.z, alpha));
     m.rotation.y = lerpAngle(a.yaw, b.yaw, alpha);
   }));
@@ -4694,6 +5059,8 @@ window.__railhead = {
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, BLD_BAYS, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   carry: { TOOL_KINDS, TOOL_PARK, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
+  interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
+    carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),

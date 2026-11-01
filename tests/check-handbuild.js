@@ -195,6 +195,7 @@ async function checkRules(problems) {
       }
       // 5b. A 6u job (not a whole number of bundles) hands back the pieces it did not use as part-used bundles.
       { const S7 = R.newState(1866), T = S7.track;
+        S7.overland.phase = 'off'; // this part runs past 06:00: keep the Overland's delivery out of the item list (B4)
         const N = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1).sort((a, b) => a.x - b.x)[0];
         const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null });
         for (const c of ['ties', 'ties', 'rails', 'spikes']) R.cargo.itemCreate(S7, wb(c), { kind: 'GROUND', x: Math.round((N.x - 3) * 100), z: Math.round((N.z - 1.5) * 100) }, null);

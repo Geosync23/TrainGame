@@ -1,0 +1,11 @@
+{
+  "name": "railhead",
+  "private": true,
+  "description": "Railhead: an isometric railroad game for phones. The game itself is index.html; this file only lists tools used by the test scripts.",
+  "scripts": {
+    "test": "node tests/run-all.js"
+  },
+  "devDependencies": {
+    "three": "0.128.0"
+  }
+}

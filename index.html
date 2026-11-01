@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Railhead</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #c9b48a; touch-action: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #label { position: fixed; left: 12px; top: calc(env(safe-area-inset-top) + 12px);
+           font: 600 15px/1.2 Georgia, serif; color: #3b2a1a; pointer-events: none; }
+</style>
+<!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<div id="label">Railhead (setup build)</div>
+<script>
+'use strict';
+
+// ==== Section: config ====
+const CONFIG = {
+  ISO_ELEVATION_DEG: 35.264, // true isometric angle (design doc section 5)
+  VIEW_HEIGHT_U: 24,         // world units visible top to bottom at zoom 1
+};
+
+// ==== Section: renderer and camera ====
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xc9b48a);
+
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
+// Looking down the (1,1,1) diagonal gives the 35.264 degree isometric elevation and a 45 degree yaw.
+camera.position.set(50, 50, 50);
+camera.lookAt(0, 0, 0);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  const halfH = CONFIG.VIEW_HEIGHT_U / 2, halfW = halfH * (w / h);
+  camera.left = -halfW; camera.right = halfW; camera.top = halfH; camera.bottom = -halfH;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ==== Section: world (placeholder) ====
+scene.add(new THREE.HemisphereLight(0xfff4e0, 0x6b5a40, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+sun.position.set(20, 40, 10);
+scene.add(sun);
+
+const ground = new THREE.Mesh(
+  new THREE.BoxGeometry(16, 0.5, 16),
+  new THREE.MeshStandardMaterial({ color: 0x9c8a5a, flatShading: true, roughness: 0.9 })
+);
+ground.position.y = -0.25;
+scene.add(ground);
+
+// ==== Section: main loop ====
+function frame() {
+  renderer.render(scene, camera);
+  window.__railhead.drawCalls = renderer.info.render.calls;
+  requestAnimationFrame(frame);
+}
+// Read by the test scripts.
+window.__railhead = { ready: true, drawCalls: 0, threeRevision: THREE.REVISION };
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

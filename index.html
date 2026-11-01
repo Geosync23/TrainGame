@@ -593,7 +593,7 @@ function buildTrackCmd(S, c, ev) {
   const p = buildPlan(S, c);
   if (!p.ok) { ev.push({ t: 'buildRefused', why: p.why || 'Drag further to lay track' }); return; }
   const e0 = S.track.edges.length, r = bMutate(S.track, p.G);
-  trackIndexCache.delete(S.track);
+  trackIndexCache.delete(S.track); walkGridCache.delete(S.track);
   ev.push({ t: 'trackBuilt', edges: S.track.edges.length - e0, sw: r.sw, len: Math.round(p.len * 100) });
 }
 function throwSwitch(S, swId, ev) {
@@ -676,6 +676,205 @@ function trainTick(S, tr, ev) {
   } else if (tr.mode === 'idle' && tr.status !== 'Arrived') tr.status = 'Stopped';
 }
 
+// ==== Section: walk grid and path-finding ====
+// Design-doc section 11 "Pathfinding", for the player (M1). One grid of 0.5u cells over the whole map
+// (240 x 240 = 57,600 cells): the map is only 120u square, so a finer area near the station is not needed.
+// The static part is cached per track and rebuilt only when the track changes (walkGridSig, and the
+// build command clears it): a cost per cell, 0 = blocked. Blocked: building footprints grown by the
+// player's radius (WALK.R), and every cell that is not flat ground (terrainFlatAt) at its corners, edge
+// midpoints and centre. Platforms and the freight dock cost 1.0, everything else is grass, 1.4. Track is
+// walkable at the grass cost for now (provisional: section 11 says impassable except at crossings; see
+// DEV_NOTES). Trains are dynamic: their cells are stamped at query time, so the grid itself stays static.
+// A* uses whole-number costs (100 per straight step on cost 1.0, 140 per diagonal), a fixed neighbour
+// order, and ties broken by cell index, so the same state always gives the same path. Nothing about the
+// path is saved: each tick it is worked out again from the saved state (G.memo only skips repeat work).
+// Pure math: no three.js, no DOM.
+const WALK = { CELL: 0.5, HALF: 60, N: 240, R: 0.25, GRASS: 14, PLATFORM: 10, LOOK: 48 };
+const WALK_NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]; // fixed order
+const walkGridCache = new WeakMap();
+function walkGridSig(T) { return T.edges.length + '/' + T.nodes.length + '/' + T.switches.length; }
+function walkGrid(T) {
+  let G = walkGridCache.get(T);
+  if (!G || G.sig !== walkGridSig(T)) { G = walkGridBuild(T); walkGridCache.set(T, G); }
+  return G;
+}
+const walkCellOf = v => Math.max(0, Math.min(WALK.N - 1, Math.floor((v + WALK.HALF) / WALK.CELL)));
+function walkCell(x, z) { return walkCellOf(z) * WALK.N + walkCellOf(x); }
+function walkCentre(i) { const ci = i % WALK.N; return [-WALK.HALF + (ci + 0.5) * WALK.CELL, -WALK.HALF + ((i - ci) / WALK.N + 0.5) * WALK.CELL]; }
+// Does the axis-aligned square (centre cx, cz, half size h) overlap rectangle f grown by m on every side?
+// f is {x, z, w, d, yaw}, w along the local x axis (cos yaw, -sin yaw), as buildingFootprints() gives.
+function walkRectHits(f, m, cx, cz, h) {
+  const c = Math.cos(f.yaw), s = Math.sin(f.yaw), ac = Math.abs(c), as = Math.abs(s);
+  const hw = f.w / 2 + m, hd = f.d / 2 + m, dx = cx - f.x, dz = cz - f.z;
+  if (Math.abs(dx) >= ac * hw + as * hd + h || Math.abs(dz) >= as * hw + ac * hd + h) return false;
+  const sq = h * (ac + as);
+  return Math.abs(dx * c - dz * s) < hw + sq && Math.abs(dx * s + dz * c) < hd + sq;
+}
+// Calls fn(cell) for every cell that rectangle f grown by m overlaps.
+function walkStampRect(f, m, fn) {
+  const r = Math.hypot(f.w / 2 + m, f.d / 2 + m), H = WALK.CELL / 2, N = WALK.N;
+  const i0 = walkCellOf(f.x - r), i1 = walkCellOf(f.x + r), j0 = walkCellOf(f.z - r), j1 = walkCellOf(f.z + r);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const [cx, cz] = walkCentre(j * N + i);
+    if (walkRectHits(f, m, cx, cz, H)) fn(j * N + i);
+  }
+}
+function walkGridBuild(T) {
+  const N = WALK.N, C = WALK.CELL, H = WALK.HALF, cost = new Uint8Array(N * N).fill(WALK.GRASS);
+  // Hills: flat ground sampled every 0.25u (cell corners, edge midpoints, centres), 9 samples per cell.
+  terrainFlatAt(T, 0, 0); // works out the heights for this track if needed
+  const M = 2 * N + 1, flat = new Uint8Array(M * M);
+  for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) flat[j * M + i] = terrainHeight(-H + i * C / 2, -H + j * C / 2) === 0 ? 1 : 0;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    let ok = 1;
+    for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) ok &= flat[(2 * j + b) * M + 2 * i + a];
+    if (!ok) cost[j * N + i] = 0;
+  }
+  // Buildings: platforms and the dock are walked on (cost 1.0); the rest block, grown by the player's radius.
+  const fps = buildingFootprints(), solid = fps.filter(f => !f.flush);
+  for (const f of fps) if (f.flush) walkStampRect(f, 0, i => { if (cost[i]) cost[i] = WALK.PLATFORM; });
+  for (const f of solid) walkStampRect(f, WALK.R, i => { cost[i] = 0; });
+  // Connected areas over open cells (4 neighbours; a diagonal step needs both side cells open, so this
+  // matches what A* can reach). Used to pick a reachable goal without searching the whole map.
+  const comp = new Int32Array(N * N).fill(-1), q = new Int32Array(N * N);
+  let nc = 0;
+  for (let s0 = 0; s0 < N * N; s0++) {
+    if (!cost[s0] || comp[s0] >= 0) continue;
+    let qh = 0, qt = 0; q[qt++] = s0; comp[s0] = nc;
+    while (qh < qt) {
+      const c = q[qh++], ci = c % N;
+      const nb = [ci < N - 1 ? c + 1 : -1, ci > 0 ? c - 1 : -1, c + N < N * N ? c + N : -1, c - N];
+      for (const n of nb) if (n >= 0 && cost[n] && comp[n] < 0) { comp[n] = nc; q[qt++] = n; }
+    }
+    nc++;
+  }
+  return { sig: walkGridSig(T), cost, comp, solid, g: new Int32Array(N * N), from: new Int32Array(N * N),
+    seen: new Uint32Array(N * N), q: 0, dyn: new Uint32Array(N * N), dq: 0, memo: null };
+}
+// Stamps the cells under the trains (vehicle footprint as insideTrain() sees it, which already includes
+// the player's radius). Returns them sorted, as part of the memo key.
+function walkTrainStamp(G, poses) {
+  const cells = [], dq = ++G.dq;
+  for (const p of poses) walkStampRect({ x: p.x, z: p.z, yaw: p.yaw, w: p.len + 0.4, d: 1.5 }, 0, i => {
+    if (G.dyn[i] !== dq) { G.dyn[i] = dq; cells.push(i); }
+  });
+  return cells.sort((a, b) => a - b);
+}
+function walkOpen(G, i) { return G.cost[i] > 0 && G.dyn[i] !== G.dq; }
+// Nearest open cell to cell g (by distance in cells, ties by cell index), in connected area k (or any if k < 0).
+function walkNearest(G, g, k) {
+  const N = WALK.N, gi = g % N, gj = (g - gi) / N;
+  let best = -1, bd = Infinity;
+  const tryCell = (i, j) => {
+    if (i < 0 || j < 0 || i >= N || j >= N) return;
+    const c = j * N + i;
+    if (!walkOpen(G, c) || (k >= 0 && G.comp[c] !== k)) return;
+    const d = (i - gi) * (i - gi) + (j - gj) * (j - gj);
+    if (d < bd || (d === bd && c < best)) { bd = d; best = c; }
+  };
+  tryCell(gi, gj);
+  for (let r = 1; r < N && r * r <= bd; r++) {
+    for (let i = gi - r; i <= gi + r; i++) { tryCell(i, gj - r); tryCell(i, gj + r); }
+    for (let j = gj - r + 1; j <= gj + r - 1; j++) { tryCell(gi - r, j); tryCell(gi + r, j); }
+  }
+  return best;
+}
+// A* from cell s to cell goal over open cells. If the goal cannot be reached (a train cuts it off), the
+// path ends at the reached cell nearest the goal. Returns { cells (start first), reached, expanded }.
+function walkAStar(G, s, goal) {
+  const N = WALK.N, cost = G.cost, g = G.g, from = G.from, seen = G.seen, q = ++G.q;
+  const gi = goal % N, gj = (goal - gi) / N;
+  const hOf = i => { const ci = i % N, dx = Math.abs(ci - gi), dz = Math.abs((i - ci) / N - gj); return dx > dz ? 100 * (dx - dz) + 140 * dz : 100 * (dz - dx) + 140 * dx; };
+  // Binary heap ordered by (f, cell).
+  const hf = [], hc = [];
+  const less = (a, b) => hf[a] < hf[b] || (hf[a] === hf[b] && hc[a] < hc[b]);
+  const swap = (a, b) => { const f = hf[a], c = hc[a]; hf[a] = hf[b]; hc[a] = hc[b]; hf[b] = f; hc[b] = c; };
+  const push = (f, c) => { let i = hf.length; hf.push(f); hc.push(c); while (i > 0) { const p = (i - 1) >> 1; if (!less(i, p)) break; swap(i, p); i = p; } };
+  const pop = () => {
+    swap(0, hf.length - 1); const f = hf.pop(), c = hc.pop();
+    for (let i = 0; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < hf.length && less(l, m)) m = l; if (r < hf.length && less(r, m)) m = r; if (m === i) break; swap(i, m); i = m; }
+    return [f, c];
+  };
+  seen[s] = q; g[s] = 0; from[s] = -1; push(hOf(s), s);
+  let best = s, bh = hOf(s), expanded = 0;
+  while (hf.length) {
+    const [f, c] = pop(), h = hOf(c);
+    if (f > g[c] + h) continue; // a stale entry
+    expanded++;
+    if (h < bh || (h === bh && c < best)) { bh = h; best = c; }
+    if (c === goal) break;
+    const ci = c % N, cj = (c - ci) / N;
+    for (const [di, dj] of WALK_NB) {
+      const ni = ci + di, nj = cj + dj;
+      if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+      const n = nj * N + ni;
+      if (!walkOpen(G, n)) continue;
+      const diag = di !== 0 && dj !== 0;
+      if (diag && (!walkOpen(G, cj * N + ni) || !walkOpen(G, nj * N + ci))) continue; // no cutting corners
+      const ng = g[c] + cost[n] * (diag ? 14 : 10);
+      if (seen[n] !== q || ng < g[n]) { seen[n] = q; g[n] = ng; from[n] = c; push(ng + hOf(n), n); }
+    }
+  }
+  const cells = [];
+  for (let c = best; c >= 0; c = from[c]) cells.push(c);
+  return { cells: cells.reverse(), reached: best === goal, expanded };
+}
+// The player's walk as cells, from the player's cell towards the target (S.player.tx, tz).
+// A start inside a blocked cell (an old save, a teleport) first steps out to the nearest open cell (escape).
+// A target in a blocked cell, or in an area the player cannot reach, is moved to the nearest cell that can be.
+// exact: the path ends in the target's own cell. Depends only on the state and the trains' poses.
+function walkPlan(S, poses) {
+  const P = S.player, G = walkGrid(S.track), dyn = walkTrainStamp(G, poses);
+  const s0 = walkCell(P.x, P.z), g0 = walkCell(P.tx, P.tz), key = s0 + '|' + g0 + '|' + dyn.join(',');
+  if (G.memo && G.memo.key === key) return G.memo;
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const s = walkOpen(G, s0) ? s0 : walkNearest(G, s0, -1);
+  let memo;
+  if (s < 0) memo = { key, cells: [], escape: false, exact: false, expanded: 0 };
+  else {
+    const k = G.comp[s], goal = walkOpen(G, g0) && G.comp[g0] === k ? g0 : walkNearest(G, g0, k);
+    const r = walkAStar(G, s, goal);
+    memo = { key, cells: r.cells, escape: s !== s0, exact: goal === g0 && r.reached, expanded: r.expanded };
+  }
+  memo.ms = typeof performance !== 'undefined' ? performance.now() - t0 : 0; // for the checks only; the sim never reads it
+  G.memo = memo;
+  return memo;
+}
+// Is the straight line from (x0, z0) to (x1, z1) over open cells only? (The first cell is not checked,
+// and a diagonal move between cells needs both side cells open.)
+function walkClear(G, x0, z0, x1, z1) {
+  const N = WALK.N, n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.1));
+  let pi = walkCellOf(x0), pj = walkCellOf(z0);
+  for (let k = 1; k <= n; k++) {
+    const i = walkCellOf(x0 + (x1 - x0) * k / n), j = walkCellOf(z0 + (z1 - z0) * k / n);
+    if (i === pi && j === pj) continue;
+    if (!walkOpen(G, j * N + i)) return false;
+    if (i !== pi && j !== pj && (!walkOpen(G, pj * N + i) || !walkOpen(G, j * N + pi))) return false;
+    pi = i; pj = j;
+  }
+  return true;
+}
+// The walk as points from the player's position, smoothed by string-pulling: the farthest point of the
+// cell path in a clear straight line, then the farthest from there, and so on, until the points cover
+// upTo units. done: the points reach the end of the path. exact: that end is the target itself.
+function walkPoints(S, poses, upTo) {
+  const P = S.player, plan = walkPlan(S, poses), G = walkGrid(S.track);
+  const pts = plan.cells.slice(plan.escape ? 0 : 1).map(walkCentre);
+  if (plan.exact) { if (pts.length) pts[pts.length - 1] = [P.tx, P.tz]; else pts.push([P.tx, P.tz]); }
+  const out = [];
+  let cx = P.x, cz = P.z, i = 0, len = 0;
+  const add = k => { len += Math.hypot(pts[k][0] - cx, pts[k][1] - cz); cx = pts[k][0]; cz = pts[k][1]; out.push(pts[k]); i = k + 1; };
+  if (plan.escape && pts.length) add(0); // step out of the blocked cell first, in a straight line
+  while (i < pts.length && len < upTo) {
+    let k = i;
+    for (let m = i + 1; m < Math.min(pts.length, i + WALK.LOOK); m++) { if (walkClear(G, cx, cz, pts[m][0], pts[m][1])) k = m; else break; }
+    add(k);
+  }
+  return { pts: out, done: i >= pts.length, exact: plan.exact };
+}
+// Is (x, z) inside a building, grown by the player's radius? (For walking by direction.)
+function walkInBuilding(T, x, z) { return walkGrid(T).solid.some(f => walkRectHits(f, WALK.R, x, z, 0)); }
+
 // ==== Section: player ====
 // Rough footprint test: is (x, z) inside a vehicle (plus the player's own radius)?
 function insideTrain(poses, x, z) {
@@ -695,7 +894,9 @@ function pathClear(poses, x0, z0, x1, z1) {
 // view (optional, 0-255 angle code): direction towards the camera. When the spots on both sides
 // can be walked to, the one on the camera's side wins, so the player is not hidden behind the train.
 // allPoses: every vehicle on the map, used to check the way is clear.
-function trainApproach(poses, x, z, view, allPoses) {
+// T (optional): the track, for the walk grid. A spot inside a building or on a hill gives way to the spot
+// on the other side, and the path then leads round the train's end.
+function trainApproach(poses, x, z, view, allPoses, T) {
   let best = null;
   for (const p of poses) {
     const fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
@@ -713,8 +914,12 @@ function trainApproach(poses, x, z, view, allPoses) {
     if (want !== best.side) {
       const ox = clampMap(best.cx + best.fz * 1.15 * want), oz = clampMap(best.cz - best.fx * 1.15 * want);
       const all = allPoses || poses;
-      if (pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; }
+      if (pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; best.side = want; }
     }
+  }
+  if (best && T) {
+    const G = walkGrid(T), sd = -best.side, ox = clampMap(best.cx + best.fz * 1.15 * sd), oz = clampMap(best.cz - best.fx * 1.15 * sd);
+    if (!G.cost[walkCell(best.x, best.z)] && G.cost[walkCell(ox, oz)]) { best.x = ox; best.z = oz; best.side = sd; }
   }
   return best;
 }
@@ -727,40 +932,56 @@ function playerTick(S, ev, poseCache) {
   }
   if (P.mode !== 'to' && P.mode !== 'dir') return;
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id]));
-  const step = (P.run ? CFG.RUN : CFG.WALK) * DT_MIN;
-  let dx, dz, dist;
+  const step = (P.run ? CFG.RUN : CFG.WALK) * DT_MIN, T = S.track;
+  // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building?
+  // A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
+  const into = (x0, z0, x1, z1, bld) => (insideTrain(poses, x1, z1) && !insideTrain(poses, x0, z0))
+    || (!terrainFlatAt(T, x1, z1) && terrainFlatAt(T, x0, z0))
+    || (bld && walkInBuilding(T, x1, z1) && !walkInBuilding(T, x0, z0));
   if (P.mode === 'dir') {
-    const ang = P.a / 256 * Math.PI * 2;
-    dx = Math.cos(ang); dz = Math.sin(ang); dist = step;
-  } else {
-    if (P.use && P.use.k === 'tr') {
-      const ap = trainApproach(poseCache[P.use.id], P.x, P.z, P.use.view, poses);
-      if (ap.dist <= CFG.REACH) { P.mode = 'idle'; P.f = Math.atan2(ap.x - P.x, ap.z - P.z) + Math.PI; ev.push({ t: 'reachedTrain', tr: P.use.id }); P.use = null; return; }
-      P.tx = ap.x; P.tz = ap.z;
+    // Press and hold: direct steering. A blocked move slides along the wall (its x-only or z-only part).
+    const ang = P.a / 256 * Math.PI * 2, dx = Math.cos(ang), dz = Math.sin(ang);
+    const nx = clampMap(P.x + dx * step), nz = clampMap(P.z + dz * step);
+    for (const [x, z] of [[nx, nz], [nx, P.z], [P.x, nz]]) {
+      if ((x === P.x && z === P.z) || into(P.x, P.z, x, z, true)) continue;
+      P.x = x; P.z = z; P.f = Math.atan2(dx, dz);
+      break;
     }
-    dx = P.tx - P.x; dz = P.tz - P.z; dist = Math.hypot(dx, dz);
-    if (dist < 1e-6) dist = 0; else { dx /= dist; dz /= dist; }
+    return;
   }
-  const go = Math.min(step, dist);
-  let nx = P.x + dx * go, nz = P.z + dz * go;
-  nx = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, nx)); nz = Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, nz));
-  // Trains block the player, and so do the hills: M0 walking stays on the flat ground (height 0).
-  const blocked = (insideTrain(poses, nx, nz) && !insideTrain(poses, P.x, P.z))
-    || (go > 0 && !terrainFlatAt(S.track, nx, nz) && terrainFlatAt(S.track, P.x, P.z));
-  if (!blocked && go > 0) { P.x = nx; P.z = nz; P.f = Math.atan2(dx, dz); }
-  if (P.mode === 'to' && (dist <= step || blocked)) {
+  if (P.use && P.use.k === 'tr') {
+    const ap = trainApproach(poseCache[P.use.id], P.x, P.z, P.use.view, poses, T);
+    if (ap.dist <= CFG.REACH) { P.mode = 'idle'; P.f = Math.atan2(ap.x - P.x, ap.z - P.z) + Math.PI; ev.push({ t: 'reachedTrain', tr: P.use.id }); P.use = null; return; }
+    P.tx = ap.x; P.tz = ap.z;
+  }
+  // Tap to walk: follow the path (walk grid and path-finding), worked out again every tick, so a train
+  // moving into the way gives a new path round it. The walk ends at the target, or at the nearest spot
+  // that can be reached (a train that stays in the way leaves the player standing beside it).
+  const w = walkPoints(S, poses, step);
+  let x = P.x, z = P.z, left = step, end = true;
+  for (const [px, pz] of w.pts) {
+    const d = Math.hypot(px - x, pz - z);
+    if (d <= left) { x = px; z = pz; left -= d; continue; }
+    x += (px - x) / d * left; z += (pz - z) / d * left; end = false;
+    break;
+  }
+  // The path keeps clear of trains and hills, so this only stops a step it should never take.
+  const blocked = (x !== P.x || z !== P.z) && into(P.x, P.z, x, z, false);
+  if (!blocked && (x !== P.x || z !== P.z)) { P.f = Math.atan2(x - P.x, z - P.z); P.x = x; P.z = z; }
+  if ((end && w.done) || blocked) {
     P.mode = 'idle';
-    // A blocked walk only counts as arriving if the player is within reach of what they were going to use.
-    let reached = !blocked;
+    // Only a walk that ends on its target counts as arriving, unless the player is within reach of
+    // what they were going to use.
+    let reached = w.exact && !blocked;
     if (P.use && P.use.k === 'sw') {
       const W = S.track.switches[P.use.id];
-      if (blocked) reached = Math.hypot(W.stand.x - P.x, W.stand.z - P.z) <= CFG.REACH;
+      if (!reached) reached = Math.hypot(W.stand.x - P.x, W.stand.z - P.z) <= CFG.REACH;
       if (reached) {
         P.f = Math.atan2(W.stand.x - P.x, W.stand.z - P.z);
         P.act = { k: 'throw', sw: P.use.id, left: CFG.THROW_S };
       }
     } else if (P.use && P.use.k === 'tr') {
-      if (blocked) reached = trainApproach(poseCache[P.use.id], P.x, P.z).dist <= CFG.REACH;
+      if (!reached) reached = trainApproach(poseCache[P.use.id], P.x, P.z).dist <= CFG.REACH;
       if (reached) ev.push({ t: 'reachedTrain', tr: P.use.id });
     }
     if (!reached) ev.push({ t: 'blocked' });
@@ -1308,7 +1529,7 @@ function applyDaylight(S, dt) {
 // into ONE mesh with GLOW_MAT: the whole station costs 3 draw calls (the main mesh twice with its shadow).
 // Clearances (section 6): the platform and the freight dock sit flush at 0.9u from the track centreline;
 // everything else is at least 1.2u from a main line (1.0u from yard track). tests/check-buildings.js checks it.
-// The player walks through buildings in M0 (no collision yet); buildingFootprints() is there for that later.
+// buildingFootprints() is plain data (no three.js): the sim's walk grid reads it, so the player walks round buildings.
 // Assumes the ground is flat (height 0) under the footprints; terrain can read buildingFootprints().
 const BLD_COL = { plat: '#a39684', tank: '#8a6a48', canvas: '#e4d6b6', tin: '#55534f' };
 const BLD_EDGE = 14 - 0.9;            // the platform edge, flush at 0.9u from the main line at z = 14
@@ -1366,18 +1587,28 @@ function bldPlacer(kit, glow, at, vary) {
   };
 }
 
-// Recipes: each draws its parts and returns its plan extent in local coordinates [minX, maxX, minZ, maxZ].
+// Plan extent of each kind in local coordinates [minX, maxX, minZ, maxZ]. Plain data, so the sim
+// (walk grid) and buildingFootprints() can read it without three.js; each recipe returns its own entry.
+const BLD_EXTENTS = {
+  platform: [-6, 6, -0.8, 0.8],         // 12u long (train No. 1 is 10.8u), 1.6u deep
+  depot: [-2.3, 2.3, -1.3, 1.48],
+  shanty: [-0.85, 1.15, -0.75, 0.75],
+  watertower: [-0.95, 0.95, -0.95, 0.95],
+  freightshed: [-2.35, 2.35, -1.95, 1.7],
+  lamp: [-0.15, 0.15, -0.15, 0.15],
+};
+// Recipes: each draws its parts and returns its plan extent (its BLD_EXTENTS entry).
 const BLD_RECIPES = {
   // Platform, 12u long (train No. 1 is 10.8u), with a canopy over its east half and a bench.
   platform(b) {
-    const len = 12, dep = 1.6, top = BLD_PLATFORM_TOP;
+    const [x0, x1, z0, z1] = BLD_EXTENTS.platform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP;
     b.add(box(len, top + 0.05, dep), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
     b.add(box(5.2, 0.12, 1.35), PAL.roof, 3.2, 2.05, 0.075);
     for (const x of [1.0, 3.2, 5.4]) for (const z of [-0.45, 0.45]) b.add(cyl(0.06, 0.06, 1.75), PAL.trim, x, top + 0.875, z);
     b.add(box(1.2, 0.07, 0.34), PAL.trim, 2.1, top + 0.4, -0.5);
     b.add(box(1.2, 0.3, 0.05), PAL.trim, 2.1, top + 0.65, -0.66);
     for (const x of [1.6, 2.6]) b.add(box(0.07, 0.37, 0.3), PAL.loco, x, top + 0.18, -0.5);
-    return [-len / 2, len / 2, -dep / 2, dep / 2];
+    return BLD_EXTENTS.platform;
   },
   // Small depot (style test page station): ticket window, telegraph, and the agent's office in the bay.
   depot(b) {
@@ -1396,7 +1627,7 @@ const BLD_RECIPES = {
     b.win(1.6, 1.05, 1.0, 0.55, 0.6, 'z');
     for (const x of [-1.2, 0.3, 1.4]) b.win(x, 1.05, -1.0, 0.55, 0.6, 'z', -1);
     b.win(2.1, 1.05, 0, 0.55, 0.6, 'x'); b.win(-2.1, 1.05, 0, 0.55, 0.6, 'x', -1);
-    return [-2.3, 2.3, -1.3, 1.48];
+    return BLD_EXTENTS.depot;
   },
   // Telegraph shanty, with the pole and its crossarm beside it.
   shanty(b) {
@@ -1409,7 +1640,7 @@ const BLD_RECIPES = {
     b.add(cyl(0.05, 0.06, 2.7), PAL.trim, 1.05, 1.3, -0.25);
     b.add(box(0.07, 0.07, 0.9), PAL.trim, 1.05, 2.45, -0.25);
     for (const z of [-0.6, -0.4, -0.1, 0.1]) b.add(box(0.05, 0.09, 0.05), PAL.green, 1.05, 2.53, z);
-    return [-0.85, 1.15, -0.75, 0.75];
+    return BLD_EXTENTS.shanty;
   },
   // Water tower (style test page), with the spout swung up, clear of passing engines.
   watertower(b) {
@@ -1419,7 +1650,7 @@ const BLD_RECIPES = {
     for (const y of [2.25, 2.95]) b.add(cyl(0.87, 0.87, 0.06), PAL.trim, 0, y, 0);
     b.add(new THREE.ConeGeometry(0.95, 0.6, SEG), PAL.roof, 0, 3.51, 0);
     b.add(box(0.12, 0.12, 0.8), PAL.trim, 0, 2.53, 1.13, -0.6);
-    return [-0.95, 0.95, -0.95, 0.95];
+    return BLD_EXTENTS.watertower;
   },
   // Freight shed: 4 bays on a loading dock at platform height; red siding, grey tin roof, a few crates.
   freightshed(b) {
@@ -1433,26 +1664,26 @@ const BLD_RECIPES = {
     b.add(box(0.42, 0.4, 0.42), PAL.tie, 1.85, top + 0.19, 1.2);
     b.add(box(0.36, 0.34, 0.36), PAL.tie, 1.4, top + 0.16, 1.25, 0, 0.4);
     b.add(cyl(0.15, 0.15, 0.42), PAL.trunk, -1.9, top + 0.2, 1.2);
-    return [-2.35, 2.35, -1.95, 1.7];
+    return BLD_EXTENTS.freightshed;
   },
   // Lamp post (style test page): iron post, glowing lamp, cone cap.
   lamp(b) {
     b.add(cyl(0.05, 0.07, 1.6), PAL.loco, 0, 0.8, 0);
     b.glow(box(0.22, 0.26, 0.22), 0, 1.73, 0);
     b.add(new THREE.ConeGeometry(0.19, 0.16, 4), PAL.loco, 0, 1.94, 0, 0, Math.PI / 4);
-    return [-0.15, 0.15, -0.15, 0.15];
+    return BLD_EXTENTS.lamp;
   },
 };
 const bldKind = id => id.replace(/\d+$/, '');
-const bldNoKit = { add(geo) { geo.dispose(); }, glow(geo) { geo.dispose(); }, win() {} };
 
-// Plan rectangles {id, kind, x, z, w, d, yaw, flush}, for collision later and so other code (terrain,
-// the build tool) can keep clear. flush marks the ones allowed at 0.9u from the track (platform, dock).
+// Plan rectangles {id, kind, x, z, w, d, yaw, flush}, for the player's walk grid and so other code
+// (terrain, the build tool, the crowd) can keep clear. Pure data: no three.js. flush marks the ones
+// allowed at 0.9u from the track (platform, dock).
 // The freight shed's dock is its own rectangle, as it sits flush like a platform.
 function buildingFootprints() {
   const out = [];
   for (const at of BLD_LAYOUT) {
-    const kind = bldKind(at.id), ext = BLD_RECIPES[kind](bldNoKit);
+    const kind = bldKind(at.id), ext = BLD_EXTENTS[kind];
     const rect = (id, [x0, x1, z0, z1], flush) => {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, c = Math.cos(at.yaw), s = Math.sin(at.yaw);
       out.push({ id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush });
@@ -2612,15 +2843,21 @@ function dbgPlayerTarget() {
   if (P.mode === 'dir') { const ang = P.a / 256 * Math.PI * 2; return { x: P.x + Math.cos(ang) * 2, z: P.z + Math.sin(ang) * 2, dir: true }; }
   return null;
 }
+// The player's walk: for a tap to walk, the smoothed path from the walk grid (it can change when a
+// train moves, so the tick is part of the signature); otherwise a straight line to the target.
 function dbgPath(o) {
-  const P = S.player, t = dbgPlayerTarget();
-  const sig = t ? [P.mode, Math.round(P.x * 10), Math.round(P.z * 10), Math.round(t.x * 10), Math.round(t.z * 10)].join(',') : '-';
+  const P = S.player, t = dbgPlayerTarget(), walking = P.mode === 'to' && !P.act;
+  const sig = t ? [P.mode, Math.round(P.x * 10), Math.round(P.z * 10), Math.round(t.x * 10), Math.round(t.z * 10), walking ? S.tick : ''].join(',') : '-';
   if (sig === o.sig) return;
   o.sig = sig;
   const B = dbgBuf(), col = new THREE.Color(DBG_COL.path);
   if (t) {
-    dbgLine(B, P.x, P.z, t.x, t.z, 0.1, col, DBG_Y + 0.01);
+    let pts = [[t.x, t.z]];
+    if (walking) pts = walkPoints(S, [].concat(...S.trains.map(tr => trainPoses(S.track, tr))), Infinity).pts;
+    let x = P.x, z = P.z;
+    for (const [px, pz] of pts) { dbgLine(B, x, z, px, pz, 0.1, col, DBG_Y + 0.01); x = px; z = pz; }
     if (!t.dir) dbgDiamond(B, t.x, t.z, 0.35, col, DBG_Y + 0.01);
+    if (walking && (x !== t.x || z !== t.z)) dbgDiamond(B, x, z, 0.2, col, DBG_Y + 0.012); // where the walk really ends
   }
   dbgSetMesh(o, B);
 }

@@ -20,6 +20,13 @@
   #clock { background: var(--paper); border: 2px solid var(--edge); border-radius: 8px; padding: 6px 10px; font-size: 15px;
     color: var(--ink); font-variant-numeric: tabular-nums; justify-self: start; }
   #speeds { display: flex; gap: 4px; }
+  /* Cash (economy): beside the speed buttons under the clock on a narrow phone, beside the clock when wide. */
+  #topleft { grid-template-areas: "clock clock" "speeds cash"; grid-template-columns: auto auto; justify-content: start; align-items: center; }
+  #clock { grid-area: clock; } #speeds { grid-area: speeds; }
+  #cash { grid-area: cash; justify-self: start; background: var(--paper); border: 2px solid var(--edge); border-radius: 8px; padding: 6px 8px;
+    font-size: 15px; color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+  #cash[data-neg] { color: var(--accent); }
+  @media (min-width: 600px) { #topleft { grid-template-areas: "clock cash" "speeds speeds"; } }
   #speeds button { padding: 0 8px; }
   #bottomleft { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); display: flex; gap: 8px; }
   #bottomleft svg { width: 26px; height: 26px; display: block; }
@@ -69,6 +76,24 @@
   #carInfo, #carHeld { font-size: 14px; color: #5a4a3a; }
   #carItems { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
   #carItems button { font-size: 14px; padding: 0 6px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The telegraph panel (economy): orders, contracts and the ledger, at the depot's telegraph key. Same look as the car panel. */
+  #telPanel { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); width: min(94vw, 380px);
+    box-sizing: border-box; background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  #telPanel .row { display: flex; gap: 6px; align-items: center; }
+  #telPanel .grow { flex: 1; min-width: 0; }
+  #telPanel h2 { margin: 0; font-size: 18px; color: var(--ink); }
+  #telTabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  #telTabs button { padding: 0 4px; font-size: 14px; }
+  #telInfo { font-size: 14px; color: #5a4a3a; line-height: 1.3; }
+  #telBody { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink); max-height: 36vh; overflow-y: auto; }
+  #telBody .row > span { line-height: 1.25; }
+  #telBody .q { min-width: 2em; text-align: center; font-variant-numeric: tabular-nums; }
+  #telBody small { color: #5a4a3a; font-size: 13px; }
+  #telBody .card { border-top: 1px solid var(--paper-2); padding-top: 6px; display: grid; gap: 6px; }
+  #telBody .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #telBody button { font-size: 14px; padding: 0 8px; }
+  #telSend { background: var(--edge); color: var(--paper); }
+  #telSend:disabled { opacity: 0.45; }
   .jobSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
     background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-left-width: 7px; border-radius: 8px;
     padding: 3px 3px 3px 9px; font-size: 14px; line-height: 1.25; display: flex; gap: 8px; align-items: center; }
@@ -82,6 +107,8 @@
   .jobSign[data-k="work"] { border-left-color: #c69a2c; }
   @media (orientation: landscape) and (max-height: 500px) {
     #carPanel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: 76vh; }
+    #telPanel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 10px); width: 360px; }
+    #telBody { max-height: calc(100vh - 250px); }
     #buildLabel { top: calc(env(safe-area-inset-top) + 10px); max-width: 340px; }
     #buildConfirm { bottom: calc(env(safe-area-inset-bottom) + 10px); }
     #panel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 66px); width: 340px; }
@@ -101,6 +128,7 @@
     <button data-speed="2">2x</button>
     <button data-speed="4">4x</button>
   </div>
+  <div id="cash" role="status" aria-label="Cash on hand">$2,500.00</div>
 </div>
 <div id="bottomleft" class="hud">
   <button id="rotL" aria-label="Turn view left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 3v5h5"/></svg></button>
@@ -120,6 +148,12 @@
     <button id="actFwd">Forward</button><button id="actBack">Back</button><button id="actStop">Stop</button><button id="actSend">Send to</button>
   </div>
 </div>
+<div id="telPanel" class="hud" hidden>
+  <div class="row"><h2 class="grow">Telegraph</h2><button id="telClose" aria-label="Close">X</button></div>
+  <div id="telTabs" role="group" aria-label="Telegraph"><button data-tab="order">Order</button><button data-tab="contracts">Contracts</button><button data-tab="ledger">Ledger</button></div>
+  <div id="telInfo"></div>
+  <div id="telBody"></div>
+</div>
 <div id="carPanel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="carTitle">Car</h2><button id="carClose" aria-label="Close">X</button></div>
   <div id="carInfo"></div>
@@ -132,7 +166,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 5,
+  SCHEMA_VERSION: 6,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -458,6 +492,7 @@ function newState(seed) {
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
     jobs: jobNewStore(),             // staked construction jobs (section "construction jobs")
+    econ: econNewState(0),           // cash, market, orders, contracts and the ledger (section "economy")
   };
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
@@ -600,6 +635,12 @@ function applyCommand(S, c, ev) {
     case 'jobWork': jobWorkCmd(S, c, ev); break;
     case 'jobCancel': jobCancelCmd(S, c, ev); break;
     case 'setBayTag': setBayTag(S, c.b, c.bay, c.tag, ev); break;
+    case 'useTelegraph': { const k = econTelegraphKey(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'tel' }; P.act = null; P.run = false; break; }
+    case 'econOrder': econOrderCmd(S, c, ev); break;     // economy: orders, contracts and the credit line by telegraph
+    case 'contractAccept': econContractCmd(S, c, ev, true); break;
+    case 'contractDecline': econContractCmd(S, c, ev, false); break;
+    case 'creditDraw': econCreditCmd(S, c, ev, true); break;
+    case 'creditRepay': econCreditCmd(S, c, ev, false); break;
     case 'trainRun': {
       if (!tr) return;
       releaseRoute(S, tr);
@@ -819,7 +860,10 @@ function overlandTick(S, ev) {
     O.visits += 1;
     let cars = 0, items = 0;
     const held = tr.consist.length - 1;
-    if (!held) for (const d of OVERLAND_DELIVERY[sod === OVERLAND.DUE[0] ? 'morning' : 'evening']) {
+    // Normal play brings what was ordered by telegraph (section "economy"); the fixed test delivery only when
+    // a debug scenario or a check sets O.testDelivery.
+    if (!held && !O.testDelivery) { const r = econLoadOverland(S, tr, ev); cars += r.cars; items += r.items; }
+    if (!held && O.testDelivery) for (const d of OVERLAND_DELIVERY[sod === OVERLAND.DUE[0] ? 'morning' : 'evening']) {
       const car = { id: O.nextStock++, ...OVERLAND_CARS[d.car] };
       tr.consist.push(car); cars++;
       for (const [commodity, town, kind, cid, n] of d.items) for (let i = 0; i < n; i++) {
@@ -846,13 +890,13 @@ function overlandTick(S, ev) {
     if (tr.consist.some(c => overlandTakes(S, c))) { O.phase = 'out'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 + trainLength(tr)); }
     else { O.phase = 'setout'; O.wait = OVERLAND.UNCOUPLE_S; tr.status = 'Setting out cars'; }
   } else if (O.phase === 'out') {
-    // Off the map: the crew drops the cars it takes; their Outside goods are sold Outside (money: round C).
+    // Off the map: the crew drops the cars it takes; their Outside goods are sold Outside, paid at the market's sell price.
     const take = tr.consist.filter(c => overlandTakes(S, c)), gone = new Set(take.map(c => c.id));
-    let sold = 0;
-    for (const c of take) for (const id of itemsAt(S, { kind: 'CAR', stockId: c.id })) if (itemConsume(S, id, 'soldOutside', ev).ok) sold++;
+    let sold = 0, paid = 0;
+    for (const c of take) for (const id of itemsAt(S, { kind: 'CAR', stockId: c.id })) if (itemConsume(S, id, 'soldOutside', ev).ok) { sold++; paid += econSoldOutside(S, id, ev); }
     tr.consist = tr.consist.filter(c => !gone.has(c.id));
     O.took += take.length;
-    ev.push({ t: 'overlandPickedUp', cars: take.length, stock: take.map(c => c.id), sold });
+    ev.push({ t: 'overlandPickedUp', cars: take.length, stock: take.map(c => c.id), sold, paid });
     if (tr.consist.length > 1) { O.phase = 'back'; overlandGo(S, tr, -1, CFG.STOP_GAP); }
     else { O.phase = 'leave'; tr.route = null; }
   } else if (O.phase === 'back') {
@@ -1596,6 +1640,453 @@ function jobDebugScenario(S) {
   return S;
 }
 
+// ==== Section: economy ====
+// Owner: M1 package 3 (builder C1). Cash, the Overland market, import orders by telegraph, contracts, the
+// credit line and the ledger (design-doc 10, 16, 19, 20, 21). Pure simulation: no three.js, no page elements.
+// All money is whole cents; all times are game seconds (S.time, counted from 05:00 on day 1).
+//
+// S.econ:
+//   cash, start      cash on hand and the cash the game started with (cents). cash may go down to ECON.OVERDRAFT.
+//   ledger           every money change, oldest first: { t, amount, category, counterparty, ref }
+//                    (amount + in, - out; category one of ECON_CATEGORIES; ref { kind, id } or null)
+//   loan             what is drawn on the Eastern investors' credit line (cents)
+//   market           { buy: { c: cents }, sell: { c: cents }, walk: { c: permille }, history: { c: [buy, ...last 8 weeks] } }
+//                    null where a commodity is not traded that way (section 21)
+//   orders           import orders waiting for their Overland visit: { id, t, due, lines: [{ c, n, contract }], cost }
+//   nextOrder        the next order id
+//   contracts        every contract ever offered, index = id: section 20 Contract plus
+//                    { period (standing: weeks done), owed (standing: unpaid cents, paid Saturday 18:00),
+//                      items (ids of items paid for), offered (time) }; status OFFERED, ACTIVE, LATE, DONE,
+//                    CANCELLED, DECLINED or EXPIRED (the last two: an offer turned down or left until its due time)
+//   reputation       { townId: 0..100 } (section 10)
+//
+// The money rule (section 19): cash = start + the sum of the ledger, and loan = the sum of the 'credit' entries.
+// econCheckMoney(S) lists any break, like itemCheckConservation. Only econPost changes cash.
+//
+// API (S the game state, ev the tick's event list or null):
+//   econPost(S, amount, category, counterparty, ref, ev)   the one way money changes; event 'money'
+//   econCheckMoney(S)                                      -> list of problems (empty when the money adds up)
+//   econTelegraphKey()                                     where the telegraph key is (from the depot's layout)
+//   econNextVisit(time)                                    the Overland visit an order placed at time rides
+//   contractOffer(S, spec, ev)                             a business offers a contract (placeholder towns, C5)
+//   contractDeliver(S, itemId, ev)                         an item handed over at a business: pays its contract
+//   econLotFee(S, kind, townId, ref, ev)                   lot fees stub: 'HOUSE' $25, 'BUSINESS' $60
+//   econSoldOutside(S, itemId, ev)                         an item sold Outside on the Overland's pick-up: pays
+// Commands (the player must stand within ECON.TEL_REACH of the telegraph key, except useTelegraph):
+//   { t: 'useTelegraph' }                                  walk to the key; event 'reachedTelegraph'
+//   { t: 'econOrder', lines: [{ c, n, contract? }] }       order goods for the next Overland visit (pay on order)
+//   { t: 'contractAccept', id }, { t: 'contractDecline', id }
+//   { t: 'creditDraw', amount }, { t: 'creditRepay', amount }   cents
+// Events: money, reachedTelegraph, econRefused { why }, orderPlaced, orderDelivered, contractOffered,
+//   contractAccepted, contractDeclined, contractExpired, contractDelivered, contractLate, contractCancelled,
+//   contractPaid, creditDrawn, creditRepaid, marketMoved, interestPaid.
+// Provisional numbers (DEV_NOTES "Economy"): order lead 6 game hours, at most 6 cars of orders a visit,
+// Willow Ford 12 miles from the hub, starting offers due by the end of their day.
+const ECON = {
+  START_CASH: 250000, CREDIT_LIMIT: 500000, CREDIT_PERMILLE_WEEK: 10, OVERDRAFT: -50000,
+  LOT_FEE: { HOUSE: 2500, BUSINESS: 6000 },
+  ORDER_LEAD_S: 6 * 3600, ORDER_MAX_CARS: 6, ORDER_MAX_LINE: 99, ORDER_MAX_LINES: 40,
+  TEL_REACH: 3,
+  LATE_PCT_DAY: 10, LATE_PCT_MAX: 50, CANCEL_DAYS: 5,
+  REP_START: 50, REP_ON_TIME: 2, REP_LATE: -4, REP_CANCEL: -10,
+  WALK_STEP: 50, PRICE_MIN: 700, PRICE_MAX: 1400, HISTORY_WEEKS: 8,
+  DAY_S: 86400, WEEK_S: 7 * 86400, PAYDAY_SOD: 18 * 3600,
+};
+const ECON_CATEGORIES = ['delivered', 'haulage', 'fares', 'mail', 'lotFees', 'exports', 'imports', 'wages', 'rollingStock',
+  'construction', 'land', 'interest', 'upkeep', 'credit'];
+const ECON_CATEGORY_NAMES = { delivered: 'Delivered sales', haulage: 'Haulage', fares: 'Fares', mail: 'Mail', lotFees: 'Lot fees',
+  exports: 'Sold Outside', imports: 'Imports', wages: 'Wages', rollingStock: 'Rolling stock', construction: 'Construction',
+  land: 'Land', interest: 'Interest', upkeep: 'Upkeep', credit: 'Credit line' };
+// Placeholder businesses until the placeholder towns package (C5) builds real ones. Ids match the Overland's
+// test delivery (business 0 at the hub, 1 at Willow Ford). Town ids are CARGO_TOWNS ids.
+const ECON_BUSINESSES = [
+  { id: 0, name: 'Hub General Store', townId: 0 },
+  { id: 1, name: 'Willow Ford General Store', townId: 1 },
+  { id: 2, name: 'Hub Developer\'s Yard', townId: 0 },
+  { id: 3, name: 'Hub Saloon', townId: 0 },
+  { id: 4, name: 'Hub Boarding House', townId: 0 },
+];
+const ECON_TOWN_MILES = { 0: 0, 1: 12 };                      // provisional: miles from the hub (16u a mile)
+const ECON_OWN_USE = ['ties', 'rails', 'spikes', 'hardware'];  // ordered for our own track work: addressed to construction
+// What can be ordered: traded goods that are items (bulk needs gondolas; mail is not bought). Section 21 order.
+const ECON_ORDERABLE = Object.keys(COMMODITIES).filter(c => COMMODITIES[c].buy !== null && COMMODITIES[c].type !== 'bulk');
+// The starting offers (section 21 "First contracts", one commodity per contract), plus a standing one for
+// Willow Ford. due: by the end of that day (day 1 is the first day).
+const ECON_START_OFFERS = [
+  { kind: 'DELIVERY', counterparty: 0, commodity: 'flour', quantity: 6, dueDay: 2 },
+  { kind: 'DELIVERY', counterparty: 0, commodity: 'beans', quantity: 4, dueDay: 2 },
+  { kind: 'DELIVERY', counterparty: 2, commodity: 'lumber', quantity: 8, dueDay: 4 },
+  { kind: 'DELIVERY', counterparty: 2, commodity: 'nails', quantity: 2, dueDay: 4 },
+  { kind: 'STANDING', counterparty: 1, commodity: 'coffee', quantity: 2, dueDay: 7, repeatWeeks: 4 },
+];
+const econBiz = id => ECON_BUSINESSES.find(b => b.id === id) || null;
+const econTownName = id => { const t = CARGO_TOWNS.find(t => t.id === id); return t ? t.name : 'town ' + id; };
+// "$2,500.00", "-$5.25".
+function econMoney(c) {
+  const a = Math.abs(c), d = Math.floor(a / 100), s = String(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (c < 0 ? '-$' : '$') + s + '.' + String(a % 100).padStart(2, '0');
+}
+// A game time as words: "Mon 18:00", or "end of Tue" for midnight.
+function econWhen(time) {
+  const abs = time + CFG.DAY_START_S, sod = abs % ECON.DAY_S, wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (sod === 0) return 'end of ' + wd[(Math.floor(abs / ECON.DAY_S) + 6) % 7];
+  return wd[Math.floor(abs / ECON.DAY_S) % 7] + ' ' + String(Math.floor(sod / 3600)).padStart(2, '0') + ':' + String(Math.floor(sod % 3600 / 60)).padStart(2, '0');
+}
+
+// ---- The market (section 10 "The Overland market") ----
+// Seasons as in clockText: 14 days each, spring first. Factors in permille.
+function econSeasonPermille(c, day, side) {
+  const season = Math.floor(day / 14) % 4;
+  if (side === 'buy' && season === 3 && ['flour', 'beans', 'meat', 'cordwood'].includes(c)) return 1100;
+  if (side === 'buy' && season === 0 && c === 'lumber') return 1100;
+  if (side === 'sell' && season === 2 && c === 'grain') return 1200;
+  return 1000;
+}
+function econPrice(base, season, walk) {
+  if (base === null) return null;
+  const p = Math.round(base * season * walk / 1e6);
+  return Math.max(Math.round(base * ECON.PRICE_MIN / 1000), Math.min(Math.round(base * ECON.PRICE_MAX / 1000), p));
+}
+function econMarketSet(M, day) {
+  for (const c of Object.keys(COMMODITIES).sort()) {
+    const C = COMMODITIES[c];
+    M.buy[c] = econPrice(C.buy, econSeasonPermille(c, day, 'buy'), M.walk[c]);
+    M.sell[c] = econPrice(C.sell, econSeasonPermille(c, day, 'sell'), M.walk[c]);
+  }
+}
+// Each Monday at 00:00: a random walk of up to 5% of base per commodity (the game's seeded numbers, in
+// commodity order), the season's factor, kept within 70% to 140% of base; 8 weeks of buy prices kept.
+function econMarketMove(S, day, ev) {
+  const M = S.econ.market;
+  for (const c of Object.keys(COMMODITIES).sort()) {
+    const d = Math.round((rngNext(S.rng) * 2 - 1) * ECON.WALK_STEP);
+    M.walk[c] = Math.max(ECON.PRICE_MIN, Math.min(ECON.PRICE_MAX, M.walk[c] + d));
+  }
+  econMarketSet(M, day);
+  for (const c of Object.keys(COMMODITIES).sort()) if (M.buy[c] !== null) {
+    M.history[c].push(M.buy[c]);
+    if (M.history[c].length > ECON.HISTORY_WEEKS) M.history[c].shift();
+  }
+  if (ev) ev.push({ t: 'marketMoved' });
+}
+// Delivered price offered (section 10): buy x (1.25 + 0.03 x miles from the hub), to the cent. (Scarcity: C5.)
+function econDeliveredPrice(E, c, townId) {
+  const buy = E.market.buy[c] !== null && E.market.buy[c] !== undefined ? E.market.buy[c] : COMMODITIES[c].sell || 0;
+  return Math.round(buy * (125 + 3 * (ECON_TOWN_MILES[townId] || 0)) / 100);
+}
+
+// ---- State ----
+// A fresh economy at game time `time` (0 for a new game; an old save's time when it is migrated).
+function econNewState(time) {
+  time = time || 0;
+  const day = Math.floor((time + CFG.DAY_START_S) / ECON.DAY_S);
+  const M = { buy: {}, sell: {}, walk: {}, history: {} };
+  for (const c of Object.keys(COMMODITIES).sort()) M.walk[c] = 1000;
+  econMarketSet(M, day);
+  for (const c of Object.keys(COMMODITIES).sort()) if (M.buy[c] !== null) M.history[c] = [M.buy[c]];
+  const E = { cash: ECON.START_CASH, start: ECON.START_CASH, ledger: [], loan: 0, market: M, orders: [], nextOrder: 0,
+    contracts: [], reputation: {} };
+  for (const t of CARGO_TOWNS) E.reputation[t.id] = ECON.REP_START;
+  for (const o of ECON_START_OFFERS) {
+    econAddContract(E, time, { kind: o.kind, counterparty: o.counterparty, commodity: o.commodity, quantity: o.quantity,
+      due: (day + o.dueDay) * ECON.DAY_S - CFG.DAY_START_S, repeatWeeks: o.repeatWeeks || 1 });
+  }
+  return E;
+}
+function econAddContract(E, time, s) {
+  const b = econBiz(s.counterparty);
+  const k = { id: E.contracts.length, kind: s.kind, counterparty: s.counterparty, townId: b.townId, commodity: s.commodity,
+    quantity: s.quantity, pricePerUnit: s.pricePerUnit !== undefined ? s.pricePerUnit : econDeliveredPrice(E, s.commodity, b.townId),
+    due: s.due, repeatWeeks: s.repeatWeeks || 1, period: 0, delivered: 0, status: 'OFFERED', owed: 0, items: [], offered: time };
+  E.contracts.push(k);
+  return k;
+}
+// A business offers a contract (for the placeholder towns, C5). spec: { kind: 'DELIVERY' | 'STANDING',
+// counterparty (business id), commodity, quantity, due (game seconds), repeatWeeks?, pricePerUnit? (cents) }.
+function contractOffer(S, s, ev) {
+  const why = !s || !['DELIVERY', 'STANDING'].includes(s.kind) ? 'unknown kind of contract'
+    : !econBiz(s.counterparty) ? 'no such business' : !COMMODITIES[s.commodity] || COMMODITIES[s.commodity].type === 'bulk' ? 'not an item commodity'
+    : !Number.isInteger(s.quantity) || s.quantity < 1 ? 'bad quantity' : !Number.isInteger(s.due) || s.due <= S.time ? 'bad due time'
+    : s.repeatWeeks !== undefined && !(Number.isInteger(s.repeatWeeks) && s.repeatWeeks >= 1) ? 'bad number of weeks'
+    : s.pricePerUnit !== undefined && !(Number.isInteger(s.pricePerUnit) && s.pricePerUnit >= 0) ? 'bad price' : null;
+  if (why) return { ok: false, why };
+  const k = econAddContract(S.econ, S.time, { ...s, repeatWeeks: s.kind === 'STANDING' ? s.repeatWeeks || 1 : 1 });
+  if (ev) ev.push({ t: 'contractOffered', id: k.id });
+  return { ok: true, id: k.id };
+}
+
+// ---- Money ----
+function econPost(S, amount, category, counterparty, ref, ev) {
+  if (!Number.isInteger(amount) || amount === 0) return;
+  const E = S.econ;
+  E.cash += amount;
+  E.ledger.push({ t: S.time, amount, category, counterparty, ref: ref || null });
+  if (ev) ev.push({ t: 'money', amount, category });
+}
+function econCheckMoney(S) {
+  const E = S.econ, out = [];
+  if (!E || typeof E !== 'object') return ['no economy state'];
+  if (!Number.isInteger(E.cash) || !Number.isInteger(E.start)) return ['cash is not a whole number of cents'];
+  if (!Array.isArray(E.ledger)) return ['no ledger'];
+  let sum = 0, credit = 0;
+  E.ledger.forEach((L, i) => {
+    if (!L || !Number.isInteger(L.amount) || L.amount === 0) { out.push('ledger entry ' + i + ' has no whole-cent amount'); return; }
+    if (!ECON_CATEGORIES.includes(L.category)) out.push('ledger entry ' + i + ' has an unknown category (' + L.category + ')');
+    if (typeof L.counterparty !== 'string' || !L.counterparty) out.push('ledger entry ' + i + ' has no counterparty');
+    if (!Number.isInteger(L.t)) out.push('ledger entry ' + i + ' has no time');
+    else if (i && E.ledger[i - 1] && L.t < E.ledger[i - 1].t) out.push('ledger entry ' + i + ' is out of time order');
+    sum += L.amount;
+    if (L.category === 'credit') credit += L.amount;
+  });
+  if (E.cash !== E.start + sum) out.push(`cash ${econMoney(E.cash)} is not the starting cash plus the ledger (${econMoney(E.start + sum)})`);
+  if (!Number.isInteger(E.loan) || E.loan !== credit) out.push(`the credit line owed (${E.loan}) is not the sum of the credit entries (${credit})`);
+  if (E.loan < 0 || E.loan > ECON.CREDIT_LIMIT) out.push('the credit line is outside 0 to ' + econMoney(ECON.CREDIT_LIMIT));
+  for (const k of E.contracts || []) if (!Number.isInteger(k.owed) || k.owed < 0) out.push('contract ' + k.id + ' owes a bad amount');
+  return out;
+}
+// Lot fees (stub, section 10): a building completed in a town you founded pays $25 (house) or $60 (business).
+// Nothing calls it yet (towns grow in M2).
+function econLotFee(S, kind, townId, ref, ev) {
+  const fee = ECON.LOT_FEE[kind];
+  if (!fee) return { ok: false, why: 'lot fees are for a HOUSE or a BUSINESS' };
+  econPost(S, fee, 'lotFees', econTownName(townId), ref || null, ev);
+  return { ok: true, amount: fee };
+}
+// An item sold Outside on the Overland's pick-up (called after itemConsume 'soldOutside'): the market's sell
+// price (a part-used bundle pays for its pieces). Returns the cents paid.
+function econSoldOutside(S, id, ev) {
+  if (!S.econ) return 0;
+  const wb = S.items.waybill[id], p = S.econ.market.sell[wb.commodity];
+  if (!p) return 0;
+  const M = typeof JOB_MAT !== 'undefined' && JOB_MAT[wb.commodity];
+  const amount = wb.pieces !== undefined && M ? Math.round(p * wb.pieces / M.per) : p;
+  econPost(S, amount, 'exports', 'Overland market', { kind: 'item', id }, ev);
+  return amount;
+}
+
+// ---- The telegraph key and import orders ----
+// The key is in the depot's agent's office bay; the player works it from the platform in front of the bay
+// window. Worked out from the depot's layout (buildings section), so it moves with the depot.
+// x, z: where the player stands; wx, wy, wz: the bay window (the spot to tap).
+// When the buildings section gives use spots (buildingSpots(), builder C2), the hub depot's 'telegraph' spot is
+// used; otherwise the spot is worked out from the depot's footprint (the layout before C2).
+function econTelegraphKey() {
+  const at = BLD_LAYOUT.find(a => a.id === 'depot'), ext = BLD_EXTENTS.depot, c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
+  const w = (lx, lz) => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c });
+  const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'telegraph') : null;
+  const stand = sp ? { x: sp.x, z: sp.z } : w(0.4, ext[3] + 0.37); // 0.37: just outside the walk grid's block, as C2's spot
+  // The bay window, 0.44u back from the standing spot towards the building (local -z).
+  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05, wz: stand.z - 0.44 * c };
+}
+function econAtKey(S, r) { const k = econTelegraphKey(), P = S.player; return Math.hypot(P.x - k.x, P.z - k.z) <= (r || ECON.TEL_REACH); }
+function econRefuse(ev, why) { if (ev) ev.push({ t: 'econRefused', why }); return { ok: false, why }; }
+// The visit an order placed at `time` rides: the first 06:00 or 18:00 at least ECON.ORDER_LEAD_S away.
+function econNextVisit(time) {
+  const abs = time + CFG.DAY_START_S;
+  for (let d = Math.floor(abs / ECON.DAY_S); ; d++) for (const v of OVERLAND.DUE) {
+    const at = d * ECON.DAY_S + v;
+    if (at - abs >= ECON.ORDER_LEAD_S) return at - CFG.DAY_START_S;
+  }
+}
+// Which cars a list of commodities (one per item, in order) needs: long bundles and machinery on flatcars,
+// everything else in boxcars, first fit. Returns [{ k, units: [index into the list] }].
+function econPack(list) {
+  const cars = [];
+  list.forEach((c, i) => {
+    const type = COMMODITIES[c].type, k = type === 'longBundle' || type === 'machinery' ? 'flatcar' : 'boxcar', R = CARGO_CAR_RULES[k], cost = R.cost[type];
+    let car = cars.find(x => x.k === k && x.used + cost <= R.cap);
+    if (!car) { car = { k, used: 0, units: [] }; cars.push(car); }
+    car.used += cost; car.units.push(i);
+  });
+  return cars;
+}
+const econLineUnits = lines => lines.reduce((a, l) => { for (let i = 0; i < l.n; i++) a.push(l.c); return a; }, []);
+// A checked copy of an order's lines, or the reason it cannot be ordered.
+function econOrderLines(S, lines) {
+  if (!Array.isArray(lines) || !lines.length) return 'The order is empty';
+  if (lines.length > ECON.ORDER_MAX_LINES) return 'Too many lines in one order';
+  const out = [];
+  for (const l of lines) {
+    if (!l || !ECON_ORDERABLE.includes(l.c)) return 'The Overland market does not sell that';
+    if (!Number.isInteger(l.n) || l.n < 1 || l.n > ECON.ORDER_MAX_LINE) return 'Order between 1 and ' + ECON.ORDER_MAX_LINE + ' of each';
+    let contract = null;
+    if (l.contract !== undefined && l.contract !== null) {
+      const k = Number.isInteger(l.contract) ? S.econ.contracts[l.contract] : null;
+      if (!k || (k.status !== 'ACTIVE' && k.status !== 'LATE')) return 'That contract is not open';
+      if (k.commodity !== l.c) return 'That contract is for ' + COMMODITIES[k.commodity].name.toLowerCase();
+      contract = k.id;
+    }
+    out.push({ c: l.c, n: l.n, contract });
+  }
+  return out;
+}
+function econOrderCmd(S, c, ev) {
+  const E = S.econ;
+  if (!econAtKey(S)) return econRefuse(ev, 'Orders go by telegraph: walk to the telegraph key at the depot first');
+  const lines = econOrderLines(S, c.lines);
+  if (typeof lines === 'string') return econRefuse(ev, lines);
+  const cost = lines.reduce((s, l) => s + l.n * E.market.buy[l.c], 0);
+  if (E.cash - cost < ECON.OVERDRAFT) return econRefuse(ev, `Not enough money: the order costs ${econMoney(cost)}, and cash may not go below ${econMoney(ECON.OVERDRAFT)}`);
+  const due = econNextVisit(S.time);
+  const booked = E.orders.filter(o => o.due <= due).reduce((a, o) => a.concat(o.lines), []);
+  if (econPack(econLineUnits(booked.concat(lines))).length > ECON.ORDER_MAX_CARS) return econRefuse(ev, `Too much for one train: the Overland brings at most ${ECON.ORDER_MAX_CARS} cars of orders a visit`);
+  const id = E.nextOrder++;
+  E.orders.push({ id, t: S.time, due, lines, cost });
+  econPost(S, -cost, 'imports', 'Overland market', { kind: 'order', id }, ev);
+  if (ev) ev.push({ t: 'orderPlaced', id, due, cost, items: lines.reduce((s, l) => s + l.n, 0) });
+  return { ok: true, id };
+}
+// The waybill of an ordered item: for a contract, to its business; track materials to our own construction;
+// anything else to the hub warehouse (goods we own and have not sold yet, section 9).
+function econOrderWaybill(S, l) {
+  const k = l.contract !== null ? S.econ.contracts[l.contract] : null;
+  const base = { commodity: l.c, originTownId: 'OUTSIDE', contractId: null, due: null };
+  if (k) return { ...base, destTownId: k.townId, consignee: { kind: 'BUSINESS', id: k.counterparty }, contractId: k.id, due: k.due };
+  if (ECON_OWN_USE.includes(l.c)) return { ...base, destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 } };
+  return { ...base, destTownId: 0, consignee: { kind: 'WAREHOUSE', id: 0 } };
+}
+// The Overland's delivery (called by overlandTick as it comes in, when it has no cars held aboard): every
+// order due by now, oldest first, as long as they fit in ECON.ORDER_MAX_CARS cars; the rest wait for the next
+// visit. Cars are added to the Overland's consist (tr) with the items in them. Returns { cars, items }.
+function econLoadOverland(S, tr, ev) {
+  const E = S.econ, O = S.overland;
+  if (!E) return { cars: 0, items: 0 };
+  const take = [];
+  let lines = [];
+  for (const o of E.orders.filter(o => o.due <= S.time)) {
+    const next = lines.concat(o.lines.map(l => ({ ...l, order: o.id })));
+    if (take.length && econPack(econLineUnits(next)).length > ECON.ORDER_MAX_CARS) break;
+    take.push(o); lines = next;
+  }
+  const units = [];
+  for (const l of lines) for (let i = 0; i < l.n; i++) units.push(l);
+  const got = {};
+  let items = 0;
+  const cars = econPack(units.map(u => u.c));
+  for (const car of cars) {
+    const sc = { id: O.nextStock++, ...OVERLAND_CARS[car.k] };
+    tr.consist.push(sc);
+    for (const i of car.units) {
+      const r = itemCreate(S, econOrderWaybill(S, units[i]), { kind: 'CAR', stockId: sc.id }, ev);
+      if (r.ok) { items++; (got[units[i].order] = got[units[i].order] || []).push(r.id); }
+    }
+  }
+  const gone = new Set(take.map(o => o.id));
+  E.orders = E.orders.filter(o => !gone.has(o.id));
+  if (ev) for (const o of take) ev.push({ t: 'orderDelivered', id: o.id, items: got[o.id] || [] });
+  return { cars: cars.length, items };
+}
+
+// ---- Contracts ----
+function econRep(E, townId, d) { E.reputation[townId] = Math.max(0, Math.min(100, (E.reputation[townId] === undefined ? ECON.REP_START : E.reputation[townId]) + d)); }
+function econContractCmd(S, c, ev, accept) {
+  if (!econAtKey(S)) return econRefuse(ev, 'Contracts come by telegraph: walk to the telegraph key at the depot first');
+  const k = Number.isInteger(c.id) ? S.econ.contracts[c.id] : null;
+  if (!k || k.status !== 'OFFERED') return econRefuse(ev, 'That offer is no longer open');
+  k.status = accept ? 'ACTIVE' : 'DECLINED';
+  if (ev) ev.push({ t: accept ? 'contractAccepted' : 'contractDeclined', id: k.id });
+  return { ok: true };
+}
+// An item handed over at a business (C5's local delivery calls this once the item is consumed with reason
+// 'business', or while it stands at { kind: 'BUSINESS', businessId }). It counts towards the open contract its
+// waybill names (contractId), or else the oldest open contract of that business for that commodity.
+// A delivery contract pays at once; a standing contract's pay is owed and paid on Saturday at 18:00.
+// Late (section 10): 10% off per day late, up to 50%; reputation +2 for a period done on time, -4 if late.
+// Returns { ok: true, id (contract), amount } or { ok: false, why }; event 'contractDelivered'.
+function contractDeliver(S, itemId, ev) {
+  const E = S.econ, I = S.items;
+  if (!Number.isInteger(itemId) || itemId < 0 || itemId >= I.next) return { ok: false, why: 'no such item' };
+  const wb = I.waybill[itemId];
+  let at = I.alive[itemId] ? I.where[itemId] : null;
+  if (!I.alive[itemId]) { const u = I.used.find(u => u.id === itemId); if (u && u.reason === 'business') at = u.from; }
+  if (!at || at.kind !== 'BUSINESS') return { ok: false, why: 'the item was not handed over at a business' };
+  if (E.contracts.some(k => k.items.includes(itemId))) return { ok: false, why: 'that item has already been paid for' };
+  if (wb.pieces !== undefined) return { ok: false, why: 'a part-used bundle does not count for a contract' };
+  const open = k => k && (k.status === 'ACTIVE' || k.status === 'LATE') && k.counterparty === at.businessId && k.commodity === wb.commodity;
+  let k = wb.contractId !== null && open(E.contracts[wb.contractId]) ? E.contracts[wb.contractId] : null;
+  if (!k && wb.contractId === null && wb.consignee.kind === 'BUSINESS' && wb.consignee.id === at.businessId) k = E.contracts.find(open) || null;
+  if (!k) return { ok: false, why: 'no open contract of that business wants it' };
+  const daysLate = S.time > k.due ? Math.ceil((S.time - k.due) / ECON.DAY_S) : 0;
+  const pct = Math.min(ECON.LATE_PCT_MAX, ECON.LATE_PCT_DAY * daysLate), amount = Math.round(k.pricePerUnit * (100 - pct) / 100);
+  k.delivered += 1; k.items.push(itemId);
+  const b = econBiz(k.counterparty);
+  if (k.kind === 'STANDING') k.owed += amount;
+  else econPost(S, amount, 'delivered', b.name, { kind: 'contract', id: k.id }, ev);
+  let done = false;
+  if (k.delivered >= k.quantity) {
+    econRep(E, k.townId, daysLate ? ECON.REP_LATE : ECON.REP_ON_TIME);
+    k.period += 1;
+    if (k.period >= k.repeatWeeks) { k.status = 'DONE'; done = true; }
+    else { k.delivered = 0; k.due += ECON.WEEK_S; k.status = S.time > k.due ? 'LATE' : 'ACTIVE'; }
+  }
+  if (ev) ev.push({ t: 'contractDelivered', id: k.id, item: itemId, amount, late: daysLate, done });
+  return { ok: true, id: k.id, amount };
+}
+
+// ---- The credit line (section 10 "Loans and failure") ----
+function econCreditCmd(S, c, ev, draw) {
+  const E = S.econ;
+  if (!econAtKey(S)) return econRefuse(ev, 'The investors are reached by telegraph: walk to the telegraph key at the depot first');
+  const a = c.amount;
+  if (!Number.isInteger(a) || a <= 0) return econRefuse(ev, 'That is not an amount of money');
+  if (draw && E.loan + a > ECON.CREDIT_LIMIT) return econRefuse(ev, `The credit line is ${econMoney(ECON.CREDIT_LIMIT)}; you have drawn ${econMoney(E.loan)}`);
+  if (!draw && a > E.loan) return econRefuse(ev, `You owe the investors only ${econMoney(E.loan)}`);
+  if (!draw && a > E.cash) return econRefuse(ev, 'Not enough cash to repay that much');
+  E.loan += draw ? a : -a;
+  econPost(S, draw ? a : -a, 'credit', 'Eastern investors', null, ev);
+  if (ev) ev.push({ t: draw ? 'creditDrawn' : 'creditRepaid', amount: a });
+  return { ok: true };
+}
+
+// ---- Each tick (after the actors) ----
+// Before the actors move: is the player on the way to the telegraph key? (So econTick can tell they arrived.)
+function econTelBefore(S, ev) { const P = S.player; return P.use && P.use.k === 'tel' ? { from: ev.length } : null; }
+function econTick(S, ev, tel) {
+  const E = S.econ, P = S.player;
+  if (!E) return;
+  if (tel && P.use === null && P.mode === 'idle' && !P.act) {
+    if (econAtKey(S, CFG.REACH)) {
+      for (let i = ev.length - 1; i >= tel.from; i--) if (ev[i].t === 'blocked') ev.splice(i, 1);
+      ev.push({ t: 'reachedTelegraph' });
+    }
+  }
+  const abs = S.time + CFG.DAY_START_S, sod = abs % ECON.DAY_S, day = Math.floor(abs / ECON.DAY_S), wd = day % 7;
+  if (sod === 0 && wd === 0) {
+    // Monday 00:00: the week's interest on the credit line, then the market moves.
+    if (E.loan > 0) {
+      const amount = Math.round(E.loan * ECON.CREDIT_PERMILLE_WEEK / 1000);
+      econPost(S, -amount, 'interest', 'Eastern investors', null, ev);
+      if (ev) ev.push({ t: 'interestPaid', amount });
+    }
+    econMarketMove(S, day, ev);
+  }
+  if (sod === ECON.PAYDAY_SOD && wd === 5) for (const k of E.contracts) if (k.owed > 0) {
+    // Saturday 18:00: standing contracts pay what they owe.
+    const amount = k.owed; k.owed = 0;
+    econPost(S, amount, 'delivered', econBiz(k.counterparty).name, { kind: 'contract', id: k.id }, ev);
+    if (ev) ev.push({ t: 'contractPaid', id: k.id, amount });
+  }
+  for (const k of E.contracts) {
+    if (k.status === 'OFFERED' && S.time >= k.due) { k.status = 'EXPIRED'; if (ev) ev.push({ t: 'contractExpired', id: k.id }); }
+    else if (k.status === 'ACTIVE' && S.time > k.due) { k.status = 'LATE'; if (ev) ev.push({ t: 'contractLate', id: k.id }); }
+    else if (k.status === 'LATE' && S.time > k.due + ECON.CANCEL_DAYS * ECON.DAY_S) {
+      k.status = 'CANCELLED'; econRep(E, k.townId, ECON.REP_CANCEL);
+      if (ev) ev.push({ t: 'contractCancelled', id: k.id });
+    }
+  }
+}
+// Shape check for a saved economy (used when a save is loaded). Throws on damage.
+function econCheckSaveShape(st) {
+  const E = st.econ, int = Number.isInteger, bad = () => { throw new Error('damaged save: money and contracts'); };
+  if (!E || typeof E !== 'object' || !int(E.cash) || !int(E.start) || !int(E.loan) || !int(E.nextOrder)) bad();
+  if (!Array.isArray(E.ledger) || !Array.isArray(E.orders) || !Array.isArray(E.contracts) || !E.reputation || typeof E.reputation !== 'object') bad();
+  const M = E.market;
+  if (!M || !M.buy || !M.sell || !M.walk || !M.history) bad();
+  for (const c of Object.keys(COMMODITIES)) if (!int(M.walk[c]) || (COMMODITIES[c].buy !== null && !int(M.buy[c]))) bad();
+  E.contracts.forEach((k, i) => { if (!k || k.id !== i || !int(k.due) || !int(k.delivered) || !Array.isArray(k.items) || typeof k.status !== 'string') bad(); });
+  for (const o of E.orders) if (!o || !int(o.id) || !int(o.due) || !Array.isArray(o.lines)) bad();
+}
+
 // ==== Section: walk grid and path-finding ====
 // Design-doc section 11 "Pathfinding", for the player (M1). One grid of 0.5u cells over the whole map
 // (240 x 240 = 57,600 cells): the map is only 120u square, so a finer area near the station is not needed.
@@ -2174,7 +2665,9 @@ function simTick(S, cmds) {
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
+  const tel = econTelBefore(S, ev);
   jobActorTick(S, ev, poseCache);                       // 7. actors (the player: walking in playerTick, carrying and job work around it)
+  econTick(S, ev, tel);                                 // 8. economy: reaching the telegraph key, market Mondays, contracts due
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
 }
@@ -2233,6 +2726,11 @@ function migrate(save) {
     overlandMigrate(st);
     st.schemaVersion = 5;
   }
+  if (st.schemaVersion === 5) {
+    // 5 -> 6 (economy): starting cash and market, the starting offers dated from the save's own day, no orders.
+    st.econ = econNewState(Number.isInteger(st.time) ? st.time : 0);
+    st.schemaVersion = 6;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -2263,6 +2761,7 @@ function checkSaveShape(st) {
   carryCheckSaveShape(st);
   jobCheckSaveShape(st);
   overlandCheckSaveShape(st);
+  econCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -4840,6 +5339,7 @@ const DBG_SCENARIOS = {
   interchange: () => {
     const st = newState(CFG.SEED);
     st.time = 50 * 60;
+    st.overland.testDelivery = true; // the fixed test delivery (B4's check), not import orders
     st.player.x = 3.5; st.player.z = 22.5;
     return st;
   },
@@ -4969,7 +5469,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland/.test(e.t));
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland|^(orderPlaced|contract|credit)/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -4994,7 +5494,7 @@ function handleEvent(e) {
   else if (e.t === 'reachedCar') openCarPanel(e.stock);
   else if (e.t === 'overlandArriving') toast(e.cars ? `The Overland is coming in with ${e.cars} car${e.cars > 1 ? 's' : ''} for the interchange.` : 'The Overland is coming in on the interchange track.');
   else if (e.t === 'overlandSetOut' && e.cars) toast(`The Overland set out ${e.cars} car${e.cars > 1 ? 's' : ''} on the interchange track.` + (e.held ? ` ${e.held} did not fit and stay aboard.` : ''));
-  else if (e.t === 'overlandPickedUp' && e.cars) toast(`The Overland took away ${e.cars} car${e.cars > 1 ? 's' : ''} from the interchange.`);
+  else if (e.t === 'overlandPickedUp' && e.cars) toast(`The Overland took away ${e.cars} car${e.cars > 1 ? 's' : ''} from the interchange.` + (e.paid ? ` Goods sold Outside: ${econMoney(e.paid)}.` : ''));
   else if (e.t === 'overlandLeft') toast('The Overland has left.');
   else if (e.t === 'blocked') toast('Something is in the way.');
   else if (e.t === 'trackBuilt') buildOnBuilt(e);
@@ -5003,6 +5503,7 @@ function handleEvent(e) {
   else if (e.t === 'toolTaken') toast(`You take the ${TOOL_KINDS[S.tools[e.tool].k].name.toLowerCase()}.`);
   else if (e.t === 'toolLeft') toast(`${TOOL_KINDS[S.tools[e.tool].k].name} left at its spot.`);
   else if (/^job/.test(e.t)) jobOnEvent(e);
+  else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
 }
 // The carry readout (bottom left, above the turn buttons): what the player carries, and a Put down button.
 // Hidden while the train panel or the build tool use that part of the screen.
@@ -5013,7 +5514,7 @@ function carryHud() {
   let text = '';
   if (carrier === 'HAND') text = held.length ? 'Carrying: ' + held.map(label).join(', ') : '';
   else text = `${TOOL_KINDS[S.tools[P.tool].k].name} ${held.length}/${CARGO_CARRY_CAP[carrier]}` + (held.length ? ': ' + held.map(label).join(', ') : '');
-  const hide = !text || ui.panelTrain !== null || carUi.stock !== null || (typeof bt !== 'undefined' && bt.on);
+  const hide = !text || ui.panelTrain !== null || carUi.stock !== null || telUi.open || (typeof bt !== 'undefined' && bt.on);
   const sig = (hide ? '-' : text) + '|' + held.length;
   if (sig === carryHudSig) return;
   carryHudSig = sig;
@@ -5030,7 +5531,7 @@ $('carryPut').addEventListener('click', () => {
 // It closes when the player walks more than 3u from the door, or the car is taken or moves off.
 const carUi = { stock: null, sig: '' };
 const CAR_NAMES = { boxcar: 'Boxcar', flatcar: 'Flatcar', combine: 'Combine' };
-function openCarPanel(stock) { closePanel(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
+function openCarPanel(stock) { closePanel(); closeTelPanel(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
 function closeCarPanel() { carUi.stock = null; carUi.sig = ''; $('carPanel').hidden = true; }
 function carPanelUpdate() {
   if (carUi.stock === null) return;
@@ -5052,12 +5553,119 @@ function carPanelUpdate() {
 $('carItems').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.id !== undefined) send({ t: 'carryPick', id: Number(b.dataset.id) }); });
 $('carPutIn').addEventListener('click', () => { if (carUi.stock !== null) send({ t: 'carryPut', stock: carUi.stock }); });
 $('carClose').addEventListener('click', closeCarPanel);
-function openPanel(trId) { closeCarPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
+// The telegraph panel (economy, builder C1): opened when the player reaches the telegraph key in the depot
+// ('reachedTelegraph'). Three tabs: Order (choose how many of each good, Send order pays and books it for the
+// next Overland), Contracts (offers to accept or decline; open contracts with a button to order what they
+// still need), and Ledger (cash, the credit line with Borrow and Repay, the latest entries). Same look as the
+// car panel; it closes when the player walks more than ECON.TEL_REACH from the key. The order being put
+// together is page-side only (telUi.draft) until Send order sends it as one command.
+const telUi = { open: false, tab: 'order', draft: {}, sig: '' };
+const TEL_CREDIT_STEP = 50000; // Borrow and Repay move $500 at a time
+function openTelPanel() { closePanel(); closeCarPanel(); telUi.open = true; telUi.sig = ''; $('telPanel').hidden = false; telPanelUpdate(); }
+function closeTelPanel() { telUi.open = false; telUi.sig = ''; $('telPanel').hidden = true; }
+// Send a telegraph command; while paused, run one tick so it takes effect at once (as Lay track does).
+function telSend(cmd) { send(cmd); if (speed === 0) doTick(); }
+function telDraftLines() { return ECON_ORDERABLE.filter(c => telUi.draft[c] > 0).map(c => ({ c, n: telUi.draft[c] })); }
+// How many of a contract's goods are still to be ordered: wanted this period, less delivered, ordered and on the way.
+function telContractLeft(k) {
+  let n = k.quantity - k.delivered;
+  for (const o of S.econ.orders) for (const l of o.lines) if (l.contract === k.id) n -= l.n;
+  for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && S.items.waybill[i].contractId === k.id) n -= 1;
+  return Math.max(0, n);
+}
+function telContractText(k) {
+  const b = econBiz(k.counterparty), C = COMMODITIES[k.commodity];
+  const what = `${k.quantity} ${C.name.toLowerCase()}` + (k.kind === 'STANDING' ? ` a week for ${k.repeatWeeks} weeks` : '');
+  return `<b>${b.name}</b> (${econTownName(k.townId)}): ${what}, <span class="money">${econMoney(k.pricePerUnit)}</span> each, due ${econWhen(k.due)}.`;
+}
+function telPanelUpdate() {
+  if (!telUi.open) return;
+  const P = S.player, key = econTelegraphKey(), E = S.econ;
+  if (Math.hypot(key.x - P.x, key.z - P.z) > ECON.TEL_REACH) { closeTelPanel(); return; }
+  const week = Math.floor((S.time + CFG.DAY_START_S) / ECON.WEEK_S);
+  const sig = JSON.stringify([telUi.tab, telUi.draft, E.cash, E.loan, E.ledger.length, E.orders.map(o => o.id), E.contracts.map(k => k.status + k.delivered + ':' + k.period),
+    econNextVisit(S.time), week, S.items.next]);
+  if (sig === telUi.sig) return;
+  telUi.sig = sig;
+  document.querySelectorAll('#telTabs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tab === telUi.tab)));
+  const info = $('telInfo'), body = $('telBody');
+  let h = '';
+  if (telUi.tab === 'order') {
+    const lines = telDraftLines(), cost = lines.reduce((s, l) => s + l.n * E.market.buy[l.c], 0), n = lines.reduce((s, l) => s + l.n, 0);
+    info.textContent = `Cash ${econMoney(E.cash)}. Pay on order; an order sent now comes on the Overland, ${econWhen(econNextVisit(S.time))}.`;
+    h += `<div class="row"><span class="grow">${n ? `${n} item${n > 1 ? 's' : ''}, <span class="money">${econMoney(cost)}</span>` : 'Choose goods below.'}</span><button id="telSend" data-act="send"${n ? '' : ' disabled'}>Send order</button></div>`;
+    for (const o of E.orders) h += `<div><small>Waiting for the Overland (${econWhen(o.due)}): ` + o.lines.map(l => `${l.n} ${COMMODITIES[l.c].name.toLowerCase()}`).join(', ') + '.</small></div>';
+    for (const c of ECON_ORDERABLE) {
+      const q = telUi.draft[c] || 0;
+      h += `<div class="row" data-c="${c}"><span class="grow">${COMMODITIES[c].name} <small class="money">${econMoney(E.market.buy[c])}</small></span>` +
+        `<button data-act="dec" data-c="${c}" aria-label="One less ${COMMODITIES[c].name}">-</button><span class="q">${q}</span><button data-act="inc" data-c="${c}" aria-label="One more ${COMMODITIES[c].name}">+</button></div>`;
+    }
+  } else if (telUi.tab === 'contracts') {
+    info.textContent = 'Reputation: ' + CARGO_TOWNS.map(t => `${t.name} ${E.reputation[t.id]}`).join(', ') + '. Late deliveries pay 10% less a day.';
+    const offers = E.contracts.filter(k => k.status === 'OFFERED'), open = E.contracts.filter(k => k.status === 'ACTIVE' || k.status === 'LATE');
+    const past = E.contracts.filter(k => /^(DONE|CANCELLED)$/.test(k.status)).slice(-3);
+    if (!offers.length && !open.length) h += '<div>No offers or contracts at the moment.</div>';
+    for (const k of offers) h += `<div class="card" data-k="${k.id}"><span>Offer: ${telContractText(k)}</span><div class="row"><button data-act="accept" data-id="${k.id}">Accept</button><button data-act="decline" data-id="${k.id}">Decline</button></div></div>`;
+    for (const k of open) {
+      const left = telContractLeft(k), C = COMMODITIES[k.commodity];
+      h += `<div class="card" data-k="${k.id}"><span>${k.status === 'LATE' ? '<b>Late.</b> ' : ''}${telContractText(k)} ${k.delivered} of ${k.quantity} delivered` +
+        (k.kind === 'STANDING' ? ` (week ${k.period + 1})` : '') + '.</span>' +
+        (left ? `<div class="row"><button data-act="orderFor" data-id="${k.id}">Order ${left} ${C.name.toLowerCase()} (${econMoney(left * E.market.buy[k.commodity])})</button></div>` : '') + '</div>';
+    }
+    for (const k of past) h += `<div><small>${k.status === 'DONE' ? 'Done' : 'Cancelled'}: ${econBiz(k.counterparty).name}, ${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}.</small></div>`;
+  } else {
+    info.textContent = `Cash ${econMoney(E.cash)}. Credit line: ${econMoney(E.loan)} of ${econMoney(ECON.CREDIT_LIMIT)} drawn, 1% a week.`;
+    h += `<div class="row"><button data-act="borrow"${E.loan + TEL_CREDIT_STEP > ECON.CREDIT_LIMIT ? ' disabled' : ''}>Borrow ${econMoney(TEL_CREDIT_STEP)}</button>` +
+      `<button data-act="repay"${E.loan < TEL_CREDIT_STEP ? ' disabled' : ''}>Repay ${econMoney(TEL_CREDIT_STEP)}</button></div>`;
+    const last = E.ledger.slice(-12).reverse();
+    if (!last.length) h += '<div>No money in or out yet.</div>';
+    for (const L of last) h += `<div class="row"><span class="grow">${econWhen(L.t)} ${ECON_CATEGORY_NAMES[L.category] || L.category}<br><small>${L.counterparty}</small></span><span class="money">${econMoney(L.amount)}</span></div>`;
+  }
+  body.innerHTML = h;
+}
+$('telTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { telUi.tab = b.dataset.tab; telPanelUpdate(); } });
+$('telBody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  const a = b.dataset.act, c = b.dataset.c, id = Number(b.dataset.id);
+  if (a === 'inc') telUi.draft[c] = Math.min(ECON.ORDER_MAX_LINE, (telUi.draft[c] || 0) + 1);
+  else if (a === 'dec') telUi.draft[c] = Math.max(0, (telUi.draft[c] || 0) - 1);
+  else if (a === 'send') telSend({ t: 'econOrder', lines: telDraftLines() });
+  else if (a === 'accept') telSend({ t: 'contractAccept', id });
+  else if (a === 'decline') telSend({ t: 'contractDecline', id });
+  else if (a === 'orderFor') { const k = S.econ.contracts[id]; telSend({ t: 'econOrder', lines: [{ c: k.commodity, n: telContractLeft(k), contract: id }] }); }
+  else if (a === 'borrow') telSend({ t: 'creditDraw', amount: TEL_CREDIT_STEP });
+  else if (a === 'repay') telSend({ t: 'creditRepay', amount: TEL_CREDIT_STEP });
+  telPanelUpdate();
+});
+$('telClose').addEventListener('click', closeTelPanel);
+// Messages for the economy's events.
+function econOnEvent(e) {
+  if (e.t === 'reachedTelegraph') openTelPanel();
+  else if (e.t === 'econRefused') toast(e.why + '.');
+  else if (e.t === 'orderPlaced') { telUi.draft = {}; toast(`Order sent: ${e.items} item${e.items > 1 ? 's' : ''}, ${econMoney(e.cost)}. It comes on the Overland, ${econWhen(e.due)}.`); }
+  else if (e.t === 'orderDelivered') toast(`Your order came on the Overland: ${e.items.length} item${e.items.length === 1 ? '' : 's'}.`);
+  else if (e.t === 'contractAccepted') toast('Contract accepted.');
+  else if (e.t === 'contractDelivered') toast(`Delivered for a contract: ${econMoney(e.amount)}` + (e.late ? ' (late)' : '') + (e.done ? '. The contract is done.' : '.'));
+  else if (e.t === 'contractLate') toast(`A contract is late: ${econBiz(S.econ.contracts[e.id].counterparty).name}.`);
+  else if (e.t === 'contractCancelled') toast(`${econBiz(S.econ.contracts[e.id].counterparty).name} cancelled a late contract.`);
+  else if (e.t === 'creditDrawn') toast(`The investors sent ${econMoney(e.amount)}.`);
+  else if (e.t === 'creditRepaid') toast(`Repaid ${econMoney(e.amount)} to the investors.`);
+}
+// The cash readout beside the clock.
+let cashHudText = '';
+function cashHud() {
+  const c = S.econ ? S.econ.cash : 0, t = econMoney(c);
+  if (t === cashHudText) return;
+  cashHudText = t; $('cash').textContent = t;
+  if (c < 0) $('cash').dataset.neg = ''; else delete $('cash').dataset.neg;
+}
+function openPanel(trId) { closeCarPanel(); closeTelPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
 // The job signs' labels (hand-building, builder B2): one small card per staked job, standing on its sign board,
 // saying what the job still needs ("Bring 2 tie bundles and 1 spike keg"), or that it is ready or being built.
 // Words from jobNeeds through jobNeedsText (build tool section). Below the buttons (z-index 1, no taps), and
 // hidden while it would overlap a button or panel, so it never covers them.
-const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel'];
+const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel', 'telPanel', 'cash'];
 const jobSigns = {};
 function jobSignText(S, job) {
   const P = S.player, needs = jobNeedsText(jobNeeds(S, job)), c = job.count, d = job.done;
@@ -5131,6 +5739,8 @@ function updateHud() {
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
   $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
   carPanelUpdate();
+  telPanelUpdate();
+  cashHud();
   carryHud();
   jobSignHud();
 }
@@ -5192,6 +5802,7 @@ function onTap(px, py) {
     const yw = camYawTarget();
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
+  if (econTelTap(px, py)) return;
   if (carryTap(px, py, g)) return;
   if (jobTap(g)) return;
   if (g) {
@@ -5245,6 +5856,13 @@ function carryTap(px, py, g) {
     return true;
   }
   return false;
+}
+// The telegraph key (economy): a tap on the depot's office bay window walks there and opens the telegraph panel.
+function econTelTap(px, py) {
+  const k = econTelegraphKey(), p = toScreen(k.wx, k.wy, k.wz);
+  if (Math.hypot(p.x - px, p.y - py) > 36) return false;
+  send({ t: 'useTelegraph' });
+  return true;
 }
 function groundAtY(px, py, y) {
   raycaster.setFromCamera(ndc(px, py), camera);
@@ -5461,8 +6079,10 @@ window.__railhead = {
   switchLockReason, occupiedSwitches, migrate,
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, BLD_BAYS, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
+  econ: { ECON, ECON_CATEGORIES, ECON_BUSINESSES, ECON_ORDERABLE, econNewState, econPost, econCheckMoney, econTelegraphKey, econNextVisit, econPack,
+    contractOffer, contractDeliver, econLotFee, econSoldOutside, econMoney, econWhen, econDeliveredPrice, panel: telUi },
   carry: { TOOL_KINDS, TOOL_PARK, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
-  interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
+  interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, withTestDelivery: st => { st.overland.testDelivery = true; return st; }, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
   jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,

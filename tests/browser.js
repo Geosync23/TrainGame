@@ -69,6 +69,7 @@ async function openGame(viewportName, options = {}) {
   if (options.fresh !== false) {
     await page.goto(url + 'tests/blank.html');
     await page.evaluate(() => new Promise((res) => { const r = indexedDB.deleteDatabase('railhead'); r.onsuccess = r.onerror = r.onblocked = () => res(); }));
+    await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* no storage */ } }); // the quick save lives here
   }
   await page.goto(url + 'index.html' + (options.query || ''));
   await waitReady(page);

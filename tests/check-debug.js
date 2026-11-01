@@ -40,6 +40,12 @@ module.exports = async function checkDebug() {
   try {
     const frames = () => page.waitForTimeout(250);
     if (await page.evaluate(() => typeof window.rh) !== 'object') { problems.push('with ?debug=1, window.rh is missing'); return problems; }
+    // Same scene as the debug-off page (the start, nothing moved), every overlay hidden: same draw calls.
+    // (Measured before anything moves, because the camera follows the player and what is in view changes.)
+    await page.evaluate(() => ['blocks', 'locks', 'routes', 'path'].forEach(k => rh.overlay(k, false)));
+    await page.waitForTimeout(300);
+    const startCalls = await page.evaluate(() => rh.drawCalls);
+    if (offCalls !== null && startCalls !== offCalls) problems.push(`draw calls with debug off (${offCalls}) differ from debug on with overlays hidden (${startCalls})`);
     // Something for every overlay to show: a route for the train and a walk for the player.
     await page.evaluate(() => {
       const T = rh.state.track;
@@ -53,7 +59,6 @@ module.exports = async function checkDebug() {
     await page.evaluate((n) => n.forEach(k => rh.overlay(k, false)), names);
     await frames();
     const hiddenCalls = await page.evaluate(() => rh.drawCalls);
-    if (offCalls !== null && hiddenCalls !== offCalls) problems.push(`draw calls with debug off (${offCalls}) differ from debug on with overlays hidden (${hiddenCalls})`);
     for (const k of names) {
       await page.evaluate((k) => rh.overlay(k, true), k);
       await frames();
@@ -78,7 +83,7 @@ module.exports = async function checkDebug() {
     await page.tap('#dbgBar [data-ov="blocks"]'); await frames();
     const allCalls = await page.evaluate(() => rh.drawCalls);
     await page.screenshot({ path: screenshotPath('debug-all') });
-    console.log(`  draw calls: debug off ${offCalls}, debug on with overlays hidden ${hiddenCalls}, all overlays ${allCalls}`);
+    console.log(`  draw calls: debug off ${offCalls}, debug on with overlays hidden ${startCalls} (${hiddenCalls} after the train and player moved), all overlays ${allCalls}`);
 
     // Scenarios.
     const sc = await page.evaluate(() => {

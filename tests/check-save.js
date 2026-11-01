@@ -2,6 +2,9 @@
 // - Export and re-import give the identical state (same hash).
 // - A save written to the browser's storage survives closing and reopening the page.
 // - Every old save kept in tests/fixtures still loads, gives its recorded hash, and keeps running.
+// - A damaged save (in IndexedDB or the quick save) does not stop the game: it starts fresh, keeps the
+//   bad save under a 'broken-<time>' key, and logs no console errors.
+// - Of the IndexedDB save and the quick save in localStorage, the one with the higher tick is loaded.
 
 const fs = require('fs');
 const path = require('path');
@@ -43,6 +46,77 @@ module.exports = async function checkSave() {
       else console.log(`  ${f}: loads, hash ${r.h}, ran on to tick ${r.tick}`);
     }
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
-    return problems;
   } finally { await browser.close(); }
+  await checkBadSave(problems);
+  await checkNewestWins(problems);
+  return problems;
 };
+
+// Writes saves straight into the browser's storage from a blank page of the same site, then opens the game.
+async function plantAndOpen(page, url, idbJson, quickJson) {
+  await page.goto(url + 'tests/blank.html');
+  await page.waitForTimeout(500); // let any save started by the game page as it closed finish first
+  await page.evaluate(async ([idbJson, quickJson]) => {
+    localStorage.clear();
+    if (quickJson !== null) localStorage.setItem('railhead-quicksave', quickJson);
+    await new Promise((res, rej) => {
+      const r = indexedDB.open('railhead', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('saves');
+      r.onsuccess = () => {
+        const db = r.result, tx = db.transaction('saves', 'readwrite'), st = tx.objectStore('saves');
+        st.clear();
+        if (idbJson !== null) st.put({ gz: false, data: idbJson }, 'auto');
+        tx.oncomplete = () => { db.close(); res(); }; tx.onerror = () => rej(tx.error);
+      };
+      r.onerror = () => rej(r.error);
+    });
+  }, [idbJson, quickJson]);
+  await page.goto(url + 'index.html?paused');
+  await waitReady(page);
+}
+async function storedKeys(page) {
+  return page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.open('railhead', 1);
+    r.onsuccess = () => { const g = r.result.transaction('saves').objectStore('saves').getAllKeys(); g.onsuccess = () => { r.result.close(); res({ idb: g.result.map(String), ls: Object.keys(localStorage) }); }; };
+  }));
+}
+
+async function checkBadSave(problems) {
+  const { browser, page, errors, url } = await openGame('portrait', { query: '?paused' });
+  try {
+    const good = await page.evaluate(() => { window.__railhead.step(30); return window.__railhead.exportSave(); });
+    // IndexedDB: the trains are missing. Quick save: a train in route mode with a broken route (fails when run).
+    const a = JSON.parse(good); delete a.state.trains;
+    const b = JSON.parse(good); b.state.tick = 999; Object.assign(b.state.trains[0], { mode: 'route', v: 1, route: { total: 5, left: 5 } });
+    await plantAndOpen(page, url, JSON.stringify(a), JSON.stringify(b));
+    const r = await page.evaluate(() => ({ tick: window.__railhead.state.tick, trains: window.__railhead.state.trains.length }));
+    const keys = await storedKeys(page);
+    if (r.tick !== 0 || r.trains !== 1) problems.push(`with damaged saves the game did not start fresh (tick ${r.tick})`);
+    if (!keys.idb.some(k => /^broken-\d+$/.test(k)) || keys.idb.includes('auto')) problems.push('the damaged IndexedDB save was not kept as broken-<time>: ' + JSON.stringify(keys.idb));
+    if (!keys.ls.some(k => /^railhead-broken-\d+$/.test(k)) || keys.ls.includes('railhead-quicksave')) problems.push('the damaged quick save was not kept as railhead-broken-<time>: ' + JSON.stringify(keys.ls));
+    // The fresh game runs.
+    await page.evaluate(() => window.__railhead.step(20));
+    if (errors.length) problems.push('console errors with a damaged save: ' + errors.join(' | '));
+    else console.log('  damaged saves: fresh game started, bad saves kept as ' + keys.idb.concat(keys.ls).filter(k => /broken/.test(k)).join(', '));
+  } finally { await browser.close(); }
+}
+
+async function checkNewestWins(problems) {
+  const { browser, page, errors, url } = await openGame('portrait', { query: '?paused' });
+  try {
+    const s = await page.evaluate(() => {
+      const R = window.__railhead;
+      R.step(50); const a = R.exportSave(), ha = R.hash();
+      R.send({ t: 'walkTo', x: 0, z: 0 }); R.step(50); const b = R.exportSave(), hb = R.hash();
+      return { a, ha, b, hb };
+    });
+    await plantAndOpen(page, url, s.a, s.b); // quick save newer
+    const q = await page.evaluate(() => ({ tick: window.__railhead.state.tick, h: window.__railhead.hash() }));
+    if (q.h !== s.hb) problems.push(`a newer quick save lost to an older IndexedDB save (loaded tick ${q.tick})`);
+    await plantAndOpen(page, url, s.b, s.a); // IndexedDB newer
+    const i = await page.evaluate(() => ({ tick: window.__railhead.state.tick, h: window.__railhead.hash() }));
+    if (i.h !== s.hb) problems.push(`a newer IndexedDB save lost to an older quick save (loaded tick ${i.tick})`);
+    if (q.h === s.hb && i.h === s.hb) console.log(`  newest save wins: quick save and IndexedDB both checked (tick ${q.tick})`);
+    if (errors.length) problems.push('console errors: ' + errors.join(' | '));
+  } finally { await browser.close(); }
+}

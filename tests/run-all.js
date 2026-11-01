@@ -20,6 +20,7 @@ const checks = {
   'M0 acceptance criteria': require('./check-m0'),
   'carrying (by hand, hand truck, handcart)': require('./check-carry'),
   'cargo (items, waybills, bays)': require('./check-cargo'),
+  'hand-building track (construction jobs)': require('./check-handbuild'),
 };
 
 (async () => {

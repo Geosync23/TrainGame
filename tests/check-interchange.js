@@ -28,7 +28,7 @@ module.exports = async function checkInterchange() {
         const R = window.__railhead, X = R.interchange, out = {};
         const hhmm = st => { const s = (st.time + 5 * 3600) % 86400; return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
         // Two game days with no commands, logging the Overland's events.
-        const st = R.newState(1866), log = [];
+        const st = X.withTestDelivery(R.newState(1866)), log = [];
         out.startsAway = X.overlandTrain(st).away === true && X.interchangeCut(st).consist.length === 0;
         out.trackErrs = R.trackValidate(st.track);
         let consBad = 0, firstSetOut = null;
@@ -52,7 +52,7 @@ module.exports = async function checkInterchange() {
         out.brokenCaught = R.cargo.itemCheckConservation(broken).some(p => /no real place|no such car/.test(p));
 
         // Driving the Overland or its cars is refused.
-        const s2 = R.newState(1866);
+        const s2 = X.withTestDelivery(R.newState(1866));
         const ev1 = R.simTick(s2, [{ t: 'trainRun', tr: 1, dir: 1 }, { t: 'useTrain', tr: 2 }, { t: 'trainSendTo', tr: 0, e: X.interchangeEdge(s2.track), s: 5000 }]);
         out.notYours = ev1.filter(e => e.t === 'notYourTrain').length;
         out.sendRefused = ev1.some(e => e.t === 'noRoute' && /interchange/.test(e.why));
@@ -60,7 +60,7 @@ module.exports = async function checkInterchange() {
         // Outbound pick-up: after the first morning, empty the flatcar (the player unloaded it), and in the boxcar
         // leave goods for the map. A third car (test only) holds a crate for Outside. At 18:00 the Overland takes
         // the empty flatcar and the Outside car, sells the crate Outside, and leaves the boxcar.
-        const s3 = R.newState(1866);
+        const s3 = X.withTestDelivery(R.newState(1866));
         for (let i = 0; i < 300 * 60 / 8; i++) R.simTick(s3, []); // to 10:00
         const cut = X.interchangeCut(s3), flat = cut.consist.find(c => c.k === 'flatcar'), boxc = cut.consist.find(c => c.k === 'boxcar');
         let gx = 400;
@@ -80,7 +80,7 @@ module.exports = async function checkInterchange() {
           cut: X.interchangeCut(s3).consist.map(c => c.id), phase: s3.overland.phase };
 
         // The interchange cannot be built on (planning, a staked job, or instant track in the sim).
-        const s4 = R.newState(1866), T4 = s4.track, ie = X.interchangeEdge(T4), E = T4.edges[ie];
+        const s4 = X.withTestDelivery(R.newState(1866)), T4 = s4.track, ie = X.interchangeEdge(T4), E = T4.edges[ie];
         const plan = c => { const p = R.buildPlan(s4, { t: 'buildTrack', ...c }); return { ok: p.ok, why: p.why }; };
         out.build = {
           fromEnd: plan({ from: 'node', n: E.a, tx: -200, tz: 2000 }),
@@ -99,9 +99,9 @@ module.exports = async function checkInterchange() {
         // Determinism: 2 game days twice, with a few commands, give the same hash.
         const script = [{ tick: 3, cmd: { t: 'walkTo', x: 350, z: 2250 } }, { tick: 500, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: 900, cmd: { t: 'trainStop', tr: 0 } }];
         const t0 = performance.now();
-        const h1 = R.stateHash(R.simRun(R.newState(1866), script, 2 * 10800));
+        const h1 = R.stateHash(R.simRun(X.withTestDelivery(R.newState(1866)), script, 2 * 10800));
         out.ms2days = Math.round(performance.now() - t0);
-        const h2 = R.stateHash(R.simRun(R.newState(1866), script, 2 * 10800));
+        const h2 = R.stateHash(R.simRun(X.withTestDelivery(R.newState(1866)), script, 2 * 10800));
         out.det = { h1, h2 };
         return out;
       });
@@ -255,7 +255,8 @@ module.exports = async function checkInterchange() {
   {
     const { browser, page, errors } = await openGame('landscape', { query: '?paused&world=yard' });
     try {
-      await page.evaluate(() => { const R = window.__railhead; R.step(450 + 120); R.camera.zoom = 1.4; });
+      // The fixed test delivery (normal play brings only what was ordered by telegraph; section "economy").
+      await page.evaluate(() => { const R = window.__railhead; R.state.overland.testDelivery = true; R.step(450 + 120); R.camera.zoom = 1.4; });
       const before = await page.evaluate(async () => { const R = window.__railhead; await R.saveGame(); return { h: R.hash(), ph: R.state.overland.phase, tick: R.state.tick }; });
       await page.reload(); await waitReady(page);
       const after = await page.evaluate(() => ({ h: window.__railhead.hash(), ph: window.__railhead.state.overland.phase, tick: window.__railhead.state.tick }));

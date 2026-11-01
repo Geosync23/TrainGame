@@ -42,6 +42,9 @@ Current checks:
 - `check-determinism.js`: two runs of 3 game days with the same commands give the same state hash.
 - `check-save.js`: export and import, a real browser save surviving a page reload, and every sample save in `tests/fixtures/` still loading with its recorded hash.
 - `check-touch.js`: real touch events for tap to walk, hold to walk, tap a switch, tap the train (panel opens, Send to sets a route) and pinch to zoom.
+- `check-buildings.js`: every station footprint keeps the section 6 clearance from every track edge (platform and dock flush at 0.9u, others 1.2u from main, 1.0u from yard), the platform top is 0.3u, the buildings are 2 meshes, draw calls stay under 100, and screenshots of the station.
+
+Buildings (piece 3b): `BLD_LAYOUT` places a platform, depot (agent's office bay), telegraph shanty, water tower, freight shed with dock, and 4 lamps inside the oval beside the bottom main line (z = 14). All are merged into one KIT_MAT mesh plus one GLOW_MAT mesh. `buildingFootprints()` gives plan rectangles; `buildingLights()` gives lamp positions. No collision yet: the player walks through buildings.
 
 Sample saves: `tests/fixtures/save-v1.json`. When the save format changes, bump `SCHEMA_VERSION`, add a step to `migrate()`, and run `node tests/make-fixture.js` to add the new version's sample. Keep the old samples.
 

@@ -999,8 +999,181 @@ const GLOW_MAT = new THREE.MeshStandardMaterial({ color: PAL.win, emissive: PAL.
 function applyDaylight(S, dt) { }
 
 // ==== Section: buildings ====
-// Owner: piece 3b. Static station buildings near the yard, merged per building; windows and lamps use GLOW_MAT.
-function buildBuildings(G) { }
+// Owner: piece 3b. The small hub station beside the test yard's main line (bottom straight, z = 14),
+// built from a kit of parts (section 17) and laid out on the inside of the oval (z < 14).
+// All buildings are merged into ONE vertex-coloured mesh (KIT_MAT), and all windows and lamp glass
+// into ONE mesh with GLOW_MAT: the whole station costs 3 draw calls (the main mesh twice with its shadow).
+// Clearances (section 6): the platform and the freight dock sit flush at 0.9u from the track centreline;
+// everything else is at least 1.2u from a main line (1.0u from yard track). tests/check-buildings.js checks it.
+// The player walks through buildings in M0 (no collision yet); buildingFootprints() is there for that later.
+// Assumes the ground is flat (height 0) under the footprints; terrain can read buildingFootprints().
+const BLD_COL = { plat: '#a39684', tank: '#8a6a48', canvas: '#e4d6b6', tin: '#55534f' };
+const BLD_EDGE = 14 - 0.9;            // the platform edge, flush at 0.9u from the main line at z = 14
+const BLD_PLATFORM_TOP = 0.3;
+// Where each building stands: centre x, z and yaw (local +z faces the track); y lifts lamps onto the platform.
+const BLD_LAYOUT = [
+  { id: 'platform', x: 0, z: BLD_EDGE - 0.8, yaw: 0 },
+  { id: 'depot', x: -2.4, z: 10.6, yaw: 0 },
+  { id: 'shanty', x: 2.4, z: 10.4, yaw: 0 },
+  { id: 'watertower', x: 7.6, z: 11.8, yaw: 0 },
+  { id: 'freightshed', x: -15.6, z: BLD_EDGE - 1.7, yaw: 0 },
+  { id: 'lamp1', x: -5.5, z: 11.8, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp2', x: 0.2, z: 11.8, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp3', x: 6.4, z: 12.4, yaw: 0 },
+  { id: 'lamp4', x: -12.9, z: 10.6, yaw: 0 },
+];
+
+// A gable roof: a closed triangular prism, ridge along local x, eaves at y = 0, ridge at y = h.
+function bldPrism(len, wid, h) {
+  const L = len / 2, W = wid / 2, p = [];
+  const tri = (a, b, c) => p.push(...a, ...b, ...c);
+  const e1 = [-L, 0, W], e2 = [L, 0, W], e3 = [L, 0, -W], e4 = [-L, 0, -W], r1 = [-L, h, 0], r2 = [L, h, 0];
+  tri(e2, e3, r2); tri(e4, e1, r1);                 // gable ends
+  tri(e1, e2, r2); tri(e1, r2, r1);                 // front slope
+  tri(e3, e4, r1); tri(e3, r1, r2);                 // back slope
+  tri(e1, e4, e3); tri(e1, e3, e2);                 // underside
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  return g;
+}
+// Seeded colour variation per building (section 17): hue +-4 degrees, lightness +-6%.
+function bldVary(rng) {
+  const dh = (rngNext(rng) * 2 - 1) * 4 / 360, dl = (rngNext(rng) * 2 - 1) * 0.06, hsl = {};
+  return hex => { new THREE.Color(hex).getHSL(hsl); return new THREE.Color().setHSL((hsl.h + dh + 1) % 1, hsl.s, Math.min(1, hsl.l * (1 + dl))); };
+}
+// Puts parts given in a building's local frame into the shared kits.
+function bldPlacer(kit, glow, at, vary) {
+  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), at.yaw || 0);
+  const v = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const place = (k, geo, col, x, y, z, rx, ry, rz) => {
+    v.set(x, y, z).applyQuaternion(qy);
+    q.setFromEuler(e.set(rx || 0, ry || 0, rz || 0)).premultiply(qy);
+    e.setFromQuaternion(q, 'XYZ');
+    k.add(geo, col, at.x + v.x, (at.y || 0) + v.y, at.z + v.z, e.x, e.y, e.z);
+  };
+  return {
+    add: (geo, hex, x, y, z, rx, ry, rz) => place(kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
+    glow: (geo, x, y, z, rx, ry, rz) => place(glow, geo, PAL.win, x, y, z, rx, ry, rz),
+    // A glowing window in a trim frame, on a wall facing z (side 'z') or x (side 'x'); s = -1 faces the minus side.
+    win(x, y, z, w, h, side, s) {
+      s = s || 1;
+      if (side === 'x') { this.add(box(0.03, h + 0.1, w + 0.1), PAL.trim, x, y, z); this.glow(box(0.05, h, w), x + s * 0.005, y, z); }
+      else { this.add(box(w + 0.1, h + 0.1, 0.03), PAL.trim, x, y, z); this.glow(box(w, h, 0.05), x, y, z + s * 0.005); }
+    },
+  };
+}
+
+// Recipes: each draws its parts and returns its plan extent in local coordinates [minX, maxX, minZ, maxZ].
+const BLD_RECIPES = {
+  // Platform, 12u long (train No. 1 is 10.8u), with a canopy over its east half and a bench.
+  platform(b) {
+    const len = 12, dep = 1.6, top = BLD_PLATFORM_TOP;
+    b.add(box(len, top + 0.05, dep), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    b.add(box(5.2, 0.12, 1.35), PAL.roof, 3.2, 2.05, 0.075);
+    for (const x of [1.0, 3.2, 5.4]) for (const z of [-0.45, 0.45]) b.add(cyl(0.06, 0.06, 1.75), PAL.trim, x, top + 0.875, z);
+    b.add(box(1.2, 0.07, 0.34), PAL.trim, 2.1, top + 0.4, -0.5);
+    b.add(box(1.2, 0.3, 0.05), PAL.trim, 2.1, top + 0.65, -0.66);
+    for (const x of [1.6, 2.6]) b.add(box(0.07, 0.37, 0.3), PAL.loco, x, top + 0.18, -0.5);
+    return [-len / 2, len / 2, -dep / 2, dep / 2];
+  },
+  // Small depot (style test page station): ticket window, telegraph, and the agent's office in the bay.
+  depot(b) {
+    b.add(box(4.3, 0.3, 2.1), PAL.trim, 0, 0.1, 0);
+    b.add(box(4.2, 1.7, 2), PAL.wall, 0, 0.85, 0);
+    b.add(bldPrism(4.6, 2.6, 0.9), PAL.roof, 0, 1.7, 0);
+    b.add(box(0.3, 0.6, 0.3), PAL.trim, 1.2, 2.45, -0.35);
+    b.add(box(0.6, 1.0, 0.05), PAL.trim, -1.3, 0.75, 1.0);                  // door
+    b.add(box(1.5, 0.38, 0.04), PAL.trim, -1.3, 1.5, 1.01);                 // sign board (blank for now)
+    b.add(box(1.38, 0.26, 0.05), BLD_COL.canvas, -1.3, 1.5, 1.025);
+    // The agent's office bay, windows on three sides so the agent can see up and down the line.
+    b.add(box(1.2, 1.25, 0.42), PAL.wall, 0.4, 0.875, 1.2);
+    b.add(box(1.34, 0.08, 0.52), PAL.roof, 0.4, 1.54, 1.22);
+    b.win(0.4, 1.05, 1.41, 0.55, 0.5, 'z');
+    b.win(-0.2, 1.05, 1.2, 0.22, 0.5, 'x', -1); b.win(1.0, 1.05, 1.2, 0.22, 0.5, 'x');
+    b.win(1.6, 1.05, 1.0, 0.55, 0.6, 'z');
+    for (const x of [-1.2, 0.3, 1.4]) b.win(x, 1.05, -1.0, 0.55, 0.6, 'z', -1);
+    b.win(2.1, 1.05, 0, 0.55, 0.6, 'x'); b.win(-2.1, 1.05, 0, 0.55, 0.6, 'x', -1);
+    return [-2.3, 2.3, -1.3, 1.48];
+  },
+  // Telegraph shanty, with the pole and its crossarm beside it.
+  shanty(b) {
+    b.add(box(1.5, 0.2, 1.2), PAL.trim, 0, 0.05, 0);
+    b.add(box(1.4, 1.3, 1.1), PAL.wall, 0, 0.65, 0);
+    b.add(bldPrism(1.7, 1.5, 0.5), PAL.roof, 0, 1.3, 0);
+    b.add(cyl(0.06, 0.06, 0.55), PAL.loco, -0.4, 1.75, -0.2);
+    b.add(box(0.5, 0.95, 0.05), PAL.trim, -0.35, 0.6, 0.55);
+    b.win(0.3, 0.85, 0.55, 0.4, 0.4, 'z');
+    b.add(cyl(0.05, 0.06, 2.7), PAL.trim, 1.05, 1.3, -0.25);
+    b.add(box(0.07, 0.07, 0.9), PAL.trim, 1.05, 2.45, -0.25);
+    for (const z of [-0.6, -0.4, -0.1, 0.1]) b.add(box(0.05, 0.09, 0.05), PAL.green, 1.05, 2.53, z);
+    return [-0.85, 1.15, -0.75, 0.75];
+  },
+  // Water tower (style test page), with the spout swung up, clear of passing engines.
+  watertower(b) {
+    for (const x of [-0.55, 0.55]) for (const z of [-0.55, 0.55]) b.add(cyl(0.07, 0.07, 2.05), PAL.trim, x, 0.975, z);
+    b.add(box(1.3, 0.08, 1.3), PAL.trim, 0, 1.95, 0);
+    b.add(cyl(0.85, 0.85, 1.2), BLD_COL.tank, 0, 2.6, 0);
+    for (const y of [2.25, 2.95]) b.add(cyl(0.87, 0.87, 0.06), PAL.trim, 0, y, 0);
+    b.add(new THREE.ConeGeometry(0.95, 0.6, SEG), PAL.roof, 0, 3.51, 0);
+    b.add(box(0.12, 0.12, 0.8), PAL.trim, 0, 2.53, 1.13, -0.6);
+    return [-0.95, 0.95, -0.95, 0.95];
+  },
+  // Freight shed: 4 bays on a loading dock at platform height; red siding, grey tin roof, a few crates.
+  freightshed(b) {
+    const top = BLD_PLATFORM_TOP;
+    b.add(box(4.6, top + 0.05, 3.4), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    b.add(box(4.4, 1.5, 2.4), PAL.red, 0, top + 0.74, -0.5);
+    b.add(bldPrism(4.7, 2.9, 0.7), BLD_COL.tin, 0, top + 1.49, -0.5);
+    for (const x of [-1.6, -0.55, 0.55, 1.6]) b.add(box(0.85, 1.1, 0.05), PAL.trim, x, top + 0.55, 0.725);
+    b.add(box(4.1, 0.06, 0.06), PAL.loco, 0, top + 1.18, 0.75);
+    for (const x of [-1.2, 1.2]) b.win(x, top + 1.0, -1.7, 0.5, 0.4, 'z', -1);
+    b.add(box(0.42, 0.4, 0.42), PAL.tie, 1.85, top + 0.19, 1.2);
+    b.add(box(0.36, 0.34, 0.36), PAL.tie, 1.4, top + 0.16, 1.25, 0, 0.4);
+    b.add(cyl(0.15, 0.15, 0.42), PAL.trunk, -1.9, top + 0.2, 1.2);
+    return [-2.35, 2.35, -1.95, 1.7];
+  },
+  // Lamp post (style test page): iron post, glowing lamp, cone cap.
+  lamp(b) {
+    b.add(cyl(0.05, 0.07, 1.6), PAL.loco, 0, 0.8, 0);
+    b.glow(box(0.22, 0.26, 0.22), 0, 1.73, 0);
+    b.add(new THREE.ConeGeometry(0.19, 0.16, 4), PAL.loco, 0, 1.94, 0, 0, Math.PI / 4);
+    return [-0.15, 0.15, -0.15, 0.15];
+  },
+};
+const bldKind = id => id.replace(/\d+$/, '');
+const bldNoKit = { add(geo) { geo.dispose(); }, glow(geo) { geo.dispose(); }, win() {} };
+
+// Plan rectangles {id, kind, x, z, w, d, yaw, flush}, for collision later and so other code (terrain,
+// the build tool) can keep clear. flush marks the ones allowed at 0.9u from the track (platform, dock).
+// The freight shed's dock is its own rectangle, as it sits flush like a platform.
+function buildingFootprints() {
+  const out = [];
+  for (const at of BLD_LAYOUT) {
+    const kind = bldKind(at.id), ext = BLD_RECIPES[kind](bldNoKit);
+    const rect = (id, [x0, x1, z0, z1], flush) => {
+      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, c = Math.cos(at.yaw), s = Math.sin(at.yaw);
+      out.push({ id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush });
+    };
+    if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95], false); rect('freightdock', [-2.3, 2.3, 0.95, ext[3]], true); }
+    else rect(at.id, ext, kind === 'platform');
+  }
+  return out;
+}
+// Lamp positions, for the day and night section (real point lights for the nearest ones).
+function buildingLights() {
+  return BLD_LAYOUT.filter(a => bldKind(a.id) === 'lamp').map(a => ({ x: a.x, y: (a.y || 0) + 1.73, z: a.z }));
+}
+function buildBuildings(G) {
+  const kit = new Kit(), glow = new Kit();
+  BLD_LAYOUT.forEach((at, i) => {
+    const kind = bldKind(at.id);
+    const vary = kind === 'lamp' ? null : bldVary(rngSeed(CFG.SEED * 31 + 101 * (i + 1)));
+    BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary));
+  });
+  const m = kit.mesh(); m.name = 'buildings'; G.add(m);
+  const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'buildingGlow'; G.add(g);
+  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], footprints: buildingFootprints, lights: buildingLights, platformTop: BLD_PLATFORM_TOP };
+}
 
 // ==== Section: people (crowd) ====
 // Owner: piece 4. Extra characters (all three kits), instanced per body part. Render-side only in M0.

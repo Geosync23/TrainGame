@@ -41,7 +41,20 @@
     box-sizing: border-box; background: var(--accent); color: #fff; border-radius: 10px; padding: 8px 8px 8px 14px;
     display: flex; gap: 10px; align-items: center; font-size: 15px; }
   #banner span { flex: 1; }
+  #buildBtn { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 10px); }
+  #buildLabel { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 112px); width: max-content; max-width: min(92vw, 380px);
+    box-sizing: border-box; background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-left-width: 8px;
+    border-radius: 8px; padding: 8px 12px; font-size: 15px; line-height: 1.3; text-align: center; pointer-events: none; }
+  #buildLabel[data-k="ok"] { border-left-color: var(--green); }
+  #buildLabel[data-k="amber"] { border-left-color: #d9952b; }
+  #buildLabel[data-k="bad"] { border-left-color: var(--accent); color: var(--accent); }
+  #buildConfirm { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); display: flex; gap: 12px; }
+  #buildConfirm button { min-height: 56px; min-width: 128px; font-size: 17px; }
+  #buildLay { background: var(--edge); color: var(--paper); }
+  #buildLay:disabled { opacity: 0.45; cursor: default; }
   @media (orientation: landscape) and (max-height: 500px) {
+    #buildLabel { top: calc(env(safe-area-inset-top) + 10px); max-width: 340px; }
+    #buildConfirm { bottom: calc(env(safe-area-inset-bottom) + 10px); }
     #panel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 66px); width: 340px; }
     #toast, #banner { top: calc(env(safe-area-inset-top) + 10px); }
     #toast.below { top: calc(env(safe-area-inset-top) + 82px); }
@@ -65,6 +78,9 @@
   <button id="rotR" aria-label="Turn view right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 3v5h-5"/></svg></button>
 </div>
 <button id="centre" class="hud" hidden>Centre</button>
+<button id="buildBtn" class="hud" aria-pressed="false">Build</button>
+<div id="buildLabel" class="hud" role="status" aria-live="polite" hidden></div>
+<div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="banner" class="hud" hidden><span id="bannerText">Tap a track to send the train there</span><button id="bannerCancel">Cancel</button></div>
 <div id="panel" class="hud" hidden>
@@ -513,6 +529,7 @@ function applyCommand(S, c, ev) {
       if (Number.isInteger(c.view)) P.use.view = ((c.view % 256) + 256) % 256;
       break;
     case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
+    case 'buildTrack': buildTrackCmd(S, c, ev); break;
     case 'trainRun': {
       if (!tr) return;
       releaseRoute(S, tr);
@@ -567,6 +584,15 @@ function applyCommand(S, c, ev) {
   }
 }
 function clampMap(v) { return Math.max(-CFG.MAP_HALF, Math.min(CFG.MAP_HALF, v)); }
+// Lay track (M0: instant, debug build). Re-checks the plan from the command's whole numbers, then applies it.
+// Never over a train's track; edges keep their ids (new ones are appended); the derived index is rebuilt.
+function buildTrackCmd(S, c, ev) {
+  const p = buildPlan(S, c);
+  if (!p.ok) { ev.push({ t: 'buildRefused', why: p.why || 'Drag further to lay track' }); return; }
+  const e0 = S.track.edges.length, r = bMutate(S.track, p.G);
+  trackIndexCache.delete(S.track);
+  ev.push({ t: 'trackBuilt', edges: S.track.edges.length - e0, sw: r.sw, len: Math.round(p.len * 100) });
+}
 function throwSwitch(S, swId, ev) {
   const W = S.track.switches[swId];
   if (!W) return;
@@ -1718,7 +1744,8 @@ function crowdGrid() {
   const fps = buildingFootprints(), M = 0.3;
   for (let gz = 0; gz < h; gz++) for (let gx = 0; gx < w; gx++) {
     const x = gx * cell + A.x0, z = gz * cell + A.z0;
-    let no = !terrainFlatAt(T, x, z);
+    // A cell counts as hill if the ground rises anywhere within 0.35u of its centre (cells are 0.5u).
+    let no = [[0, 0], [0.35, 0], [-0.35, 0], [0, 0.35], [0, -0.35]].some(([ox, oz]) => !terrainFlatAt(T, x + ox, z + oz));
     for (let k = 0; !no && k < fps.length; k++) {
       const f = fps[k], c = Math.cos(f.yaw), sn = Math.sin(f.yaw), dx = x - f.x, dz = z - f.z;
       no = Math.abs(dx * c - dz * sn) <= f.w / 2 + M && Math.abs(dx * sn + dz * c) <= f.d / 2 + M;
@@ -1894,8 +1921,542 @@ function updateCrowd(dt) {
 }
 
 // ==== Section: build tool ====
-// Owner: piece 2. Laying track and switches by finger.
-function buildToolInit() { }
+// Owner: piece 2. Laying track and switches by finger (section 6 "Build tool"). M0 builds instantly.
+// Part 1 (sim side, no three.js or DOM): turn a buildTrack command into a plan, check it, apply it.
+// Part 2 (view and input): build mode, the ghost preview, the label and the Lay track / Cancel buttons.
+//
+// A buildTrack command carries whole numbers only:
+//   from: 'node'   n = dead-end node id (the new track continues its tangent)
+//         'free'   x, z = start point (hundredths of u), h = heading (thousandths of a degree)
+//         'switch' e = straight edge, s = distance from its node A (thousandths of u),
+//                  fwd = +1 towards node B or -1 towards node A, side = the arc's turn (+1 or -1)
+//   tx, tz = the target point (hundredths of u)
+const BUILD = {
+  NODE_SNAP: 0.5,      // ends snap to dead ends within 0.5u
+  PAR: 1.6,            // parallel offsets of 1.6u from nearby straight track
+  PAR_SNAP: 0.5, PAR_BAND: 6,
+  CLEAR: 1.6,          // minimum centreline spacing to other track
+  SKIP: 1.6,           // the first and last 1.6u next to a joint are not spacing-checked
+  EARTH: 0.3,          // amber if the ground is more than 0.3u off the bed height
+  AHEAD_DEG: 1,        // straight if the target is within 1 degree of straight ahead
+  HEAD_STEP: 15,       // straights snap to 15-degree headings
+  SW_THROUGH: 5, SW_R: 10, SW_DEG: 30, SW_END_SNAP: 0.3,
+  MIN_LEN: 0.5, R_TOP: 120, R_STEP: 0.25,
+};
+const B_TAU = Math.PI * 2, B_D2R = Math.PI / 180;
+function bWrap(a) { a %= B_TAU; if (a < 0) a += B_TAU; return a; }
+function bFmt(v) { const r = Math.round(v * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+// Where an arc ends: the same sums as trackArc, so a plan lands exactly where the built track does.
+function bArcEnd(x, z, hx, hz, R, turn, deg) {
+  const cx = x + R * hz * turn, cz = z - R * hx * turn;
+  const th0 = Math.atan2(z - cz, x - cx), sweep = -turn * deg * Math.PI / 180, th1 = th0 + sweep, sg = sweep > 0 ? 1 : -1;
+  return { x: cx + R * Math.cos(th1), z: cz + R * Math.sin(th1), hx: -Math.sin(th1) * sg, hz: Math.cos(th1) * sg };
+}
+// Pieces are { k: 'S', L } or { k: 'A', R, turn, deg }, laid one after another from a start point and heading.
+function bChainEnd(st, pieces) {
+  let x = st.x, z = st.z, hx = st.hx, hz = st.hz;
+  for (const p of pieces) {
+    if (p.k === 'S') { x += hx * p.L; z += hz * p.L; }
+    else { const r = bArcEnd(x, z, hx, hz, p.R, p.turn, p.deg); x = r.x; z = r.z; hx = r.hx; hz = r.hz; }
+  }
+  return { x, z, hx, hz };
+}
+function bTidy(pieces) {
+  const out = [];
+  for (const p of pieces) {
+    if (p.k === 'S' && p.L < 1e-7) continue;
+    if (p.k === 'A' && p.deg < 1e-7) continue;
+    const q = out[out.length - 1];
+    if (q && q.k === 'S' && p.k === 'S') { q.L += p.L; continue; }
+    out.push({ ...p });
+  }
+  return out;
+}
+// Turn of an arc edge when travelled from node `from` (in trackArc's turn terms); 0 for a straight.
+function bTravelTurn(E, from) { return E.k !== 'A' ? 0 : (from === E.a ? -Math.sign(E.sweep) : Math.sign(E.sweep)); }
+// Leaving node N along edge E: the first curve met (looking through one straight) and the straight before it.
+function bBeyond(T, N, E) {
+  if (E.k === 'A') return { turn: bTravelTurn(E, N), gap: 0 };
+  const ix = trackIndex(T), M = E.a === N ? E.b : E.a, list = ix.nodeEdges[M];
+  if (list.length === 2 && ix.nodeSw[M] === undefined) {
+    const O = T.edges[list[0] === E.id ? list[1] : list[0]];
+    if (O.k === 'A') return { turn: bTravelTurn(O, M), gap: E.len };
+  }
+  return { turn: 0, gap: 0 };
+}
+// Section 6 limits on a chain: radius, at most half a circle per arc, and the straight between reverse curves
+// (including the curves already there before the start and after the end).
+function bChainProblem(pieces, g, inTurn, inGap, outTurn, outGap) {
+  let last = inTurn, gap = inGap;
+  for (const p of pieces) {
+    if (p.k === 'S') { gap += p.L; continue; }
+    if (p.R < g.minR - 1e-9) return 'tight';
+    if (p.deg > 180 + 1e-9) return 'half';
+    if (last !== 0 && p.turn === -last && gap < g.revStraight - 1e-9) return 'reverse';
+    last = p.turn; gap = 0;
+  }
+  if (outTurn && last !== 0 && outTurn === -last && gap + outGap < g.revStraight - 1e-9) return 'reverse';
+  return null;
+}
+function bChainStats(pieces) {
+  let len = 0, turn = 0, R = Infinity;
+  for (const p of pieces) { if (p.k === 'S') len += p.L; else { len += p.R * p.deg * B_D2R; turn += p.deg; R = Math.min(R, p.R); } }
+  return { len, turn, R };
+}
+// Arc tangent to the start, then a straight on heading th that passes through Q. Returns pieces or null.
+function bArcThenStraight(P, h, t, th, Q, g, base) {
+  const phi = Math.atan2(h.hz, h.hx), D = bWrap((phi - th) * t);
+  if (D < 1e-9 || D > Math.PI + 1e-9) return null;
+  const deg = D / B_D2R, f = bArcEnd(0, 0, h.hx, h.hz, 1, t, deg), ux = Math.cos(th), uz = Math.sin(th);
+  const den = f.x * uz - f.z * ux;
+  if (Math.abs(den) < 1e-12) return null;
+  const vx = Q.x - P.x, vz = Q.z - P.z, R = (vx * uz - vz * ux) / den;
+  const L = (vx - R * f.x) * ux + (vz - R * f.z) * uz;
+  if (!(R > 0) || L < -1e-7) return null;
+  return { R, pieces: bTidy(base.concat([{ k: 'A', R, turn: t, deg }, { k: 'S', L: Math.max(0, L) }])) };
+}
+// A free end: straight if straight ahead, else an arc and a straight (largest radius, snapped heading).
+function bPlanFree(st, Q, g, prefs) {
+  const vx = Q.x - st.x, vz = Q.z - st.z;
+  if (Math.hypot(vx, vz) < BUILD.MIN_LEN) return { short: true };
+  const fwd = vx * st.hx + vz * st.hz, lat = vx * st.hz - vz * st.hx;
+  if (fwd > 0 && Math.abs(Math.atan2(lat, fwd)) <= BUILD.AHEAD_DEG * B_D2R) return { pieces: [{ k: 'S', L: fwd }] };
+  const t = lat > 0 ? 1 : -1;
+  const lead = st.inTurn !== 0 && t === -st.inTurn && st.inGap < g.revStraight - 1e-9;
+  const base = lead ? [{ k: 'S', L: g.revStraight }] : [];
+  const P1 = lead ? { x: st.x + st.hx * g.revStraight, z: st.z + st.hz * g.revStraight } : st;
+  const ok = c => c && !bChainProblem(c.pieces, g, st.inTurn, st.inGap, 0, 0);
+  for (const th of prefs) { const c = bArcThenStraight(P1, st, t, th, Q, g, base); if (ok(c)) return c; }
+  let best = null;
+  for (let k = 0; k < 360 / BUILD.HEAD_STEP; k++) {
+    const c = bArcThenStraight(P1, st, t, k * BUILD.HEAD_STEP * B_D2R, Q, g, base);
+    if (ok(c) && (!best || c.R > best.R)) best = c;
+  }
+  if (best) return best;
+  // Last try: one arc straight to the finger. If it is too tight, it is shown in red.
+  const wx = Q.x - P1.x, wz = Q.z - P1.z, lat1 = (wx * st.hz - wz * st.hx) * t, fwd1 = wx * st.hx + wz * st.hz;
+  if (lat1 <= 1e-9) return { why: 'There is no smooth way there from this end' };
+  const Rm = (wx * wx + wz * wz) / (2 * lat1), D = 2 * Math.atan2(lat1, fwd1);
+  const arc = bTidy(base.concat([{ k: 'A', R: Rm, turn: t, deg: D / B_D2R }]));
+  if (D > Math.PI + 1e-9) return { why: 'That turns more than half a circle: lay it in two pieces' };
+  if (Rm < g.minR - 1e-9) return { why: `Curve too tight: ${bFmt(Rm)}u, minimum ${g.minR}u`, pieces: arc };
+  if (!bChainProblem(arc, g, st.inTurn, st.inGap, 0, 0)) return { pieces: arc, R: Rm };
+  return { why: 'There is no smooth way there from this end' };
+}
+// Joining an existing track end: Q with arrival heading He. Tries a straight, one arc, arc + straight,
+// straight + arc, then arc-straight-arc (S-curve) for a range of radii, and keeps the gentlest.
+function bPlanJoin(st, Q, He, out, g) {
+  const cands = [], phi0 = Math.atan2(st.hz, st.hx), phi1 = Math.atan2(He.hz, He.hx);
+  const tryAdd = (pieces) => {
+    pieces = bTidy(pieces);
+    if (!pieces.length) return;
+    const e = bChainEnd(st, pieces);
+    if (Math.hypot(e.x - Q.x, e.z - Q.z) > 1e-6 || e.hx * He.hx + e.hz * He.hz < 1 - 1e-9) return;
+    if (bChainProblem(pieces, g, st.inTurn, st.inGap, out.turn, out.gap)) return;
+    cands.push({ pieces, ...bChainStats(pieces) });
+  };
+  const rv = g.revStraight;
+  for (const leadL of [0, rv]) {
+    const base = leadL ? [{ k: 'S', L: leadL }] : [];
+    const P = { x: st.x + st.hx * leadL, z: st.z + st.hz * leadL };
+    const vx = Q.x - P.x, vz = Q.z - P.z, fwd = vx * st.hx + vz * st.hz, lat = vx * st.hz - vz * st.hx;
+    if (fwd > 0 && Math.abs(lat) < 1e-7) tryAdd(base.concat([{ k: 'S', L: fwd }]));
+    for (const t of [1, -1]) {
+      const lt = lat * t;
+      if (lt > 1e-9) {
+        const Rm = (vx * vx + vz * vz) / (2 * lt), D = 2 * Math.atan2(lt, fwd);
+        tryAdd(base.concat([{ k: 'A', R: Rm, turn: t, deg: D / B_D2R }]));
+      }
+      const c = bArcThenStraight(P, st, t, phi1, Q, g, base);
+      if (c) tryAdd(c.pieces);
+      // Straight, then an arc into Q.
+      const D2 = bWrap((phi0 - phi1) * t);
+      if (D2 > 1e-9 && D2 <= Math.PI + 1e-9) {
+        const R = lt / (1 - Math.cos(D2));
+        if (R > 0) {
+          const f = bArcEnd(0, 0, st.hx, st.hz, R, t, D2 / B_D2R), L = (vx - f.x) * st.hx + (vz - f.z) * st.hz;
+          if (L > -1e-7) tryAdd(base.concat([{ k: 'S', L: Math.max(0, L) }, { k: 'A', R, turn: t, deg: D2 / B_D2R }]));
+        }
+      }
+    }
+  }
+  // S-curves and C-curves: arc, straight, arc with equal radii.
+  for (let R = BUILD.R_TOP; R >= g.minR - 1e-9; R -= BUILD.R_STEP) {
+    for (const t1 of [1, -1]) for (const t2 of [1, -1]) {
+      const leadL = st.inTurn && t1 === -st.inTurn && st.inGap < rv ? rv : 0;
+      const trailL = out.turn && t2 === -out.turn && out.gap < rv ? rv : 0;
+      const P = { x: st.x + st.hx * leadL, z: st.z + st.hz * leadL }, Q1 = { x: Q.x - He.hx * trailL, z: Q.z - He.hz * trailL };
+      const c1x = P.x + R * t1 * st.hz, c1z = P.z - R * t1 * st.hx, c2x = Q1.x + R * t2 * He.hz, c2z = Q1.z - R * t2 * He.hx;
+      const dx = c2x - c1x, dz = c2z - c1z, D = Math.hypot(dx, dz);
+      let thu, L;
+      if (t1 === t2) {
+        if (D < 1e-9) { tryAdd([{ k: 'S', L: leadL }, { k: 'A', R, turn: t1, deg: bWrap((phi0 - phi1) * t1) / B_D2R }, { k: 'S', L: trailL }]); continue; }
+        thu = Math.atan2(dz, dx); L = D;
+      } else {
+        if (D < 2 * R) continue;
+        L = Math.sqrt(D * D - 4 * R * R);
+        thu = Math.atan2(dz, dx) + Math.atan2(-2 * R * t1, L);
+        if (L < rv - 1e-9) continue;
+      }
+      let d1 = bWrap((phi0 - thu) * t1) / B_D2R, d2 = bWrap((thu - phi1) * t2) / B_D2R;
+      if (d1 > 360 - 1e-7) d1 = 0; if (d2 > 360 - 1e-7) d2 = 0;
+      tryAdd([{ k: 'S', L: leadL }, { k: 'A', R, turn: t1, deg: d1 }, { k: 'S', L }, { k: 'A', R, turn: t2, deg: d2 }, { k: 'S', L: trailL }]);
+    }
+  }
+  if (!cands.length) return { why: 'Cannot join that track end smoothly from here' };
+  const dist = Math.hypot(Q.x - st.x, Q.z - st.z);
+  const fair = cands.filter(c => c.len <= 3 * dist + 20);
+  const pool = fair.length ? fair : cands;
+  const minTurn = Math.min(...pool.map(c => c.turn));
+  let best = null;
+  for (const c of pool) {
+    if (c.turn > minTurn + 10) continue;
+    if (!best || c.R > best.R + 1e-9 || (Math.abs(c.R - best.R) <= 1e-9 && c.len < best.len)) best = c;
+  }
+  return { pieces: best.pieces };
+}
+// Where the new track starts, its heading, the curve behind it, and its class.
+function bStart(S, c) {
+  const T = S.track, ix = trackIndex(T);
+  if (c.from === 'node') {
+    const N = T.nodes[c.n];
+    if (!N || ix.nodeEdges[c.n].length !== 1) return { why: 'Start from the end of a track' };
+    const E = T.edges[ix.nodeEdges[c.n][0]], t = outTangent(T, E, c.n), b = bBeyond(T, c.n, E);
+    const main = E.cls === 'main' || (E.cls === 'switch' && E.lim >= CFG.LIM.main);
+    return { node: c.n, x: N.x, z: N.z, hx: -t.x, hz: -t.z, inTurn: -b.turn, inGap: b.gap, cls: main ? 'main' : 'yard' };
+  }
+  if (c.from === 'free') {
+    const a = c.h / 1000 * B_D2R;
+    return { node: null, x: c.x / 100, z: c.z / 100, hx: Math.cos(a), hz: Math.sin(a), inTurn: 0, inGap: 0, cls: 'yard' };
+  }
+  if (c.from === 'switch') {
+    const E = T.edges[c.e];
+    if (!E) return { why: 'There is no track there' };
+    if (E.k !== 'S') return { why: 'Switches go on straight track only' };
+    if (ix.legSw[E.id] !== undefined) return { why: 'Too close to another switch' };
+    for (const tr of S.trains) if (trainSegs(T, tr).some(sg => sg[0] === E.id)) return { why: 'A train is on that track' };
+    const fwd = c.fwd > 0 ? 1 : -1, turn = c.side > 0 ? 1 : -1;
+    let s = c.s / 1000, room = fwd > 0 ? E.len - s : s;
+    if (Math.abs(room - BUILD.SW_THROUGH) <= BUILD.SW_END_SNAP) { s = fwd > 0 ? E.len - BUILD.SW_THROUGH : BUILD.SW_THROUGH; room = BUILD.SW_THROUGH; }
+    if (room < BUILD.SW_THROUGH) return { why: `A switch needs 5u of straight: only ${bFmt(Math.max(0, room))}u here` };
+    if ((fwd > 0 ? s : E.len - s) < BUILD.SW_END_SNAP) return { why: 'Too close to a joint: start the switch further along' };
+    const A = T.nodes[E.a], B = T.nodes[E.b], dx = (B.x - A.x) / E.len, dz = (B.z - A.z) / E.len;
+    const px = A.x + dx * s, pz = A.z + dz * s;
+    const d = bArcEnd(px, pz, dx * fwd, dz * fwd, BUILD.SW_R, turn, BUILD.SW_DEG);
+    const main = E.cls === 'main';
+    return { node: null, x: d.x, z: d.z, hx: d.hx, hz: d.hz, inTurn: turn, inGap: 0, cls: 'yard', swMain: main,
+      sw: { e: E.id, s, fwd, turn, x: px, z: pz } };
+  }
+  return { why: 'Unknown start' };
+}
+// The geometry of a command: start, pieces and the end node it joins (if any).
+function bGeom(S, c) {
+  const st = bStart(S, c);
+  if (st.why) return { why: st.why };
+  const T = S.track, ix = trackIndex(T), g = CFG.GEOM[st.cls];
+  let Q = { x: c.tx / 100, z: c.tz / 100 }, endNode = null, r;
+  let snap = null;
+  for (const N of T.nodes) {
+    if (ix.nodeEdges[N.id].length !== 1 || N.id === st.node) continue;
+    const d = Math.hypot(N.x - Q.x, N.z - Q.z);
+    if (d <= BUILD.NODE_SNAP && (!snap || d < snap.d)) snap = { n: N.id, d };
+  }
+  if (snap) {
+    endNode = snap.n;
+    const N = T.nodes[snap.n], E = T.edges[ix.nodeEdges[snap.n][0]], t = outTangent(T, E, snap.n);
+    Q = { x: N.x, z: N.z };
+    r = bPlanJoin(st, Q, { hx: t.x, hz: t.z }, bBeyond(T, snap.n, E), g);
+  } else {
+    const vx = Q.x - st.x, vz = Q.z - st.z;
+    const fwd = vx * st.hx + vz * st.hz, lat = vx * st.hz - vz * st.hx;
+    if (st.sw && (Math.hypot(vx, vz) < 1 || fwd < 0.5)) r = { pieces: [] };
+    else if (fwd > BUILD.MIN_LEN && Math.abs(Math.atan2(lat, fwd)) <= BUILD.AHEAD_DEG * B_D2R) r = { pieces: [{ k: 'S', L: fwd }] };
+    else {
+      // Nearby straight track: offer its heading first, and snap the end to parallel offsets of 1.6u.
+      const prefs = [];
+      let near = null;
+      for (const E of T.edges) {
+        if (E.k !== 'S') continue;
+        const A = T.nodes[E.a], B = T.nodes[E.b], ux = (B.x - A.x) / E.len, uz = (B.z - A.z) / E.len;
+        const along = (Q.x - A.x) * ux + (Q.z - A.z) * uz, off = (Q.x - A.x) * uz - (Q.z - A.z) * ux;
+        if (along < -2 || along > E.len + 2 || Math.abs(off) > BUILD.PAR_BAND || Math.abs(off) < 0.8) continue;
+        if (!near || Math.abs(off) < Math.abs(near.off)) near = { ux, uz, off };
+      }
+      if (near) {
+        const k = Math.round(Math.abs(near.off) / BUILD.PAR), want = k * BUILD.PAR * Math.sign(near.off);
+        if (k >= 1 && Math.abs(near.off - want) <= BUILD.PAR_SNAP) { Q = { x: Q.x + near.uz * (want - near.off), z: Q.z - near.ux * (want - near.off) }; }
+        const sgn = (Q.x - st.x) * near.ux + (Q.z - st.z) * near.uz >= 0 ? 1 : -1;
+        prefs.push(Math.atan2(near.uz * sgn, near.ux * sgn));
+      }
+      r = bPlanFree(st, Q, g, prefs);
+    }
+  }
+  return { st, cls: st.cls, lim: CFG.LIM[st.cls], g, endNode, Q, pieces: r.pieces || null, why: r.why || null, short: !!r.short };
+}
+// Split a straight edge to make room for a switch and add the switch prefab. Edge ids are kept:
+// the old edge is shortened, the other pieces are appended, and switches that used it are pointed at the right piece.
+function bPlaceSwitch(T, w) {
+  const E = T.edges[w.e], A = T.nodes[E.a], B = T.nodes[E.b], bOld = E.b, len = E.len;
+  const dx = (B.x - A.x) / len, dz = (B.z - A.z) / len, sT = w.s + BUILD.SW_THROUGH * w.fwd;
+  const cuts = [w.s];
+  if (sT > 1e-9 && sT < len - 1e-9) cuts.push(sT);
+  cuts.sort((p, q) => p - q);
+  const ids = cuts.map(s => trackNode(T, A.x + dx * s, A.z + dz * s));
+  const pieces = [E.id];
+  E.b = ids[0]; E.len = Math.hypot(T.nodes[ids[0]].x - A.x, T.nodes[ids[0]].z - A.z);
+  for (let i = 1; i < ids.length; i++) pieces.push(trackStraight(T, ids[i - 1], ids[i], E.cls, E.lim));
+  pieces.push(trackStraight(T, ids[ids.length - 1], bOld, E.cls, E.lim));
+  const lastId = pieces[pieces.length - 1];
+  for (const W of T.switches) if (W.node === bOld) for (const k of ['trunk', 'normal', 'reverse']) if (W[k] === E.id) W[k] = lastId;
+  const k = cuts.indexOf(w.s), swNode = ids[k];
+  const trunk = w.fwd > 0 ? pieces[k] : pieces[k + 1], normal = w.fwd > 0 ? pieces[k + 1] : pieces[k];
+  T.edges[normal].cls = 'switch';
+  const d = trackArc(T, swNode, dx * w.fwd, dz * w.fwd, BUILD.SW_R, w.turn, BUILD.SW_DEG, 'switch', CFG.LIM.diverge);
+  const sw = trackSwitch(T, swNode, trunk, normal, d.e);
+  return { node: d.node, hx: d.hx, hz: d.hz, sw };
+}
+// Apply a plan's geometry to a track (the real one, or a copy for the preview).
+function bMutate(T, G) {
+  let cur, hx = G.st.hx, hz = G.st.hz, sw = null;
+  if (G.st.sw) { const r = bPlaceSwitch(T, G.st.sw); cur = r.node; hx = r.hx; hz = r.hz; sw = r.sw; }
+  else if (G.st.node !== null) cur = G.st.node;
+  else cur = trackNode(T, G.st.x, G.st.z);
+  const contFrom = T.edges.length;
+  G.pieces.forEach((p, i) => {
+    const endN = i === G.pieces.length - 1 && G.endNode !== null ? G.endNode : undefined;
+    if (p.k === 'S') {
+      const nb = endN !== undefined ? endN : trackNode(T, T.nodes[cur].x + hx * p.L, T.nodes[cur].z + hz * p.L);
+      trackStraight(T, cur, nb, G.cls, G.lim); cur = nb;
+    } else {
+      const r = trackArc(T, cur, hx, hz, p.R, p.turn, p.deg, G.cls, G.lim, endN);
+      cur = r.node; hx = r.hx; hz = r.hz;
+    }
+  });
+  trackIndexCache.delete(T);
+  return { sw, contFrom };
+}
+function bEdgeDist(T, E, x, z) {
+  const A = T.nodes[E.a], B = T.nodes[E.b];
+  if (E.k === 'S') {
+    const ux = B.x - A.x, uz = B.z - A.z, q = Math.max(0, Math.min(1, ((x - A.x) * ux + (z - A.z) * uz) / (ux * ux + uz * uz)));
+    return Math.hypot(x - A.x - ux * q, z - A.z - uz * q);
+  }
+  const th = Math.atan2(z - E.cz, x - E.cx), rel = bWrap((th - E.th0) * Math.sign(E.sweep));
+  if (rel <= Math.abs(E.sweep)) return Math.abs(Math.hypot(x - E.cx, z - E.cz) - E.R);
+  return Math.min(Math.hypot(x - A.x, z - A.z), Math.hypot(x - B.x, z - B.z));
+}
+const B_BUILDING_NAMES = { depot: 'the depot', shanty: 'the shanty', watertower: 'the water tower', freightshed: 'the freight shed',
+  platform: 'the platform', lamp: 'a lamp post' };
+// Points every 0.25u along edges [from, to) of T2, with the distance along them.
+function bSamples(T2, from, to) {
+  const out = []; let acc = 0;
+  for (let i = from; i < to; i++) {
+    const E = T2.edges[i], n = Math.max(1, Math.ceil(E.len / 0.25));
+    for (let j = 0; j <= n; j++) { const p = edgeAt(T2, E, E.len * j / n); out.push({ x: p.x, z: p.z, at: acc + E.len * j / n }); }
+    acc += E.len;
+  }
+  return { pts: out, len: acc };
+}
+const bBaseErrs = new WeakMap();
+// The whole check, used by both the preview and the command: the result says ok, amber or why not.
+function buildPlan(S, c) {
+  const G = bGeom(S, c);
+  if (!G.pieces) return { ok: false, short: G.short, why: G.why, G };
+  const T = S.track, T2 = JSON.parse(JSON.stringify(T)), e0 = T.edges.length;
+  const res = bMutate(T2, G);
+  const plan = { ok: !G.why, amber: false, why: G.why, G, T2, e0, sw: res.sw, cls: G.cls, len: 0, minR: Infinity };
+  for (let i = e0; i < T2.edges.length; i++) { const E = T2.edges[i]; plan.len += E.len; if (E.k === 'A' && E.cls !== 'switch') plan.minR = Math.min(plan.minR, E.R); }
+  if (!plan.ok) return plan;
+  const fail = why => { plan.ok = false; plan.why = why; return plan; };
+  if (plan.len < BUILD.MIN_LEN) { plan.short = true; return fail('Drag further to lay track'); }
+  // Spacing to other track: the new piece (not its first or last 1.6u at a joint), and a switch's diverging leg.
+  const cont = bSamples(T2, res.contFrom, T2.edges.length);
+  const skipA = G.st.node !== null || G.st.sw ? BUILD.SKIP : 0, skipB = G.endNode !== null ? BUILD.SKIP : 0;
+  let minD = Infinity;
+  for (const p of cont.pts) {
+    if (p.at < skipA - 1e-9 || p.at > cont.len - skipB + 1e-9) continue;
+    for (const E of T.edges) minD = Math.min(minD, bEdgeDist(T, E, p.x, p.z));
+  }
+  let all = cont.pts;
+  if (G.st.sw) {
+    const E0 = T.edges[G.st.sw.e], div = bSamples(T2, res.contFrom - 1, res.contFrom);
+    for (const p of div.pts) for (const E of T.edges) {
+      if (E.id === E0.id || E.a === E0.a || E.b === E0.a || E.a === E0.b || E.b === E0.b) continue;
+      minD = Math.min(minD, bEdgeDist(T, E, p.x, p.z));
+    }
+    all = all.concat(div.pts);
+  }
+  if (minD < 0.05) return fail('Crosses other track: crossings are not built yet');
+  if (minD < BUILD.CLEAR - 0.01) return fail(`Too close to other track: ${bFmt(minD)}u, minimum ${BUILD.CLEAR}u`);
+  for (const p of all) if (Math.abs(p.x) > CFG.MAP_HALF - 0.5 || Math.abs(p.z) > CFG.MAP_HALF - 0.5) return fail('Off the edge of the map');
+  // Clearance to buildings (section 6): 1.2u main, 1.0u yard, platforms flush at 0.9u.
+  if (typeof buildingFootprints === 'function') {
+    const clr = G.cls === 'main' || G.st.swMain ? 1.2 : 1.0;
+    for (const f of buildingFootprints()) {
+      const cs = Math.cos(f.yaw), sn = Math.sin(f.yaw), need = f.flush ? 0.9 - 0.01 : clr - 0.01;
+      for (const p of all) {
+        const dx = p.x - f.x, dz = p.z - f.z, lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+        const d = Math.hypot(Math.max(0, Math.abs(lx) - f.w / 2), Math.max(0, Math.abs(lz) - f.d / 2));
+        if (d < need) return fail(`Runs into ${B_BUILDING_NAMES[f.kind] || 'a building'}`);
+      }
+    }
+  }
+  // Everything the validator checks (radius by class, smooth joints, reverse curves), new problems only.
+  const key = T.nodes.length + ':' + T.edges.length + ':' + T.switches.length;
+  let base = bBaseErrs.get(T);
+  if (!base || base.key !== key) { base = { key, errs: new Set(trackValidate(T)) }; bBaseErrs.set(T, base); }
+  const errs = trackValidate(T2).filter(e => !base.errs.has(e));
+  if (errs.length) {
+    const m = errs[0];
+    let r;
+    if ((r = /radius ([\d.]+) is below the \w+ minimum ([\d.]+)/.exec(m))) return fail(`Curve too tight: ${bFmt(+r[1])}u, minimum ${r[2]}u`);
+    if ((r = /([\d.]+)u straight between reverse curves \(minimum ([\d.]+)\)/.exec(m))) return fail(`Reverse curves need ${r[2]}u of straight between: only ${r[1]}u`);
+    if (/reverse curves/.test(m)) return fail('Reverse curves need a straight between them');
+    if (/smoothly|line up|same direction/.test(m)) return fail('The track does not join smoothly');
+    return fail('Not valid: ' + m);
+  }
+  // Earthwork: amber if the ground is more than 0.3u off the bed (height 0) anywhere along it.
+  let earth = 0;
+  for (let i = e0; i < T2.edges.length; i++) {
+    const E = T2.edges[i], n = Math.max(1, Math.ceil(E.len / 0.5));
+    for (let j = 0; j <= n; j++) { const p = edgeAt(T2, E, E.len * j / n); earth = Math.max(earth, Math.abs(terrainHeight(p.x, p.z))); }
+  }
+  if (earth > BUILD.EARTH) { plan.amber = true; plan.earth = earth; }
+  return plan;
+}
+
+// ---- Part 2: view and input ----
+const bt = { on: false, drag: null, plan: null, cmd: null, ghost: null, ends: null, confirm: false };
+const B_COL = { ok: '#3f8a3a', amber: '#d9952b', bad: '#c2402a' };
+function buildToolInit() {
+  $('buildBtn').addEventListener('click', () => setBuildMode(!bt.on));
+  $('buildLay').addEventListener('click', buildLay);
+  $('buildCancel').addEventListener('click', () => { buildClear(); buildHint(); });
+  Object.assign(window.__railhead, { buildPlan, buildTool: bt, setBuildMode });
+}
+function setBuildMode(on) {
+  bt.on = on;
+  $('buildBtn').setAttribute('aria-pressed', String(on));
+  buildClear();
+  if (on) { closePanel(); view.ring.visible = false; buildEndMarkers(); buildHint(); }
+  else { buildLabel(null); if (bt.ends) bt.ends.visible = false; }
+}
+function buildHint() { if (bt.on) buildLabel('hint', 'Drag from a track end, along a straight for a switch, or on open ground'); }
+function buildLabel(kind, text) {
+  const el = $('buildLabel');
+  if (!kind) { el.hidden = true; return; }
+  el.hidden = false; el.dataset.k = kind; el.textContent = text;
+}
+function buildClear() {
+  bt.drag = null; bt.plan = null; bt.cmd = null; bt.confirm = false;
+  $('buildConfirm').hidden = true;
+  buildGhost(null);
+}
+// Small rings on every track end, so it is clear where a drag can start.
+function buildEndMarkers() {
+  if (bt.ends) { scene.remove(bt.ends); bt.ends.geometry.dispose(); bt.ends = null; }
+  const T = S.track, ix = trackIndex(T), ends = T.nodes.filter(N => ix.nodeEdges[N.id].length === 1);
+  const geo = new THREE.RingGeometry(0.32, 0.46, 20); geo.rotateX(-Math.PI / 2);
+  const m = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: PAL.brass }), Math.max(1, ends.length));
+  const mtx = new THREE.Matrix4();
+  ends.forEach((N, i) => { mtx.makeTranslation(N.x, 0.27, N.z); m.setMatrixAt(i, mtx); });
+  m.count = ends.length; m.visible = bt.on; m.renderOrder = 6;
+  bt.ends = m; scene.add(m);
+}
+// The ghost: one translucent mesh (bed and two rails), 2.5 cm above the real rails so nothing flickers.
+function buildGhost(plan) {
+  if (bt.ghost) { scene.remove(bt.ghost); bt.ghost.geometry.dispose(); bt.ghost = null; }
+  if (!plan || !plan.T2) return;
+  const T2 = plan.T2, col = new THREE.Color(plan.ok ? (plan.amber ? B_COL.amber : B_COL.ok) : B_COL.bad);
+  const dark = col.clone().multiplyScalar(0.5), pos = [], cols = [];
+  const quad = (c, a, b, d, e) => { pos.push(...a, ...b, ...d, ...a, ...d, ...e); for (let i = 0; i < 6; i++) cols.push(c.r, c.g, c.b); };
+  for (let i = plan.e0; i < T2.edges.length; i++) {
+    const E = T2.edges[i], n = E.k === 'S' ? 1 : Math.max(2, Math.ceil(E.len / 0.4));
+    for (let j = 0; j < n; j++) {
+      const p = edgeAt(T2, E, E.len * j / n), q = edgeAt(T2, E, E.len * (j + 1) / n);
+      const off = (pt, o, y) => [pt.x - pt.tz * o, y, pt.z + pt.tx * o];
+      quad(col, off(p, -0.65, 0.235), off(q, -0.65, 0.235), off(q, 0.65, 0.235), off(p, 0.65, 0.235));
+      for (const sd of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) quad(dark, off(p, sd - 0.05, 0.245), off(q, sd - 0.05, 0.245), off(q, sd + 0.05, 0.245), off(p, sd + 0.05, 0.245));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  bt.ghost = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
+  bt.ghost.renderOrder = 5; scene.add(bt.ghost);
+}
+function buildShowPlan(plan) {
+  bt.plan = plan;
+  buildGhost(plan);
+  if (!plan) { buildHint(); return; }
+  if (!plan.ok) { buildLabel(plan.short ? 'hint' : 'bad', plan.why || 'Drag further to lay track'); return; }
+  const what = (plan.cls === 'main' ? 'Main line' : 'Yard track') + `, ${bFmt(plan.len)}u` +
+    (plan.minR < Infinity ? `, curve ${bFmt(plan.minR)}u` : '') + (plan.sw !== null ? ', with a switch' : '');
+  if (plan.amber) buildLabel('amber', `Needs earthwork (ground ${bFmt(plan.earth)}u off). ${what}`);
+  else buildLabel('ok', what);
+}
+// Finger down in build mode: on a track end, on a straight (switch), or on open ground.
+function buildDown(id, px, py) {
+  buildClear();
+  const g = groundAt(px, py);
+  if (!g) return;
+  const T = S.track, ix = trackIndex(T);
+  let best = null;
+  for (const N of T.nodes) {
+    if (ix.nodeEdges[N.id].length !== 1) continue;
+    const d = Math.hypot(N.x - g.x, N.z - g.z);
+    if (d < 0.9 && (!best || d < best.d)) best = { n: N.id, d };
+  }
+  let start;
+  if (best) start = { from: 'node', n: best.n };
+  else {
+    const nr = trackNearest(T, g.x, g.z);
+    if (nr && nr.dist < 0.75) start = { from: 'switch', e: nr.e, s: Math.round(nr.s * 1000) };
+    else start = { from: 'free', x: Math.round(g.x * 100), z: Math.round(g.z * 100) };
+  }
+  bt.drag = { id, x0: px, y0: py, gx: g.x, gz: g.z, start, moved: false };
+}
+function buildMove(px, py) {
+  const d = bt.drag, g = groundAt(px, py);
+  if (!d || !g) return;
+  const dx = g.x - d.gx, dz = g.z - d.gz;
+  if (!d.moved) {
+    if (Math.hypot(px - d.x0, py - d.y0) < CFG.TAP_MOVE_PX || Math.hypot(dx, dz) < 0.6) return;
+    d.moved = true;
+    // A free piece takes its heading from the first drag direction, snapped to 15 degrees.
+    if (d.start.from === 'free') d.start.h = (((Math.round(Math.atan2(dz, dx) / B_D2R / BUILD.HEAD_STEP) * BUILD.HEAD_STEP) % 360 + 360) % 360) * 1000;
+  }
+  const c = { t: 'buildTrack', ...d.start, tx: Math.round(g.x * 100), tz: Math.round(g.z * 100) };
+  if (c.from === 'switch') {
+    // The switch faces the way the finger moves along the track and turns off to the finger's side.
+    const E = S.track.edges[c.e], p = edgeAt(S.track, E, c.s / 1000);
+    c.fwd = dx * p.tx + dz * p.tz >= 0 ? 1 : -1;
+    const hx = p.tx * c.fwd, hz = p.tz * c.fwd;
+    c.side = dx * hz - dz * hx >= 0 ? 1 : -1;
+  }
+  bt.cmd = c;
+  buildShowPlan(buildPlan(S, c));
+}
+function buildUp() {
+  const d = bt.drag;
+  bt.drag = null;
+  if (!d || !d.moved || !bt.plan || (bt.plan.short && !bt.plan.T2)) { buildClear(); buildHint(); return; }
+  bt.confirm = true;
+  $('buildConfirm').hidden = false;
+  $('buildLay').disabled = !bt.plan.ok;
+}
+function buildAbortDrag() { if (bt.drag) { buildClear(); buildHint(); } }
+function buildLay() {
+  if (!bt.plan || !bt.plan.ok || !bt.cmd) return;
+  send(bt.cmd);
+  buildClear();
+  if (speed === 0) doTick(); // paused: run one tick so the track appears at once
+}
+function buildOnBuilt(e) {
+  buildWorld(S);
+  if (bt.on) { buildEndMarkers(); buildHint(); }
+  toast(`Track laid: ${bFmt(e.len / 100)}u` + (e.sw !== null ? `, switch ${e.sw + 1}` : ''));
+}
 
 // ==== Section: debug ====
 // Owner: piece 5. ?debug=1 overlays and the window.rh console.
@@ -2190,7 +2751,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet');
+  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt');
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -2210,6 +2771,8 @@ function handleEvent(e) {
   else if (e.t === 'noRoute') toast(e.why);
   else if (e.t === 'trainArrived') toast(`${S.trains[e.tr].name} has arrived.`);
   else if (e.t === 'blocked') toast('Something is in the way.');
+  else if (e.t === 'trackBuilt') buildOnBuilt(e);
+  else if (e.t === 'buildRefused') toast(`Cannot lay that track: ${e.why}.`);
 }
 function openPanel(trId) { ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; updateHud(); }
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
@@ -2282,8 +2845,11 @@ let hold = null, pinch = null, sentDir = null, keyDir = null;
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (ptrs.size === 1) hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), on: false };
-  else if (ptrs.size === 2) {
+  if (ptrs.size === 1) {
+    if (bt.on) { hold = null; buildDown(e.pointerId, e.clientX, e.clientY); } // build mode: one finger draws track
+    else hold = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), on: false };
+  } else if (ptrs.size === 2) {
+    if (bt.on) buildAbortDrag(); // a second finger means pinch or pan, not track
     if (hold && hold.on) stopHoldWalk();
     hold = null;
     const v = [...ptrs.values()];
@@ -2294,6 +2860,7 @@ canvas.addEventListener('pointermove', e => {
   const p = ptrs.get(e.pointerId);
   if (!p) return;
   p.x = e.clientX; p.y = e.clientY;
+  if (bt.on && bt.drag && bt.drag.id === e.pointerId && ptrs.size === 1) buildMove(e.clientX, e.clientY);
   if (hold && hold.id === e.pointerId) {
     hold.x = e.clientX; hold.y = e.clientY;
     if (Math.hypot(hold.x - hold.x0, hold.y - hold.y0) > CFG.TAP_MOVE_PX) hold.on = true;
@@ -2309,6 +2876,7 @@ canvas.addEventListener('pointermove', e => {
 function pointerEnd(e) {
   if (!ptrs.has(e.pointerId)) return;
   ptrs.delete(e.pointerId);
+  if (bt.on && bt.drag && bt.drag.id === e.pointerId) { if (e.type === 'pointerup') buildUp(); else buildAbortDrag(); }
   if (hold && hold.id === e.pointerId) {
     if (hold.on) stopHoldWalk();
     else if (e.type === 'pointerup') onTap(hold.x, hold.y);
@@ -2366,7 +2934,8 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Digit1') setSpeed(1);
   if (e.code === 'Digit2') setSpeed(2);
   if (e.code === 'Digit3') setSpeed(4);
-  if (e.code === 'Escape') closePanel();
+  if (e.code === 'Escape') { closePanel(); if (bt.on) { buildClear(); buildHint(); } }
+  if (e.code === 'KeyB') setBuildMode(!bt.on);
 });
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());

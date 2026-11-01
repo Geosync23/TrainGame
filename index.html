@@ -6254,7 +6254,7 @@ function paxHud() {
       const board = document.createElement('div'); board.className = 'hud paxBoard'; board.dataset.st = K.id; document.body.appendChild(board);
       const win = document.createElement('button'); win.className = 'hud paxWin'; win.dataset.st = K.id; document.body.appendChild(win);
       win.addEventListener('click', () => send({ t: 'staffWindow', st: K.id }));
-      C = paxCards[K.id] = { board, win, bsig: '', wsig: '', bw: 0, bh: 0, ww: 0, wh: 0 };
+      C = paxCards[K.id] = { board, win, bsig: '', wsig: '', bw: 0, bh: 0, ww: 0, wh: 0, bkey: '', wkey: '', age: 0 };
     }
     // The departure board.
     const deps = stationDepartures(S, K.id).slice(0, 4);
@@ -6273,9 +6273,14 @@ function paxHud() {
     }
     const at = K.depot || K.plat, bp = toScreen(at.x, 3.0, at.z);
     const br = { l: bp.x - C.bw / 2, r: bp.x + C.bw / 2, t: bp.y - C.bh, b: bp.y };
-    const showB = cam.zoom >= 1 && paxClear(br);
-    C.board.style.transform = `translate(${Math.round(br.l)}px, ${Math.round(br.t)}px)`;
-    C.board.style.visibility = showB ? 'visible' : 'hidden';
+    // The page is only touched when the card moves or every 20 frames (buttons and panels open and close).
+    const bkey = Math.round(br.l) + ',' + Math.round(br.t) + ',' + (cam.zoom >= 1);
+    if (bkey !== C.bkey || ++C.age > 20) {
+      C.bkey = bkey; C.age = 0;
+      const showB = cam.zoom >= 1 && paxClear(br);
+      C.board.style.transform = `translate(${Math.round(br.l)}px, ${Math.round(br.t)}px)`;
+      C.board.style.visibility = showB ? 'visible' : 'hidden';
+    }
     // The ticket window's button: while travellers queue and the player is not staffing this window.
     const n = queued(K.id), wsig = String(n);
     if (wsig !== C.wsig) { C.wsig = wsig; C.win.textContent = `Tickets (${n})`; C.ww = 0; }
@@ -6283,9 +6288,13 @@ function paxHud() {
     if (showW0 && !C.ww) { C.win.style.visibility = 'hidden'; C.win.hidden = false; C.ww = C.win.offsetWidth; C.wh = C.win.offsetHeight; }
     const wp = toScreen(K.window.x, 1.9, K.window.z);
     const wr = { l: wp.x - C.ww / 2, r: wp.x + C.ww / 2, t: wp.y - C.wh, b: wp.y };
-    const showW = showW0 && paxClear(wr);
-    C.win.hidden = !showW;
-    if (showW) { C.win.style.transform = `translate(${Math.round(wr.l)}px, ${Math.round(wr.t)}px)`; C.win.style.visibility = 'visible'; }
+    const wkey = showW0 ? Math.round(wr.l) + ',' + Math.round(wr.t) + ',' + C.ww : '-';
+    if (wkey !== C.wkey || (showW0 && C.age === 0)) {
+      C.wkey = wkey;
+      const showW = showW0 && paxClear(wr);
+      C.win.hidden = !showW;
+      if (showW) { C.win.style.transform = `translate(${Math.round(wr.l)}px, ${Math.round(wr.t)}px)`; C.win.style.visibility = 'visible'; }
+    }
   }
 }
 $('paxLeave').addEventListener('click', () => send({ t: 'leaveWindow' }));

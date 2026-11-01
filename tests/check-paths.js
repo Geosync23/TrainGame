@@ -121,7 +121,7 @@ module.exports = async function checkPaths() {
         // 7b. Pushing the handcart: a walk whose shortest way runs along the platform (the cheapest cells)
         //     goes round the platform and the dock instead (they have steps), never entering them, and arrives.
         {
-          const ax = -8, az = 12.3, bx = 9.2, bz = 13.6;
+          const ax = -11.2, az = 12.3, bx = 9.2, bz = 13.6;   // from just past the platform's west end (D12: 20u long)
           const plain = R.newState(1); plain.player.x = ax; plain.player.z = az;
           const wp = run(plain, [{ tick: 0, cmd: walkTo(bx, bz) }], 600, idle);
           const st = R.newState(1);

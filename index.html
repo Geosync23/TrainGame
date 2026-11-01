@@ -899,10 +899,7 @@ function buildWorld(S) {
   if (view.staticGroup) { scene.remove(view.staticGroup); view.staticGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   const G = new THREE.Group(); view.staticGroup = G; scene.add(G);
   const T = S.track;
-  // Ground: one slab whose top is at y = 0.
-  const ground = new THREE.Mesh(box(CFG.MAP_HALF * 2 + 40, 0.4, CFG.MAP_HALF * 2 + 40),
-    new THREE.MeshStandardMaterial({ color: PAL.grass, flatShading: true, roughness: 0.9, metalness: 0 }));
-  ground.position.y = -0.2; ground.receiveShadow = true; G.add(ground);
+  buildTerrain(G);
   // Track: ballast ribbons and rails merged into one mesh each; ties as one instanced mesh.
   // Diverging legs sit 4 mm higher so overlapping surfaces never flicker.
   const ballast = [], rails = [], ties = [];
@@ -959,6 +956,7 @@ function buildWorld(S) {
     posts.add(box(0.12, 0.2, 1.3), PAL.red, bx + t.x * 0.1, 0.5, bz + t.z * 0.1, 0, yaw, 0);
   }
   G.add(posts.mesh());
+  buildBuildings(G);
   // Target discs: green for normal, red for reverse.
   view.discMat = { N: new THREE.MeshStandardMaterial({ color: PAL.green, flatShading: true, roughness: 0.8 }),
                    R: new THREE.MeshStandardMaterial({ color: PAL.red, flatShading: true, roughness: 0.8 }) };
@@ -982,6 +980,41 @@ function buildActors(S) {
   }));
   if (!view.player) { view.player = modelChunky(); scene.add(view.player); }
 }
+
+// ==== Section: terrain ====
+// Owner: piece 3a. The ground, and terrainHeight(x, z) for everything that stands on it.
+// Track beds stay at height 0 in M0; hills keep clear of the track.
+function terrainHeight(x, z) { return 0; }
+function buildTerrain(G) {
+  // Ground: one slab whose top is at y = 0.
+  const ground = new THREE.Mesh(box(CFG.MAP_HALF * 2 + 40, 0.4, CFG.MAP_HALF * 2 + 40),
+    new THREE.MeshStandardMaterial({ color: PAL.grass, flatShading: true, roughness: 0.9, metalness: 0 }));
+  ground.position.y = -0.2; ground.receiveShadow = true; G.add(ground);
+}
+
+// ==== Section: day and night ====
+// Owner: piece 3a. Called every frame with the game state; sets sun, sky, hemisphere light,
+// and the glow of GLOW_MAT (lit windows and lamps) from the game clock.
+const GLOW_MAT = new THREE.MeshStandardMaterial({ color: PAL.win, emissive: PAL.win, emissiveIntensity: 0, flatShading: true, roughness: 0.9, metalness: 0 });
+function applyDaylight(S, dt) { }
+
+// ==== Section: buildings ====
+// Owner: piece 3b. Static station buildings near the yard, merged per building; windows and lamps use GLOW_MAT.
+function buildBuildings(G) { }
+
+// ==== Section: people (crowd) ====
+// Owner: piece 4. Extra characters (all three kits), instanced per body part. Render-side only in M0.
+function buildCrowd() { }
+function updateCrowd(dt) { }
+
+// ==== Section: build tool ====
+// Owner: piece 2. Laying track and switches by finger.
+function buildToolInit() { }
+
+// ==== Section: debug ====
+// Owner: piece 5. ?debug=1 overlays and the window.rh console.
+function debugInit() { }
+function debugUpdate(dt) { }
 
 // ==== Section: game loop state ====
 let S = newState(CFG.SEED);
@@ -1214,6 +1247,9 @@ function render(alpha, dt) {
   cam.fx += (px - cam.fx) * k; cam.fz += (pz - cam.fz) * k;
   cam.yaw += (camYawTarget() - cam.yaw) * (1 - Math.exp(-dt * 10));
   placeCamera();
+  applyDaylight(S, dt);
+  updateCrowd(dt);
+  debugUpdate(dt);
   renderer.render(scene, camera);
 }
 
@@ -1265,6 +1301,7 @@ window.__railhead = {
     }
   } catch (e) { console.warn('Could not load the save, starting fresh:', e && e.message); }
   buildWorld(S); buildActors(S); resetViewsFromState();
+  buildCrowd(); buildToolInit(); debugInit();
   setSpeed(new URLSearchParams(location.search).has('paused') ? 0 : lastSpeed); // ?paused is used by the checks
   resize();
   window.__railhead.ready = true;

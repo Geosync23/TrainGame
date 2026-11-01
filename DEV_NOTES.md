@@ -48,5 +48,6 @@ Current checks:
 
 ## Next
 
-Write a short plan for the first playable slice of milestone M0, adapted for phones and one file, for the designer to review.
-Do not build it until it is approved.
+The plan for M0 piece 1 (test yard, switches, one train, yard moves, clock, saving) is waiting for the designer's review:
+https://claude.ai/artifact/5ysP6CghXJwzq9pKJ9ivTS
+Read the answers in its "Questions for you" table and any comments on it. Do not build it until it is approved.

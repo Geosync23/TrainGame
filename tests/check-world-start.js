@@ -166,8 +166,9 @@ module.exports = async function checkWorldStart() {
         out.overland = { phase: s1.overland.phase, setOut: s1.trains.find(t => t.owner === 'interchange').consist.length, conservation: R.cargo.itemCheckConservation(s1) };
         // Walk grid: build time, memory, and a long walk (hub to Willow Ford) tick by tick.
         const t0 = performance.now(); for (let i = 0; i < 3; i++) Wd.walkGridBuild(T); out.buildMs = (performance.now() - t0) / 3;
-        const g = Wd.walkGrid(T), gc = Wd.walkGrid(T, true), bytes = q => ['cost', 'comp', 'g', 'from', 'seen', 'dyn'].reduce((n, k) => n + q[k].byteLength, 0);
-        out.cells = g.cost.length; out.mb = (bytes(g) + bytes(gc)) / 1048576;
+        const g = Wd.walkGrid(T), gc = Wd.walkGrid(T, true), bytes = (q, ks) => ks.reduce((n, k) => n + q[k].byteLength, 0);
+        // The search scratch (g, from, seen, dyn) is shared by the plain and the handcart grid (D15).
+        out.cells = g.cost.length; out.mb = (bytes(g, ['cost', 'comp']) + bytes(gc, ['cost', 'comp']) + bytes(g.sc, ['g', 'from', 'seen', 'dyn']) * (g.sc === gc.sc ? 1 : 2)) / 1048576;
         const st = R.newState(1866);
         R.simTick(st, [{ t: 'walkTo', x: (Wd.WFORD.x + 18) * 100, z: Math.round((Wd.WFORD.z - 1.7) * 100) }]);
         let mxT = 0, sum = 0, nT = 0;

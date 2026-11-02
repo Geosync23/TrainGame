@@ -3638,7 +3638,7 @@ function walkGrid(T, cart) {
   if (!G.cart) {
     const cost = G.cost.slice();
     for (const [x0, x1, z0, z1] of carryNoCartRects()) walkStampRect({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, yaw: 0 }, 0, i => { cost[i] = 0; });
-    G.cart = walkGridLayer(G.sig, cost, G.solid);
+    G.cart = walkGridLayer(G.sig, cost, G.solid, G.sc); // shares the search scratch with the plain grid (memory, D15)
   }
   return G.cart;
 }
@@ -3710,8 +3710,9 @@ function walkGridBuild(T) {
   for (const f of solid) walkStampRect(f, WALK.R, i => { cost[i] = 0; });
   return walkGridLayer(walkGridSig(T), cost, solid);
 }
-// A grid from its costs: connected areas, and the scratch arrays for the searches.
-function walkGridLayer(sig, cost, solid) {
+// A grid from its costs: connected areas, and the scratch arrays for the searches (sc; shared by the plain and the
+// handcart grid, as every search and train stamp starts afresh by bumping a counter in sc).
+function walkGridLayer(sig, cost, solid, sc) {
   const N = WALK.N, NN = N * WALK.NZ;
   // Connected areas over open cells (4 neighbours; a diagonal step needs both side cells open, so this
   // matches what A* can reach). Used to pick a reachable goal without searching the whole map.
@@ -3729,19 +3730,19 @@ function walkGridLayer(sig, cost, solid) {
     }
     nc++;
   }
-  return { sig, cost, comp, solid, g: new Int32Array(NN), from: new Int32Array(NN),
-    seen: new Uint32Array(NN), q: 0, dyn: new Uint32Array(NN), dq: 0, memo: null };
+  sc = sc || { g: new Int32Array(NN), from: new Int32Array(NN), seen: new Uint32Array(NN), q: 0, dyn: new Uint32Array(NN), dq: 0 };
+  return { sig, cost, comp, solid, sc, memo: null };
 }
 // Stamps the cells under the trains (vehicle footprint as insideTrain() sees it, which already includes
 // the player's radius). Returns them sorted, as part of the memo key.
 function walkTrainStamp(G, poses) {
-  const cells = [], dq = ++G.dq;
+  const cells = [], D = G.sc, dq = ++D.dq;
   for (const p of poses) walkStampRect({ x: p.x, z: p.z, yaw: p.yaw, w: p.len + 0.4, d: 2 * TRAIN_HALF_W }, 0, i => {
-    if (G.dyn[i] !== dq) { G.dyn[i] = dq; cells.push(i); }
+    if (D.dyn[i] !== dq) { D.dyn[i] = dq; cells.push(i); }
   });
   return cells.sort((a, b) => a - b);
 }
-function walkOpen(G, i) { return G.cost[i] > 0 && G.dyn[i] !== G.dq; }
+function walkOpen(G, i) { return G.cost[i] > 0 && G.sc.dyn[i] !== G.sc.dq; }
 // Nearest open cell to cell g (by distance in cells, ties by cell index), in connected area k (or any if k < 0).
 function walkNearest(G, g, k) {
   const N = WALK.N, NZ = WALK.NZ, gi = g % N, gj = (g - gi) / N;
@@ -3763,7 +3764,7 @@ function walkNearest(G, g, k) {
 // A* from cell s to cell goal over open cells. If the goal cannot be reached (a train cuts it off), the
 // path ends at the reached cell nearest the goal. Returns { cells (start first), reached, expanded }.
 function walkAStar(G, s, goal) {
-  const N = WALK.N, NZ = WALK.NZ, cost = G.cost, g = G.g, from = G.from, seen = G.seen, q = ++G.q;
+  const N = WALK.N, NZ = WALK.NZ, cost = G.cost, g = G.sc.g, from = G.sc.from, seen = G.sc.seen, q = ++G.sc.q;
   const gi = goal % N, gj = (goal - gi) / N;
   // The estimate prices the rest of the way as grass (D15): exact on open grass, so a long walk across the grown map
   // expands about the cells along its way instead of a wide fan. Where the way crosses a platform (cheaper) the path

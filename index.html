@@ -3795,6 +3795,26 @@ function walkTrainStamp(G, poses) {
   });
   return cells.sort((a, b) => a - b);
 }
+// A moving train's footprint on the player's walk grid also reaches ahead of it, by as far as it runs while a
+// person walks across its width (D15: the trains cover 1.6 times the ground per tick and are wider, so a walk
+// that set off across the track just in front of a train was run into part-way over). Pose-like pieces of track
+// 0.6u long every 0.5u along the way ahead; the train itself is in the poses already. Not used for the step test
+// (insideTrain), so a player already in the way can always step out of it.
+function walkTrainAhead(S) {
+  const out = [], T = S.track, cross = Math.ceil(2 * TRAIN_HALF_W / (CFG.WALK * DT_MIN)) + 1;
+  for (const tr of S.trains) {
+    if (trainOff(tr) || !(tr.v > 0)) continue;
+    const lead = tr.m > 0 ? tr.front : trackWalk(T, reversePos(tr.front), trainLength(tr)).pos;
+    for (const k of trackAhead(T, lead, tr.v * DT_MIN * cross)) {
+      const E = T.edges[k.e], n = Math.max(1, Math.ceil(Math.abs(k.to - k.from) / 0.5));
+      for (let i = 1; i <= n; i++) {
+        const p = edgeAt(T, E, k.from + (k.to - k.from) * i / n);
+        out.push({ x: p.x, z: p.z, yaw: Math.atan2(-p.tz, p.tx), len: 0.6 });
+      }
+    }
+  }
+  return out;
+}
 function walkOpen(G, i) { return G.cost[i] > 0 && G.sc.dyn[i] !== G.sc.dq; }
 // Nearest open cell to cell g (by distance in cells, ties by cell index), in connected area k (or any if k < 0).
 function walkNearest(G, g, k) {
@@ -3863,7 +3883,7 @@ function walkAStar(G, s, goal) {
 // A target in a blocked cell, or in an area the player cannot reach, is moved to the nearest cell that can be.
 // exact: the path ends in the target's own cell. Depends only on the state and the trains' poses.
 function walkPlan(S, poses) {
-  const P = S.player, G = walkGridFor(S), dyn = walkTrainStamp(G, poses);
+  const P = S.player, G = walkGridFor(S), dyn = walkTrainStamp(G, poses.concat(walkTrainAhead(S)));
   const s0 = walkCell(P.x, P.z), g0 = walkCell(P.tx, P.tz), key = s0 + '|' + g0 + '|' + dyn.join(',');
   if (G.memo && G.memo.key === key) return G.memo;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;

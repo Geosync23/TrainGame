@@ -1,13 +1,13 @@
 // Check: switches and trains, run in the game's own simulation (no drawing involved).
 // - Sent to the passing siding, the train finds the way, sets the switch and stops at the spot.
 // - A switch with a train on it refuses to move.
-// - Changing a switch changes where a running train goes; at a dead end it stops 0.5u short.
-// - A switch set against a train makes it wait 0.5u before the switch's block, and go on once thrown.
+// - Changing a switch changes where a running train goes; at a dead end it stops CFG.STOP_GAP (0.8u since D15) short.
+// - A switch set against a train makes it wait CFG.STOP_GAP before the switch's block, and go on once thrown.
 // - The player walks to a switch stand and throws it.
 // Regression checks for the piece 1 review and play-test:
 // - Route locks are freed on arrival over a switch and on Stop mid-route (switches under the train
 //   stay locked only while the train is on them).
-// - A stopping train still stops 0.5u before a switch set against it.
+// - A stopping train still stops CFG.STOP_GAP before a switch set against it.
 // - A moving train never reverses at once (Forward/Back or Send to); bad Send-to spots are refused.
 // - The player only throws a switch from within reach; letting go of a hold does not cancel a throw;
 //   a walk to beyond the map edge ends.
@@ -18,7 +18,8 @@ module.exports = async function checkTrains() {
   const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const r = await page.evaluate(() => {
-      const R = window.__railhead, out = {};
+      const R = window.__railhead, out = {}, SC = R.CFG.SCALE, GAP = R.CFG.STOP_GAP;
+      out.gap = GAP;
       const runUntil = (S, cmds, maxTicks, stopWhen) => {
         const evs = [];
         for (let i = 0; i < maxTicks; i++) {
@@ -33,7 +34,7 @@ module.exports = async function checkTrains() {
       // 1. Send to the middle of the siding.
       let S = R.newState(1);
       const T = S.track;
-      const siding = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 && T.nodes[E.b].z > 17);
+      const siding = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 * SC && T.nodes[E.b].z > 17 * SC);
       const target = { e: siding.id, s: siding.len / 2 };
       const evs = runUntil(S, [{ t: 'trainSendTo', tr: 0, e: target.e, s: Math.round(target.s * 1000) }], 20000,
         (st, e) => e.some(x => x.t === 'trainArrived'));
@@ -83,7 +84,7 @@ module.exports = async function checkTrains() {
       S = R.newState(1);
       S.track.switches[1].state = 'R';
       runUntil(S, [{ t: 'trainRun', tr: 0, dir: 1 }], 1000, (st) => st.trains[0].v === 0 && st.tick > 20);
-      // The train must wait before the switch's block: 0.5u short of the far end of the through leg.
+      // The train must wait before the switch's block: STOP_GAP short of the far end of the through leg.
       const W1 = S.track.switches[1], leg = S.track.edges[W1.normal];
       const n1 = S.track.nodes[leg.a === W1.node ? leg.b : leg.a], f = posXZ(S, S.trains[0].front);
       out.againstGap = Math.hypot(f.x - n1.x, f.z - n1.z);
@@ -102,7 +103,7 @@ module.exports = async function checkTrains() {
       // 6. Arrival over a switch: once the train has moved off it, the switch can be thrown again.
       {
         const st = R.newState(1), T6 = st.track;
-        const sid = T6.edges.find(E => E.k === 'S' && E.cls === 'yard' && T6.nodes[E.a].z > 17 && T6.nodes[E.b].z > 17);
+        const sid = T6.edges.find(E => E.k === 'S' && E.cls === 'yard' && T6.nodes[E.a].z > 17 * SC && T6.nodes[E.b].z > 17 * SC);
         runUntil(st, [{ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) }], 20000, (x, e) => e.some(v => v.t === 'trainArrived'));
         const under = Object.keys(R.occupiedSwitches(st)).map(Number);
         runUntil(st, [{ t: 'trainRun', tr: 0, dir: st.trains[0].m }], 3000, (x) => under.every(sw => R.occupiedSwitches(x)[sw] === undefined));
@@ -113,7 +114,7 @@ module.exports = async function checkTrains() {
       // 7. Stop mid-route while over a switch: no lock is left behind once the train is off it.
       {
         const st = R.newState(1), T7 = st.track;
-        const sid = T7.edges.find(E => E.k === 'S' && E.cls === 'yard' && T7.nodes[E.a].z > 17 && T7.nodes[E.b].z > 17);
+        const sid = T7.edges.find(E => E.k === 'S' && E.cls === 'yard' && T7.nodes[E.a].z > 17 * SC && T7.nodes[E.b].z > 17 * SC);
         runUntil(st, [{ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) }], 5000, (x) => Object.keys(R.occupiedSwitches(x)).length > 0);
         const under = Object.keys(R.occupiedSwitches(st)).map(Number);
         R.simTick(st, [{ t: 'trainStop', tr: 0 }]); runUntil(st, [], 100);
@@ -123,11 +124,11 @@ module.exports = async function checkTrains() {
         out.stopUnder = under;
         out.stopFreed = under.map(sw => R.switchLockReason(st, sw));
       }
-      // 8. Stop pressed just before a switch set against the train: it still stops 0.5u short.
+      // 8. Stop pressed just before a switch set against the train: it still stops STOP_GAP short.
       {
         const st = R.newState(1), t8 = st.trains[0];
         t8.front = { e: 2, s: 0, d: 1 }; t8.v = 4; t8.mode = 'run'; st.track.switches[1].state = 'R';
-        for (let k = 0; k < 200 && 14 - 0.5 - t8.front.s >= 2.0; k++) R.simTick(st, []);
+        for (let k = 0; k < 200 && 14 * SC - GAP - t8.front.s >= 2.0 * SC; k++) R.simTick(st, []);
         R.simTick(st, [{ t: 'trainStop', tr: 0 }]); runUntil(st, [], 60);
         out.stopModeGap = st.track.edges[t8.front.e].len - t8.front.s;
         out.stopModeEdge = t8.front.e;
@@ -160,8 +161,8 @@ module.exports = async function checkTrains() {
       //     walk ends short; no throw. (Walking round a train to a stand is in check-paths.js.)
       {
         const st = R.newState(1), W = st.track.switches[0];
-        st.trains[0].front = { e: 0, s: 7.8, d: 1 };
-        st.player.x = W.stand.ux; st.player.z = 14 + (14 - W.stand.uz);
+        st.trains[0].front = { e: 0, s: 7.8 * SC, d: 1 };
+        st.player.x = W.stand.ux; st.player.z = 14 * SC + (14 * SC - W.stand.uz);
         const G = walkGrid(st.track);
         for (let i = 0; i < G.cost.length; i++) { const [x, z] = walkCentre(i), d = Math.hypot(x - W.stand.x, z - W.stand.z); if (d >= 2 && d <= 2.6) G.cost[i] = 0; }
         const e10 = runUntil(st, [{ t: 'useSwitch', sw: 0 }], 200);
@@ -179,7 +180,7 @@ module.exports = async function checkTrains() {
       //     the player ends up further north (towards the camera) than with no view given.
       {
         const endZ = (view) => {
-          const st = R.newState(1); st.player.x = -10.5; st.player.z = 11.2;
+          const st = R.newState(1); st.player.x = -10.5 * SC; st.player.z = 14 * SC - 2.8;
           runUntil(st, [{ t: 'useTrain', tr: 0, view }], 200, (x, e) => e.some(v => v.t === 'reachedTrain'));
           return st.player.z;
         };
@@ -200,8 +201,8 @@ module.exports = async function checkTrains() {
     else if (!r.lockEvent || !r.lockKept) problems.push('a switch under the train could be thrown');
     if (!r.normalAvoidsSpur) problems.push('with switch 3 straight, the train went into the spur');
     if (!r.reverseInSpur) problems.push('with switch 3 turned, the train did not go into the spur');
-    if (!(Math.abs(r.endGap - 0.5) < 0.05)) problems.push(`at the dead end the train stopped ${r.endGap.toFixed(3)}u short (expected 0.5u)`);
-    if (!(Math.abs(r.againstGap - 0.5) < 0.05)) problems.push(`at a switch set against it the train stopped ${r.againstGap.toFixed(3)}u short (expected 0.5u)`);
+    if (!(Math.abs(r.endGap - r.gap) < 0.05)) problems.push(`at the dead end the train stopped ${r.endGap.toFixed(3)}u short (expected ${r.gap}u)`);
+    if (!(Math.abs(r.againstGap - r.gap) < 0.05)) problems.push(`at a switch set against it the train stopped ${r.againstGap.toFixed(3)}u short (expected ${r.gap}u)`);
     if (!/set against/.test(r.againstStatus)) problems.push('status did not say the switch is set against: ' + r.againstStatus);
     if (!r.movesAfterThrow) problems.push('train did not move on after the switch was thrown back');
     if (!r.playerThrew) problems.push('the player did not walk to switch 1 and throw it');
@@ -212,7 +213,7 @@ module.exports = async function checkTrains() {
     if (r.stopLocks.some(x => x !== null)) problems.push('route locks left after Stop mid-route: ' + JSON.stringify(r.stopLocks));
     if (!r.stopUnder.length) problems.push('expected the stopped train to be over a switch');
     if (r.stopFreed.some(x => x !== null)) problems.push('after Stop mid-route and moving off, a switch stayed locked: ' + JSON.stringify(r.stopFreed));
-    if (r.stopModeEdge !== 2 || r.stopModeGap < 0.5 - 1e-6 || r.stopModeOcc) problems.push(`a braking train ran past the stopping point (edge ${r.stopModeEdge}, gap ${r.stopModeGap})`);
+    if (r.stopModeEdge !== 2 || r.stopModeGap < r.gap - 1e-6 || r.stopModeOcc) problems.push(`a braking train ran past the stopping point (edge ${r.stopModeEdge}, gap ${r.stopModeGap})`);
     if (!(r.revV0 > 0.5) || r.revMAfter1 !== 1 || !r.revFlipped || r.revFlipV !== 0 || !r.revMovesBack) problems.push('Back while running forward did not brake to a stop first: ' + JSON.stringify([r.revV0, r.revMAfter1, r.revFlipped, r.revFlipV, r.revMovesBack]));
     if (r.sendMovingM !== 1 || r.sendMovingMode !== 'route') problems.push(`Send to while moving reversed the train or failed (m ${r.sendMovingM}, mode ${r.sendMovingMode})`);
     if (!r.badSpotRefused) problems.push('Send to a spot beyond the end of an edge was not refused');

@@ -63,13 +63,13 @@ module.exports = async function checkInterchange() {
         const s3 = X.withTestDelivery(R.newState(1866));
         for (let i = 0; i < 300 * 60 / 8; i++) R.simTick(s3, []); // to 10:00
         const cut = X.interchangeCut(s3), flat = cut.consist.find(c => c.k === 'flatcar'), boxc = cut.consist.find(c => c.k === 'boxcar');
-        let gx = 400;
-        for (const id of R.cargo.itemsAt(s3, { kind: 'CAR', stockId: flat.id })) R.cargo.itemMove(s3, id, { kind: 'GROUND', x: gx += 40, z: 2300 }, null);
-        cut.consist.push({ id: 900, k: 'boxcar', len: 2.6, mass: 0.5 }); // a car the player left for Outside (test only: coupling comes in round C)
+        let gx = 400 * R.CFG.SCALE;
+        for (const id of R.cargo.itemsAt(s3, { kind: 'CAR', stockId: flat.id })) R.cargo.itemMove(s3, id, { kind: 'GROUND', x: Math.round(gx += 40 * R.CFG.SCALE), z: Math.round(2300 * R.CFG.SCALE) }, null);
+        cut.consist.push({ id: 900, k: 'boxcar', len: 2.6 * R.CFG.SCALE, mass: 0.5 }); // a car the player left for Outside (test only: coupling comes in round C)
         const outWb = { commodity: 'tools', originTownId: 0, destTownId: 'OUTSIDE', consignee: { kind: 'OUTSIDE', id: 0 }, contractId: null, due: null };
         const exportId = R.cargo.itemCreate(s3, outWb, { kind: 'CAR', stockId: 900 }, null).id;
         // The added car stands at the west end: move the cut's front so its cars still end at the dead end.
-        cut.front.s += 2.7;
+        cut.front.s += 2.7 * R.CFG.SCALE;
         out.takes = { flat: X.overlandTakes(s3, flat), box: X.overlandTakes(s3, boxc), outCar: X.overlandTakes(s3, cut.consist[2]) };
         const ev3 = [];
         for (let i = 0; i < 12 * 3600 / 8; i++) for (const e of R.simTick(s3, [])) if (/^overland/.test(e.t)) ev3.push(e);
@@ -182,18 +182,18 @@ module.exports = async function checkInterchange() {
       // A long bundle into the boxcar is refused; put the ties down on the ground instead.
       let ev = await R(box => window.__railhead.simTick(window.__railhead.state, [{ t: 'carryPut', stock: box }]), ids.box);
       if (!ev.some(e => e.t === 'carryRefused' && /boxcar cannot take a long bundle/.test(e.why))) problems.push('a long bundle into the boxcar was not refused: ' + JSON.stringify(ev.filter(e => /Refused/.test(e.t))));
-      await R(() => window.__railhead.send({ t: 'carryPut', x: 600, z: 2350 }));
+      await R(() => { const k = window.__railhead.CFG.SCALE; window.__railhead.send({ t: 'carryPut', x: Math.round(600 * k), z: Math.round(2350 * k) }); });
       await stepUntil("R.carry.carryHeld(R.state).length === 0", 200);
 
       // 2. Walking across the interchange goes round the standing cars (they block walking like a train).
-      await R(() => { const R = window.__railhead; R.state.player.x = 5.2; R.state.player.z = 22.6; R.send({ t: 'walkTo', x: 520, z: 1750 }); });
+      await R(() => { const R = window.__railhead, k = R.CFG.SCALE; R.state.player.x = 5.2 * k; R.state.player.z = 20 * k + 2.6; R.send({ t: 'walkTo', x: Math.round(520 * k), z: Math.round((20 * k - 2.5) * 100) }); });
       const walk = await R(() => {
-        const R = window.__railhead, cut = R.interchange.interchangeCut(R.state), x0 = R.edgeAt(R.state.track, R.state.track.edges[cut.front.e], cut.front.s).x, x1 = x0 - R.trainLength(cut);
+        const R = window.__railhead, k = R.CFG.SCALE, cut = R.interchange.interchangeCut(R.state), x0 = R.edgeAt(R.state.track, R.state.track.edges[cut.front.e], cut.front.s).x, x1 = x0 - R.trainLength(cut);
         let inside = 0, steps = 0; R.step(1);
-        for (; steps < 400 && R.state.player.mode === 'to'; steps++) { R.step(1); const P = R.state.player; if (P.x > x1 && P.x < x0 && Math.abs(P.z - 20) < 0.7) inside++; }
-        return { inside, done: R.state.player.mode !== 'to', z: R.state.player.z, x1, x0 };
+        for (; steps < 400 && R.state.player.mode === 'to'; steps++) { R.step(1); const P = R.state.player; if (P.x > x1 && P.x < x0 && Math.abs(P.z - 20 * k) < 0.55 * k + 0.15) inside++; }
+        return { inside, done: R.state.player.mode !== 'to', z: R.state.player.z, x1, x0, zMax: 20 * k - 1 };
       });
-      if (walk.inside || !walk.done || walk.z > 19) problems.push('a walk across the interchange did not go round the standing cars: ' + JSON.stringify(walk));
+      if (walk.inside || !walk.done || walk.z > walk.zMax) problems.push('a walk across the interchange did not go round the standing cars: ' + JSON.stringify(walk));
 
       // 3. The hand truck: a crate from the boxcar onto it; a long bundle from the flatcar onto it is refused.
       await R(() => window.__railhead.send({ t: 'carryTool', tool: 0 }));
@@ -213,9 +213,9 @@ module.exports = async function checkInterchange() {
       await stepUntil("R.state.player.tool === null", 900);
 
       // 4. Real touch: tap the boxcar, walk to its door, the car panel opens; tap the clothing crate in it.
-      await R(() => { const R = window.__railhead; R.state.player.x = 4; R.state.player.z = 22.4; R.step(1); });
+      await R(() => { const R = window.__railhead; R.state.player.x = 4 * R.CFG.SCALE; R.state.player.z = 20 * R.CFG.SCALE + 2.4; R.step(1); });
       await camSettle();
-      const sp = await R(box => { const R = window.__railhead, cut = R.interchange.interchangeCut(R.state), i = cut.consist.findIndex(c => c.id === box), p = R.trainPoses(R.state.track, cut)[i]; return R.toScreen(p.x, p.z, 1.1); }, ids.box);
+      const sp = await R(box => { const R = window.__railhead, cut = R.interchange.interchangeCut(R.state), i = cut.consist.findIndex(c => c.id === box), p = R.trainPoses(R.state.track, cut)[i]; return R.toScreen(p.x, p.z, 1.1 * R.CFG.SCALE); }, ids.box);
       await page.touchscreen.tap(sp.x, sp.y); await settle();
       await stepUntil('window.__railhead.interchange.carPanel.stock !== null', 200);
       await settle();
@@ -266,7 +266,7 @@ module.exports = async function checkInterchange() {
       const fut = await page.evaluate(() => { const R = window.__railhead, copy = JSON.parse(JSON.stringify(R.state)); R.simRun(copy, [], 300); R.step(300); return [R.hash(), R.stateHash(copy)]; });
       if (fut[0] !== fut[1]) problems.push('after the reload the visit did not go on the same way');
       // Landscape screenshot with the cars set out, the player beside them.
-      await page.evaluate(() => { const R = window.__railhead; R.step(200); R.state.player.x = 4.5; R.state.player.z = 22.3; R.step(1); });
+      await page.evaluate(() => { const R = window.__railhead; R.step(200); R.state.player.x = 4.5 * R.CFG.SCALE; R.state.player.z = 20 * R.CFG.SCALE + 2.3; R.step(1); });
       await page.waitForTimeout(1200);
       await page.screenshot({ path: screenshotPath('interchange-cars-landscape') });
       const dc = await page.evaluate(() => window.__railhead.drawCalls);

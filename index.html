@@ -2879,7 +2879,7 @@ const TOWN = {
   OFFER_SOD: 7 * 3600,      // offers are looked at once a day, at 07:00
   LOW_DAYS: 4, TARGET_DAYS: 14, OPEN_DAYS: 5, DUE_DAYS: 4, OFFER_GAP_S: 3 * 86400, SCARCE_PCT: 30, // OPEN_DAYS 5 (was 10, D4): first offers about day 3 (provisional)
   DOOR_OUT: 0.6,            // the door spot, this far out from the front wall
-  SIGN_NEAR: 9 * CFG.SCALE, // the door label shows when the player is this close (page side; D15: x1.6 with the town)
+  SIGN_NEAR: 9,             // the door label shows when the player is this close (page side)
 };
 // Who lives where (provisional, section 15 and 21): hub 25 people in 9 households, 8 of them boarders;
 // Willow Ford 10 people in 4 households.
@@ -2923,7 +2923,6 @@ function townRate(B, c, winter) { return (B.uses[c] || 0) + (winter ? B.winter[c
 // ---- Buildings: plan sizes, doors and lots (plain data; the drawing is in "buildings") ----
 // Plan extent in the building's own frame [minX, maxX, minZ, maxZ]; local +z is the front (the street side).
 // door: the door's local x on the front; sign: where the name board is (local x, y, z), for the door label.
-// D15: these are the M1 numbers; townGrowKinds below grows them by CFG.SCALE, as the buildings section grows its recipes.
 const TOWN_KINDS = {
   store: { ext: [-1.9, 1.9, -1.3, 2.0], door: 0, sign: [0, 2.15, 1.4] },          // general store, false front, porch
   saloon: { ext: [-1.7, 1.7, -1.3, 2.0], door: 0, sign: [0, 2.45, 1.4] },         // saloon, taller stepped false front
@@ -2932,9 +2931,6 @@ const TOWN_KINDS = {
   tradingpost: { ext: [-1.4, 1.4, -1.1, 1.4], door: 0, sign: [0, 1.75, 1.42] },   // Willow Ford: canvas store tent
   house: { ext: [-0.9, 0.9, -0.75, 0.75], door: -0.35, sign: null },             // a shanty home (4 at the hub)
 };
-(function townGrowKinds() {
-  for (const K of Object.values(TOWN_KINDS)) { K.ext = K.ext.map(v => v * CFG.SCALE); K.door *= CFG.SCALE; if (K.sign) K.sign = K.sign.map(v => v * CFG.SCALE); }
-})();
 // Lots: kind, business (null for homes), town, and the position from the town's anchor (dx, dz in the anchor's
 // frame, yaw added to it; a world may give its own, as start: { dx, dz }). Both worlds have their station on the
 // track side of the depot, so the hub's lots are the same from its depot in each: a Main Street behind the depot
@@ -2953,12 +2949,10 @@ const TOWN_LOTS = [
   { id: 'house4', kind: 'house', biz: null, townId: 0, dx: 12.4, dz: -14.6, yaw: 0 },
   { id: 'wfstore', kind: 'tradingpost', biz: 1, townId: 1, dx: 0, dz: 0, yaw: 0, start: { dx: -8.1, dz: 0.4 } },
 ];
-// D15: lot offsets from the anchor are the M1 numbers x CFG.SCALE (with the depot x1.6 too, the town is M1's grown 1.6x).
-for (const L of TOWN_LOTS) { L.dx *= CFG.SCALE; L.dz *= CFG.SCALE; if (L.start) L.start = { dx: L.start.dx * CFG.SCALE, dz: L.start.dz * CFG.SCALE }; }
 // Where each town is laid out from, in the world in use (worldUse points BLD_LAYOUT at it): the hub from its
 // depot; Willow Ford from its depot in the real start, and in the M0 test yard (which has no Willow Ford) from a
 // spot inside the yard's east loop, clear of the track.
-const TOWN_WILLOW_SPOT = { x: 23.4 * CFG.SCALE, z: -2.0 * CFG.SCALE, yaw: 0 }; // D15: x1.6 with the test yard
+const TOWN_WILLOW_SPOT = { x: 23.4, z: -2.0, yaw: 0 };
 function townAnchor(townId) {
   const d = BLD_LAYOUT.find(a => a.id === (townId === 0 ? 'depot' : 'wfdepot'));
   return d ? { x: d.x, z: d.z, yaw: d.yaw || 0 } : TOWN_WILLOW_SPOT;
@@ -3358,7 +3352,7 @@ function econTelegraphKey() {
   const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'telegraph') : null;
   const stand = sp ? { x: sp.x, z: sp.z } : w(0.4, ext[3] + 0.37); // 0.37: just outside the walk grid's block, as C2's spot
   // The bay window, 0.44u back from the standing spot towards the building (local -z).
-  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05 * CFG.SCALE, wz: stand.z - 0.44 * c };
+  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05, wz: stand.z - 0.44 * c };
 }
 // The office desk (D13, builder D1): the hub depot's 'desk' use spot from buildingSpots(), else worked out from the
 // depot's layout. x, z: where the player stands; wx, wy, wz: the depot wall behind it (the spot to tap).
@@ -3366,7 +3360,7 @@ function econDeskSpot() {
   const at = BLD_LAYOUT.find(a => a.id === 'depot'), ext = BLD_EXTENTS.depot, c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
   const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'desk') : null;
   const stand = sp ? { x: sp.x, z: sp.z } : { x: at.x - 1.3 * c + (ext[3] + 0.52) * s, z: at.z + 1.3 * s + (ext[3] + 0.52) * c };
-  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05 * CFG.SCALE, wz: stand.z - 0.44 * c };
+  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05, wz: stand.z - 0.44 * c };
 }
 // Economy commands work from the telegraph key or from the office desk (D13): within r of either.
 function econAtKey(S, r) {
@@ -3944,12 +3938,12 @@ const TOOL_KINDS = {
 // freight shed exactly as the test yard's do (8u east, on the platform track 3.41u north of the main line).
 const TOOL_PARKS = {
   yard: [
-    { id: 0, k: 'truck', x: Math.round(-1190 * CFG.SCALE), z: Math.round(900 * CFG.SCALE), yaw: 192 },   // D15: M1's x1.6
-    { id: 1, k: 'cart', x: Math.round(-1010 * CFG.SCALE), z: Math.round(860 * CFG.SCALE), yaw: 192 },
+    { id: 0, k: 'truck', x: -1190, z: 900, yaw: 192 },
+    { id: 1, k: 'cart', x: -1010, z: 860, yaw: 192 },
   ],
   start: [
-    { id: 0, k: 'truck', x: Math.round(-390 * CFG.SCALE), z: Math.round((-TURN_OFF - 5 * CFG.SCALE) * 100), yaw: 192 },
-    { id: 1, k: 'cart', x: Math.round(-210 * CFG.SCALE), z: Math.round((-TURN_OFF - 5.4 * CFG.SCALE) * 100), yaw: 192 },
+    { id: 0, k: 'truck', x: -390, z: Math.round((-TURN_OFF - 5) * 100), yaw: 192 },
+    { id: 1, k: 'cart', x: -210, z: Math.round((-TURN_OFF - 5.4) * 100), yaw: 192 },
   ],
 };
 let TOOL_PARK = TOOL_PARKS.yard;
@@ -5648,7 +5642,7 @@ function buildWorld(S) {
   const tieMesh = new THREE.InstancedMesh(box(0.22 * WS, 0.08 * WS, 1.2 * WS), new THREE.MeshStandardMaterial({ color: PAL.tie, flatShading: true, roughness: 0.9, metalness: 0 }), ties.length);
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
   ties.forEach((t, i) => { q.setFromAxisAngle(up, t.yaw); mtx.compose(new THREE.Vector3(t.x, t.y, t.z), q, one); tieMesh.setMatrixAt(i, mtx); });
-  tieMesh.receiveShadow = true; G.add(tieMesh);
+  tieMesh.receiveShadow = true; tieMesh.name = 'trackTies'; G.add(tieMesh);
   // Switch stands (posts merged) and a buffer stop at each dead end. D15: the stand (lever post, its foot bar and the
   // target disc) stays human-sized, as a person throws it; it stands where the track data puts it (W.stand), beside
   // the wider track. Buffer stops are track furniture and grow with the track.
@@ -6588,9 +6582,10 @@ const BLD_EXT_M1 = {
 const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) => [k, e.map(v => v * WS)]));
 // Use spots in a building's local frame [x, z] (local +z faces the track): where a person stands to use
 // something inside. Just outside the walk grid's block (the footprint grown by 0.25u), on the platform.
-// D15: x along the wall grows with the building; the person still stands 0.52u from the depot's front (as in M1).
+// D15: x along the wall grows with the building; the person stands 0.85u in front of the depot's front: past the walk
+// grid's block (front + 0.25u) by more than one 0.5u cell, so the spot's cell is open, and well within reach (1.5u).
 const BLD_SPOTS = {
-  depot: { ticket: [1.6 * WS, 1.48 * WS + 0.52], telegraph: [0.4 * WS, 1.48 * WS + 0.52], desk: [-1.3 * WS, 1.48 * WS + 0.52] },
+  depot: { ticket: [1.6 * WS, 1.48 * WS + 0.85], telegraph: [0.4 * WS, 1.48 * WS + 0.85], desk: [-1.3 * WS, 1.48 * WS + 0.85] },
 };
 // Use spots as world points [{ building, kind, x, z }]: the ticket window, telegraph key and office desk of
 // each depot (C1's telegraph, C4's passengers). Plain data, no three.js.
@@ -7904,9 +7899,8 @@ function buildGhost(plan) {
     for (let j = 0; j < n; j++) {
       const p = edgeAt(T2, E, E.len * j / n), q = edgeAt(T2, E, E.len * (j + 1) / n);
       const off = (pt, o, y) => [pt.x - pt.tz * o, y, pt.z + pt.tx * o];
-      const yb = RAIL_TOP + 0.025, yr = RAIL_TOP + 0.035, bw = 0.65 * WS, rw = 0.05 * WS; // D15: 1.6x like the laid track
-      quad(col, off(p, -bw, yb), off(q, -bw, yb), off(q, bw, yb), off(p, bw, yb));
-      for (const sd of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) quad(dark, off(p, sd - rw, yr), off(q, sd - rw, yr), off(q, sd + rw, yr), off(p, sd + rw, yr));
+      quad(col, off(p, -0.65, 0.235), off(q, -0.65, 0.235), off(q, 0.65, 0.235), off(p, 0.65, 0.235));
+      for (const sd of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) quad(dark, off(p, sd - 0.05, 0.245), off(q, sd - 0.05, 0.245), off(q, sd + 0.05, 0.245), off(p, sd + 0.05, 0.245));
     }
   }
   const g = new THREE.BufferGeometry();
@@ -8683,7 +8677,9 @@ function townSignHud() {
     if (sig !== L.sig) { L.sig = sig; L.el.dataset.k = tx.k; L.b.textContent = tx.title; L.s.textContent = tx.body; L.w = 0; }
     const p = toScreen(sp.x, sp.y + 0.35, sp.z);
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; L.x = -1e9; }
-    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), y = p.y;
+    // D15: the grown buildings put their name boards higher on screen; while the board itself is on screen the label
+    // is held just inside the top edge rather than dropped.
+    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), y = p.y > 0 ? Math.max(p.y, L.h + 4) : p.y;
     if (Math.abs(x - L.x) >= 0.5 || Math.abs(y - L.y) >= 0.5) { L.x = x; L.y = y; L.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`; }
     const r = { l: x - L.w / 2, r: x + L.w / 2, t: y - L.h, b: y };
     let show = p.x > 0 && p.x < W && r.t > 0 && r.b < H;
@@ -9808,7 +9804,7 @@ window.__railhead = {
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
   jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,
-  trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.isInstancedMesh && o.geometry.parameters && o.geometry.parameters.depth === 1.2 ? o.count : 0), 0),
+  trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.name === 'trackTies' ? o.count : 0), 0),
   pax: { PAX, paxStations: T => paxStations(T || S.track), paxStation: (id, T) => paxStation(T || S.track, id), paxQueueSlots, paxFare, paxAdd, paxUnstaffed, paxCarsAt, stationDepartures, paxTrainServes, paxDebugScenario, paxNewStore, paxLook, paxPlaceName,
     get view() { return paxView; }, get kits() { return crowd.kits; } },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },

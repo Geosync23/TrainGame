@@ -1331,13 +1331,18 @@ function overlandCheckSaveShape(st) {
 // train never moves for the timetable without it, so two timetable trains never meet head-on. Runs are handled in
 // order of class, then scheduled departure. A run more than 6 game hours late is cancelled.
 // Runs also keep: wood (the wood action was met at this stop), win (water on the way in: 1 running to or standing
-// at the spout, 2 done or given up), winT (game time it stopped under the spout).
+// at the spout, 2 done or given up), winT (game time it stopped under the spout), pT (game time it came to stand on
+// the stopping track, null while off it) and back (the move back to the platform was tried at this stop).
+// Platform work (D7): a train with a passenger car stands on the stopping track at least 5 game minutes (TT.DWELL_S)
+// before it moves on (to the spout or away), and while travellers for the station are still aboard or others walk
+// up to board (up to 15 minutes, TT.PLAT_MAX_S); after water at a spout off the stopping track it stops at the
+// platform again on its way out when the platform is on its way and 15 minutes (TT.BACK_S) are left.
 // Commands: uncouple { tr, at } (a person at the joint, 0.5 game minutes), fuelTender { tr } (put the carried cord
 // of wood on the tender), takeWater {} (fill the tender under a tower spout, 2 game minutes), ttAssign { tr, on }
 // (put the train on the timetable or take it off), ttHighball { tr } (wave it off without its stop actions).
 // Events: ttStarted, ttArrived, ttDeparted, ttDone, ttCancelled, ttAssigned, ttHighball, ttRefused, uncoupled,
 // coupled, tenderFuelled, waterTaken.
-const TT = { START_EARLY_S: 3600, IN_WATER_S: 600, CANCEL_S: 6 * 3600, TOUCH: 0.35, SPOUT_MOVE: 40, BESIDE: 1.15, TENDER_AT: -1.87, SPOUT_REACH: 1.2 };
+const TT = { START_EARLY_S: 3600, IN_WATER_S: 600, DWELL_S: 300, PLAT_MAX_S: 900, BACK_S: 900, CANCEL_S: 6 * 3600, TOUCH: 0.35, SPOUT_MOVE: 40, BESIDE: 1.15, TENDER_AT: -1.87, SPOUT_REACH: 1.2 };
 const TT_TEST_STATIONS = [
   { id: 'hub', name: 'Hub (test)', tags: ['HUB', 'HUBWH'], track: { x0: 16, z0: -14, x1: -2, z1: -14 }, area: [-4, 18, -13, -9],
     board: { x: 17.2, z: -12.6 }, water: null, wood: { x: 8, z: -11.6 }, ra: null },
@@ -1634,7 +1639,7 @@ function ttRunStep(S, run, ev) {
     }
     if (ttAtStation(S, tr, st) || (run.i === 0 && ttUnderSpout(S, tr, st))) {
       run.ph = 'at'; run.arr = S.time; run.hb = false; run.ra = null; run.why = ''; run.watered = false; run.dry = false;
-      run.wood = false; run.win = 0; run.winT = null;
+      run.wood = false; run.win = 0; run.winT = null; run.pT = ttAtStation(S, tr, st) ? S.time : null; run.back = false;
       S.tt.res = S.tt.res.filter(r => r.tr !== tr.id);
       ev.push({ t: 'ttArrived', svc: svc.id, i: run.i, tr: tr.id, st: st.id, late: stop.arr === null ? 0 : S.time - ttAt(run.day, stop.arr) });
       return;
@@ -1647,24 +1652,41 @@ function ttRunStep(S, run, ev) {
   // At the stop.
   if (stop.turn === 'runaround' && !(run.ra && run.ra.done) && run.i < svc.stops.length - 1) return ttRunAround(S, run, tr, st, ev);
   if (busy) return;
+  // Platform work (D7): pT is when the train came to stand on the stopping track (null while it is elsewhere, such
+  // as under the spout). Before it moves off again it stands there the dwell, and while travellers step off or walk
+  // up to board (ttPlatformHold).
+  if ((run.pT === null || run.pT === undefined) && ttAtStation(S, tr, st)) run.pT = S.time;
   const depT = stop.dep === null ? null : ttAt(run.day, stop.dep);
   const need = ttStopNeeds(S, run, tr, st, stop);
-  // Water: the train first moves so a tender stands under the tower's spout (it leaves from there).
+  // Water: the train first moves so a tender stands under the tower's spout (after the platform work).
   if (need.includes('water') && st.water && !ttUnderSpout(S, tr, st)) {
     const b = ttPlanSpout(S, tr, st, [tr.m, -tr.m]);
     if (!b) run.dry = true;               // no way to the spout: the stop goes without water
-    else if (ttGrant(S, tr, b, false)) { run.why = 'Running to the water tower'; return; }
+    else if (ttPlatformHold(S, run, tr, st)) { run.why = TT_PLAT_WHY; return; }
+    else if (ttGrant(S, tr, b, false)) { run.why = 'Running to the water tower'; run.pT = null; return; }
     else { run.why = 'Hold for orders: the line is not clear'; return; }
   }
   if (run.i === svc.stops.length - 1) { if (need.length) run.why = TT_NEED_WHY[need[0]]; else ttEnd(S, run, ev, 'done'); return; }
   if (S.time > depT + TT.CANCEL_S) return ttEnd(S, run, ev, 'cancelled', 'more than 6 hours late');
   if (need.length) { run.why = TT_NEED_WHY[need[0]]; return; }
-  if (S.time < depT) { run.why = 'Waiting for its time, ' + ttClock(stop.dep); return; }
   const next = ttStation(S, svc.stops[run.i + 1].st);
   // To a last stop that takes water: first to the spout of its water tower (water on the way in), when there is a way.
   const inWater = run.i + 1 === svc.stops.length - 1 && next && next.water && (svc.stops[run.i + 1].acts || []).includes('water');
-  const wb = inWater ? ttPlanSpout(S, tr, next, [1, -1], Infinity) : null;
-  const p = wb ? { best: wb } : ttPlanStop(S, tr, next);
+  const plan = () => { const wb = inWater ? ttPlanSpout(S, tr, next, [1, -1], Infinity) : null; return { wb, p: wb ? { best: wb } : ttPlanStop(S, tr, next) }; };
+  // Back to the platform (D7): a train that took water off the stopping track (Willow Ford's spout, beyond the
+  // platform) stops at the platform again on its way out, when the platform is on its way and there is time, so
+  // travellers can board until it leaves. Tried once per stop.
+  if (!run.back && !run.hb && run.pT === null && depT !== null && S.time + TT.BACK_S <= depT) {
+    run.back = true;
+    const d = plan().p, k = st.trk;
+    if (d.best && d.best.r.path.includes(k.e)) {
+      const b = ttPlan(S, tr, [{ e: k.e, s: k.s1, d: 1 }, { e: k.e, s: k.s0, d: -1 }], [d.best.m]);
+      if (b && b.r.dist <= TT.SPOUT_MOVE && ttGrant(S, tr, b, false)) { run.why = 'Running back to the platform'; return; }
+    }
+  }
+  if (S.time < depT) { run.why = 'Waiting for its time, ' + ttClock(stop.dep); return; }
+  if (ttPlatformHold(S, run, tr, st)) { run.why = TT_PLAT_WHY; return; }
+  const { wb, p } = plan();
   if (!p.best) { run.why = 'Waiting: ' + p.why.charAt(0).toLowerCase() + p.why.slice(1); return; }
   const legU = (p.best.r.dist + CFG.FUEL_RESERVE_U) * trainBurnRate(tr), L = trainLocos(tr);
   if (L.some(c => c.fuel < legU)) { run.why = 'Waiting: low on wood'; return; }
@@ -1672,6 +1694,20 @@ function ttRunStep(S, run, ev) {
   if (!ttGrant(S, tr, p.best, false)) { run.why = 'Hold for orders: the line is not clear'; return; }
   ev.push({ t: 'ttDeparted', svc: svc.id, i: run.i, tr: tr.id, st: st.id, late: S.time - depT });
   run.i += 1; run.ph = 'go'; run.ra = null; run.hb = false; run.why = ''; run.win = wb ? 1 : 0; run.winT = null;
+}
+// Platform work (D7): must a timetable train standing on the stopping track stay there for its travellers? Only a
+// train with a passenger car at a station with a platform: for the dwell (TT.DWELL_S, 5 game minutes) after it came
+// to stand there; while a traveller for this station is still aboard one of its cars beside the platform (those
+// always step off here); and while a traveller walks up to board one of them, up to TT.PLAT_MAX_S after it came in.
+// Highball waves it off without this.
+const TT_PLAT_WHY = 'Waiting: passengers stepping off and boarding';
+function ttPlatformHold(S, run, tr, st) {
+  if (run.hb || run.pT === null || run.pT === undefined || !S.pax || !tr.consist.some(c => PAX.SEATS[c.k]) || !ttAtStation(S, tr, st)) return false;
+  const K = paxStation(S.track, st.id);
+  if (!K) return false;
+  if (S.time < run.pT + TT.DWELL_S) return true;
+  const served = new Set(paxCarsAt(S, K, { [tr.id]: trainPoses(S.track, tr) }).filter(C => C.tr === tr).map(C => C.stock));
+  return S.pax.list.some(p => served.has(p.car) && ((p.s === 'aboard' && p.to === st.id) || (p.s === 'board' && p.st === st.id && S.time < run.pT + TT.PLAT_MAX_S)));
 }
 // Is the player working at this train (taking water at its tender or putting wood on it), walking up to do so
 // from close by, or carrying a cord of wood near a tender that has room for it? A train waiting for water on the
@@ -4236,12 +4272,16 @@ function paxTrainServes(S, tr, st, to) {
   return D.runs.some(r => { const v = D.services[r.svc]; return v && v.train === tr.id && v.stops.some((p, i) => i > r.i && p.st === to) && v.stops[r.i] && v.stops[r.i].st === st; });
 }
 // Passenger cars standing at station K's platform: [{ stock, tr, seats, doors: [[x, z]] (boarding spots, u) }].
+// The cars a timetable train's engine is running round (D7) stand at the platform as part of that train (tr is
+// the train), so travellers step off and board them meanwhile.
 function paxCarsAt(S, K, poseCache) {
   const out = [];
-  for (const tr of S.trains) {
-    if (tr.owner || trainOff(tr) || tr.v > 0 || /^(run|route|turn)$/.test(tr.mode)) continue;
-    const poses = poseCache[tr.id] || [];
-    tr.consist.forEach((c, i) => {
+  for (const cut of S.trains) {
+    const ra = cut.owner === 'cut' && S.tt && S.tt.runs.find(r => r.ra && !r.ra.done && r.ra.cut === cut.id && r.ph === 'at');
+    const tr = ra ? S.trains[S.tt.services[ra.svc].train] || cut : cut;
+    if ((cut.owner && !ra) || trainOff(cut) || cut.v > 0 || /^(run|route|turn)$/.test(cut.mode)) continue;
+    const poses = poseCache[cut.id] || [];
+    cut.consist.forEach((c, i) => {
       const seats = PAX.SEATS[c.k], p = poses[i];
       if (!seats || !p) return;
       const [lx, lz] = paxLocal(K, p.x, p.z), fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);

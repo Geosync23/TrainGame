@@ -22,7 +22,7 @@
 //      cord from it; a single cord, or one on the platform, by hand), goods for Willow Ford loaded into No. 1's boxcar at the hub, the run-around
 //      at Willow Ford (uncouple the engine, water), unloading there and carrying the goods to the store's door.
 //      Since D13 it rides No. 1: it boards the combine shortly before each departure (12 minutes at the hub, 20 at
-//      Willow Ford, where the train leaves from the water tower's spout) and steps off once the train stands at the
+//      Willow Ford, where until D7 the train left from the water tower's spout) and steps off once the train stands at the
 //      other station (at the hub that is under the spout, where it takes water). It walks only after missing a train.
 //   3. Freight at the hub: unload the Overland's set-out cars into the freight shed's bays (hand truck for crates,
 //      sacks and kegs; long bundles by hand, cordwood on the handcart), then deliver from the bays to the business

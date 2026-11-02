@@ -276,6 +276,45 @@ module.exports = async function checkTimetable() {
           }
           out.inWater = { log, wood };
         }
+        // 12. (D7) Platform work at Willow Ford on the timetable: at each visit the combine stands at the platform
+        // for at least the dwell before it moves, the travellers for Willow Ford all step off there (none ride back),
+        // those waiting in line board and pay on arrival at the hub, and after water at the spout beyond the platform
+        // the train comes back to the platform and leaves from there, so travellers who came meanwhile board too.
+        {
+          const st = R.newState(1866), tr = st.trains[0], T = st.track, K = R.pax.paxStation('willow', T), slots = R.pax.paxQueueSlots(st, K);
+          R.simTick(st, [{ t: 'ttAssign', tr: 0, on: true }]);
+          const comb = tr.consist.find(c => c.k === 'combine').id;
+          const combAt = () => { const t = st.trains.find(o => o.consist.some(c => c.id === comb)), ps = R.trainPoses(T, t), p = ps[t.consist.findIndex(c => c.id === comb)]; return p.x.toFixed(3) + ',' + p.z.toFixed(3); };
+          const atPlat = () => R.pax.paxCarsAt(st, K, { 0: R.trainPoses(T, tr) }).some(C => C.stock === comb);
+          const add = (n, s, to) => { const ids = [], ev = []; for (let k = 0; k < n; k++) { const sl = slots[k % slots.length]; R.pax.paxAdd(st, s, s, to, sl[0] / 100, sl[1] / 100, ev); ids.push(st.pax.list[st.pax.list.length - 1].id); } return ids; };
+          const visits = [];
+          let v = null, back = 0, endAt = Infinity, wasAtPlat = false;
+          for (let i = 0; i < 2 * 10800 && i < endAt; i++) {
+            if (v && v.arr !== null && v.late === null && st.time >= v.arr + 25 * 60) v.late = add(2, 'willow', 'hub');
+            if (v && v.arr !== null && v.moved === null && combAt() !== v.pos) v.moved = st.time - v.arr;
+            wasAtPlat = atPlat();
+            const ev = C.auto(st, 0);
+            for (const e of ev) {
+              if (e.t === 'ttDeparted' && e.i === 0) {
+                // Six ticketed travellers for Willow Ford aboard the combine as it leaves the hub.
+                for (const id of add(6, 'hub', 'willow')) { const p = st.pax.list.find(q => q.id === id); Object.assign(p, { s: 'aboard', car: comb, door: 0, fare: 40, path: [], tx: null, tz: null }); }
+                v = { day: R.tt.ttRunOf(st, 0).day, svc: e.svc, forWF: st.pax.list.filter(p => p.s === 'aboard' && p.to === 'willow').map(p => p.id), arr: null, pos: null, moved: null, queue: [], late: null, ra: false, leftAtPlat: null, rodeOn: null, boarded: [], paid: [], off: [] };
+                visits.push(v);
+              }
+              if (!v) continue;
+              if (e.t === 'ttArrived' && e.i === 1) { v.arr = st.time; v.pos = combAt(); v.queue = add(4, 'willow', 'hub'); }
+              if (e.t === 'ttRunAround') v.ra = true;
+              if (e.t === 'paxAlighted' && e.st === 'willow' && v.forWF.includes(e.id)) v.off.push(e.id);
+              if (e.t === 'paxBoarded' && e.st === 'willow') v.boarded.push(e.id);
+              if (e.t === 'ttDeparted' && e.i === 1) { v.leftAtPlat = wasAtPlat; v.rodeOn = st.pax.list.filter(p => p.s === 'aboard' && p.to === 'willow').length; }
+              if (e.t === 'farePaid' && e.st === 'hub' && e.from === 'willow') v.paid.push(e.id);
+              if (e.t === 'ttArrived' && e.i === 2 && ++back === 3) endAt = i + 150;
+            }
+          }
+          out.plat = visits.map(v => ({ svc: v.svc, day: v.day, ra: v.ra, moved: v.moved, forWF: v.forWF.length, off: v.off.length, rodeOn: v.rodeOn, leftAtPlat: v.leftAtPlat,
+            queue: v.queue.length, queueBoarded: v.queue.filter(id => v.boarded.includes(id)).length, queuePaid: v.queue.filter(id => v.paid.includes(id)).length,
+            late: v.late ? v.late.length : 0, lateBoarded: v.late ? v.late.filter(id => v.boarded.includes(id)).length : 0, money: R.econ.econCheckMoney(st).length }));
+        }
         return out;
       });
       const u = r.uncouple;
@@ -313,6 +352,19 @@ module.exports = async function checkTimetable() {
         if (arrs.some(a => a.late > 10 * 60)) problems.push('water on the way in should not make the run back late: ' + JSON.stringify(arrs));
         if (!w || !w.low || w.filled || w.after) problems.push('the hub\'s wood need: wanted when low, met when filled, and still met after burning a little: ' + JSON.stringify(w));
         console.log(`  water on the way in: ${L.map(x => x.t + (x.i !== undefined && x.i !== null ? ' ' + x.i + x.ph : '') + (x.x !== undefined ? ' x ' + x.x : '') + (x.late ? ' late ' + Math.round(x.late / 60) : '') + ' ' + x.at).join(', ')}; wood need ${JSON.stringify(w)}`);
+      }
+      {
+        const V = r.plat, dwell = 300;
+        if (V.length < 3 || !V.some(v => !v.ra)) problems.push('platform work: expected 3 visits to Willow Ford, one at least without a run-around: ' + JSON.stringify(V));
+        for (const v of V) {
+          const tag = `Willow Ford visit (day ${v.day + 1}, service ${v.svc}${v.ra ? ', run-around' : ''})`;
+          if (v.moved === null || v.moved < dwell) problems.push(`${tag}: the combine should stand at the platform at least ${dwell / 60} game minutes before it moves, moved after ${v.moved} s`);
+          if (v.off !== v.forWF || v.rodeOn !== 0) problems.push(`${tag}: every traveller for Willow Ford should step off there (${v.off} of ${v.forWF}; ${v.rodeOn} still aboard as it left)`);
+          if (v.queueBoarded !== v.queue || v.queuePaid !== v.queue) problems.push(`${tag}: the ${v.queue} waiting in line should board and pay on arrival at the hub (${v.queueBoarded} boarded, ${v.queuePaid} paid)`);
+          if (!v.ra && (!v.leftAtPlat || v.lateBoarded !== v.late)) problems.push(`${tag}: after water at the spout the train should leave from the platform, taking those who came meanwhile (left at the platform ${v.leftAtPlat}, ${v.lateBoarded} of ${v.late} boarded)`);
+          if (v.money) problems.push(`${tag}: the money check failed`);
+        }
+        console.log(`  platform work at Willow Ford: ${V.map(v => `day ${v.day + 1} svc ${v.svc}${v.ra ? ' (run-around)' : ''}: stood ${Math.round(v.moved / 60)} min before moving, ${v.off}/${v.forWF} off, ${v.rodeOn} rode on, line ${v.queueBoarded}/${v.queue} boarded ${v.queuePaid} paid at the hub, later ${v.lateBoarded}/${v.late}, left at the platform ${v.leftAtPlat}`).join('; ')}`);
       }
       console.log(`  coupling: uncouple ${u.took} s, coupled ${JSON.stringify(r.couple.ev)}; stop short of an engine at ${r.gap.gap && r.gap.gap.toFixed(3)}u`);
       console.log(`  fetch from the interchange: cars ${f.cars.join(',')} (items ${f.items.join(',')}) now in No. 1 at x ${f.xs.join(',')}`);

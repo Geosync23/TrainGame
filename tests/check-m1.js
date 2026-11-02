@@ -11,9 +11,8 @@
 //    set-out cars) and a waiting train (No. 1 standing at the hub owing wood or work). Screenshot m1-pressure-portrait.png.
 // 3. Save and reload mid-week (day 4, 17:00, the train out on the line) gives the same hash at the end of the week;
 //    the week played twice gives the same hash.
-// Known gap, reported (not a failure here): day 1 has no cordwood for the afternoon train (the first cords can only
-// come on day 1's 18:00 Overland), so the bot takes No. 1 off the timetable after the morning run and that day's
-// afternoon service is cancelled ("too late to start"). See backlog.md and DEV_NOTES "M1 acceptance check".
+// Since D13 a new game has 8 cords at the hub's wood stage, so day 1's afternoon train runs too: all 14 services
+// in the week (until D13 day 1's afternoon was a known gap, as no wood came before the 18:00 Overland).
 // Not scriptable now: "the player can complete the tutorial with no debug tools" (the tutorial is built in round
 // D) and the playtester gate (five outside playtesters, a designer gate).
 // The sim runs headless in the page (simTick in large batches); only the screenshot is drawn.
@@ -28,7 +27,7 @@ const RUNNER = `window.__m1 = (() => {
   const R = window.__railhead, factory = (0, eval)('(' + window.__m1src + ')');
   const sod = S => (S.time + 18000) % 86400, day = S => Math.floor((S.time + 18000) / 86400);
   const hm = S => 'day ' + (day(S) + 1) + ' ' + String(Math.floor(sod(S) / 3600)).padStart(2, '0') + ':' + String(Math.floor(sod(S) % 3600 / 60)).padStart(2, '0');
-  function newRec() { return { tt: [], daily: [], moves: { toBay: 0, fromBay: 0, toDoor: 0, toWillowStore: 0, toTrain: 0, toJob: 0 }, ordered: 0, arrived: 0,
+  function newRec() { return { tt: [], daily: [], moves: { toBay: 0, fromBay: 0, toDoor: 0, toWillowStore: 0, toTrain: 0, toJob: 0, toCart: 0 }, ordered: 0, arrived: 0,
     events: {}, overlandIn: [], pressure: null, pressureDays: [], cancelled: [], jobDone: null, offers: 0, maxQueue: 0 }; }
   function start(seed) { return { S: R.newState(seed), bot: factory(R), rec: newRec() }; }
   function waitingTrain(S) {
@@ -58,6 +57,7 @@ const RUNNER = `window.__m1 = (() => {
           if (t === 'STOCKPILE') rec.moves.toJob++;
           if (t === 'BAY') rec.moves.toBay = (rec.moves.toBay || 0) + 1;
           if (f === 'BAY') rec.moves.fromBay = (rec.moves.fromBay || 0) + 1;
+          if (t === 'CARRIED' && e.to.carrier === 'HANDCART') rec.moves.toCart = (rec.moves.toCart || 0) + 1;
         }
       }
       // The pressure moment: the evening after both trains are in.
@@ -68,7 +68,9 @@ const RUNNER = `window.__m1 = (() => {
         const cut = S.trains.find(t => t.owner === 'interchange');
         const unsorted = cut ? cut.consist.reduce((n, c) => n + R.cargo.itemsAt(S, { kind: 'CAR', stockId: c.id }).length, 0) : 0;
         const ovIn = rec.overlandIn.filter(o => o.day === day(S) && o.t <= S.time && (o.t + 18000) % 86400 >= 17 * 3600).pop();
-        const no1In = rec.tt.filter(r => r.t === 'ttArrived' && r.i === 2 && r.day === day(S) && r.st === 'hub').pop();
+        // (The evening arrival only: since D13 day 1's afternoon train runs and comes in about 18:31, so the morning's
+        // return must not stand in for it while the evening train still waits at the spout.)
+        const no1In = rec.tt.filter(r => r.t === 'ttArrived' && r.i === 2 && r.day === day(S) && r.st === 'hub' && (r.time + 18000) % 86400 >= 17 * 3600).pop();
         if (ovIn && no1In && q > 0 && unsorted > 0 && waitingTrain(S)) {
           const gapMin = Math.round(Math.abs(ovIn.t - no1In.time) / 60);
           if (!rec.pressureDays.some(p => p.day === day(S))) {
@@ -112,7 +114,10 @@ module.exports = async function checkM1() {
       const R = window.__railhead, A = window.__A, S = A.S;
       const k = S.econ.contracts.map(c => ({ id: c.id, kind: c.kind, biz: c.counterparty, c: c.commodity, q: c.quantity, status: c.status, period: c.period }));
       const left = []; for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && !/BUSINESS|STOCKPILE/.test(S.items.where[i].kind)) left.push(S.items.waybill[i].commodity + '@' + S.items.where[i].kind);
-      return { hash: R.stateHash(S), rec: A.rec, stats: A.bot.mem.stats, refusals: A.bot.mem.refusals, notes: A.bot.mem.notes, contracts: k, cash: S.econ.cash, money: R.econ.econCheckMoney(S), cons: R.cargo.itemCheckConservation(S),
+      const S0 = R.newState(1866), hub = R.tt.ttStation(S0, 'hub');
+      const startCords = R.cargo.itemsAt(S0, { kind: 'GROUND' }).filter(i => S0.items.waybill[i].commodity === 'cordwood' && Math.hypot(S0.items.where[i].x / 100 - hub.wood.x, S0.items.where[i].z / 100 - hub.wood.z) < 6).length;
+      const fares = S.econ.ledger.filter(L => L.category === 'fares'), onArr = fares.filter(L => L.ref && L.ref.kind === 'FARE');
+      return { startCords, faresOnArrival: { n: onArr.length, cents: onArr.reduce((a, L) => a + L.amount, 0), byRoute: onArr.reduce((o, L) => { o[L.counterparty] = (o[L.counterparty] || 0) + 1; return o; }, {}) }, hash: R.stateHash(S), rec: A.rec, stats: A.bot.mem.stats, refusals: A.bot.mem.refusals, notes: A.bot.mem.notes, contracts: k, cash: S.econ.cash, money: R.econ.econCheckMoney(S), cons: R.cargo.itemCheckConservation(S),
         mid: A.mid ? A.mid.hash : null, tick: S.tick, jobs: S.jobs.list.length, edges: S.track.edges.length, left, sold: S.pax.sold, gaveUp: S.pax.rep,
         town: S.town.biz.map(b => b.id + ':' + Object.keys(b.shelf).filter(c => b.shelf[c] > 0).length + ' goods on the shelf') };
     });
@@ -132,15 +137,17 @@ module.exports = async function checkM1() {
     if (A.contracts.some(c => c.status === 'CANCELLED' || c.status === 'LATE')) problems.push('a contract went late or was cancelled: ' + JSON.stringify(A.contracts));
     const coffee = A.contracts.find(c => c.id === 4);
     if (!coffee || coffee.period < 1) problems.push('the standing coffee contract for Willow Ford got no week delivered: ' + JSON.stringify(coffee));
-    // The timetable: every departure and arrival within 15 game minutes; day 1's afternoon is the known gap.
+    // The timetable: every departure and arrival within 15 game minutes, all 14 services (day 1's afternoon too, D13).
     const late = r.tt.filter(x => x.late > 15 * 60);
     if (late.length) problems.push('the Willow Ford train ran more than 15 game minutes late: ' + late.map(x => `${x.t} svc ${x.svc} stop ${x.i} ${x.at} +${Math.round(x.late / 60)} min`).join('; '));
     const dep = r.tt.filter(x => x.t === 'ttDeparted' && x.i === 0).length, done = r.tt.filter(x => x.t === 'ttArrived' && x.i === 2).length;
-    if (dep < 13 || done < 13) problems.push(`the Willow Ford services should run 13 times in the week (all but day 1's afternoon), ran ${dep} departures and ${done} returns`);
-    const day1 = r.cancelled.filter(c => c.day === 0 && c.svc === 1);
-    if (day1.length) known.push(`day 1's afternoon Willow Ford service was cancelled (${day1[0].why}, ${day1[0].at}): no cordwood exists before the first Overland delivery at 18:30`);
-    const otherCancel = r.cancelled.filter(c => !(c.day === 0 && c.svc === 1));
-    if (otherCancel.length) problems.push('services were cancelled: ' + JSON.stringify(otherCancel));
+    if (dep < 14 || done < 14) problems.push(`the Willow Ford services should run 14 times in the week (day 1's afternoon too), ran ${dep} departures and ${done} returns`);
+    const day1pm = r.tt.filter(x => x.day === 0 && x.svc === 1);
+    if (!day1pm.some(x => x.t === 'ttDeparted' && x.i === 0) || !day1pm.some(x => x.t === 'ttArrived' && x.i === 2)) problems.push('day 1\'s afternoon Willow Ford train did not run: ' + JSON.stringify(day1pm));
+    if (r.cancelled.length) problems.push('services were cancelled: ' + JSON.stringify(r.cancelled));
+    // The 8 starting cords (D13): at the hub's wood stage in the new game, and some went on the handcart.
+    if (A.startCords !== 8) problems.push(`a new game should have 8 cords at the hub's wood stage, has ${A.startCords}`);
+    if (!(r.moves.toCart > 0)) problems.push('the bot never put a cord on the handcart: ' + JSON.stringify(r.moves));
     if (!r.jobDone || A.jobs !== 0) problems.push('the siding was not finished by hand: ' + JSON.stringify({ done: r.jobDone, jobs: A.jobs, toJob: r.moves.toJob }));
     if (!(A.stats.tickets > 20)) problems.push('the bot sold few tickets: ' + A.stats.tickets);
     // 2. Pressure.
@@ -172,7 +179,7 @@ module.exports = async function checkM1() {
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
     // Report.
     const fmt = x => `${x.at.slice(4)} ${x.st === 'hub' ? 'hub' : 'WF'} ${x.t === 'ttDeparted' ? 'dep' : 'arr'}${x.late > 0 ? ' +' + Math.round(x.late / 60) : x.late < 0 ? ' ' + Math.round(x.late / 60) : ''}`;
-    console.log(`  week: ${r.ordered} items ordered, ${r.arrived} arrived; moves ${JSON.stringify(r.moves)}; cash $${(A.cash / 100).toFixed(2)}; tickets ${A.stats.tickets} (${JSON.stringify(A.sold)}), gave up ${JSON.stringify(A.gaveUp)}`);
+    console.log(`  week: ${r.ordered} items ordered, ${r.arrived} arrived; moves ${JSON.stringify(r.moves)}; cash $${(A.cash / 100).toFixed(2)}; tickets ${A.stats.tickets} (${JSON.stringify(A.sold)}), fares paid on arrival ${A.faresOnArrival.n} ($${(A.faresOnArrival.cents / 100).toFixed(2)}, ${JSON.stringify(A.faresOnArrival.byRoute)}), gave up ${JSON.stringify(A.gaveUp)}`);
     console.log(`  contracts: ${A.contracts.map(c => c.id + ' ' + c.c + ' ' + c.status + (c.kind === 'STANDING' ? ' (weeks ' + c.period + ')' : '')).join(', ')}; town offers in the week: ${r.offers}`);
     console.log(`  timetable (late in minutes): ${r.tt.map(fmt).join(', ')}`);
     console.log(`  worst lateness ${Math.max(...r.tt.map(x => x.late)) / 60 | 0} game minutes; cancelled ${JSON.stringify(r.cancelled)}`);

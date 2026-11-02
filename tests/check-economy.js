@@ -81,7 +81,7 @@ module.exports = async function checkEconomy() {
         // 3. No order: the Overland brings no cars (normal play has no fixed delivery).
         const s2 = R.newState(1866);
         const ev2 = run(s2, toTime(0, 20));
-        out.noOrder = { arriving: ev2.filter(e => e.t === 'overlandArriving').map(e => e.cars), cut: X.interchangeCut(s2).consist.length, items: s2.items.next };
+        out.noOrder = { arriving: ev2.filter(e => e.t === 'overlandArriving').map(e => e.cars), cut: X.interchangeCut(s2).consist.length, items: s2.items.next - 8 }; // (D13: a new game has 8 starting cords)
 
         // 4. Selling Outside: after the evening visit of s1, empty the boxcar, put 2 tool crates and a tie bundle for Outside on
         //    the flatcar (with the ties moved off), and let the next morning's pick-up take them.
@@ -141,7 +141,8 @@ module.exports = async function checkEconomy() {
         R.simTick(s6, [{ t: 'contractAccept', id: 0 }]);
         R.simTick(s6, [{ t: 'econOrder', lines: [{ c: 'flour', n: 6, contract: 0 }] }]);
         run(s6, toTime(0, 20));
-        const ids6 = []; for (let i = 0; i < s6.items.next; i++) if (s6.items.alive[i]) ids6.push(s6.items.waybill[i]);
+        // (D13: the 8 starting cords at the wood stage are not part of the order.)
+        const ids6 = []; for (let i = 0; i < s6.items.next; i++) if (s6.items.alive[i] && s6.items.waybill[i].commodity !== 'cordwood') ids6.push(s6.items.waybill[i]);
         out.forContract = { n: ids6.length, ok: ids6.every(w => w.contractId === 0 && w.consignee.kind === 'BUSINESS' && w.consignee.id === 0 && w.commodity === 'flour') };
         const badFor = R.simTick(s6, [{ t: 'econOrder', lines: [{ c: 'beans', n: 1, contract: 0 }] }]);
         out.forWrong = badFor.some(e => e.t === 'econRefused');

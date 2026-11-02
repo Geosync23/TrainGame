@@ -233,6 +233,60 @@ module.exports = async function checkPassengers() {
       console.log(`  real line: ${r5b.aboard} boarded at the hub, ${r5b.off} stepped off at Willow Ford, ${r5b.gone} walked off the map there`);
     }
 
+    // 5c. Unstaffed stations (D13): at Willow Ford (unstaffed) travellers in line board No. 1 without a ticket and
+    // pay the fare on arrival at the hub (one 'fares' ledger entry each, ref FARE); at the hub (staffed, even with
+    // the player away from the window) travellers without a ticket do not board.
+    const r5c = await R(() => {
+      const R = window.__railhead, S = R.pax.paxDebugScenario(R.newState(1866), 3, 4), T = S.track, out = { bad: [] };
+      const W = R.world && R.world.stationsOf(T).find(s => s.id === 'willow');
+      if (!W) return { skip: true };
+      if (!R.pax.paxUnstaffed(T, 'willow') || R.pax.paxUnstaffed(T, 'hub')) out.bad.push('Willow Ford should be unstaffed and the hub staffed');
+      const hubQueue = S.pax.list.filter(p => p.s === 'queue').map(p => p.id);
+      const boardedNoTicket = new Set(), farePaid = [], log = [];
+      const tick = cmds => { for (const e of R.simTick(S, cmds || [])) {
+        if (e.t === 'paxBoarded') { const p = S.pax.list.find(q => q.id === e.id); if (p && !p.fare) boardedNoTicket.add(e.id + '@' + e.st); }
+        if (e.t === 'farePaid') farePaid.push(e);
+        log.push(e);
+      } };
+      const sendTo = st => { const sp = st.tracks[st.stops[0]], n = R.trackNearest(T, (sp.x0 + sp.x1) / 2, (sp.z0 + sp.z1) / 2); tick([{ t: 'trainSendTo', tr: 0, e: n.e, s: Math.round(n.s * 1000) }]); };
+      const standing = () => S.trains[0].mode === 'idle' && S.trains[0].v === 0;
+      for (let k = 0; k < 40; k++) tick();
+      out.hubBoarded = S.pax.list.filter(p => p.s === 'aboard').length;
+      const cash0 = S.econ.cash;
+      sendTo(W);
+      for (let k = 0; k < 2500 && !(standing() && k > 20); k++) tick();
+      out.hubNoTicketAboard = S.pax.list.filter(p => hubQueue.includes(p.id) && p.s === 'aboard').length;
+      if ([...boardedNoTicket].some(k => /@hub$/.test(k))) out.bad.push('a traveller without a ticket boarded at the hub: ' + [...boardedNoTicket].join(','));
+      if (farePaid.length) out.bad.push('fares were paid on arrival at Willow Ford by travellers with tickets: ' + JSON.stringify(farePaid));
+      // Four travellers arrive at Willow Ford and wait in line; nobody sells tickets there.
+      const K = R.pax.paxStation('willow', T), slots = R.pax.paxQueueSlots(S, K), ev0 = [];
+      for (let i = 0; i < 4; i++) R.pax.paxAdd(S, 'willow', 'willow', 'hub', slots[i][0] / 100, slots[i][1] / 100, ev0);
+      for (let k = 0; k < 60; k++) tick();
+      out.wfAboard = S.pax.list.filter(p => p.from === 'willow' && p.s === 'aboard').length;
+      out.wfNoTicket = [...boardedNoTicket].filter(k => /@willow$/.test(k)).length;
+      if (out.wfNoTicket < 4) out.bad.push(`travellers in line at Willow Ford did not board without a ticket (${out.wfNoTicket} of 4): ` + JSON.stringify(S.pax.list.filter(p => p.st === 'willow').map(p => [p.id, p.s, p.fare])));
+      if (S.econ.cash !== cash0) out.bad.push('money changed when travellers boarded without a ticket at Willow Ford');
+      // Back to the hub: each pays the fare as they step off.
+      const hub = R.world.stationsOf(T).find(s => s.id === 'hub');
+      sendTo(hub);
+      for (let k = 0; k < 2500 && farePaid.length < out.wfNoTicket; k++) tick();
+      for (let k = 0; k < 20; k++) tick();
+      const L = S.econ.ledger.filter(e => e.ref && e.ref.kind === 'FARE');
+      out.paid = farePaid.length; out.ledger = L.length; out.cents = L.reduce((a, e) => a + e.amount, 0); out.cash = S.econ.cash - cash0;
+      if (farePaid.length !== out.wfNoTicket || farePaid.some(e => e.st !== 'hub' || e.from !== 'willow' || e.cents !== 40)) out.bad.push('fares on arrival at the hub: ' + JSON.stringify(farePaid));
+      if (L.length !== out.wfNoTicket || L.some(e => e.category !== 'fares' || e.amount !== 40 || !/arrival, Willow Ford to Hub/.test(e.counterparty))) out.bad.push('ledger entries for fares on arrival: ' + JSON.stringify(L));
+      if (out.cash !== out.cents) out.bad.push(`cash went up by ${out.cash} cents, the fares on arrival were ${out.cents}`);
+      const money = R.econ.econCheckMoney(S);
+      if (money.length) out.bad.push('money check: ' + money.join('; '));
+      // The hub's queue (no tickets sold) is still there or gave up; none of them rode.
+      if (S.pax.list.some(p => hubQueue.includes(p.id) && (p.s === 'aboard' || p.s === 'off'))) out.bad.push('a hub traveller without a ticket rode the train');
+      return out;
+    });
+    if (!r5c.skip) {
+      problems.push(...r5c.bad);
+      console.log(`  unstaffed Willow Ford: ${r5c.hubBoarded} ticketed boarded at the hub (its 3 without tickets stayed: ${r5c.hubNoTicketAboard} aboard), ${r5c.wfNoTicket} boarded at Willow Ford without a ticket, ${r5c.paid} paid on arrival at the hub (${r5c.ledger} ledger entries, ${r5c.cents} cents, cash +${r5c.cash})`);
+    }
+
     // 6. Determinism: the same commands twice, with staffing and a train move, give the same hash.
     const det = await R(() => {
       const R = window.__railhead, run = () => { const S = R.pax.paxDebugScenario(R.newState(1866), 12, 6);

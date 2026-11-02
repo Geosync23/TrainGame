@@ -688,7 +688,7 @@ const COUPLER_GAP = 0.1;
 function newState(seed, world) {
   const Wd = WORLDS[world === 'yard' ? 'yard' : 'start'], T = Wd.build();
   worldUse(T);
-  return {
+  const st = {
     schemaVersion: CFG.SCHEMA_VERSION,
     seed, rng: rngSeed(seed), tick: 0, time: 0,
     track: T,
@@ -707,6 +707,10 @@ function newState(seed, world) {
     tg: tgNewStore(),                // the telegram inbox (section "telegrams and alerts")
     tut: tutNewState(world === 'yard'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard
   };
+  // The real start begins with 8 cords of wood at the hub's wood stage (D13; section "timetable"). Only a new game:
+  // loading a save never comes through here, so old saves get no free cords.
+  if (world !== 'yard') ttStartingWood(st);
+  return st;
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
 // A train that is not on the map: the Overland while it is away, or the interchange cars when none stand there.
@@ -1809,6 +1813,8 @@ function ttWalkBeside(S, at, use) {
   let side = ((P.x - at.x) * nx + (P.z - at.z) * nz) >= 0 ? 1 : -1;
   const spot = sd => ({ x: clampX(at.x + nx * TT.BESIDE * sd), z: clampZ(at.z + nz * TT.BESIDE * sd) }); // map bounds of the world in use
   if (!G.cost[walkCell(spot(side).x, spot(side).z)] && G.cost[walkCell(spot(-side).x, spot(-side).z)]) side = -side;
+  // Pushing the handcart (cords of wood, D13): the side away from the platform, where the handcart cannot go.
+  if (carryCarrier(S) === 'HANDCART' && carryNoCartAt(spot(side).x, spot(side).z) && !carryNoCartAt(spot(-side).x, spot(-side).z) && G.cost[walkCell(spot(-side).x, spot(-side).z)]) side = -side;
   const sp = spot(side);
   P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = use; P.act = null; P.run = false;
 }
@@ -1980,6 +1986,21 @@ function ttCheckSaveShape(st) {
   for (const r of D.runs) if (!r || !D.services[r.svc] || !Number.isInteger(r.i) || !D.services[r.svc].stops[r.i]) bad();
   for (const r of D.res) if (!r || !st.trains[r.tr] || !Array.isArray(r.blocks)) bad();
   for (const tr of st.trains) if (!tr.owner) for (const c of tr.consist) if (c.k === 'loco' && (typeof c.fuel !== 'number' || typeof c.water !== 'number')) bad();
+}
+// A new game in the real start (D13, 2026-11-02): 8 cords of wood lie on the ground at the hub's wood stage, in two
+// rows of 4 just beyond its open east end (0.7u clear of its deck, off every footprint), so day 1's afternoon train
+// can be fuelled before the first Overland delivery. They are ordinary cordwood items (waybill as the timetable
+// scenario's: the railroad's own, CONSTRUCTION 0), so the item conservation check counts them like any other.
+const TT_START_CORDS = 8;
+function ttStartingWood(st) {
+  const hub = ttStation(st, 'hub'), e = BLD_EXTENTS.woodstage;
+  if (!hub || !hub.wood) return st;
+  for (let i = 0; i < TT_START_CORDS; i++) {
+    const x = hub.wood.x + e[1] + 0.7 + (i % 2) * 0.7, z = hub.wood.z - 1.05 + Math.floor(i / 2) * 0.7;
+    itemCreate(st, { commodity: 'cordwood', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null },
+      { kind: 'GROUND', x: Math.round(x * 100), z: Math.round(z * 100) }, null);
+  }
+  return st;
 }
 // rh.scenario('timetable') (in the M0 test yard): 07:20 on day 1. No. 1 stands at the test hub (north main line, heading east), on the
 // timetable; 6 cords of wood lie at the hub's wood stage; the player stands by the hub's order board. The Overland's
@@ -2159,8 +2180,14 @@ function cargoWhere(S, w) {
   return 'unknown kind of place';
 }
 const cargoSame = (a, b) => a && b && JSON.stringify(a) === JSON.stringify(b);
-// Can an item of this type go to this (clean) place, given what is already there? ignoreId: the item being moved.
-function cargoRoomProblem(S, type, w, ignoreId) {
+// Which long bundles may ride the handcart (D13, 2026-11-02): cordwood only, up to the handcart's 6. Every other
+// long bundle (ties, rails, lumber, poles) is still carried by hand only, and no long bundle goes on a hand truck.
+// This is the one place the rule lives: cargoRoomProblem and the conservation check both read it.
+const CARGO_CART_LONG = ['cordwood'];
+const cargoLongCarrierOk = (commodity, carrier) => carrier === 'HAND' || (carrier === 'HANDCART' && CARGO_CART_LONG.includes(commodity));
+// Can an item of this type go to this (clean) place, given what is already there? ignoreId: the item being moved;
+// commodity: its commodity (for the cordwood-on-the-handcart rule).
+function cargoRoomProblem(S, type, w, ignoreId, commodity) {
   const I = S.items, n = I.next;
   const others = []; // living items at the same place-kind and target, except the one moving
   const key = w.kind === 'CAR' ? 'stockId' : w.kind === 'BAY' ? 'buildingId' : w.kind === 'CARRIED' ? 'actorId' : null;
@@ -2175,7 +2202,7 @@ function cargoRoomProblem(S, type, w, ignoreId) {
   } else if (w.kind === 'CARRIED') {
     if (type === 'machinery') return 'machinery needs two people or the station crane';
     if (type === 'longBundle' && w.carrier === 'HANDTRUCK') return 'a long bundle never goes on a hand truck';
-    if (type === 'longBundle' && w.carrier === 'HANDCART') return 'a long bundle is carried by hand only';
+    if (type === 'longBundle' && !cargoLongCarrierOk(commodity, w.carrier)) return 'a long bundle is carried by hand only (only cordwood goes on a handcart)';
     if (others.some(i => I.where[i].carrier !== w.carrier)) return 'already carrying by ' + others.map(i => I.where[i].carrier.toLowerCase())[0];
     if (others.some(i => I.where[i].slot === w.slot)) return 'that slot is taken';
   } else if (w.kind === 'CAR') {
@@ -2193,12 +2220,12 @@ function itemCanMove(S, id, where) {
   const w = cargoWhere(S, where);
   if (typeof w === 'string') return w;
   if (cargoSame(I.where[id], w)) return 'it is already there';
-  return cargoRoomProblem(S, itemType(S, id), w, id);
+  return cargoRoomProblem(S, itemType(S, id), w, id, I.waybill[id].commodity);
 }
 function itemCreate(S, waybill, where, ev) {
   const I = S.items, bad = cargoWaybillProblem(waybill);
   const w = bad ? null : cargoWhere(S, where);
-  const why = bad || (typeof w === 'string' ? w : cargoRoomProblem(S, COMMODITIES[waybill.commodity].type, w, -1));
+  const why = bad || (typeof w === 'string' ? w : cargoRoomProblem(S, COMMODITIES[waybill.commodity].type, w, -1, waybill.commodity));
   if (why) { if (ev) ev.push({ t: 'itemRefused', id: null, why }); return { ok: false, why }; }
   const id = I.next++;
   I.waybill[id] = cargoCopyWaybill(waybill); I.where[id] = w; I.alive[id] = true;
@@ -2275,7 +2302,7 @@ function itemCheckConservation(S) {
         room[k] = (room[k] || 0) + 1; if (room[k] > 1) out.push(c.actorId + ' has two items in slot ' + c.slot);
         if (room[kc] && room[kc] !== c.carrier) out.push(c.actorId + ' carries with two kinds of carrier at once');
         room[kc] = c.carrier;
-        if ((type === 'longBundle' && c.carrier !== 'HAND') || type === 'machinery') out.push('item ' + i + ' (' + cargoName(type) + ') cannot be carried by ' + c.carrier);
+        if ((type === 'longBundle' && !cargoLongCarrierOk(wb.commodity, c.carrier)) || type === 'machinery') out.push('item ' + i + ' (' + cargoName(type) + ') cannot be carried by ' + c.carrier);
       }
       if (c.kind === 'CAR') {
         const car = cargoCar(S, c.stockId), R = CARGO_CAR_RULES[car.k], k = 'R:' + c.stockId;
@@ -3858,7 +3885,8 @@ function carryWalkTo(S, x, z, use) {
 }
 // Section 9 wording for the common refusals; the cargo section's reason otherwise.
 function carryWhy(why) {
-  if (/long bundle (never goes on|is carried by hand)/.test(why)) return 'A long bundle is carried by hand only, never on a hand truck or handcart';
+  if (/long bundle never goes on/.test(why)) return 'A long bundle is never put on a hand truck (cordwood can go on the handcart)';
+  if (/long bundle is carried by hand/.test(why)) return 'A long bundle is carried by hand only (only cordwood goes on the handcart)';
   return why.charAt(0).toUpperCase() + why.slice(1);
 }
 function carryToolName(S) { return TOOL_KINDS[S.tools[S.player.tool].k].name.toLowerCase(); }
@@ -3964,7 +3992,7 @@ const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1, biz: 1 };
 // the player is on, 0.8u out from the car's centre line; the walk ends 0.5u further out. Pick-up and put-down
 // take 0.2 game minutes each, as everywhere, and every move goes through the cargo section's itemMove, so its
 // rules apply: a boxcar holds 16 and takes no long bundles; a flatcar takes long bundles, crates and pallets
-// only (24 units); a long bundle is carried by hand only (never on the hand truck or handcart).
+// only (24 units); a long bundle is carried by hand only (never on the hand truck; cordwood may go on the handcart, D13).
 // Only a standing car the player may work: not the Overland's own train (its crew works it), and not a
 // train that is moving. Commands: { t: 'useCar', stock } walks to the car's door and gives 'reachedCar'
 // (the page then shows what is in it); carryPick { id } takes an item from a car; carryPut { stock } puts the
@@ -4064,8 +4092,14 @@ function carryCheckSaveShape(st) {
 //   sold, cents, rep, gone, arrived: counts per station (tickets sold, fares in cents, gave up, left the map, stepped off).
 // Commands: { t: 'staffWindow', st } walks to the station's ticket window and staffs it on arrival (any walk
 // or action stops it); { t: 'leaveWindow' }. Each fare is posted to the ledger with econPost (category 'fares').
-// Events: paxArrived, ticketSold, money (from econPost), paxBoarded, paxAlighted,
+// Events: paxArrived, ticketSold, farePaid (on arrival, D13), money (from econPost), paxBoarded, paxAlighted,
 // paxGaveUp, paxGone, deskStaffed, deskLeft.
+// Unstaffed stations (D13, 2026-11-02; Willow Ford, `staffed: false` in STATIONS): nobody sells tickets there
+// unless the player stands at the window. Travellers still come and wait in line by the window; when a train of
+// ours that serves them stands at the platform, those in line board it without a ticket (after the ticketed
+// ones, in id order, never past the seats), and each pays the fare on arrival as they step off: one ledger entry
+// ('fares', ref { kind: 'FARE', id }). They still go home after 60 game minutes in line with no train. A staffed
+// station (the hub, even while the player is away from its window) keeps the rule: no ticket, no boarding.
 // Stations come from the building data (paxStations): each platform footprint is one station, and its depot has
 // the ticket window. C2's layout may name them with a `station` field on the footprints; otherwise the first
 // platform is the hub. Departures come from stationDepartures, which returns nothing until train services exist (C3).
@@ -4137,6 +4171,12 @@ function paxStations(T) {
   return (paxStationsCache[wid] = out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
 }
 const paxStation = (T, id) => paxStations(T).find(s => s.id === id) || null;
+// Is this station unstaffed (no ticket agent), so travellers board without a ticket and pay on arrival (D13)?
+// From the station table's `staffed` field; the M0 test yard has no table, and its stations count as staffed.
+function paxUnstaffed(T, id) {
+  const table = typeof stationsOf === 'function' ? stationsOf(T) || [] : [], st = table.find(t => t.id === id);
+  return !!st && st.staffed === false;
+}
 // Platform-local coordinates [along, out] of (x, z) from station K's platform centre, and back.
 function paxLocal(K, x, z) { const dx = x - K.plat.x, dz = z - K.plat.z; return [dx * K.along[0] + dz * K.along[1], dx * K.out[0] + dz * K.out[1]]; }
 function paxWorld(K, lx, lz) { return [K.plat.x + K.along[0] * lx + K.out[0] * lz, K.plat.z + K.along[1] * lx + K.out[1] * lz]; }
@@ -4355,7 +4395,7 @@ function paxTick(S, ev, poseCache) {
   }
   // 2. Each station: giving up, the queue, ticket sales, stepping off and boarding.
   for (const K of stations) {
-    const slots = paxQueueSlots(S, K), here = X.list.filter(p => p.st === K.id);
+    const slots = paxQueueSlots(S, K), here = X.list.filter(p => p.st === K.id), unstaffed = paxUnstaffed(S.track, K.id);
     // 60 game minutes without a ticket, and no conductor aboard (none in M1): home, and the station remembers it.
     for (const p of here) if (p.s === 'queue' && S.time - p.t0 >= PAX.GIVE_UP_S) {
       p.s = 'leave'; p.tx = null; p.tz = null; p.path = []; paxCount(X.rep, K.id);
@@ -4381,13 +4421,16 @@ function paxTick(S, ev, poseCache) {
     } else X.sell[K.id] = 0;
     // Passenger cars at the platform: step off first, then board, one at a time per door, 0.1 game minutes each.
     const cars = paxCarsAt(S, K, poseCache), carIds = new Set(cars.map(c => c.stock));
-    for (const p of here) if (p.s === 'board' && !carIds.has(p.car)) { p.s = 'wait'; p.car = null; const w = paxWaitSpot(S, K); paxGo(S, p, poses, w[0], w[1]); }
+    // A car that moved off sends its walkers back: ticketed ones to the platform, those without a ticket to the line.
+    for (const p of here) if (p.s === 'board' && !carIds.has(p.car)) { p.car = null; if (p.fare) { p.s = 'wait'; const w = paxWaitSpot(S, K); paxGo(S, p, poses, w[0], w[1]); } else { p.s = 'queue'; p.tx = null; p.tz = null; } }
     for (const C of cars) {
       const aboard = X.list.filter(p => p.s === 'aboard' && p.car === C.stock);
       let taken = aboard.length + here.filter(p => p.s === 'board' && p.car === C.stock).length;
-      for (const p of here) {
+      // Ticketed travellers first; at an unstaffed station those in line then board too, without a ticket (D13).
+      const boarders = here.filter(p => p.s === 'wait').concat(unstaffed ? here.filter(p => p.s === 'queue') : []);
+      for (const p of boarders) {
         if (taken >= C.seats) break;
-        if (p.s !== 'wait' || !paxTrainServes(S, C.tr, K.id, p.to)) continue;
+        if (!paxTrainServes(S, C.tr, K.id, p.to)) continue;
         let di = 0; // the nearest door (ties to the lower number)
         const dd = j => Math.hypot(C.doors[j][0] * 100 - p.x, C.doors[j][1] * 100 - p.z);
         for (let j = 1; j < C.doors.length; j++) if (dd(j) < dd(di)) di = j;
@@ -4404,6 +4447,13 @@ function paxTick(S, ev, poseCache) {
           X.door[key] -= PAX.BOARD_S;
           if (off.length) {
             const p = off.shift();
+            // No ticket (boarded at an unstaffed station): the fare is paid now, on arrival (D13).
+            if (!p.fare) {
+              const cents = paxFare(p.st, K.id);
+              p.fare = cents;
+              econPost(S, cents, 'fares', `Fare paid on arrival, ${paxPlaceName(p.st)} to ${paxPlaceName(K.id)}`, { kind: 'FARE', id: p.id }, ev);
+              ev.push({ t: 'farePaid', id: p.id, from: p.st, st: K.id, cents });
+            }
             p.s = 'off'; p.st = K.id; p.car = null; p.x = dx; p.z = dz; p.tx = null; p.tz = null; p.path = [];
             paxCount(X.arrived, K.id);
             ev.push({ t: 'paxAlighted', id: p.id, st: K.id, stock: C.stock });
@@ -5610,12 +5660,14 @@ function carryDraw(alpha, dt) {
 }
 // Where an item on the hand truck or handcart is drawn: {x, y, z, yaw}, stacked on the tool (TOOL_STACK).
 // null for items carried by hand (the cargo section's default pose holds them in front of the player).
-function carryItemPose(S, w) {
+// Cords of wood on the handcart (D13) lie along the bed, two side by side, in up to three layers.
+function carryItemPose(S, w, id) {
   if (w.carrier === 'HAND' || S.player.tool === null) return null;
   const v = carryView.tools[S.player.tool];
   if (!v) return null;
   const st = TOOL_STACK[v.k];
   if (v.k === 'truck') carryV.set(st.x, st.y + Math.cos(st.tilt) * w.slot * st.dy, st.z + Math.sin(st.tilt) * w.slot * st.dy);
+  else if (id !== undefined && itemType(S, id) === 'longBundle') carryV.set(st.x + ((w.slot % st.cols) - 0.5) * st.dx, st.y + Math.floor(w.slot / st.cols) * 0.17, st.z);
   else carryV.set(st.x + ((w.slot % st.cols) - 0.5) * st.dx, st.y, st.z + (Math.floor(w.slot / st.cols) - 1) * st.dz);
   v.lean.children[0].localToWorld(carryV);
   return { x: carryV.x, y: carryV.y, z: carryV.z, yaw: v.g.rotation.y };
@@ -5718,11 +5770,11 @@ function cargoPoses(S) {
 }
 // Default pose of a carried item: held in front of the actor (in hand), or low in front for a hand truck or
 // handcart until the carrying code draws those. Builder W3 may replace this function.
-function cargoCarriedPose(S, w, actor) {
+function cargoCarriedPose(S, w, actor, id) {
   if (!actor) return null;
   // Replaced by the carrying code (W3): items on the hand truck or handcart stack on it (carryItemPose);
   // by hand the item is held in front of the chest. The character model faces local +z (its cap visor and nose).
-  if (actor === view.player) { const p = carryItemPose(S, w); if (p) return p; }
+  if (actor === view.player) { const p = carryItemPose(S, w, id); if (p) return p; }
   const f = actor.rotation.y, fx = Math.sin(f), fz = Math.cos(f);
   return { x: actor.position.x + fx * 0.34, y: 0.36, z: actor.position.z + fz * 0.34, yaw: f };
 }
@@ -5796,7 +5848,7 @@ function cargoDraw(S) {
     const w = I.where[i];
     if (!w) continue;
     if (w.kind === 'CARRIED' && S.player.ride) continue;   // riding: the items in hand ride inside the car, not drawn
-    const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId)) : w.kind === 'CAR' ? flat[i] : poses[i];
+    const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId), i) : w.kind === 'CAR' ? flat[i] : poses[i];
     if (p) cargoSetItem(S, i, p);
   }
   for (const x of extras) {
@@ -9151,7 +9203,7 @@ window.__railhead = {
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
   jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,
   trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.isInstancedMesh && o.geometry.parameters && o.geometry.parameters.depth === 1.2 ? o.count : 0), 0),
-  pax: { PAX, paxStations: T => paxStations(T || S.track), paxStation: (id, T) => paxStation(T || S.track, id), paxQueueSlots, paxFare, paxCarsAt, stationDepartures, paxTrainServes, paxDebugScenario, paxNewStore, paxLook, paxPlaceName,
+  pax: { PAX, paxStations: T => paxStations(T || S.track), paxStation: (id, T) => paxStation(T || S.track, id), paxQueueSlots, paxFare, paxAdd, paxUnstaffed, paxCarsAt, stationDepartures, paxTrainServes, paxDebugScenario, paxNewStore, paxLook, paxPlaceName,
     get view() { return paxView; }, get kits() { return crowd.kits; } },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState, ttStopNeeds, ttWoodNeedU,

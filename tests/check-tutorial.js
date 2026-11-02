@@ -12,8 +12,8 @@
 // 3. Save and reload mid-tutorial (at the tickets step) loads with the same hash, resumes the same step and ends
 //    with the same hash as the game played straight through; the game played twice gives the same hash.
 // 4. An old save (every sample in tests/fixtures before schema 12) loads with the tutorial done and sends none.
-// 5. In the page: the Current task chip and the telegram card (the tutorial's own drawing; D1's inbox is drawn
-//    separately) for the first telegram and a later one, portrait and landscape, buttons at least 48 px, the
+// 5. In the page: the Current task chip, which opens D1's telegram inbox at the step's telegram (since D1's merge
+//    the inbox is the one place to read and answer telegrams), for the first telegram and a later one, portrait and landscape, buttons at least 48 px, the
 //    brass marker drawn over the step's place, no console errors. Screenshots tutorial-*.png.
 
 const fs = require('fs');
@@ -191,25 +191,28 @@ module.exports = async function checkTutorial() {
       // The first telegram: a new game after one tick, the chip tapped (the card opens and the telegram is read).
       await pg.evaluate(() => { const R = window.__railhead; R.importSave(JSON.stringify({ state: R.newState(1866) })); R.step(2); });
       await pg.waitForTimeout(300);
+      const chipBox = await pg.evaluate(() => { const b = document.getElementById('tutChip').getBoundingClientRect(); return { w: b.width, h: b.height }; });
       await pg.tap('#tutChip');
       await pg.evaluate(() => window.__railhead.step(1));
       await pg.waitForTimeout(400);
       const a = await pg.evaluate(() => {
         const r = id => { const e = document.getElementById(id); if (!e || e.hidden) return null; const b = e.getBoundingClientRect(); return { w: b.width, h: b.height, x: b.x, y: b.y, r: b.right, b: b.bottom }; };
-        const btns = [...document.querySelectorAll('#tutBtns button')].map(b => ({ t: b.textContent, h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width }));
-        return { chip: r('tutChip'), card: r('tutCard'), btns, title: document.getElementById('tutTitle').textContent, read: window.__railhead.state.tg.list[0].read, vw: innerWidth, vh: innerHeight };
+        const btns = [...document.querySelectorAll('#inboxBody button[data-b]')].map(b => ({ t: b.textContent, h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width }));
+        const open = document.querySelector('#inboxBody .tg[data-id="' + window.__railhead.state.tut.tg + '"] b');
+        return { chip: r('tutChip'), card: r('inbox'), btns, title: open ? open.textContent : '', read: window.__railhead.state.tg.list[0].read, vw: innerWidth, vh: innerHeight };
       });
       await pg.screenshot({ path: screenshotPath(`tutorial-first-${orient}`) });
       if (!a.card || a.title !== 'Welcome to the Calder Valley') problems.push(`${orient}: the card should show the first telegram: ${JSON.stringify(a)}`);
       if (JSON.stringify(a.btns.map(b => b.t)) !== JSON.stringify(['OK', 'Skip tutorial'])) problems.push(`${orient}: the card's buttons should be OK and Skip tutorial: ${JSON.stringify(a.btns)}`);
+      a.chip = chipBox;   // the chip hides while the inbox is open; measured before the tap
       if (a.btns.some(b => b.h < 48 || b.w < 48) || !a.chip || a.chip.h < 48) problems.push(`${orient}: a tutorial button is under 48 px: ${JSON.stringify(a)}`);
       if (!a.read) problems.push(`${orient}: opening the card should mark the telegram read`);
       if (a.card && (a.card.r > a.vw || a.card.b > a.vh || a.card.x < 0)) problems.push(`${orient}: the card runs off the screen: ${JSON.stringify(a)}`);
       // OK by touch: the next step's telegram follows and the chip names it.
-      await pg.tap('#tutBtns button');
+      await pg.tap('#inboxBody button[data-b]');
       await pg.evaluate(() => window.__railhead.step(2));
       await pg.waitForTimeout(300);
-      const b = await pg.evaluate(() => ({ chip: document.getElementById('tutChipText').textContent, card: document.getElementById('tutCard').hidden, step: window.__railhead.state.tut.step }));
+      const b = await pg.evaluate(() => ({ chip: document.getElementById('tutChipText').textContent, card: document.getElementById('inbox').hidden, step: window.__railhead.state.tut.step }));
       if (b.step !== 1 || b.chip !== 'Take a contract' || !b.card) problems.push(`${orient}: OK should close the card and the chip show the next task: ${JSON.stringify(b)}`);
       // A later telegram: the bot's game at the sort step, the card open, the marker over the bay.
       await pg.evaluate(src => { window.__tutsrc = src; }, tutBotFactory.toString());
@@ -227,14 +230,15 @@ module.exports = async function checkTutorial() {
       await pg.waitForTimeout(500);
       const c = await pg.evaluate(() => {
         const R = window.__railhead;
-        return { title: document.getElementById('tutTitle').textContent, card: !document.getElementById('tutCard').hidden, btns: [...document.querySelectorAll('#tutBtns button')].map(b => b.textContent), dc: R.drawCalls };
+        const open = document.querySelector('#inboxBody .tg[data-id="' + R.state.tut.tg + '"] b');
+        return { title: open ? open.textContent : '', card: !document.getElementById('inbox').hidden, btns: [...document.querySelectorAll('#inboxBody button[data-b]')].map(b => b.textContent), dc: R.drawCalls };
       });
       await pg.screenshot({ path: screenshotPath(`tutorial-later-${orient}`) });
-      if (at.step !== 6 || !c.card || c.title !== 'Sort it in the freight shed' || JSON.stringify(c.btns) !== '["Close"]') problems.push(`${orient}: the later telegram card: ${JSON.stringify({ at, c })}`);
+      if (at.step !== 6 || !c.card || c.title !== 'Sort it in the freight shed' || JSON.stringify(c.btns) !== '[]') problems.push(`${orient}: the later telegram card: ${JSON.stringify({ at, c })}`);
       // The card closed: the brass marker over the bay (screenshot tutorial-marker-*.png).
-      await pg.tap('#tutBtns button');
+      await pg.tap('#inboxClose');
       await pg.waitForTimeout(400);
-      const mk = await pg.evaluate(() => { const R = window.__railhead, t = R.tut.tutTarget(R.state); return { t, s: t ? R.toScreen(t.x, t.z, 3.6) : null, card: document.getElementById('tutCard').hidden }; });
+      const mk = await pg.evaluate(() => { const R = window.__railhead, t = R.tut.tutTarget(R.state); return { t, s: t ? R.toScreen(t.x, t.z, 3.6) : null, card: document.getElementById('inbox').hidden }; });
       await pg.screenshot({ path: screenshotPath(`tutorial-marker-${orient}`) });
       if (!mk.card) problems.push(`${orient}: Close should close the card`);
       if (!mk.t || !mk.s || mk.s.x < 0 || mk.s.y < 0 || mk.s.x > a.vw || mk.s.y > a.vh) problems.push(`${orient}: the marker is not on the screen: ${JSON.stringify(mk)}`);

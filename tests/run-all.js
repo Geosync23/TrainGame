@@ -23,6 +23,7 @@ const checks = {
   'interchange (the Overland, loading cars by hand)': require('./check-interchange'),
   'hand-building track (construction jobs)': require('./check-handbuild'),
   'hand-building drawn (stakes, sign, pieces, work poses)': require('./check-handbuild-look'),
+  'fix round gaps (stockpile pick-up, switch in a station, wrong bay mark)': require('./check-fixround'),
   'economy (cash, orders by telegraph, contracts, ledger)': require('./check-economy'),
   'towns (businesses, contracts offered, delivery at the door)': require('./check-town'),
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),

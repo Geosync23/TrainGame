@@ -1462,7 +1462,43 @@ function ttStationDefs(T) {
   const w = typeof stationsOf === 'function' ? stationsOf(T) : null;
   return w && w.length ? w.map(st => ttFromWorld(T, st)) : TT_TEST_STATIONS;
 }
-// The stations resolved onto the track (edge and distance), cached per track and its size.
+// The stations resolved onto the track (edge and distance), cached per track and its size. A resolved stopping track
+// (trk, trks) is { e, s0, s1 (one edge: the old shape, kept for callers), segs: [[edge, sFrom, sTo]] (the pieces it
+// covers, in order), len, ends: [{ e, s, d }] (where the leading end stops, and its facing, arriving either way),
+// mid: { e, s } }. Since D15 a span may cross joints: a switch built inside a platform's stopping track splits its
+// edge, and the span then runs over the pieces (the shortest way from one end to the other, which must be about as
+// long as the straight line between them, so it never goes round by a loop).
+function ttSpanOf(T, a, b) {
+  if (a.e === b.e) {
+    const e = a.e, s0 = Math.min(a.s, b.s), s1 = Math.max(a.s, b.s);
+    return { e, s0, s1, segs: [[e, s0, s1]], len: s1 - s0, ends: [{ e, s: s1, d: 1 }, { e, s: s0, d: -1 }], mid: { e, s: (s0 + s1) / 2 } };
+  }
+  const pa = edgeAt(T, T.edges[a.e], a.s), pb = edgeAt(T, T.edges[b.e], b.s), chord = Math.hypot(pa.x - pb.x, pa.z - pb.z);
+  let best = null;
+  for (const d of [1, -1]) {
+    const r = findRoute(T, { e: a.e, s: a.s, d }, { e: b.e, s: b.s });
+    if (r && (!best || r.dist < best.r.dist)) best = { r, d };
+  }
+  if (!best || best.r.dist > chord * 1.02 + 0.2) return null;
+  const segs = [], dirs = [], path = best.r.path;
+  let d = best.d, s = a.s;
+  for (let i = 0; i < path.length; i++) {
+    const E = T.edges[path[i]], last = i === path.length - 1, s2 = last ? b.s : d > 0 ? E.len : 0;
+    segs.push([E.id, Math.min(s, s2), Math.max(s, s2)]); dirs.push(d);
+    if (last) break;
+    const node = d > 0 ? E.b : E.a, E2 = T.edges[path[i + 1]];
+    d = E2.a === node ? 1 : -1; s = d > 0 ? 0 : E2.len;
+  }
+  const len = segs.reduce((n, g) => n + g[2] - g[1], 0), main = segs.slice().sort((p, q) => (q[2] - q[1]) - (p[2] - p[1]))[0];
+  let mid = null, run = 0;
+  for (let i = 0; i < segs.length && !mid; i++) {
+    const g = segs[i], gl = g[2] - g[1];
+    if (run + gl >= len / 2 - 1e-9) { const k = len / 2 - run; mid = { e: g[0], s: dirs[i] > 0 ? g[1] + k : g[2] - k }; }
+    run += gl;
+  }
+  return { e: main[0], s0: main[1], s1: main[2], segs, len, ends: [{ e: b.e, s: b.s, d: best.r.dEnd }, { e: a.e, s: a.s, d: -best.d }], mid };
+}
+const ttSpanEdges = k => k.segs.map(g => g[0]);
 const ttStationCache = new WeakMap();
 function ttStations(S) {
   const T = S.track, sig = T.edges.length + '/' + T.nodes.length, c = ttStationCache.get(T);
@@ -1473,7 +1509,7 @@ function ttStations(S) {
     // Each end is looked up 0.3u inside the span, so an end exactly on a node finds the span's own edge.
     const span = k => {
       const l = Math.hypot(k.x1 - k.x0, k.z1 - k.z0) || 1, ux = (k.x1 - k.x0) / l * 0.3, uz = (k.z1 - k.z0) / l * 0.3;
-      const a = pt({ x: k.x0 + ux, z: k.z0 + uz }), b = pt({ x: k.x1 - ux, z: k.z1 - uz }); return a && b && a.e === b.e ? { e: a.e, s0: Math.min(a.s, b.s), s1: Math.max(a.s, b.s) } : null; };
+      const a = pt({ x: k.x0 + ux, z: k.z0 + uz }), b = pt({ x: k.x1 - ux, z: k.z1 - uz }); return a && b ? ttSpanOf(T, a, b) : null; };
     const trk = span(d.track), ra = d.ra ? d.ra.map(pt) : null;
     const trks = trk ? [trk].concat((d.alt || []).map(span).filter(Boolean)) : [];
     return { ...d, trk, trks, raPts: ra && ra.every(Boolean) ? ra : null };
@@ -1535,10 +1571,10 @@ function ttPlan(S, tr, targets, ms, except) {
 // The first track (in the station's order) that has a way in wins.
 function ttPlanStop(S, tr, st) {
   if (!st || !st.trk) return { why: 'The station track is not found' };
-  const fits = st.trks.filter(k => trainLength(tr) <= k.s1 - k.s0 + 1e-6);
+  const fits = st.trks.filter(k => trainLength(tr) <= k.len + 1e-6);
   if (!fits.length) return { why: `${tr.name} is too long for the ${st.name} track` };
   for (const k of fits) {
-    const best = ttPlan(S, tr, [{ e: k.e, s: k.s1, d: 1 }, { e: k.e, s: k.s0, d: -1 }], [1, -1]);
+    const best = ttPlan(S, tr, k.ends, [1, -1]);
     if (best) return { best };
   }
   return { why: `No way to ${st.name} now` };
@@ -1577,7 +1613,7 @@ function ttReleaseRes(S) {
 function ttAtTrack(S, tr, k) {
   if (!k || tr.v > 0) return false;
   const segs = trainSegs(S.track, tr);
-  return segs.length > 0 && segs.every(([e, a, b]) => b - a < 1e-6 || (e === k.e && a >= k.s0 - 0.05 && b <= k.s1 + 0.05));
+  return segs.length > 0 && segs.every(([e, a, b]) => b - a < 1e-6 || k.segs.some(([e2, s0, s1]) => e === e2 && a >= s0 - 0.05 && b <= s1 + 0.05));
 }
 // Goods for this station still aboard, or goods in its area waiting for a later stop of this service.
 function ttWorkDone(S, tr, svc, i, st) {
@@ -1608,8 +1644,8 @@ function ttLegU(S, a, b) {
   const key = a.id + '>' + b.id;
   if (c.m[key] === undefined) {
     let best = Infinity;
-    if (a.trk && b.trk) for (const d of [1, -1]) for (const t of [{ e: b.trk.e, s: b.trk.s1 }, { e: b.trk.e, s: b.trk.s0 }]) {
-      const r = findRoute(T, { e: a.trk.e, s: (a.trk.s0 + a.trk.s1) / 2, d }, t);
+    if (a.trk && b.trk) for (const d of [1, -1]) for (const t of b.trk.ends.map(n => ({ e: n.e, s: n.s }))) {
+      const r = findRoute(T, { e: a.trk.mid.e, s: a.trk.mid.s, d }, t);
       if (r && r.dist < best) best = r.dist;
     }
     c.m[key] = best;
@@ -1628,7 +1664,7 @@ function ttWoodNeedU(S, svc, i, tr) {
     if (!st) break;
     if (k === i + 1) {
       let best = Infinity;
-      for (const m of [1, -1]) for (const t of st.trk ? [{ e: st.trk.e, s: st.trk.s1 }, { e: st.trk.e, s: st.trk.s0 }] : []) {
+      for (const m of [1, -1]) for (const t of st.trk ? st.trk.ends.map(n => ({ e: n.e, s: n.s })) : []) {
         const r = findRoute(S.track, leadPos(S.track, tr, m), t);
         if (r && r.dist < best) best = r.dist;
       }
@@ -1749,8 +1785,8 @@ function ttRunStep(S, run, ev) {
   if (!run.back && !run.hb && run.pT === null && depT !== null && S.time + TT.BACK_S <= depT) {
     run.back = true;
     const d = plan().p, k = st.trk;
-    if (d.best && d.best.r.path.includes(k.e)) {
-      const b = ttPlan(S, tr, [{ e: k.e, s: k.s1, d: 1 }, { e: k.e, s: k.s0, d: -1 }], [d.best.m]);
+    if (d.best && ttSpanEdges(k).some(e => d.best.r.path.includes(e))) {
+      const b = ttPlan(S, tr, k.ends, [d.best.m]);
       if (b && b.r.dist <= TT.SPOUT_MOVE && ttGrant(S, tr, b, false)) { run.why = 'Running back to the platform'; return; }
     }
   }
@@ -2113,7 +2149,7 @@ function ttStartingWood(st) {
 // visits are off (it would bring goods that the station work then waits for).
 function ttDebugScenario(st) {
   const hub = ttStation(st, 'hub'), tr = st.trains[0], k = hub.trk;
-  tr.front = { e: k.e, s: k.s0, d: -1 }; tr.mode = 'idle'; tr.v = 0; tr.m = 1; tr.status = 'Stopped';
+  tr.front = { ...k.ends[1] }; tr.mode = 'idle'; tr.v = 0; tr.m = 1; tr.status = 'Stopped';
   st.time = 2 * 3600 + 20 * 60;
   for (const svc of st.tt.services) svc.train = 0;
   const w = hub.wood;
@@ -2497,7 +2533,7 @@ function cargoDebugItems(S) {
 //   { t: 'jobWork', id }    walk to the job and keep working until it is done, a material runs out, or any other
 //                           command moves the player (P.act / P.use are replaced, which stops the work)
 //   { t: 'jobCancel', id }  every tie, rail, spike and crate placed, loose or on site goes back as items on the ground
-// Events: jobStaked { id, len, need }, jobRefused { why }, jobDelivered { id, item, commodity }, jobOpened { id, item,
+// Events: jobStaked { id, len, need }, jobRefused { why }, jobDelivered { id, item, commodity }, jobTaken { id, item, commodity } (picked back up), jobOpened { id, item,
 //   commodity, pieces }, jobStep { id, k: 'tie' | 'rail' | 'spike', n (done count) }, jobStopped { id, why, missing? },
 //   jobDone { id, len }, jobCancelled { id, items } (plus trackBuilt from trackLayPlan when a job joins).
 // The player's work: P.use = { k: 'job', id } while walking to the next spot; P.act = { k: 'job', id, step, i, left,
@@ -2631,8 +2667,25 @@ function jobDeliver(S, id, ev) {
   ev.push({ t: 'jobDelivered', id: job.id, item: id, commodity: wb.commodity });
   return true;
 }
-// Called by carrying (carryActorTick) after a put-down finishes: an item put down beside a job is delivered.
+// Where a stockpile item stands, in u (where it was put down; the job's start if that is not known), or null.
+function jobSiteSpot(S, id) {
+  const w = S.items.where[id], job = w && w.kind === 'STOCKPILE' ? jobGet(S, w.jobId) : null;
+  if (!job) return null;
+  const at = job.site[id];
+  if (at) return { x: at[0] / 100, z: at[1] / 100 };
+  const q = jobPoint(job, 0);
+  return q ? { x: q.x, z: q.z } : null;
+}
+// Called by carrying (carryActorTick) after a pick-up or put-down finishes. An item picked up from a job's stockpile
+// leaves it (D15: materials on site can be taken back, like any loose item; placed ties, rails and spikes stay);
+// an item put down beside a job is delivered.
 function jobAfterCarry(S, a, ev) {
+  if (a.k === 'pick') {
+    const e = ev.find(x => x.t === 'itemMoved' && x.id === a.id && x.from && x.from.kind === 'STOCKPILE');
+    const job = e ? jobGet(S, e.from.jobId) : null;
+    if (job) { delete job.site[a.id]; ev.push({ t: 'jobTaken', id: job.id, item: a.id, commodity: S.items.waybill[a.id].commodity }); }
+    return;
+  }
   if (a.k !== 'put' || !a.dest || a.dest.kind !== 'GROUND') return;
   for (let i = ev.length - 1; i >= 0; i--) if (ev[i].t === 'carryPut') { jobDeliver(S, ev[i].id, ev); return; }
 }
@@ -4000,14 +4053,15 @@ function carryPickCmd(S, c, ev) {
   const I = S.items, id = c.id;
   if (!Number.isInteger(id) || id < 0 || id >= I.next || !I.alive[id]) return carryRefuse(ev, 'There is no such item');
   const w = I.where[id];
-  if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY' && w.kind !== 'CAR')) return carryRefuse(ev, 'That item cannot be picked up from there');
+  if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY' && w.kind !== 'CAR' && w.kind !== 'STOCKPILE')) return carryRefuse(ev, 'That item cannot be picked up from there');
   if (w.kind === 'CAR') { const no = carryCarWhy(S, w.stockId); if (no) return carryRefuse(ev, no); }
   const slot = carryFreeSlot(S), carrier = carryCarrier(S);
   if (slot < 0) return carryRefuse(ev, carrier === 'HAND' ? 'Your hands are full: put that down first' : `The ${carryToolName(S)} is full (${CARGO_CARRY_CAP[carrier]} items)`);
   const why = itemCanMove(S, id, { kind: 'CARRIED', actorId: 'player', carrier, slot });
   if (why) return carryRefuse(ev, carryWhy(why));
   if (w.kind === 'CAR') return carryWalkToCar(S, w.stockId, { k: 'pick', id });
-  const p = carrySpot(w);
+  const p = carryItemSpot(S, id);
+  if (!p) return carryRefuse(ev, 'That item cannot be picked up from there');
   carryWalkTo(S, p.x, p.z, { k: 'pick', id });
 }
 function carryPutCmd(S, c, ev) {
@@ -4056,7 +4110,7 @@ function carryToggleTool(S, id, ev) {
 // Arrived (or stopped) next to what a carry command walked to: start the action if it is within reach.
 function carryArrive(S, ev, use, evFrom) {
   const P = S.player;
-  const spot = use.k === 'pick' ? carrySpotIn(S, S.items.where[use.id]) : use.k === 'put' ? carrySpotIn(S, use.dest)
+  const spot = use.k === 'pick' ? carryItemSpot(S, use.id) : use.k === 'put' ? carrySpotIn(S, use.dest)
     : use.k === 'car' ? carryCarDoor(S, use.stock, P.x, P.z) : use.k === 'biz' ? townDoor(use.id) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
   P.mode = 'idle'; P.use = null;
   if (!spot || Math.hypot(spot.x - P.x, spot.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
@@ -4136,6 +4190,8 @@ function carryWalkToCar(S, stockId, use) {
   P.use = use; P.act = null; P.run = false;
 }
 // Where a place is for walking to and reach, cars included.
+// Where an item lies, for walking to it and reaching it: a job's stockpile item where it was put down.
+function carryItemSpot(S, id) { const w = S.items.where[id]; return w && w.kind === 'STOCKPILE' ? jobSiteSpot(S, id) : carrySpotIn(S, w); }
 function carrySpotIn(S, w) { return w && w.kind === 'CAR' ? carryCarDoor(S, w.stockId, S.player.x, S.player.z) : carrySpot(w); }
 function carryUseCarCmd(S, c, ev) {
   const no = carryCarWhy(S, c.stock);
@@ -5791,10 +5847,15 @@ function carryItemPose(S, w, id) {
 // events in doTick, or a new state); carried items follow their actor every frame.
 // Tags: a flat card on the item's top, 6 mm up, turned to read upright for the current camera turn.
 // Each card shows colour + letter + shape from a small canvas atlas (one cell per CARGO_TAGS code).
-const cargoView = { group: null, meshes: {}, tag: null, shapes: null, S: null, yawIdx: null, dirty: true, carried: [], count: 0 };
+// Wrong bay (D15): above each stack in a bay that holds an item whose tag the bay's tag does not match (bayTagMatches;
+// an Any bay matches everything), a warning mark stands upright facing the camera: a yellow triangle with a black
+// edge and "!" (Okabe-Ito yellow, a little lighter; the atlas's last cell, CARGO_WARN_CELL), 1.7 times a tag's size. It is an instance of the same tag
+// mesh, so it costs no draw call. cargoView.warn lists the marks ({ x, y, z, ids }).
+const cargoView = { group: null, meshes: {}, tag: null, shapes: null, S: null, yawIdx: null, dirty: true, carried: [], count: 0, warn: [] };
 const CARGO_TAG_CODES = Object.keys(CARGO_TAGS); // atlas cell order
+const CARGO_WARN_CELL = CARGO_TAG_CODES.length, CARGO_WARN = { SIZE: 1.7, UP: 0.26, TILT: -0.6155 };
 function cargoTagMaterial() {
-  const cv = document.createElement('canvas'), N = 64, cols = 4, rows = Math.ceil(CARGO_TAG_CODES.length / cols);
+  const cv = document.createElement('canvas'), N = 64, cols = 4, rows = Math.ceil((CARGO_TAG_CODES.length + 1) / cols);
   cv.width = N * cols; cv.height = N * rows;
   const g = cv.getContext('2d');
   CARGO_TAG_CODES.forEach((code, i) => {
@@ -5811,6 +5872,12 @@ function cargoTagMaterial() {
     g.lineWidth = 5; g.strokeStyle = '#1d1a16'; g.strokeText(T.letter, cx, cy + (T.shape === 2 ? N * 0.1 : 2));
     g.fillStyle = '#ffffff'; g.fillText(T.letter, cx, cy + (T.shape === 2 ? N * 0.1 : 2));
   });
+  { // The wrong-bay warning mark: a yellow triangle, black edge, black "!".
+    const i = CARGO_WARN_CELL, cx = (i % cols) * N + N / 2, cy = Math.floor(i / cols) * N + N / 2;
+    g.beginPath(); g.moveTo(cx, cy - N * 0.42); g.lineTo(cx + N * 0.46, cy + N * 0.38); g.lineTo(cx - N * 0.46, cy + N * 0.38); g.closePath();
+    g.fillStyle = '#ffe84d'; g.fill(); g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = '#1d1a16'; g.stroke();
+    g.fillStyle = '#1d1a16'; g.fillRect(cx - N * 0.05, cy - N * 0.18, N * 0.1, N * 0.32); g.fillRect(cx - N * 0.05, cy + N * 0.2, N * 0.1, N * 0.1);
+  }
   const tex = new THREE.CanvasTexture(cv);
   tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
@@ -5853,7 +5920,7 @@ function cargoPoses(S) {
     const P = ITEM_PROP_OF[itemType(S, id)], h = cargoView.shapes[P[0]].h * P[2];
     const y = y0 + (stack[key] || 0);
     stack[key] = (stack[key] || 0) + h + 0.006;   // 6 mm between stacked items: no touching faces
-    poses[id] = { x, y, z, yaw, top: y + h };
+    poses[id] = { x, y, z, yaw, top: y + h, stack: key };
   };
   const byBay = {};
   for (let i = 0; i < I.next; i++) {
@@ -5940,9 +6007,9 @@ function cargoDraw(S) {
   const changed = cargoView.dirty || cargoView.S !== S || cargoView.yawIdx !== cam.yawIdx;
   if (!changed && !carried.length) return;
   // Bays and the ground only change with item events; carried items move every frame.
-  if (changed) { cargoView.poses = cargoPoses(S); cargoView.dirty = false; cargoView.S = S; cargoView.yawIdx = cam.yawIdx; }
+  if (changed) { cargoView.poses = cargoPoses(S); cargoView.warn = cargoWarnMarks(S, cargoView.poses); cargoView.dirty = false; cargoView.S = S; cargoView.yawIdx = cam.yawIdx; }
   const poses = cargoView.poses, need = {};
-  let total = 0;
+  let total = cargoView.warn.length;
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
     if (!w || !(poses[i] || w.kind === 'CARRIED' || flat[i])) continue;
@@ -5961,6 +6028,15 @@ function cargoDraw(S) {
     const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId), i) : w.kind === 'CAR' ? flat[i] : poses[i];
     if (p) cargoSetItem(S, i, p);
   }
+  if (cargoView.warn.length) {
+    const t = cargoView.tag, cols = cargoView.tagMat.cols, rows = cargoView.tagMat.rows;
+    cargoQ.setFromAxisAngle(cargoUp, camYawTarget()); cargoQ2.setFromAxisAngle(cargoX, CARGO_WARN.TILT); cargoQ.multiply(cargoQ2);
+    for (const w of cargoView.warn) {
+      const j = t.userData.k++;
+      t.setMatrixAt(j, cargoM.compose(cargoV.set(w.x, w.y, w.z), cargoQ, cargoS.set(CARGO_WARN.SIZE, CARGO_WARN.SIZE, 1)));
+      t.geometry.attributes.aCell.setXY(j, CARGO_WARN_CELL % cols, rows - 1 - Math.floor(CARGO_WARN_CELL / cols));
+    }
+  }
   for (const x of extras) {
     const m = cargoView.meshes[x.shape], k = m.userData.k++;
     cargoQ.setFromAxisAngle(cargoUp, x.yaw);
@@ -5973,7 +6049,20 @@ function cargoDraw(S) {
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
   }
   cargoView.tag.geometry.attributes.aCell.needsUpdate = true;
-  cargoView.count = cargoView.tag.count;
+  cargoView.count = cargoView.tag.count - cargoView.warn.length;   // items drawn (the wrong-bay marks share the tag mesh)
+}
+// The wrong-bay marks: one above each bay stack holding an item its bay's tag does not match, over the stack's top.
+function cargoWarnMarks(S, poses) {
+  const I = S.items, by = {};
+  for (let i = 0; i < I.next; i++) {
+    const w = I.where[i], p = poses[i];
+    if (!w || w.kind !== 'BAY' || !p) continue;
+    const k = p.stack, m = by[k] || (by[k] = { x: p.x, z: p.z, top: 0, ids: [] });
+    m.top = Math.max(m.top, p.top);
+    if (!bayTagMatches(S, w.buildingId, w.bay, i)) m.ids.push(i);
+  }
+  const half = 0.13 * CARGO_WARN.SIZE;
+  return Object.keys(by).sort().filter(k => by[k].ids.length).map(k => ({ x: by[k].x, y: by[k].top + CARGO_WARN.UP + half, z: by[k].z, ids: by[k].ids }));
 }
 // The turn of an item lying on the ground (or at a job's stockpile): a fixed pattern from its id.
 function cargoGroundYaw(id) { return ((id * 2654435761) >>> 0) % 16 * Math.PI / 8; }
@@ -8303,7 +8392,7 @@ function doTick() {
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
-  if (ev.some(e => /^item(Created|Moved|Consumed)$/.test(e.t))) cargoView.dirty = true; // redraw the item props
+  if (ev.some(e => /^item(Created|Moved|Consumed)$|^bayTagSet$/.test(e.t))) cargoView.dirty = true; // redraw the item props (and wrong-bay marks)
   if (changed) saveSoon();                 // the world changed: save a couple of seconds later
   if (S.time % 600 === 0) saveGame();      // and every 10 game minutes
 }
@@ -9420,9 +9509,11 @@ function itemHitAt(px, py) {
   let item = null;
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
-    if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY')) continue;
+    if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY' && w.kind !== 'STOCKPILE')) continue;
     const pose = typeof cargoView !== 'undefined' && cargoView.poses && cargoView.poses[i];
-    const sp = carrySpot(w), y = pose ? (pose.y + pose.top) / 2 : w.kind === 'BAY' ? 0.45 : 0.15;
+    const sp = carryItemSpot(S, i);
+    if (!sp) continue;
+    const y = pose ? (pose.y + pose.top) / 2 : w.kind === 'BAY' ? 0.45 : 0.15;
     const p = toScreen(pose ? pose.x : sp.x, y, pose ? pose.z : sp.z), d = Math.hypot(p.x - px, p.y - py);
     if (d < 30 && (!item || d < item.d)) item = { id: i, d, bay: w.kind === 'BAY' };
   }
@@ -9755,7 +9846,7 @@ window.__railhead = {
     contractOffer, contractDeliver, econLotFee, econSoldOutside, econMoney, econWhen, econDeliveredPrice, panel: telUi },
   town: { TOWN, TOWN_BUSINESSES, TOWN_KINDS, TOWN_LOTS, townNewState, townPlaced, townFootprints, townDoor, townSignSpot, townStock, townPending,
     townDeliverWhy, townRate, townGoods, townDebugScenario, townSignText: id => townSignText(S, id), get signs() { return townSigns; } },
-  carry: { TOOL_KINDS, get TOOL_PARK() { return TOOL_PARK; }, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt },
+  carry: { TOOL_KINDS, get TOOL_PARK() { return TOOL_PARK; }, carryNoCartRects, carryHeld, carryCarrier, carryNoCartAt, itemHitAt },
   interchange: { ICH, OVERLAND, OVERLAND_DELIVERY, withTestDelivery: st => { st.overland.testDelivery = true; return st; }, interchangeEdge, overlandTrain, interchangeCut, overlandTakes, carryCarDoor, carryCarWhy,
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand

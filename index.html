@@ -122,6 +122,14 @@
     border-left: 7px solid var(--green); border-radius: 8px; padding: 3px 3px 3px 10px; font-size: 15px; color: var(--ink); }
   #paxDeskText { flex: 1; min-width: 0; line-height: 1.25; }
   #paxLeave { flex: none; }
+  /* Riding our own train (D13): the riding readout with Step off, and the Board button at a passenger car's door. */
+  #ride { left: calc(env(safe-area-inset-left) + 10px); bottom: calc(env(safe-area-inset-bottom) + 122px); max-width: min(78vw, 340px);
+    box-sizing: border-box; display: flex; gap: 8px; align-items: center; background: var(--paper); border: 2px solid var(--edge);
+    border-left: 7px solid #c69a2c; border-radius: 8px; padding: 3px 3px 3px 10px; font-size: 15px; color: var(--ink); }
+  #rideText { flex: 1; min-width: 0; line-height: 1.25; }
+  #rideOff { flex: none; }
+  #ride[data-moving] #rideOff { opacity: 0.55; }
+  #rideBoard { left: 0; top: 0; z-index: 1; font-size: 14px; padding: 0 10px; white-space: nowrap; border-left-width: 6px; border-left-color: #c69a2c; }
   .paxWin { left: 0; top: 0; z-index: 1; font-size: 14px; padding: 0 10px; white-space: nowrap; border-left-width: 6px; border-left-color: var(--green); }
   @media (orientation: landscape) and (max-height: 500px) {
     #carPanel { left: auto; right: calc(env(safe-area-inset-right) + 10px); transform: none; bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: 76vh; }
@@ -159,6 +167,8 @@
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
 <div id="paxDesk" class="hud" role="status" aria-live="polite" hidden><span id="paxDeskText"></span><button id="paxLeave">Leave</button></div>
+<div id="ride" class="hud" role="status" aria-live="polite" hidden><span id="rideText"></span><button id="rideOff">Step off</button></div>
+<button id="rideBoard" class="hud" hidden>Board</button>
 <div id="banner" class="hud" hidden><span id="bannerText">Tap a track to send the train there</span><button id="bannerCancel">Cancel</button></div>
 <div id="panel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="panelTitle">No. 1</h2><button id="panelClose" aria-label="Close">X</button></div>
@@ -188,7 +198,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 10,
+  SCHEMA_VERSION: 11,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -666,7 +676,7 @@ function newState(seed, world) {
     trains: [{ id: 0, name: 'No. 1', front: Wd.train(T), v: 0, mode: 'idle', m: 1,
       route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }].concat(overlandNewTrains(T)),
     overland: overlandNewState(),    // the Overland's visits to the interchange (section "trains")
-    player: { x: Wd.player.x, z: Wd.player.z, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null },
+    player: { x: Wd.player.x, z: Wd.player.z, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null, ride: null },
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
@@ -791,6 +801,8 @@ function applyCommand(S, c, ev) {
   if (tr && tr.owner && /^(useTrain|trainRun|trainStop|trainSendTo)$/.test(c.t)) { ev.push({ t: 'notYourTrain', tr: tr.id, why: overlandNotYours(tr) }); return; }
   // A train running to the timetable drives itself (section "timetable"): take it off the timetable first.
   if (tr && /^(trainRun|trainStop|trainSendTo)$/.test(c.t) && ttRunOf(S, tr.id)) { ev.push({ t: 'noRoute', tr: tr.id, why: `${tr.name} is running to the timetable: take it off the timetable first.` }); return; }
+  // Riding a train (section "passengers", riding): no walking or using things until the player steps off.
+  if (P.ride && RIDE.BLOCKED.test(c.t)) { if (!(c.t === 'walkDir' && c.a === null)) rideRefuse(ev, rideBlockedWhy(S, c)); return; }
   switch (c.t) {
     case 'walkTo':
       // Targets beyond the map edge are pulled back onto the map, so the walk can end.
@@ -837,6 +849,8 @@ function applyCommand(S, c, ev) {
     case 'useBiz': townUseCmd(S, c, ev); break;          // town: walk to a business door
     case 'staffWindow': paxStaffCmd(S, c, ev); break;   // passengers: staff a station's ticket window
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
+    case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
+    case 'stepOff': rideStepOffCmd(S, ev); break;
     case 'trainRun': {
       if (!tr) return;
       releaseRoute(S, tr);
@@ -1636,6 +1650,7 @@ function ttRunStep(S, run, ev) {
 // walking up from within 6u), 'cord' (carrying a cord within 12u of a tender with room), or false.
 function ttCrewAt(S, tr) {
   const P = S.player, a = P.act || P.use;
+  if (P.ride) return false;   // riding along is not working at the train
   if (a && (a.k === 'water' || a.k === 'fuel') && a.tr === tr.id) {
     if (P.act) return 'work';
     const sp = ttTaskSpot(S, a);
@@ -4399,6 +4414,136 @@ function paxDebugScenario(S, nQueue, nWait) {
   return S;
 }
 
+// ---- Riding our own train (D13, builder D5): the player as a passenger (design-doc 5 "Interaction model") ----
+// Pure simulation. S.player.ride is null, or { stock } while the player rides in that passenger car of one of our
+// trains (the car is found by its stock id every tick, so a split train keeps its rider). While aboard, P.mode is
+// 'ride' and the player's x and z follow the car's centre (so the camera follows the car); items carried by hand
+// ride along. Commands (whole numbers only):
+//   { t: 'boardCar', stock }  walk to the car's passenger door (on the platform when at one) and board (0.1 game minutes)
+//   { t: 'stepOff' }          step off (0.1 game minutes), only while the train stands; the player then stands
+//                             beside the door, on the platform side when the car is at a platform
+// Rules: only a passenger car of our own train that stands (ttStanding) can be boarded; at a platform the player
+// uses the door's spot on the platform (as travellers, paxCarsAt), elsewhere the ground beside the door (railroad
+// staff may climb aboard where the train stands, as they may step off there); a hand truck or handcart cannot go aboard (leave it at its spot first); while aboard the player cannot
+// walk, use anything or uncouple (those commands are refused with a reason, RIDE.BLOCKED); the timetable never waits
+// for the rider and the rider never counts as crew at the train (ttCrewAt); the player does not take a traveller's
+// seat (they ride in the combine's baggage end, as railroad staff), so the 12 seats stay for paying travellers.
+// Events: rideBoarded { stock, tr, st }, rideOff { stock, tr, st (station id or null) }, rideRefused { why }.
+const RIDE = {
+  BOARD_S: PAX.BOARD_S,     // boarding or stepping off: 0.1 game minutes, as travellers
+  BLOCKED: /^(walkTo|walkDir|useSwitch|useTrain|carryPick|carryPut|carryTool|useCar|jobWork|uncouple|fuelTender|takeWater|useTelegraph|useBiz|staffWindow|boardCar)$/,
+};
+function rideCarOf(S, stock) {
+  for (const tr of S.trains) { const i = tr.consist.findIndex(c => c.id === stock); if (i >= 0) return { tr, i, car: tr.consist[i] }; }
+  return null;
+}
+function rideRefuse(ev, why) { ev.push({ t: 'rideRefused', why }); }
+function ridePoses(S) { const pc = {}; for (const tr of S.trains) pc[tr.id] = trainPoses(S.track, tr); return pc; }
+// The passenger car standing at a station's platform: { K (station), C (as paxCarsAt), door: [x, z] (u, the door's
+// boarding spot nearest the player) }, or null.
+function rideAtPlatform(S, stock, poseCache) {
+  const P = S.player;
+  for (const K of paxStations(S.track)) {
+    const C = paxCarsAt(S, K, poseCache).find(c => c.stock === stock);
+    if (!C) continue;
+    let door = C.doors[0];
+    for (const d of C.doors) if (Math.hypot(d[0] - P.x, d[1] - P.z) < Math.hypot(door[0] - P.x, door[1] - P.z)) door = d;
+    return { K, C, door };
+  }
+  return null;
+}
+function rideTrainName(S) { const f = S.player.ride && rideCarOf(S, S.player.ride.stock); return f ? f.tr.name || 'the train' : 'the train'; }
+// Why the player cannot board that car now (null: they can).
+function rideBoardWhy(S, stock, pc) {
+  const P = S.player, f = Number.isInteger(stock) ? rideCarOf(S, stock) : null;
+  if (P.ride) return 'You are already aboard';
+  if (!f || !PAX.SEATS[f.car.k] || trainOff(f.tr)) return 'Only a passenger car can be boarded';
+  if (f.tr.owner) return overlandNotYours(f.tr);
+  if (P.tool !== null) return `The ${TOOL_KINDS[S.tools[P.tool].k].name.toLowerCase()} cannot go aboard: leave it at its spot first`;
+  if (!ttStanding(f.tr)) return 'Wait until the train stands';
+  return null;
+}
+function rideBoardCmd(S, c, ev) {
+  const pc = ridePoses(S), why = rideBoardWhy(S, c.stock, pc);
+  if (why) return rideRefuse(ev, why);
+  const sp = rideDoorSpot(S, rideCarOf(S, c.stock), pc), P = S.player;
+  P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = { k: 'board', stock: c.stock }; P.act = null; P.run = false;
+}
+function rideStepOffCmd(S, ev) {
+  const P = S.player;
+  if (!P.ride) return rideRefuse(ev, 'You are not aboard a train');
+  const f = rideCarOf(S, P.ride.stock);
+  if (f && !ttStanding(f.tr)) return rideRefuse(ev, 'Wait until the train stands: you can step off only while it is stopped');
+  if (!P.act) P.act = { k: 'alight', left: RIDE.BOARD_S, total: RIDE.BOARD_S };
+}
+// A refusal for a command the player cannot give while aboard.
+function rideBlockedWhy(S, c) {
+  if (c.t === 'boardCar') return 'You are already aboard';
+  if (c.t === 'uncouple') return 'You are riding the train: step off first to uncouple';
+  return `You are aboard ${rideTrainName(S)}: step off first`;
+}
+// The door's spot on the ground beside a passenger car of a standing train, where the player boards and steps off:
+// the door's boarding spot on the platform when the car is at one (st: that station); else beside the door, on the
+// side nearer the player (stepping off: left of the car's heading first) that is open ground clear of every train.
+// dx, dz: the door itself, on the car's centre line.
+function rideDoorSpot(S, f, pc) {
+  const P = S.player, at = rideAtPlatform(S, f.car.id, pc);
+  if (at) return { x: at.door[0], z: at.door[1], st: at.K.id, dx: at.door[0] + at.K.out[0] * PAX.DOOR_OUT, dz: at.door[1] + at.K.out[1] * PAX.DOOR_OUT };
+  const p = pc[f.tr.id][f.i], fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw), t = PAX.DOORS[f.car.k][0], dx = p.x + fx * t, dz = p.z + fz * t;
+  const G = walkGrid(S.track), all = [].concat(...S.trains.map(tr => pc[tr.id] || []));
+  const spot = sd => [clampX(dx + fz * PAX.DOOR_OUT * sd), clampZ(dz - fx * PAX.DOOR_OUT * sd)];
+  const sides = [1, -1].sort((a, b) => Math.hypot(spot(a)[0] - P.x, spot(a)[1] - P.z) - Math.hypot(spot(b)[0] - P.x, spot(b)[1] - P.z));
+  let sp = spot(sides[0]);
+  for (const sd of sides) { const q = spot(sd); if (G.cost[walkCell(q[0], q[1])] && !insideTrain(all, q[0], q[1])) { sp = q; break; } }
+  return { x: sp[0], z: sp[1], st: null, dx, dz };
+}
+// Step 7 for the player, outermost: riding (follow the car, step off), boarding at a door, or everything else.
+function rideActorTick(S, ev, poseCache) {
+  const P = S.player;
+  if (P.ride) {
+    const f = rideCarOf(S, P.ride.stock), p = f && (poseCache[f.tr.id] || [])[f.i];
+    if (!p) { const stock = P.ride.stock; P.ride = null; P.mode = 'idle'; P.act = null; ev.push({ t: 'rideOff', stock, tr: null, st: null }); return; } // the car is gone
+    P.x = p.x; P.z = p.z; P.mode = 'ride'; P.use = null;
+    if (!P.act || P.act.k !== 'alight') return;
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left > 0) return;
+    P.act = null;
+    if (!ttStanding(f.tr)) return rideRefuse(ev, 'The train started: step off when it stands again');
+    const sp = rideDoorSpot(S, f, poseCache);
+    P.ride = null; P.mode = 'idle'; P.x = sp.x; P.z = sp.z; P.f = Math.atan2(sp.x - sp.dx, sp.z - sp.dz);
+    ev.push({ t: 'rideOff', stock: f.car.id, tr: f.tr.id, st: sp.st });
+    return;
+  }
+  if (P.act && P.act.k === 'board') {
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left > 0) return;
+    const a = P.act, f = rideCarOf(S, a.stock);
+    P.act = null; P.mode = 'idle';
+    if (!f || f.tr.owner || !ttStanding(f.tr) || P.tool !== null) return rideRefuse(ev, 'The train moved off');
+    const st = rideDoorSpot(S, f, poseCache).st, p = poseCache[f.tr.id][f.i];
+    P.ride = { stock: a.stock }; P.mode = 'ride'; P.use = null; P.x = p.x; P.z = p.z;
+    ev.push({ t: 'rideBoarded', stock: a.stock, tr: f.tr.id, st });
+    return;
+  }
+  const use = P.use && P.use.k === 'board' ? P.use : null, evFrom = ev.length;
+  ttActorTick(S, ev, poseCache);
+  if (!use || P.use !== null || P.mode !== 'idle') return;
+  // The walk to the door has ended: board if the car still stands there and the door is in reach.
+  const f = rideCarOf(S, use.stock);
+  if (!f || f.tr.owner || !ttStanding(f.tr)) { rideRefuse(ev, 'The train moved off'); return; }
+  const sp = rideDoorSpot(S, f, poseCache);
+  if (Math.hypot(sp.x - P.x, sp.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
+  for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1);
+  P.f = Math.atan2(sp.dx - P.x, sp.dz - P.z);   // facing the door
+  P.act = { k: 'board', stock: use.stock, left: RIDE.BOARD_S, total: RIDE.BOARD_S };
+}
+// Shape check for the riding state (used when a save is loaded). Throws on damage.
+function rideCheckSaveShape(st) {
+  const P = st.player, bad = () => { throw new Error('damaged save: the player riding'); };
+  if (P.ride === null) return;
+  if (!P.ride || typeof P.ride !== 'object' || !Number.isInteger(P.ride.stock) || P.mode !== 'ride' || !rideCarOf(st, P.ride.stock)) bad();
+}
+
 // ==== Section: sim tick ====
 // One fixed step of 8 game seconds, in the system order of section 19 (the parts built so far).
 function simTick(S, cmds) {
@@ -4413,7 +4558,7 @@ function simTick(S, cmds) {
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
   const tel = econTelBefore(S, ev);
-  ttActorTick(S, ev, poseCache);                        // 7. actors (the player: walking in playerTick; carrying, job work and train tasks around it)
+  rideActorTick(S, ev, poseCache);                      // 7. actors (the player: riding a train, else walking in playerTick; carrying, job work and train tasks around it)
   econTick(S, ev, tel);                                 // 8. economy: reaching the telegraph key, market Mondays, contracts due
   townTick(S, ev);                                      // 8b. towns: businesses use goods each hour, offer contracts at 07:00
   paxTick(S, ev, poseCache);                            // 8. travellers: arriving, the ticket queue, boarding and stepping off (section "passengers")
@@ -4502,6 +4647,11 @@ function migrate(save) {
     st.town = townNewState(10);   // the opening stock new games had then (10 days)
     st.schemaVersion = 10;
   }
+  if (st.schemaVersion === 10) {
+    // 10 -> 11 (riding our own train, D13): the player is not aboard any train.
+    if (st.player && typeof st.player === 'object') st.player.ride = null;
+    st.schemaVersion = 11;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -4537,6 +4687,7 @@ function checkSaveShape(st) {
   econCheckSaveShape(st);
   townCheckSaveShape(st);
   paxCheckSaveShape(st);
+  rideCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -5286,6 +5437,7 @@ function cargoDraw(S) {
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
     if (!w) continue;
+    if (w.kind === 'CARRIED' && S.player.ride) continue;   // riding: the items in hand ride inside the car, not drawn
     const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId)) : w.kind === 'CAR' ? flat[i] : poses[i];
     if (p) cargoSetItem(S, i, p);
   }
@@ -7659,6 +7811,7 @@ function handleEvent(e) {
   else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
   else if (e.t === 'reachedBiz' || e.t === 'bizDelivered') townOnEvent(e);
   else if (/^(desk|pax)/.test(e.t)) paxOnEvent(e);
+  else if (/^ride/.test(e.t)) rideOnEvent(e);
   else ttOnEvent(e);
 }
 // The carry readout (bottom left, above the turn buttons): what the player carries, and a Put down button.
@@ -8011,6 +8164,65 @@ function paxHud() {
   }
 }
 $('paxLeave').addEventListener('click', () => send({ t: 'leaveWindow' }));
+// ---- Riding our own train (D13, builder D5): the riding readout with Step off, and the Board button ----
+// While aboard, the readout (bottom left, where the ticket window's readout goes) says which train and whether it
+// is moving or standing (and where), with a Step off button (the sim refuses it while the train moves). A passenger
+// car standing at a platform has a Board button above its door while the player is within 8u of the door; a tap on
+// the door itself does the same (rideTap in "input").
+const rideUi = { sig: '', bsig: '', bw: 0, bh: 0, stock: null };
+function rideOnEvent(e) {
+  if (e.t === 'rideRefused') toast(e.why + '.');
+  else if (e.t === 'rideBoarded') toast(`You board ${S.trains[e.tr] ? S.trains[e.tr].name : 'the train'}. Tap Step off when it stands.`);
+  else if (e.t === 'rideOff') toast(e.st ? `You step off at ${paxName(e.st)}.` : 'You step off the train.');
+}
+// Passenger cars of our standing trains, with their doors (only the main door, on the platform when at one): [{ stock, sx, sz (the boarding spot), wx, wz (the door in the car's side) }].
+function rideDoors() {
+  const out = [];
+  if (!curPoses) return out;
+  for (const tr of S.trains) {
+    if (tr.owner || !ttStanding(tr) || !curPoses[tr.id]) continue;
+    tr.consist.forEach((c, i) => {
+      if (!PAX.SEATS[c.k] || !curPoses[tr.id][i]) return;
+      const d = rideDoorSpot(S, { tr, i, car: c }, curPoses), k = 0.75 / PAX.DOOR_OUT;
+      out.push({ stock: c.id, sx: d.x, sz: d.z, wx: d.dx + (d.x - d.dx) * k, wz: d.dz + (d.z - d.dz) * k });
+    });
+  }
+  return out;
+}
+function rideHud() {
+  const P = S.player, R = P.ride, el = $('ride');
+  const hide = !R || ui.panelTrain !== null || carUi.stock !== null || telUi.open;
+  let text = '', moving = false;
+  if (R) {
+    const f = rideCarOf(S, R.stock), at = f && curPoses ? rideAtPlatform(S, R.stock, curPoses) : null;
+    moving = !f || !ttStanding(f.tr);
+    text = `Riding ${rideTrainName(S)}` + (moving ? ': moving' : at ? `: at ${paxName(at.K.id)}` : ': standing');
+  }
+  const sig = hide ? '-' : text;
+  if (sig !== rideUi.sig) {
+    rideUi.sig = sig; el.hidden = hide; $('rideText').textContent = text;
+    if (moving) el.dataset.moving = ''; else delete el.dataset.moving;
+  }
+  // The Board button: over the nearest door within 8u, while not riding.
+  const btn = $('rideBoard');
+  let near = null;
+  if (!R && !(typeof bt !== 'undefined' && bt.on) && ui.panelTrain === null) for (const d of rideDoors()) {
+    const dd = Math.hypot(d.sx - P.x, d.sz - P.z);
+    if (dd < 8 && (!near || dd < near.dd)) near = { ...d, dd };
+  }
+  if (near && !rideUi.bw) { btn.style.visibility = 'hidden'; btn.hidden = false; rideUi.bw = btn.offsetWidth; rideUi.bh = btn.offsetHeight; }
+  const p = near ? toScreen(near.wx, 1.7, near.wz) : null;
+  const r = p ? { l: p.x - rideUi.bw / 2, r: p.x + rideUi.bw / 2, t: p.y - rideUi.bh, b: p.y } : null;
+  const show = !!r && paxClear(r);
+  const bsig = show ? Math.round(r.l) + ',' + Math.round(r.t) : '-';
+  rideUi.stock = show ? near.stock : null;
+  if (bsig !== rideUi.bsig) {
+    rideUi.bsig = bsig; btn.hidden = !show;
+    if (show) { btn.style.transform = `translate(${Math.round(r.l)}px, ${Math.round(r.t)}px)`; btn.style.visibility = 'visible'; }
+  }
+}
+$('rideOff').addEventListener('click', () => send({ t: 'stepOff' }));
+$('rideBoard').addEventListener('click', () => { if (rideUi.stock !== null) send({ t: 'boardCar', stock: rideUi.stock }); });
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
 function setSendMode(on) { ui.sendMode = on; $('panel').classList.toggle('sending', on); $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
@@ -8027,6 +8239,7 @@ function updateHud() {
   jobSignHud();
   townSignHud();
   paxHud();
+  rideHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -8146,6 +8359,7 @@ function onTap(px, py) {
     return;
   }
   const hit = pickAt(px, py);
+  if (rideTap(px, py, hit)) return;
   if (hit && hit.k === 'sw') { send({ t: 'useSwitch', sw: hit.id }); return; }
   if (ttTap(px, py, hit)) return;
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner) {
@@ -8176,6 +8390,25 @@ function paxTap(px, py) {
     if (Math.hypot(p.x - px, p.y - py) < 34) { send({ t: 'staffWindow', st: K.id }); return true; }
   }
   return false;
+}
+// Riding taps (D13). While aboard: a tap on our train opens its panel (no walking), anything else says how to get
+// down. Otherwise a tap on a passenger car's door (within 30 px, and nearer than any coupling) boards it.
+function rideTap(px, py, hit) {
+  if (S.player.ride) {
+    if (hit && hit.k === 'tr' && S.trains[hit.id] && !S.trains[hit.id].owner) openPanel(hit.id);
+    else toast(`You are aboard ${rideTrainName(S)}. Tap Step off when it stands.`);
+    return true;
+  }
+  let best = null;
+  for (const d of rideDoors()) {
+    const p = toScreen(d.wx, 1.0, d.wz), dd = Math.hypot(p.x - px, p.y - py);
+    if (dd < 30 && (!best || dd < best.d)) best = { stock: d.stock, d: dd };
+  }
+  if (!best) return false;
+  const j = ttJointHit(px, py);
+  if (j && j.d < best.d) return false;
+  send({ t: 'boardCar', stock: best.stock });
+  return true;
 }
 // Carrying taps (M1 package 1). A tap on a hand truck or handcart's parking spot takes or leaves that tool.
 // A tap on a freight item (on the ground or in a bay) picks it up when there is room. While carrying, a tap
@@ -8342,6 +8575,7 @@ function panBy(dx, dy) {
 }
 function angleCode(dx, dz) { return ((Math.round(Math.atan2(dz, dx) / (Math.PI * 2) * 256) % 256) + 256) % 256; }
 function sendDir(a, run) {
+  if (a !== null && S.player.ride) return;   // riding: no walking (Step off first)
   const key = a === null ? 'stop' : a + (run ? 'r' : '');
   if (key === sentDir) return;
   sentDir = key; send({ t: 'walkDir', a, run: !!run });
@@ -8414,6 +8648,7 @@ function render(alpha, dt) {
   const px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
   const moved = Math.hypot(px - pl.position.x, pz - pl.position.z);
   pl.position.set(px, 0, pz);
+  pl.visible = !P.ride;   // riding: inside the car (the camera follows it, as P.x and P.z follow the car)
   pl.rotation.y = lerpAngle(pl.rotation.y, P.f, 1 - Math.exp(-dt * 12));
   u.phase += moved * 0.6 * Math.PI * 2;
   const walking = moved > 1e-4;
@@ -8516,6 +8751,7 @@ window.__railhead = {
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState, ttStopNeeds, ttWoodNeedU,
     ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; } },
+  ride: { RIDE, rideCarOf: (stock, st) => rideCarOf(st || S, stock), rideAtPlatform, ridePoses, rideDoors, get playerVisible() { return view.player.visible; } },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },

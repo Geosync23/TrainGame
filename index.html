@@ -8150,8 +8150,9 @@ function buildGhost(plan) {
     for (let j = 0; j < n; j++) {
       const p = edgeAt(T2, E, E.len * j / n), q = edgeAt(T2, E, E.len * (j + 1) / n);
       const off = (pt, o, y) => [pt.x - pt.tz * o, y, pt.z + pt.tx * o];
-      quad(col, off(p, -0.65 * SC, 0.235), off(q, -0.65 * SC, 0.235), off(q, 0.65 * SC, 0.235), off(p, 0.65 * SC, 0.235));
-      for (const sd of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) quad(dark, off(p, sd - 0.05, 0.245), off(q, sd - 0.05, 0.245), off(q, sd + 0.05, 0.245), off(p, sd + 0.05, 0.245));
+      const yb = RAIL_TOP + 0.025, yr = RAIL_TOP + 0.035, rw = 0.05 * WS;
+      quad(col, off(p, -0.65 * SC, yb), off(q, -0.65 * SC, yb), off(q, 0.65 * SC, yb), off(p, 0.65 * SC, yb));
+      for (const sd of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) quad(dark, off(p, sd - rw, yr), off(q, sd - rw, yr), off(q, sd + rw, yr), off(p, sd + rw, yr));
     }
   }
   const g = new THREE.BufferGeometry();

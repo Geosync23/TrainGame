@@ -393,4 +393,4 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-M1 round A (park the instant build, cargo, carrying, path-finding) is merged. The designer approved the M1 plan (D12) and will review once at the end of M1. Round B (hand-building track, larger platform, interchange) is being built; see `plans/m1-team-plan.md`.
+All of M1 is built and merged (2026-11-02). Next: republish the playable link and prepare the end-of-M1 review for the designer. Start from `plans/handover.md`.

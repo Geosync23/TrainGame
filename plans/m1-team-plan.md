@@ -2,7 +2,7 @@
 
 Plan page for the designer: https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu
 Survey with the questions (answers saved in its database, collection `answers`, doc `m1-plan`): https://claude.ai/artifact/VaTAWnL2ycb8JqzZJSJyfA (source: `plans/m1-plan-survey.html`)
-Status: approved by the designer (survey answers recorded as D12, 2026-11-01). Review once at the end of M1. Round A started at once because the designer said "start M1"; it only covers work the design doc already specifies.
+Status: ALL OF M1 IS BUILT AND MERGED (2026-11-02), 28 checks pass; next is the end-of-M1 review. Approved by the designer (survey answers recorded as D12, 2026-11-01). Review once at the end of M1. Round A started at once because the designer said "start M1"; it only covers work the design doc already specifies.
 
 | Round | Worker | Piece | Owned sections of index.html |
 | --- | --- | --- | --- |
@@ -26,7 +26,7 @@ Round D survey (answers in its database, collection `answers`, doc `round-d`): h
 | D | D1 | Office panels at the desk with an Office button (Contracts, Market, Ledger, Trains, Timetable), telegrams sliding in under the clock with an inbox button, alerts, the Look button and inspect cards (D13). Merged (schema 11), npm test passed (28 checks) | HUD and panels, input |
 | D | D2 | Tutorial: the investor telegrams for days 1 and 2, with Skip tutorial. Merged (schema 12; includes D1's telegram rules, schema 11), npm test passed (26 checks) | new "tutorial" |
 | D | D5 | Riding your own train as a passenger (D13). Merged (schema 13), npm test passed (27 checks) | trains, player |
-| D | D7 | Willow Ford platform dwell: trains do platform work (boarding, alighting) at the platform for a few minutes before moving to the spout | timetable, passengers |
+| D | D7 | Willow Ford platform dwell: trains do platform work (boarding, alighting) at the platform for a few minutes before moving to the spout. Merged, npm test passed (28 checks) | timetable, passengers |
 | D | D6 | Cordwood on the handcart, fares paid on arrival at unstaffed stations, 8 starting cords (D13). Merged, npm test passed (26 checks) | carrying, passengers, new-game setup |
 | D | D3 | M1 acceptance check with a "reasonable player" bot playing a week; report gaps. Merged, npm test passed (25 checks) |
 

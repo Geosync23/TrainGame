@@ -50,9 +50,10 @@ If either file doesn't exist yet, create it in the first session and keep it cur
 - **Workers stay inside the lead session** (added 2026-11-01): hire them as helpers within the session, not as separate sessions.
 
 ## Memory and handover
-- **Never hand over below 45 to 50% of your context** (added 2026-11-02): a lead with less used keeps working, even when a big task is coming up. Check the actual figure; do not guess.
+- **Never hand over below 50% of your context** (added 2026-11-02, made firm the same day): a lead with less used keeps working, even when a big task is coming up.
+- **Measure, never estimate** (added 2026-11-02): run `python3 tools/context-usage.py` before any talk of memory or handover; it reads the exact figure from the session's log. The lead's memory holds 1,000,000 tokens, not 200,000: a feeling that the conversation is long is not a reason to hand over.
 - From about 60% of your context, judge case by case whether to hand over: if a big task is coming up, hand over before starting it; otherwise keep working a little longer.
 - 80% is the hard cap: never go above it.
-- Warn me early when your memory is getting full, or when the next task looks big enough to fill it. Don't wait for the automatic summary.
+- Warn me when the measured figure passes 50%, or when it is over 50% and the next task looks big enough to take it past 80%. Don't wait for the automatic summary.
 - To hand over: write `plans/handover.md` for a fresh session (what you built, loose ends, gotchas, how to test, open questions for me), push it, and stop. A fresh session reads the latest handover note first.
 - **Hand over on your own** (added 2026-11-01): when it is time, the lead writes and pushes the handover note, then starts the new lead session itself (on the same branch, told to read `plans/handover.md` first) without waiting to be asked, and tells me it has done so.

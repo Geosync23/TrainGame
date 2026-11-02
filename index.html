@@ -3883,8 +3883,8 @@ function walkAStar(G, s, goal) {
 // A target in a blocked cell, or in an area the player cannot reach, is moved to the nearest cell that can be.
 // exact: the path ends in the target's own cell. Depends only on the state and the trains' poses.
 function walkPlan(S, poses) {
-  const P = S.player, G = walkGridFor(S), dyn = walkTrainStamp(G, poses.concat(walkTrainAhead(S)));
-  const s0 = walkCell(P.x, P.z), g0 = walkCell(P.tx, P.tz), key = s0 + '|' + g0 + '|' + dyn.join(',');
+  const P = S.player, G = walkGridFor(S), all = poses.concat(walkTrainAhead(S)), dyn = walkTrainStamp(G, all);
+  const s0 = walkCell(P.x, P.z), g0 = walkCell(P.tx, P.tz), key = s0 + '|' + g0 + '|' + P.tx + ',' + P.tz + '|' + dyn.join(',');
   if (G.memo && G.memo.key === key) return G.memo;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   const s = walkOpen(G, s0) ? s0 : walkNearest(G, s0, -1);
@@ -3893,7 +3893,16 @@ function walkPlan(S, poses) {
   else {
     const k = G.comp[s], goal = walkOpen(G, g0) && G.comp[g0] === k ? g0 : walkNearest(G, g0, k);
     const r = walkAStar(G, s, goal);
-    memo = { key, cells: r.cells, escape: s !== s0, exact: goal === g0 && r.reached, expanded: r.expanded };
+    let exact = goal === g0 && r.reached, tail = false;
+    // A target just beside a train (D15): the train's stamp covers every cell it touches, so the target's own cell
+    // can be shut although the target is clear of the train, and the nearest open cell's centre can then be out of
+    // reach of what stands on the track (a spot beside the tender is 1.48u from its centre line, reach is 1.5u).
+    // When the target cell is shut only by a train and the target itself is clear, walk the last bit straight to it.
+    if (!exact && r.reached && goal >= 0 && G.cost[g0] > 0 && G.comp[g0] === k) {
+      const [gx, gz] = walkCentre(goal);
+      if (Math.hypot(P.tx - gx, P.tz - gz) <= 1.5 * WALK.CELL && pathClear(all, gx, gz, P.tx, P.tz)) exact = tail = true;
+    }
+    memo = { key, cells: r.cells, escape: s !== s0, exact, tail, expanded: r.expanded };
   }
   memo.ms = typeof performance !== 'undefined' ? performance.now() - t0 : 0; // for the checks only; the sim never reads it
   G.memo = memo;
@@ -3919,7 +3928,8 @@ function walkClear(G, x0, z0, x1, z1) {
 function walkPoints(S, poses, upTo) {
   const P = S.player, plan = walkPlan(S, poses), G = walkGridFor(S);
   const pts = plan.cells.slice(plan.escape ? 0 : 1).map(walkCentre);
-  if (plan.exact) { if (pts.length) pts[pts.length - 1] = [P.tx, P.tz]; else pts.push([P.tx, P.tz]); }
+  if (plan.tail) pts.push([P.tx, P.tz]);   // the last bit off the grid, straight to a target beside a train
+  else if (plan.exact) { if (pts.length) pts[pts.length - 1] = [P.tx, P.tz]; else pts.push([P.tx, P.tz]); }
   const out = [];
   let cx = P.x, cz = P.z, i = 0, len = 0;
   const add = k => { len += Math.hypot(pts[k][0] - cx, pts[k][1] - cz); cx = pts[k][0]; cz = pts[k][1]; out.push(pts[k]); i = k + 1; };

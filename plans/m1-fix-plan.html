@@ -1,0 +1,271 @@
+<title>Railhead M1 Fix Round</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column: what you asked, what I found, the plan, then question slips; a fixed save bar at the foot. */
+:root {
+  --paper: #f3f1ea; --slip: #fffdf7; --ink: #262420; --muted: #6c675c;
+  --rule: #d9d3c4; --brass: #8a6418; --brass-soft: #f1e4c4; --ok: #2f6b3a; --ok-soft: #dcebd9; --warn: #9a4a1c; --warn-soft: #f6e0d2;
+  --f-display: "Zilla Slab", Georgia, serif;
+  --f-body: "Source Sans 3", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-body); }
+.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 120px; display: grid; gap: 28px; }
+.wrap > section { display: grid; gap: 12px; min-width: 0; }
+h1 { font: 700 1.9rem/1.15 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 700 1.35rem/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 500 1.1rem/1.3 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--brass); }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 .75rem var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.play { display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 4px;
+  background: var(--brass); color: var(--slip); font-weight: 600; text-decoration: none; justify-self: start; }
+.shots { display: grid; grid-auto-flow: column; grid-auto-columns: min(70%, 240px); gap: 12px; overflow-x: auto;
+  padding-bottom: 8px; scroll-snap-type: x mandatory; }
+.shots figure { margin: 0; scroll-snap-align: start; display: grid; gap: 6px; align-content: start; }
+.shots img { width: 100%; border: 1px solid var(--rule); border-radius: 4px; display: block; background: var(--slip); }
+.shots figcaption { font-size: .85rem; color: var(--muted); }
+.slip { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.res { display: grid; gap: 12px; }
+.res-row { display: grid; gap: 4px; }
+.pill { font: 500 .72rem var(--f-mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 3px; padding: 1px 6px; justify-self: start; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.you { background: var(--brass-soft); color: var(--brass); }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; }
+td.n { text-align: right; white-space: nowrap; }
+.gap { border-left: 3px solid var(--warn); padding-left: 10px; }
+details.group { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; }
+details.group > summary { list-style: none; cursor: pointer; padding: 14px 16px; min-height: 48px; box-sizing: border-box;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font: 500 1.2rem var(--f-mono); color: var(--brass); }
+details.group[open] > summary::after { content: "\2212"; }
+.gcount { font: 500 .75rem var(--f-mono); color: var(--muted); white-space: nowrap; }
+.gbody { padding: 0 16px 16px; display: grid; gap: 14px; }
+.keepall { justify-self: start; background: transparent; color: var(--brass); border: 1px solid var(--brass); }
+.item { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.item p { font-size: .95rem; }
+.who { font: 500 .7rem var(--f-mono); color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule);
+  border-radius: 4px; cursor: pointer; font-size: .95rem; }
+.seg label:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.seg input { accent-color: var(--brass); width: 18px; height: 18px; margin: 0; }
+.opts { display: grid; gap: 8px; border: 0; margin: 0; padding: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px; min-height: 48px; box-sizing: border-box;
+  border: 1px solid var(--rule); border-radius: 4px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.opt input { margin-top: 4px; accent-color: var(--brass); width: 18px; height: 18px; flex: none; }
+.opt span { min-width: 0; }
+.tag { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--brass);
+  border: 1px solid var(--brass); border-radius: 3px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+label.note { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+textarea { font: 16px/1.4 var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 8px 10px; min-height: 44px; resize: vertical; box-sizing: border-box; width: 100%; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--slip); border-top: 1px solid var(--rule);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+.bar-in { max-width: 680px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#status { font: 500 .8rem var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+#status.ok { color: var(--ok); }
+button { font: 600 1rem var(--f-body); min-height: 48px; padding: 0 20px; border-radius: 4px; border: 0;
+  background: var(--brass); color: var(--slip); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:12px">
+    <span class="eyebrow">M1 fix round, plan for your review</span>
+    <h1>Railhead M1 fix round</h1>
+    <p class="muted">Your end-of-M1 review asked for a bigger game, a readable platform, a view into the cars, crossings, and a departure board in the world. This page says what I found, what I plan to build, and asks the questions only you can answer. Nothing is built until you agree. Your answers save on this page as you go.</p>
+  </header>
+
+  <section>
+    <h2>What you asked for</h2>
+    <ul class="plain">
+      <li><b>Scale the whole game up:</b> the map, the trains, the platform ("way too small") and everything else.</li>
+      <li><b>The platform roof</b> hides the platform.</li>
+      <li><b>Platform clipping:</b> the player's feet sink into the platform and the freight dock.</li>
+      <li><b>A cutaway view</b> into the cars when you board, with you shown inside.</li>
+      <li><b>Crossings:</b> track is no longer walkable everywhere.</li>
+      <li><b>The departure board</b> in the world as well as the card.</li>
+    </ul>
+    <p class="muted">Then you retest. The playtest with outside players comes later.</p>
+  </section>
+
+  <section>
+    <h2>What I found</h2>
+    <p>A unit (u) in the game is about one person's height, 1.75 m. Next to a person, the trains and cars are about half the size of real 1866 ones. That is the main reason the trains and the platform look small.</p>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Thing</th><th class="n">Now</th><th class="n">Real 1866, roughly</th></tr></thead>
+      <tbody>
+        <tr><td>A person</td><td class="n">1u</td><td class="n">1u</td></tr>
+        <tr><td>Engine and tender</td><td class="n">5.2u</td><td class="n">8 to 9u</td></tr>
+        <tr><td>Freight car, combine</td><td class="n">2.6 to 2.8u</td><td class="n">4.5 to 7u</td></tr>
+        <tr><td>Hub platform</td><td class="n">20 x 2.4u</td><td class="n">longer than the train</td></tr>
+        <tr><td>Starting map</td><td class="n">336 x 128u</td><td class="n">-</td></tr>
+        <tr><td>Camera at the start, phone upright</td><td class="n">about 11u across</td><td class="n">-</td></tr>
+      </tbody>
+    </table></div>
+    <p>Making everything bigger by the same amount, people included, looks exactly like zooming in, so on its own it would not make the trains look bigger next to you. That is why the first question asks what "bigger" should mean.</p>
+    <p>Your feet sink because the game always draws you at ground height, while the platform and dock floors are 0.3u up. Travellers on the platform are already drawn on top.</p>
+  </section>
+
+  <section>
+    <h2>The plan</h2>
+    <p>The round is built in pieces. The sizes below follow my suggested answers; they change with yours.</p>
+    <div class="slip" style="gap:14px">
+      <div class="res-row"><h3>1. Scale</h3><p>Trains, cars, track, platform, buildings and distances grow 1.6 times; people stay their size and the camera starts a bit closer. The map grows, with more open land around the hub. Train speeds grow to match, so the timetable, fares and wood use stay as they are. Your saved game is converted to the new sizes when you open it; if a save cannot be converted it is kept, not lost, and a new game starts with a note. This is the biggest piece: it touches nearly every part of the game, and all 28 checks have positions written into them, so every check is updated and the test player's week must still pass.</p></div>
+      <div class="res-row"><h3>2. Feet on the floor</h3><p>You stand on the platform and the dock and step up and down at their edges.</p></div>
+      <div class="res-row"><h3>3. The platform roof</h3><p>It turns see-through when you are under it or near it (or whatever you choose below).</p></div>
+      <div class="res-row"><h3>4. Crossings</h3><p>Track becomes something you walk around, not over. Plank crossings at the stations; tapping across the track walks you round by the nearest crossing. You still work switches, couplings, wood and water from beside the track. A train standing on a crossing blocks it. Building track by hand is unchanged: you can stand on your own unfinished track.</p></div>
+      <div class="res-row"><h3>5. Seeing into the cars</h3><p>When you board, that car opens up: roof and near wall hidden, you and the travellers shown inside. It closes when you step off. The open side follows the camera when you turn it.</p></div>
+      <div class="res-row"><h3>6. Departure board</h3><p>A painted board in the world showing the next departures, readable when zoomed in. The card stays.</p></div>
+      <div class="res-row"><h3>7. Small gaps (if you want them)</h3><p>Picking materials back up at a building job; a switch inside a station's stopping track no longer cancels its trains; a warning mark on an item in the wrong bay.</p></div>
+    </div>
+    <h3>How it is built and tested</h3>
+    <ul class="plain">
+      <li>Helpers inside this session do the building. Scale goes first, by one helper, because everything else sits on top of it. Then pieces 2 to 7 by up to three helpers side by side.</li>
+      <li>Every piece gets its own check (scale and old saves, feet, roof, crossings, cutaway, board). All checks pass before anything is saved to GitHub.</li>
+      <li>Phone speed: the busy scene uses 73 draw calls now (budget 100). The roof, the open car and the board add about 5 to 8. The bigger map is measured after piece 1; if the walking route search gets slow, I make it coarser away from the stations.</li>
+      <li>One thing to watch: the test for "two trains within 10 minutes" passes at exactly 10 minutes, so new speeds could tip it. If they do I tell you rather than nudge the timetable quietly.</li>
+      <li>At the end: a new playable link and a short review page for your retest.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Your answers</h2>
+    <p>Each question has my suggestion marked. Pick one, add a note if you like. If none fits, say so in the note.</p>
+    <div id="qs" style="display:grid;gap:16px"></div>
+  </section>
+</div>
+<div class="bar"><div class="bar-in"><span id="status">Connecting...</span><button id="save" type="button">Save answers</button></div></div>
+
+<script>
+const QS = [
+  { id: 'scale', q: 'What should "bigger" mean?', ctx: 'Real 1866 trains were about twice as long as ours, next to a person.',
+    o: [['world', 'Trains, cars, track, platform and buildings grow 1.6 times next to people, close to real sizes (an engine and tender about 8 people long). People stay their size; the camera starts a little closer so they look bigger on screen too.', 1],
+        ['double', 'The same, but 2 times (an engine and tender about 10 people long, a bit bigger than real).'],
+        ['all', 'Everything grows 1.5 times together, people too. Proportions stay as now; everything looks bigger on screen and you see less around you.'],
+        ['camera', 'Only bring the camera closer; nothing changes size.']] },
+  { id: 'map', q: 'How much larger should the starting map be?', ctx: 'Now 336 by 128 units, with Willow Ford 10 miles from the hub.',
+    o: [['room', 'Grown with everything, plus more open land north and south of the hub for your own sidings and the town later (about 640 by 320 units). Willow Ford still 10 miles.', 1],
+        ['grow', 'The same layout grown with everything (about 540 by 205 units). Willow Ford still 10 miles.'],
+        ['longer', 'Grown with everything, plus a longer line: Willow Ford 15 miles away, so the ride takes half as long again.']] },
+  { id: 'times', q: 'In the bigger world, should things take the same time as now?', ctx: 'Distances grow, so either speeds grow too or trips take longer.',
+    o: [['same', 'Yes. Trains run faster to match, so the timetable, fares and wood use stay as now. You walk a quarter faster, and building steps get quicker so a siding along the platform still takes about 3 real minutes. Walking round the bigger station still takes a little longer than now.', 1],
+        ['walksame', 'Yes, and walking fast enough that every walk takes the same time as now (you will look as if you are hurrying).'],
+        ['longer', 'No, let things take longer; the world should feel bigger.']] },
+  { id: 'zoom', q: 'How far out should you be able to zoom?', ctx: 'Zoom is 0.6x to 4x (your D3). With bigger trains, fully zoomed out on an upright phone you would see about 23 units across: not quite a whole train beside its platform.',
+    o: [['wider', 'Let you zoom out further, to 0.4x (about 35 units across), so a whole train and its platform fit.', 1],
+        ['keep', 'Keep 0.6x to 4x.']] },
+  { id: 'roof', q: 'What should happen to the platform roof?',
+    o: [['fade', 'Keep it, but it turns see-through while you are under it or near it, and solid again when you walk away.', 1],
+        ['glass', 'Keep it, always see-through.'],
+        ['higher', 'Keep it solid, but higher and narrower so it covers less.'],
+        ['park', 'Take it off (parked, not deleted). The bench stays.']] },
+  { id: 'clip', q: '"Platform clipping" means your feet sinking into the platform and the freight dock. Is that right?',
+    o: [['feet', 'Yes. Stand on top of them and step up and down at their edges.', 1],
+        ['more', 'That, and something else (say what in the note).']] },
+  { id: 'cutaway', q: 'How should the car open when you board?',
+    o: [['roofwall', 'That car\'s roof and the wall nearest the camera disappear, showing you, the travellers in their seats and the freight inside. The other cars stay whole. It closes when you step off.', 1],
+        ['roof', 'Only the roof disappears; you look down into the car.'],
+        ['all', 'The whole train opens up while you ride.']] },
+  { id: 'inside', q: 'What do you do inside the car?', ctx: 'You ride as railroad staff in the combine\'s baggage end (kept in D14).',
+    o: [['stand', 'You stand in the baggage end until you step off.', 1],
+        ['walk', 'You can walk along the inside of the car while it runs.']] },
+  { id: 'crossings', q: 'Where should the crossings be?', ctx: 'Once track is not walkable, a siding you build could cut off part of the station.',
+    o: [['fixedown', 'Plank crossings at both ends of each platform, one from the depot to the freight shed across all the hub tracks, and one at Willow Ford. You can also stake your own crossing with the Build tool, as a small job using one tie bundle.', 1],
+        ['fixed', 'Only the fixed crossings at the stations; making your own comes later.'],
+        ['auto', 'The fixed crossings, and track you build gets a crossing by itself every 40 units.']] },
+  { id: 'side', q: 'How do you work the track from beside it?',
+    o: [['either', 'From either side, without crossing: throwing switches, coupling and uncoupling, wood and water. A train standing on a crossing blocks it.', 1],
+        ['standside', 'Switches only from the side their stand is on; the rest from either side.']] },
+  { id: 'board', q: 'Where should the departure board stand?',
+    o: [['wall', 'On the depot wall beside the ticket window, at both stations, showing the next 4 departures in painted letters you can read zoomed in. The card still opens when you stand near it or Look at it.', 1],
+        ['hubwall', 'On the depot wall at the hub only.'],
+        ['posts', 'On two posts in the middle of the hub platform.']] },
+  { id: 'gaps', q: 'Fix these small known gaps in this round too?', ctx: 'Picking materials back up at a building job; a switch inside a station\'s stopping track cancelling its trains; a warning mark on an item sorted into the wrong bay.',
+    o: [['all', 'Yes, all three.', 1],
+        ['some', 'Some of them (say which in the note).'],
+        ['none', 'No, keep this round to my changes.']] },
+  { id: 'review', q: 'How do you want to review this round?',
+    o: [['scalefirst', 'Scale first, then stop and show you (pictures and a playable link), because it changes how everything looks. Then the rest in one go, and one review at the end.', 1],
+        ['onego', 'All of it in one go, one review at the end.'],
+        ['each', 'One piece at a time, each reviewed.']] },
+  { id: 'else', q: 'Anything else for this round?', o: [] },
+];
+
+const answers = {};
+const statusEl = document.getElementById('status'), saveBtn = document.getElementById('save');
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function noteBox(key, label) {
+  const nl = el('label', 'note', label); const ta = el('textarea'); ta.id = 'note-' + key; ta.rows = 1;
+  ta.addEventListener('input', () => setA(key, 'note', ta.value)); nl.append(ta); return nl;
+}
+const qsEl = document.getElementById('qs');
+QS.forEach((Q, i) => {
+  const s = el('section', 'slip'); s.append(el('div', 'eyebrow', 'Question ' + (i + 1) + ' of ' + QS.length));
+  const h = el('h3', null, Q.q); h.id = 'q-' + Q.id; s.append(h);
+  if (Q.ctx) s.append(el('p', 'muted', Q.ctx));
+  if (Q.o.length) {
+    const fs = el('fieldset', 'opts'); fs.setAttribute('aria-labelledby', h.id);
+    for (const [v, label, sug] of Q.o) {
+      const l = el('label', 'opt'); const r = el('input'); r.type = 'radio'; r.name = 'q.' + Q.id; r.value = v; r.id = 'q.' + Q.id + '-' + v;
+      r.addEventListener('change', () => setA('q.' + Q.id, 'choice', v));
+      const t = el('span', null, label); if (sug) t.append(el('span', 'tag', 'Suggested'));
+      l.append(r, t); fs.append(l);
+    }
+    s.append(fs);
+  }
+  s.append(noteBox('q.' + Q.id, Q.o.length ? 'Note (optional)' : 'Your answer')); qsEl.append(s);
+});
+function render() {
+  for (const Q of QS) {
+    const key = 'q.' + Q.id, a = answers[key] || {};
+    for (const [v] of Q.o) document.getElementById(key + '-' + v).checked = a.choice === v;
+    const ta = document.getElementById('note-' + key); if (document.activeElement !== ta) ta.value = a.note || '';
+  }
+}
+render();
+let ref = null, dirty = false, saving = false, timer = null;
+function setA(id, k, v) { answers[id] = Object.assign({}, answers[id], { [k]: v }); dirty = true; status('Not saved yet'); clearTimeout(timer); timer = setTimeout(save, 1500); }
+function status(t, ok) { statusEl.textContent = t; statusEl.className = ok ? 'ok' : ''; }
+async function save() {
+  if (!ref) { status('Saving is not available here'); return; }
+  if (saving) { clearTimeout(timer); timer = setTimeout(save, 800); return; }
+  if (!dirty) return;
+  saving = true; dirty = false; saveBtn.disabled = true;
+  try { await ref.set({ answers, savedAt: Date.now() }); status('Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), true); }
+  catch (e) { dirty = true; status('Could not save: ' + ((e && e.message) || 'try again')); }
+  finally { saving = false; saveBtn.disabled = false; }
+}
+saveBtn.addEventListener('click', () => { dirty = true; clearTimeout(timer); save(); });
+(async () => {
+  const to = setTimeout(() => status('Still connecting; your choices are kept on screen'), 10000);
+  let db = null;
+  try { db = window.claude ? await window.claude.use('db') : null; } catch (e) { db = null; }
+  clearTimeout(to);
+  if (!db) { status('Saving is not available here'); saveBtn.disabled = true; return; }
+  ref = db.doc('answers/m1-fix');
+  try {
+    const snap = await ref.get();
+    if (snap.exists) { const d = snap.data(); if (d && d.answers) for (const k in d.answers) if (!answers[k]) answers[k] = d.answers[k]; render(); status('Loaded your saved answers', true); }
+    else status('Nothing saved yet');
+  } catch (e) { status('Could not load saved answers'); }
+})();
+</script>

@@ -1,6 +1,11 @@
-# Handover (updated 2026-11-02 by the third lead session)
+# Handover (updated 2026-11-02 by the fourth lead session)
 
-## Start here: the end-of-M1 review is answered (D14)
+## Start here: the fix-round plan is published, waiting for the designer
+The M1 fix-round plan and survey are published: https://claude.ai/artifact/8ReXohbMSFEDaa1eaog927 (source `plans/m1-fix-plan.html`). Answers save in its database: collection `answers`, document `m1-fix` (keys `q.<id>`, each `{choice, note}`; ids scale, map, times, zoom, roof, clip, cutaway, inside, crossings, side, board, gaps, review, else). Read them with the ArtifactData tool. NEXT: when answered, record them as D15 in design-doc section 0, write the build order into the plan, then build (helpers inside the session). Do not build before the designer agrees.
+
+What the investigation found (so you need not redo it): a unit is about one person (1.75 m); engine and tender 5.2u, cars 2.6 to 2.8u (about half real size next to a person); hub platform 20 x 2.4u; map 336 x 128u (`WORLDS.start`, `HUB`, `WFORD`, `buildStartWorld` in "starting world layout"); camera `cam.zoom` 1.25 at start with `CFG.VIEW_MIN_U` 14 (about 11u across an upright phone), zoom 0.6 to 4; track geometry `CFG.GEOM`, switch legs radius 10 and 8 giving the 3.41u spacing (`TURN_OFF`); speeds `CFG.LIM`, `CFG.WALK`; miles are 16u (`CORD_U`, `WATER_U` and fares depend on it); vehicle lengths at index.html "game state" (around line 751) and `OVERLAND_LOCO`/`OVERLAND_CARS`; building sizes `BLD_EXTENTS`, `BLD_LAYOUT`, `BLD_PLATFORM_TOP` 0.3; walk grid 0.5u cells. Uniform scaling of everything (people too) is the same as zooming in, so the suggested answer grows the world 1.6x around the people. Feet sink because the player is drawn at y 0 (`pl.position.set(px, 0, pz)` in "drawing each frame"); passengers already use a platform height lookup (people section, around line 7324). Saves: schema 13; the plan promises conversion (schema 14 scales stored positions), keeping an unconvertible save and starting fresh with a note.
+
+## Earlier (third lead session): the end-of-M1 review is answered (D14)
 The designer answered the review (https://claude.ai/artifact/CKNAh874bKoJ1EZWAX9zEB; raw answers in its database, collection `answers`, document `m1-review`, readable with the ArtifactData tool). Recorded as D14 in design-doc section 0. In short: M1 is "not yet" right; they retest after a fix round. Playtest gate: later, not now. Next after the fix round: plan M2.
 
 The designer's own words (notes on the page), kept here because they matter for the plan:

@@ -13,6 +13,7 @@ const checks = {
   'touch controls': require('./check-touch'),
   'paths (walking round buildings and trains)': require('./check-paths'),
   'station buildings': require('./check-buildings'),
+  'platform canopy turns see-through near the player': require('./check-roof'),
   'debug tools (?debug=1)': require('./check-debug'),
   'ground and light (terrain, day and night)': require('./check-world'),
   'people (crowd of 200 walkers)': require('./check-people'),

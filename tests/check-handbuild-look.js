@@ -33,12 +33,12 @@ module.exports = async function checkHandbuildLook() {
         for (const k of ['blocks', 'locks', 'routes', 'path']) rh.overlay(k, false);
         rh.setTime(7 * 3600);
         const H = window.__railhead, S = H.state, j = S.jobs.list[0], m = H.jobs.jobPoint(j, j.len * 0.45), sg = H.jobSignSpot(j);
-        H.camera.zoom = 1.7; H.camera.ox = (m.x + sg.x) / 2 - S.player.x; H.camera.oz = (m.z + sg.z) / 2 - S.player.z;
+        H.camera.zoom = 1.7 / H.CFG.SCALE; H.camera.ox = (m.x + sg.x) / 2 - S.player.x; H.camera.oz = (m.z + sg.z) / 2 - S.player.z;
         // The train on the north main line just west of the job's switch, in view of the work. It must leave that
         // line before the job can join it (a train on the track being split), so it is moved away before the end.
-        const T = S.track, tr = S.trains[0];
-        const E = T.edges.find(E => E.k === 'S' && E.cls === 'main' && Math.abs(T.nodes[E.a].z + 14) < 1e-6 && Math.abs(T.nodes[E.b].z + 14) < 1e-6 && E.len > 20);
-        const A = T.nodes[E.a], east = A.x > T.nodes[E.b].x, s = east ? 7 : E.len - 7;
+        const T = S.track, tr = S.trains[0], SC = H.CFG.SCALE;
+        const E = T.edges.find(E => E.k === 'S' && E.cls === 'main' && Math.abs(T.nodes[E.a].z + 14 * SC) < 1e-6 && Math.abs(T.nodes[E.b].z + 14 * SC) < 1e-6 && E.len > 20 * SC);
+        const A = T.nodes[E.a], east = A.x > T.nodes[E.b].x, s = east ? 7 * SC : E.len - 7 * SC;
         tr.front = { e: E.id, s, d: east ? -1 : 1 }; tr.mode = 'idle'; tr.v = 0;
         // Away: on the next edge west, facing back towards this line, so the cars trail away from it.
         window.__trainAway = () => { const w = east ? E.b : E.a, C = T.edges.find(F => F.id !== E.id && (F.a === w || F.b === w));
@@ -89,7 +89,7 @@ module.exports = async function checkHandbuildLook() {
         const H = window.__railhead, S = H.state, j = S.jobs.list[0];
         const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
         ['flour', 'salt', 'beans', 'coffee', 'seed', 'grain', 'nails', 'tinned', 'lumber', 'furniture'].forEach((c, i) => {
-          const q = H.jobs.jobPoint(j, 6 + i * 0.9), off = j.side * 4.5;
+          const q = H.jobs.jobPoint(j, 6 * H.CFG.SCALE + i * 0.9), off = j.side * 4.5 * H.CFG.SCALE;
           H.cargo.itemCreate(S, wb(c), { kind: 'GROUND', x: Math.round((q.x - q.tz * off) * 100), z: Math.round((q.z + q.tx * off) * 100) }, null);
         });
         H.cargo.redraw();
@@ -99,7 +99,7 @@ module.exports = async function checkHandbuildLook() {
 
       // Work: after each batch of ticks, the drawn placed pieces equal the done counts.
       let ticks = 0, mid = null;
-      for (const target of [8, 30, 120, 260, 402, 700, 1100]) {
+      for (const target of [8, 30, 120, 260, 450, 700, 1100]) {   // 450: spiking stretch 2 (D15: the steps are quicker by SC)
         await R(n => window.__railhead.step(n), target - ticks); ticks = target;
         await frames();
         const c = await R(() => {
@@ -119,11 +119,11 @@ module.exports = async function checkHandbuildLook() {
           P(`after ${ticks} ticks the drawn placed pieces (${c.pl.ties} ties, ${c.pl.railPieces} rail pieces, ${c.pl.spikes} spikes) do not match done ${JSON.stringify(c.done)} (${c.wantRail} rail pieces)`);
         if (c.cnt.tie < c.done.ties || c.cnt.spike < c.done.spikes || c.cnt.rail < c.wantRail) P(`after ${ticks} ticks the visible instance counts ${JSON.stringify(c.cnt)} are below done`);
         if (c.tieAt !== null && c.tieAt > 0.01) P(`after ${ticks} ticks the last placed tie is ${c.tieAt.toFixed(3)}u from its spot`);
-        if (target === 402) {
+        if (target === 450) {
           mid = c;
           await R(() => { const H = window.__railhead; H.camera.ox = 0; H.camera.oz = 0; H.camera.zoom = 2; });
           await page.waitForTimeout(900);
-          if (!c.act || c.act.step !== 'spike' || !c.maul) P('mid-build (402 ticks): the player should be driving a spike with the maul showing: ' + JSON.stringify({ act: c.act, maul: c.maul }));
+          if (!c.act || c.act.step !== 'spike' || !c.maul) P('mid-build (450 ticks): the player should be driving a spike with the maul showing: ' + JSON.stringify({ act: c.act, maul: c.maul }));
           if (!(c.done.ties > 0 && c.done.rails > 0 && c.done.spikes > 0)) P('mid-build: expected ties, rails and spikes placed: ' + JSON.stringify(c.done));
           // Busy scene draw calls, and what the job drawing adds (its group hidden for one frame).
           await page.waitForTimeout(500);

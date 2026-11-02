@@ -48,6 +48,7 @@ If either file doesn't exist yet, create it in the first session and keep it cur
 - **Don't create pull requests unless I ask.**
 - **Questions for me always come as an interactive survey** (added 2026-11-01): a published page with a choice per question (your suggestion marked) and a note box, with my answers saved on the page so they are not lost. Always do this.
 - **Workers stay inside the lead session** (added 2026-11-01): hire them as helpers within the session, not as separate sessions.
+- **Notify my phone when everything waits on me** (added 2026-11-02): whenever work cannot go on until I answer a survey or question, send a notification to my phone (the PushNotification tool) with the link, in one short line. Say in the chat that you did.
 
 ## Memory and handover
 - **Never hand over below 50% of your context** (added 2026-11-02, made firm the same day): a lead with less used keeps working, even when a big task is coming up.

@@ -5737,10 +5737,11 @@ function carryDraw(alpha, dt) {
     const T = S.tools[v.id];
     if (P.tool === v.id) {
       const f = pl.rotation.y, d = CARRY_PUSH[v.k].d;
-      v.g.position.set(pl.position.x + Math.sin(f) * d, 0, pl.position.z + Math.cos(f) * d);
+      const tx = pl.position.x + Math.sin(f) * d, tz = pl.position.z + Math.cos(f) * d;
+      v.g.position.set(tx, bldStandY(tx, tz), tz);   // up on a deck with the player (D15)
       v.g.rotation.y = f; v.lean.rotation.x = CARRY_PUSH[v.k].tilt;
     } else {
-      v.g.position.set(T.x / 100, 0, T.z / 100); v.g.rotation.y = carryYaw(T.yaw); v.lean.rotation.x = 0;
+      v.g.position.set(T.x / 100, bldStandY(T.x / 100, T.z / 100), T.z / 100); v.g.rotation.y = carryYaw(T.yaw); v.lean.rotation.x = 0;
     }
     v.g.updateMatrixWorld(true);
   }
@@ -5764,7 +5765,7 @@ function carryDraw(alpha, dt) {
     const total = P.act.total || (P.act.k === 'throw' ? CFG.THROW_S : CFG.CARRY_S);
     const f = Math.max(0, Math.min(1, (total - P.act.left + (speed > 0 ? alpha : 0) * CFG.TICK_GAME_S) / total));
     ring.geometry.setDrawRange(0, 6 * Math.max(1, Math.ceil(f * 24)));
-    ring.position.set(pl.position.x, 1.45, pl.position.z); ring.quaternion.copy(camera.quaternion);
+    ring.position.set(pl.position.x, pl.position.y + 1.45, pl.position.z); ring.quaternion.copy(camera.quaternion);
     ring.visible = true;
   } else ring.visible = false;
 }
@@ -5886,7 +5887,7 @@ function cargoCarriedPose(S, w, actor, id) {
   // by hand the item is held in front of the chest. The character model faces local +z (its cap visor and nose).
   if (actor === view.player) { const p = carryItemPose(S, w, id); if (p) return p; }
   const f = actor.rotation.y, fx = Math.sin(f), fz = Math.cos(f);
-  return { x: actor.position.x + fx * 0.34, y: 0.36, z: actor.position.z + fz * 0.34, yaw: f };
+  return { x: actor.position.x + fx * 0.34, y: actor.position.y + 0.36, z: actor.position.z + fz * 0.34, yaw: f };
 }
 const cargoM = new THREE.Matrix4(), cargoQ = new THREE.Quaternion(), cargoQ2 = new THREE.Quaternion(), cargoV = new THREE.Vector3(),
   cargoS = new THREE.Vector3(), cargoUp = new THREE.Vector3(0, 1, 0), cargoX = new THREE.Vector3(1, 0, 0), cargoCol = new THREE.Color();
@@ -6139,11 +6140,12 @@ function jobAnimate(work, pl) {
   if (work.step === 'tie') {
     const f = pl.rotation.y, sx = pl.position.x + Math.cos(f) * 0.26, sz = pl.position.z - Math.sin(f) * 0.26;
     jobQ2.setFromAxisAngle(jobUp, f);
-    if (!work.acting || t < 0.55) jobPut('tie', sx, 0.78, sz, 0, 1, jobQ2);
+    const sy = pl.position.y + 0.78;   // on the shoulder, so up with the player on a deck
+    if (!work.acting || t < 0.55) jobPut('tie', sx, sy, sz, 0, 1, jobQ2);
     else {
       const T = g.ties[work.i], k = jobEase((t - 0.55) / 0.45);
       let yaw = T.yaw; while (yaw - f > Math.PI / 2) yaw -= Math.PI; while (f - yaw > Math.PI / 2) yaw += Math.PI; // a tie looks the same turned round
-      jobPut('tie', lerp(sx, T.x, k), lerp(0.78, T.y, k), lerp(sz, T.z, k), 0, 1, jobQ2.slerp(jobQ3.setFromAxisAngle(jobUp, yaw), k));
+      jobPut('tie', lerp(sx, T.x, k), lerp(sy, T.y, k), lerp(sz, T.z, k), 0, 1, jobQ2.slerp(jobQ3.setFromAxisAngle(jobUp, yaw), k));
     }
   } else if (work.acting && work.step === 'rail') {
     const lift = t < 0.55 ? 0.32 : t < 0.75 ? 0.32 * (1 - ((t - 0.55) / 0.2) ** 2) : 0;
@@ -6694,6 +6696,34 @@ function buildingFootprints() {
     else rect(at.id, ext, kind === 'platform' || kind === 'wfplatform');
   }
   return out.concat(townFootprints()); // the town's businesses and homes (section "town")
+}
+// Height a person's feet are drawn at (D15), draw side only (the sim stays at height 0): the deck top
+// (BLD_PLATFORM_TOP) on the flush rectangles of buildingFootprints() (the platforms and the freight dock),
+// else the ground. Within BLD_STEP_R of a deck's edge the height eases between the two, so walking on or
+// off is a short smooth step. Worked out from the layout's numbers, so it follows any change of size.
+// Used for the player, what the player pushes, travellers, and taps on a deck (deckGroundAt).
+const BLD_STEP_R = 0.12;
+const bldDeckCache = { layout: null, rects: null };
+function bldDecks() {
+  if (bldDeckCache.layout !== BLD_LAYOUT) { bldDeckCache.layout = BLD_LAYOUT; bldDeckCache.rects = buildingFootprints().filter(f => f.flush); }
+  return bldDeckCache.rects;
+}
+// How far (x, z) is inside the nearest deck (negative: outside it), or -Infinity with no deck near.
+function bldDeckInside(x, z) {
+  let best = -Infinity;
+  for (const f of bldDecks()) {
+    const c = Math.cos(f.yaw), s = Math.sin(f.yaw), dx = x - f.x, dz = z - f.z;
+    const d = Math.min(f.w / 2 - Math.abs(dx * c - dz * s), f.d / 2 - Math.abs(dx * s + dz * c));
+    if (d > best) best = d;
+  }
+  return best;
+}
+function bldStandY(x, z) {
+  const ground = terrainHeight(x, z), d = bldDeckInside(x, z);
+  if (d <= -BLD_STEP_R) return ground;
+  if (d >= BLD_STEP_R) return BLD_PLATFORM_TOP;
+  const t = (d + BLD_STEP_R) / (2 * BLD_STEP_R), k = t * t * (3 - 2 * t);
+  return ground + (BLD_PLATFORM_TOP - ground) * k;
 }
 // The hub boundary (design-doc 15), drawn subtly: a pale dashed line 1 cm above the ground (below the 3 cm
 // ballast where it crosses track) with a short survey stake at each corner and every 16u. In the merged mesh.
@@ -7315,15 +7345,12 @@ function updateCrowd(dt) {
 // reads S.pax (positions blended between the last two ticks); it never changes the game. A traveller's look comes
 // from its id (crowdDescribe, never railroad staff or a conductor). Travellers aboard a car are not drawn. On the
 // platform or the freight dock they stand on its top.
-const paxView = { S: null, tick: -1, prev: null, cur: null, w: new Map(), sig: '', shown: 0, flush: null };
+const paxView = { S: null, tick: -1, prev: null, cur: null, w: new Map(), sig: '', shown: 0 };
 function paxLook(id) {
   for (let k = 0; k < 12; k++) { const d = crowdDescribe(70001 + id * 31 + k * 7); if (d.role !== 'staff' && d.role !== 'conductor') return d; }
   return crowdDescribe(70001 + id * 31);
 }
-function paxStandY(x, z) {
-  if (!paxView.flush) paxView.flush = buildingFootprints().filter(f => f.flush);
-  return paxView.flush.some(f => walkRectHits(f, 0, x, z, 0)) ? BLD_PLATFORM_TOP : terrainHeight(x, z);
-}
+const paxStandY = bldStandY;   // the same lookup as the player's feet (buildings section)
 function paxDraw(alpha, dt) {
   const X = S.pax, list = X ? X.list.filter(p => p.s !== 'aboard') : [];
   if (paxView.S !== S || paxView.tick !== S.tick) {
@@ -9328,6 +9355,12 @@ function groundAt(px, py) {
   const out = new THREE.Vector3();
   return raycaster.ray.intersectPlane(groundPlane, out) ? out : null;
 }
+// Where a tap lands for walking and putting down: on a platform or dock deck when the ray meets its top
+// inside it (the same deck lookup as the player's feet, bldDeckInside), else on the ground. y is the surface's height.
+function deckGroundAt(px, py) {
+  const d = groundAtY(px, py, BLD_PLATFORM_TOP);
+  return d && bldDeckInside(d.x, d.z) > 0 ? d : groundAt(px, py);
+}
 function toScreen(x, y, z) {
   const v = new THREE.Vector3(x, y, z).project(camera);
   return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
@@ -9348,10 +9381,11 @@ function pickAt(px, py) {
 function onTap(px, py) {
   if (lookUi.open) { closeLook(); return; }          // Look (D1): a tap elsewhere closes the card
   if (lookUi.armed) { lookTap(px, py); return; }     // the one tap after Look: inspect what is there
-  const g = groundAt(px, py);
+  const g = deckGroundAt(px, py);
   if (ui.sendMode) {
-    if (!g) return;
-    const n = trackNearest(S.track, g.x, g.z);
+    const t = groundAt(px, py);   // track lies on the ground, not on a deck
+    if (!t) return;
+    const n = trackNearest(S.track, t.x, t.z);
     if (n && n.dist < 1.2) { send({ t: 'trainSendTo', tr: ui.panelTrain, e: n.e, s: Math.round(n.s * 1000) }); setSendMode(false); }
     else toast('Tap closer to a track.');
     return;
@@ -9378,7 +9412,7 @@ function onTap(px, py) {
   if (jobTap(g)) return;
   if (g) {
     send({ t: 'walkTo', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
-    view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
+    view.ring.position.set(g.x, g.y + 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
   }
 }
 // A tap on a station's ticket window walks there and staffs it (passengers, builder C4).
@@ -9456,7 +9490,7 @@ function carryTap(px, py, g) {
   if (item) { send({ t: 'carryPick', id: item.id }); return true; } // full: the sim says why
   if (held.length && carryCarrier(S) === 'HAND' && g) {
     send({ t: 'carryPut', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
-    view.ring.position.set(g.x, 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
+    view.ring.position.set(g.x, g.y + 0.05, g.z); view.ring.visible = true; view.ringArmed = true;
     return true;
   }
   return false;
@@ -9597,7 +9631,7 @@ function updateHoldWalk() {
   if (hold && !hold.on && performance.now() - hold.t0 > CFG.HOLD_MS) hold.on = true;
   if (hold && hold.on) {
     view.ring.visible = false;
-    const g = groundAt(hold.x, hold.y);
+    const g = deckGroundAt(hold.x, hold.y);
     if (g) {
       const dx = g.x - S.player.x, dz = g.z - S.player.z;
       if (Math.hypot(dx, dz) > 0.3) sendDir(angleCode(dx, dz), false);
@@ -9658,7 +9692,7 @@ function render(alpha, dt) {
   const P = S.player, pl = view.player, u = pl.userData;
   const px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
   const moved = Math.hypot(px - pl.position.x, pz - pl.position.z);
-  pl.position.set(px, 0, pz);
+  pl.position.set(px, bldStandY(px, pz), pz);   // on the platform or dock deck (D15); the sim stays at 0
   pl.visible = !P.ride;   // riding: inside the car (the camera follows it, as P.x and P.z follow the car)
   pl.rotation.y = lerpAngle(pl.rotation.y, P.f, 1 - Math.exp(-dt * 12));
   u.phase += moved * 0.6 * Math.PI * 2;
@@ -9766,6 +9800,8 @@ window.__railhead = {
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState, ttStopNeeds, ttWoodNeedU,
     ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; } },
+  feet: { bldStandY, bldDeckInside, deckGroundAt, BLD_STEP_R, get playerY() { return view.player.position.y; }, get ringY() { return view.ring.position.y; },
+    get actionRingY() { return carryView.ring.position.y; }, get toolYs() { return carryView.tools.map(v => v.g.position.y); } },
   ride: { RIDE, rideCarOf: (stock, st) => rideCarOf(st || S, stock), rideAtPlatform, ridePoses, rideDoors, get playerVisible() { return view.player.visible; } },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),

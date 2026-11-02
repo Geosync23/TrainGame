@@ -60,7 +60,8 @@ module.exports = async function checkCarry() {
     // 3. Tap the ground to put it down there.
     const p = await R(() => ({ x: window.__railhead.state.player.x, z: window.__railhead.state.player.z }));
     const gx = p.x + 1.2, gz = p.z + 0.8;
-    sp = await R(([x, z]) => window.__railhead.toScreen(x, z), [gx, gz]);
+    // The spot may be on the platform's deck: tap where its surface is drawn (D15, taps land on a deck's top).
+    sp = await R(([x, z]) => window.__railhead.toScreen(x, z, window.__railhead.feet.bldStandY(x, z)), [gx, gz]);
     await page.touchscreen.tap(sp.x, sp.y); await settle();
     await R(() => window.__railhead.step(30));
     const wg = JSON.parse(await where(ids.flour));

@@ -231,7 +231,7 @@ module.exports = async function checkTown() {
       if (!/Delivered the flour to the general store/.test(after.toast)) problems.push(`${orientation}: no delivery message: "${after.toast}"`);
       if (after.money.length || after.cons.length) problems.push(`${orientation}: after the delivery: money ${after.money.join('; ')} items ${after.cons.join('; ')}`);
       // Whiskey for the saloon, tapped onto the store: refused with a message, still in hand.
-      await R(() => { const R = window.__railhead, S = R.state, w = R.cargo.itemsAt(S, { kind: 'GROUND' })[0]; R.cargo.itemMove(S, w, { kind: 'CARRIED', actorId: 'player', carrier: 'HAND', slot: 0 }, null); R.cargo.redraw(); });
+      await R(() => { const R = window.__railhead, S = R.state, w = R.cargo.itemsAt(S, { kind: 'GROUND' }).find(i => S.items.waybill[i].commodity === 'whiskey'); R.cargo.itemMove(S, w, { kind: 'CARRIED', actorId: 'player', carrier: 'HAND', slot: 0 }, null); R.cargo.redraw(); });
       await page.waitForTimeout(300);
       const sp2 = await R(() => { const R = window.__railhead, d = R.town.townDoor(0); return R.toScreen(d.x, d.z, 0.5); });
       await frames(); await page.touchscreen.tap(sp2.x, sp2.y); await settle();

@@ -285,39 +285,50 @@
 
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
+// D15 (scale): SC is the world scale. Track, trains, buildings and distances are written as their M1 size times SC,
+// so the intent stays clear; people, what they carry and their hand tools keep their size (no SC). A mile is 16u x SC.
+const SC = 1.6;
+const MILE_U = 16 * SC;      // one mile in world units (25.6u)
+// A copy of a plain table with every number in it times SC (for tables whose numbers are all places or lengths).
+function scaleDeep(o) {
+  if (typeof o === 'number') return o * SC;
+  if (Array.isArray(o)) return o.map(scaleDeep);
+  if (o && typeof o === 'object') { const r = {}; for (const k of Object.keys(o)) r[k] = scaleDeep(o[k]); return r; }
+  return o;
+}
 const CFG = {
-  SCHEMA_VERSION: 13,
+  SCHEMA_VERSION: 14,
   SEED: 1866,
-  SCALE: 1.6,                // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
+  SCALE: SC,                 // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
   DAY_START_S: 5 * 3600,     // the game starts at 05:00
   WALK: 2.25, RUN: 3.5,      // player speeds, u per game minute (section 4)
-  ACCEL_K: 2.0,              // a = 2.0 x power / mass, u/min^2 (section 7)
-  BRAKE: 3.0,                // u/min^2
+  ACCEL_K: 2.0 * SC,         // a = 2.0 x power / mass, u/min^2 (section 7), times the scale so times stay the same
+  BRAKE: 3.0 * SC,           // u/min^2
   TENDER_FIRST: 0.6,         // speed cap factor running tender-first
-  LOCO_MAX: 4.0,             // mainline maximum
-  LIM: { main: 4.0, yard: 1.0, diverge: 1.5, interchange: 2.0 },
-  STOP_GAP: 0.5,             // trains stop 0.5u before a block they may not enter
+  LOCO_MAX: 4.0 * SC,        // mainline maximum, u per game minute
+  LIM: { main: 4.0 * SC, yard: 1.0 * SC, diverge: 1.5 * SC, interchange: 2.0 * SC },
+  STOP_GAP: 0.5 * SC,        // trains stop 0.5u (x SC) before a block they may not enter
   THROW_S: 30,               // throwing a switch takes 0.5 game minutes
   CARRY_S: 12,               // picking up or putting down an item takes 0.2 game minutes (section 9)
-  DIVERGE_PENALTY: 20,       // route cost per diverging switch
+  DIVERGE_PENALTY: 20 * SC,  // route cost per diverging switch (u)
   REACH: 1.5,                // interactables are in reach within 1.5u
-  GEOM: { main: { minR: 12, revStraight: 3 }, yard: { minR: 8, revStraight: 2 } },
-  GAUGE_HALF: 0.38,
+  GEOM: { main: { minR: 12 * SC, revStraight: 3 * SC }, yard: { minR: 8 * SC, revStraight: 2 * SC } },
+  GAUGE_HALF: 0.38 * SC,
   ZOOM_MIN: 0.6, ZOOM_MAX: 4, VIEW_MIN_U: 14,
   ISO_EL: Math.atan(1 / Math.SQRT2), // 35.264 degrees
   CAM_LAG_S: 0.2,
   HOLD_MS: 220, TAP_MOVE_PX: 10,
-  MAP_HALF: 60,              // the test yard's map (each world's own bounds are in WORLDS, "starting world layout")
+  MAP_HALF: 60 * SC,            // the test yard's map (each world's own bounds are in WORLDS, "starting world layout")
   // Coupling, locomotive state and the timetable (M1 package 6, builder C3; section "timetable").
   UNCOUPLE_S: 30,            // a person at the joint uncouples in 0.5 game minutes (section 7)
   COUPLE_S: 60,              // coupling on contact: the train stands 1.0 game minute while the crew couples up
-  CORD_U: 120,               // one cord of wood runs 7.5 miles (120u); a full tender of 4 cords is 30 miles (section 7)
+  CORD_U: 7.5 * MILE_U,      // one cord of wood runs 7.5 miles (192u); a full tender of 4 cords is 30 miles (section 7)
   TENDER_CORDS: 4,
-  WATER_U: 320,              // a full tank runs 20 miles (section 7)
+  WATER_U: 20 * MILE_U,      // a full tank runs 20 miles (section 7)
   WATER_S: 120,              // taking water at the tower spout: 2 game minutes (provisional)
-  FUEL_RESERVE_U: 32,        // a timetable train leaves only with the next leg plus 2 miles of wood and water
+  FUEL_RESERVE_U: 2 * MILE_U,      // a timetable train leaves only with the next leg plus 2 miles of wood and water
 };
 const DT_MIN = CFG.TICK_GAME_S / 60; // one tick in game minutes
 
@@ -379,9 +390,10 @@ function trackSwitch(T, node, trunk, normal, reverse) {
   const rev = T.edges[reverse], far = rev.a === node ? T.nodes[rev.b] : T.nodes[rev.a];
   const px = -h.z, pz = h.x, side = Math.sign((far.x - N.x) * px + (far.z - N.z) * pz) || 1;
   // The stand sits beside the trunk end, on the side away from the diverging leg.
-  const sx = N.x - h.x * 0.4 - px * side * 1.3, sz = N.z - h.z * 0.4 - pz * side * 1.3;
+  // All three offsets grow with the world (D15), so an old save's stands convert by a plain multiply.
+  const sx = N.x - h.x * 0.4 * SC - px * side * 1.3 * SC, sz = N.z - h.z * 0.4 * SC - pz * side * 1.3 * SC;
   T.switches.push({ id, node, trunk, normal, reverse, state: 'N', lockedBy: null,
-    stand: { x: sx, z: sz, hx: h.x, hz: h.z, ux: sx - px * side * 0.65, uz: sz - pz * side * 0.65 } });
+    stand: { x: sx, z: sz, hx: h.x, hz: h.z, ux: sx - px * side * 0.65 * SC, uz: sz - pz * side * 0.65 * SC } });
   return id;
 }
 
@@ -546,39 +558,40 @@ function trackValidate(T) {
 // ==== Section: test yard layout ====
 // An oval main line (radius 14 ends) with a passing siding on the south side (switches 0 and 1)
 // and a dead-end spur off the north side (switch 2). Switch legs follow section 6:
-// through leg straight 5u, diverging leg radius 10u, 30 degrees.
+// through leg straight 5u, diverging leg radius 10u, 30 degrees. D15: every length is the M1 size times SC,
+// so the yard is exactly the old one grown 1.6x about the origin.
 function buildTestYard() {
   const T = trackNew(), L = CFG.LIM;
   T.world = 'yard';
-  const n0 = trackNode(T, -20, 14), s1 = trackNode(T, -12, 14), s1t = trackNode(T, -7, 14);
-  const s2t = trackNode(T, 7, 14), s2 = trackNode(T, 12, 14), n1 = trackNode(T, 20, 14);
-  const n2 = trackNode(T, 20, -14), s3 = trackNode(T, -4, -14), s3t = trackNode(T, -9, -14), n3 = trackNode(T, -20, -14);
+  const n0 = trackNode(T, -20 * SC, 14 * SC), s1 = trackNode(T, -12 * SC, 14 * SC), s1t = trackNode(T, -7 * SC, 14 * SC);
+  const s2t = trackNode(T, 7 * SC, 14 * SC), s2 = trackNode(T, 12 * SC, 14 * SC), n1 = trackNode(T, 20 * SC, 14 * SC);
+  const n2 = trackNode(T, 20 * SC, -14 * SC), s3 = trackNode(T, -4 * SC, -14 * SC), s3t = trackNode(T, -9 * SC, -14 * SC), n3 = trackNode(T, -20 * SC, -14 * SC);
   const eW = trackStraight(T, n0, s1, 'main', L.main);
   const e1t = trackStraight(T, s1, s1t, 'switch', L.main);
   trackStraight(T, s1t, s2t, 'main', L.main);
   const e2t = trackStraight(T, s2t, s2, 'switch', L.main);
   const eE = trackStraight(T, s2, n1, 'main', L.main);
-  trackArc(T, n1, 1, 0, 14, 1, 180, 'main', L.main, n2);
+  trackArc(T, n1, 1, 0, 14 * SC, 1, 180, 'main', L.main, n2);
   const eN = trackStraight(T, n2, s3, 'main', L.main);
   const e3t = trackStraight(T, s3, s3t, 'switch', L.main);
   trackStraight(T, s3t, n3, 'main', L.main);
-  trackArc(T, n3, -1, 0, 14, 1, 180, 'main', L.main, n0);
+  trackArc(T, n3, -1, 0, 14 * SC, 1, 180, 'main', L.main, n0);
   // Passing siding, built from both switches towards the middle.
-  const d1 = trackArc(T, s1, 1, 0, 10, -1, 30, 'switch', L.diverge);
-  const a1 = trackNode(T, T.nodes[d1.node].x + d1.hx * 2, T.nodes[d1.node].z + d1.hz * 2);
+  const d1 = trackArc(T, s1, 1, 0, 10 * SC, -1, 30, 'switch', L.diverge);
+  const a1 = trackNode(T, T.nodes[d1.node].x + d1.hx * 2 * SC, T.nodes[d1.node].z + d1.hz * 2 * SC);
   trackStraight(T, d1.node, a1, 'yard', L.yard);
-  const b1 = trackArc(T, a1, d1.hx, d1.hz, 8, 1, 30, 'yard', L.yard);
-  const d2 = trackArc(T, s2, -1, 0, 10, 1, 30, 'switch', L.diverge);
-  const a2 = trackNode(T, T.nodes[d2.node].x + d2.hx * 2, T.nodes[d2.node].z + d2.hz * 2);
+  const b1 = trackArc(T, a1, d1.hx, d1.hz, 8 * SC, 1, 30, 'yard', L.yard);
+  const d2 = trackArc(T, s2, -1, 0, 10 * SC, 1, 30, 'switch', L.diverge);
+  const a2 = trackNode(T, T.nodes[d2.node].x + d2.hx * 2 * SC, T.nodes[d2.node].z + d2.hz * 2 * SC);
   trackStraight(T, d2.node, a2, 'yard', L.yard);
-  const b2 = trackArc(T, a2, d2.hx, d2.hz, 8, -1, 30, 'yard', L.yard);
+  const b2 = trackArc(T, a2, d2.hx, d2.hz, 8 * SC, -1, 30, 'yard', L.yard);
   trackStraight(T, b1.node, b2.node, 'yard', L.yard);
   // Dead-end spur.
-  const d3 = trackArc(T, s3, -1, 0, 10, -1, 30, 'switch', L.diverge);
-  const a3 = trackNode(T, T.nodes[d3.node].x + d3.hx * 2, T.nodes[d3.node].z + d3.hz * 2);
+  const d3 = trackArc(T, s3, -1, 0, 10 * SC, -1, 30, 'switch', L.diverge);
+  const a3 = trackNode(T, T.nodes[d3.node].x + d3.hx * 2 * SC, T.nodes[d3.node].z + d3.hz * 2 * SC);
   trackStraight(T, d3.node, a3, 'yard', L.yard);
-  const b3 = trackArc(T, a3, d3.hx, d3.hz, 8, 1, 30, 'yard', L.yard);
-  const end = trackNode(T, T.nodes[b3.node].x + b3.hx * 10, T.nodes[b3.node].z + b3.hz * 10);
+  const b3 = trackArc(T, a3, d3.hx, d3.hz, 8 * SC, 1, 30, 'yard', L.yard);
+  const end = trackNode(T, T.nodes[b3.node].x + b3.hx * 10 * SC, T.nodes[b3.node].z + b3.hz * 10 * SC);
   trackStraight(T, b3.node, end, 'yard', L.yard);
   trackSwitch(T, s1, eW, e1t, d1.e);
   trackSwitch(T, s2, eE, e2t, d2.e);
@@ -588,11 +601,11 @@ function buildTestYard() {
 }
 // The interchange track (design-doc 9 and 15): the Overland's own siding, inbound and outbound on one track
 // for now. A straight along z = 20 from a dead end at x = 2 (east of the station, south of the passing
-// siding) out past the east map edge (x = 60) to x = 140, so the Overland can stand off the map, out of
+// siding) out past the east map edge (x = 60) to x = 140 (all times SC), so the Overland can stand off the map, out of
 // sight. It is not joined to the player's track (No. 1 moves set-out cars only once coupling comes, M1
 // round C), and it is not editable: its edge has fixed: true, which the build tool refuses to touch.
 // Positions along it: s = x - 2 (node A is the dead end, node B is off the map).
-const ICH = { X0: 2, X1: 140, Z: 20, EDGE_S: 58, ENTER_S: 62, FIT_S: 46 };
+const ICH = { X0: 2 * SC, X1: 140 * SC, Z: 20 * SC, EDGE_S: 58 * SC, ENTER_S: 62 * SC, FIT_S: 46 * SC };
 function interchangeAdd(T) {
   const a = trackNode(T, ICH.X0, ICH.Z), b = trackNode(T, ICH.X1, ICH.Z);
   const e = trackStraight(T, a, b, 'yard', CFG.LIM.interchange);
@@ -603,21 +616,25 @@ function interchangeEdge(T) { const E = T.edges.find(E => E.fixed); return E ? E
 
 // ==== Section: starting world layout ====
 // M1 package 9: the real start (design-doc 15 "Starting hub", "Satellite station kit", "Hub land").
-// A long, narrow map, 336u x 128u (168 x 64 tiles; x -64 to 272, z -80 to 48): the hub at the west end
+// D15 (scale): every length below is its M1 size times SC (written so), so the layout is exactly the M1 one
+// grown 1.6x about the origin and an old save converts by a plain multiply (migrate, schema 14). The sizes in
+// these comments are the M1 ones. The map then got open land added north and south of the hub and to the east:
+// 640u x 320u (200 x 100 tiles of 3.2u; x -102.4 to 537.6, z -192 to 128).
+// M1: a long, narrow map, 336u x 128u: the hub at the west end
 // inside its 60 x 40 tile boundary, the Overland's interchange running off the west edge beside it, and a
 // 160u (10 mile) single-track spur east to Willow Ford. The spur bends north in a gentle S (radius 60u,
-// 30 degrees each way), so the map stays 128u deep and Willow Ford sits clear of the east edge.
+// 30 degrees each way), and Willow Ford sits clear of the east edge.
 // Track lines in the hub run east-west: the platform track (z = -3.41), the main track (z = 0) and the
 // interchange (z = +3.41, outside the boundary, whose south edge is z = 2). The station buildings stand on
 // the north side (smaller z), facing the tracks and the default camera. Pure data and math: no three.js.
 // Which world a game is in is saved on its track: S.track.world is 'start' or 'yard' (the M0 test yard,
 // kept as a debug scenario and for old saves). Missing means 'yard'.
-const HUB = { x0: -60, x1: 60, z0: -78, z1: 2 };                 // the hub boundary: 60 x 40 tiles
-const WFORD = { x: 192, z: -36, LOOP: 40, HEAD: 16, PLAT: 16 };  // Willow Ford: its west switch (W1) and kit sizes
-const START_ICH = { SW_X: 5, LEN: 138 };
+const HUB = { x0: -60 * SC, x1: 60 * SC, z0: -78 * SC, z1: 2 * SC };                 // the hub boundary: 60 x 40 tiles (M1)
+const WFORD = { x: 192 * SC, z: -36 * SC, LOOP: 40 * SC, HEAD: 16 * SC, PLAT: 16 * SC };  // Willow Ford: its west switch (W1) and kit sizes
+const START_ICH = { SW_X: 5 * SC, LEN: 138 * SC };
 // How far a track is moved sideways by a switch's diverging leg, 2u of straight and a radius 8u arc back:
-// 10(1 - cos 30) + 2 sin 30 + 8(1 - cos 30) = 3.41u (the test yard's passing siding is the same).
-const TURN_OFF = 18 * (1 - Math.cos(Math.PI / 6)) + 2 * Math.sin(Math.PI / 6);                          // the interchange switch (on the main track) and the interchange's length
+// 10(1 - cos 30) + 2 sin 30 + 8(1 - cos 30) = 3.41u (the test yard's passing siding is the same), times SC (5.46u).
+const TURN_OFF = (18 * (1 - Math.cos(Math.PI / 6)) + 2 * Math.sin(Math.PI / 6)) * SC;                          // the interchange switch (on the main track) and the interchange's length
 // Builds the real start's track. Switch ids: 0 the interchange switch, 1 the platform switch, 2 and 3 Willow
 // Ford's run-around loop (west, east). The interchange edge keeps B4's shape: node A (s = 0) is its east end,
 // where it meets the connection from switch 0, and it runs west off the map (s = 58 is about the map edge).
@@ -627,15 +644,15 @@ function buildStartWorld() {
   // From a switch node: a diverging leg (radius 10u, 30 degrees, section 6), 2u of straight, and a radius 8u
   // arc back to the first heading, so the new track runs parallel 3.41u off. turn: +1 or -1 as trackArc.
   const turnOut = (node, hx, hz, turn) => {
-    const d = trackArc(T, node, hx, hz, 10, turn, 30, 'switch', L.diverge);
-    const a = trackNode(T, T.nodes[d.node].x + d.hx * 2, T.nodes[d.node].z + d.hz * 2);
+    const d = trackArc(T, node, hx, hz, 10 * SC, turn, 30, 'switch', L.diverge);
+    const a = trackNode(T, T.nodes[d.node].x + d.hx * 2 * SC, T.nodes[d.node].z + d.hz * 2 * SC);
     trackStraight(T, d.node, a, 'yard', L.yard);
-    const b = trackArc(T, a, d.hx, d.hz, 8, -turn, 30, 'yard', L.yard);
+    const b = trackArc(T, a, d.hx, d.hz, 8 * SC, -turn, 30, 'yard', L.yard);
     return { e: d.e, node: b.node };
   };
   // Hub main track, west to east: dead end (a headshunt), switch 0 (interchange), switch 1 (platform track).
-  const mW = trackNode(T, -40, 0), s0t = trackNode(T, START_ICH.SW_X - 5, 0), s0 = trackNode(T, START_ICH.SW_X, 0);
-  const s1t = trackNode(T, 35, 0), s1 = trackNode(T, 40, 0);
+  const mW = trackNode(T, -40 * SC, 0), s0t = trackNode(T, START_ICH.SW_X - 5 * SC, 0), s0 = trackNode(T, START_ICH.SW_X, 0);
+  const s1t = trackNode(T, 35 * SC, 0), s1 = trackNode(T, 40 * SC, 0);
   trackStraight(T, s0t, mW, 'yard', L.yard);                       // the headshunt, west of switch 0
   const e0n = trackStraight(T, s0, s0t, 'switch', L.main);
   const eMid = trackStraight(T, s1t, s0, 'main', L.main);
@@ -647,23 +664,23 @@ function buildStartWorld() {
   T.edges[eI].fixed = true;
   // Switch 1's diverging leg turns north to the platform track, which runs west past the platform to a dead end.
   const c1 = turnOut(s1, -1, 0, -1);
-  const pW = trackNode(T, -36, T.nodes[c1.node].z);
+  const pW = trackNode(T, -36 * SC, T.nodes[c1.node].z);
   trackStraight(T, c1.node, pW, 'yard', L.yard);
   // The spur: east from switch 1, a gentle S north (radius 60u, 30 degrees each way), then east into
   // Willow Ford. The middle straight is chosen so the spur ends on Willow Ford's line (z = WFORD.z).
-  const sp0 = trackNode(T, 56, 0);
+  const sp0 = trackNode(T, 56 * SC, 0);
   const eSpur = trackStraight(T, s1, sp0, 'main', L.main);
-  const a1 = trackArc(T, sp0, 1, 0, 60, 1, 30, 'main', L.main);
-  const mid = 2 * (-WFORD.z - 120 * (1 - Math.cos(Math.PI / 6)));
+  const a1 = trackArc(T, sp0, 1, 0, 60 * SC, 1, 30, 'main', L.main);
+  const mid = 2 * (-WFORD.z - 120 * SC * (1 - Math.cos(Math.PI / 6)));
   const sp1 = trackNode(T, T.nodes[a1.node].x + a1.hx * mid, T.nodes[a1.node].z + a1.hz * mid);
   trackStraight(T, a1.node, sp1, 'main', L.main);
-  const a2 = trackArc(T, sp1, a1.hx, a1.hz, 60, -1, 30, 'main', L.main);
+  const a2 = trackArc(T, sp1, a1.hx, a1.hz, 60 * SC, -1, 30, 'main', L.main);
   const zW = T.nodes[a2.node].z;
   const w1 = trackNode(T, WFORD.x, zW);
   const eToW1 = trackStraight(T, a2.node, w1, 'main', L.main);
   // Willow Ford (satellite station kit): main track and a run-around loop between switches 2 and 3,
   // 40u apart; the loop is on the south (far) side, the platform and depot on the north side of the main.
-  const w1t = trackNode(T, WFORD.x + 5, zW), w2 = trackNode(T, WFORD.x + WFORD.LOOP, zW), w2t = trackNode(T, WFORD.x + WFORD.LOOP - 5, zW);
+  const w1t = trackNode(T, WFORD.x + 5 * SC, zW), w2 = trackNode(T, WFORD.x + WFORD.LOOP, zW), w2t = trackNode(T, WFORD.x + WFORD.LOOP - 5 * SC, zW);
   const eW1n = trackStraight(T, w1, w1t, 'switch', L.main);
   trackStraight(T, w1t, w2t, 'main', L.main);
   const eW2n = trackStraight(T, w2, w2t, 'switch', L.main);
@@ -678,33 +695,34 @@ function buildStartWorld() {
   return T;
 }
 
-// The worlds. terrain: the heightmap (2u tiles from x0, z0); walk: the player's walk grid (0.5u cells);
+// The worlds. terrain: the heightmap (tiles of `tile` u from x0, z0); walk: the player's walk grid (0.5u cells);
 // bounds: where the player, items and plans may be (and the camera looks); flat: areas held at height 0;
 // hub: the hub boundary (track may be planned only inside it), or null; crowd: where test walkers roam.
 const WORLDS = {
   yard: {
     id: 'yard', build: buildTestYard,
-    terrain: { x0: -64, z0: -64, nx: 64, nz: 64, flat: [{ x0: -25, x1: 25, z0: -20, z1: 24 }] },
-    walk: { x0: -60, z0: -60, nx: 240, nz: 240 },
-    bounds: { x0: -60, x1: 60, z0: -60, z1: 60 },
+    terrain: { x0: -64 * SC, z0: -64 * SC, nx: 64, nz: 64, tile: 2 * SC, flat: [{ x0: -25 * SC, x1: 25 * SC, z0: -20 * SC, z1: 24 * SC }] },
+    walk: { x0: -60 * SC, z0: -60 * SC, nx: 384, nz: 384 },
+    bounds: { x0: -60 * SC, x1: 60 * SC, z0: -60 * SC, z1: 60 * SC },
     hub: null,
-    crowd: { x0: -40, x1: 40, z0: -30, z1: 32 },
-    player: { x: -10.5, z: 11.2 },
-    train: T => ({ e: 2, s: 12, d: 1 }),
+    crowd: { x0: -40 * SC, x1: 40 * SC, z0: -30 * SC, z1: 32 * SC },
+    player: { x: -10.5 * SC, z: 11.2 * SC },
+    train: T => ({ e: 2, s: 12 * SC, d: 1 }),
   },
   start: {
     id: 'start', build: buildStartWorld,
-    terrain: { x0: -64, z0: -80, nx: 168, nz: 64, flat: [
-      { x0: HUB.x0 - 2, x1: HUB.x1 + 2, z0: HUB.z0 - 2, z1: HUB.z1 + 4 },                     // the hub, and the interchange beside it
-      { x0: WFORD.x - 14, x1: WFORD.x + WFORD.LOOP + WFORD.HEAD + 6, z0: WFORD.z - 22, z1: WFORD.z + 8 }, // Willow Ford
+    // 640u x 320u (D15): the M1 map (x -64 to 272, z -80 to 48) times SC, plus open land to the north, south and east.
+    terrain: { x0: -64 * SC, z0: -192, nx: 200, nz: 100, tile: 2 * SC, flat: [
+      { x0: HUB.x0 - 2 * SC, x1: HUB.x1 + 2 * SC, z0: HUB.z0 - 2 * SC, z1: HUB.z1 + 4 * SC },                     // the hub, and the interchange beside it
+      { x0: WFORD.x - 14 * SC, x1: WFORD.x + WFORD.LOOP + WFORD.HEAD + 6 * SC, z0: WFORD.z - 22 * SC, z1: WFORD.z + 8 * SC }, // Willow Ford
     ] },
-    walk: { x0: -64, z0: -80, nx: 672, nz: 256 },
-    bounds: { x0: -64, x1: 272, z0: -80, z1: 48 },
+    walk: { x0: -64 * SC, z0: -192, nx: 1280, nz: 640 },
+    bounds: { x0: -64 * SC, x1: -64 * SC + 640, z0: -192, z1: 128 },
     hub: HUB,
-    crowd: { x0: -30, x1: 40, z0: -30, z1: 2 },
-    player: { x: 7, z: -5.5 },
+    crowd: { x0: -30 * SC, x1: 40 * SC, z0: -30 * SC, z1: 2 * SC },
+    player: { x: 7 * SC, z: -5.5 * SC },
     // No. 1 stands at the hub's platform, engine east, ready to run to Willow Ford.
-    train: T => { const E = T.edges.find(E => E.cls === 'yard' && E.k === 'S' && T.nodes[E.b].x === -36); return { e: E.id, s: 12, d: -1 }; },
+    train: T => { const E = T.edges.find(E => E.cls === 'yard' && E.k === 'S' && T.nodes[E.b].x === -36 * SC); return { e: E.id, s: 12 * SC, d: -1 }; },
   },
 };
 const worldId = T => (T && T.world === 'start' ? 'start' : 'yard');
@@ -731,16 +749,16 @@ const STATIONS = {
   start: [
     { id: 'hub', name: 'Hub', town: 0, staffed: true, depot: 'depot', platforms: ['platform'],
       tracks: {
-        platform: { x0: -2, z0: -TURN_OFF, x1: 18, z1: -TURN_OFF },   // beside the 20u platform (D12)
-        main: { x0: 0, z0: 0, x1: 35, z1: 0 },                       // between switches 0 and 1
-        interchange: { x0: START_ICH.SW_X - 10.73 - 46, z0: TURN_OFF, x1: START_ICH.SW_X - 10.73 - 0.5, z1: TURN_OFF }, // where the Overland sets out its cars
+        platform: { x0: -2 * SC, z0: -TURN_OFF, x1: 18 * SC, z1: -TURN_OFF },   // beside the 20u platform (D12; 32u since D15)
+        main: { x0: 0, z0: 0, x1: 35 * SC, z1: 0 },                       // between switches 0 and 1
+        interchange: { x0: START_ICH.SW_X - (10.73 + 46) * SC, z0: TURN_OFF, x1: START_ICH.SW_X - (10.73 + 0.5) * SC, z1: TURN_OFF }, // where the Overland sets out its cars
       },
       stops: ['platform'] },
     { id: 'willow', name: 'Willow Ford', town: 1, staffed: false, depot: 'wfdepot', platforms: ['wfplatform'],
       tracks: {
-        main: { x0: WFORD.x + 12, z0: WFORD.z, x1: WFORD.x + 28, z1: WFORD.z },     // beside the 16u platform
-        loop: { x0: WFORD.x + 10.73, z0: WFORD.z + TURN_OFF, x1: WFORD.x + 29.27, z1: WFORD.z + TURN_OFF }, // the run-around loop
-        headshunt: { x0: WFORD.x + 40, z0: WFORD.z, x1: WFORD.x + 56, z1: WFORD.z },
+        main: { x0: WFORD.x + 12 * SC, z0: WFORD.z, x1: WFORD.x + 28 * SC, z1: WFORD.z },     // beside the 16u platform (M1)
+        loop: { x0: WFORD.x + 10.73 * SC, z0: WFORD.z + TURN_OFF, x1: WFORD.x + 29.27 * SC, z1: WFORD.z + TURN_OFF }, // the run-around loop
+        headshunt: { x0: WFORD.x + 40 * SC, z0: WFORD.z, x1: WFORD.x + 56 * SC, z1: WFORD.z },
       },
       stops: ['main'], runAround: { switches: [2, 3], loop: 'loop', headshunt: 'headshunt' } },
   ],
@@ -749,11 +767,11 @@ const stationsOf = T => STATIONS[worldId(T)];
 
 // ==== Section: game state ====
 const CONSIST_NO1 = [
-  { k: 'loco', len: 5.2, mass: 3, power: 10, fuel: CFG.CORD_U * CFG.TENDER_CORDS, water: CFG.WATER_U },
-  { k: 'combine', len: 2.8, mass: 0.8 },
-  { k: 'boxcar', len: 2.6, mass: 0.5 },
+  { k: 'loco', len: 5.2 * SC, mass: 3, power: 10, fuel: CFG.CORD_U * CFG.TENDER_CORDS, water: CFG.WATER_U },
+  { k: 'combine', len: 2.8 * SC, mass: 0.8 },
+  { k: 'boxcar', len: 2.6 * SC, mass: 0.5 },
 ];
-const COUPLER_GAP = 0.1;
+const COUPLER_GAP = 0.1 * SC;  // D15: vehicle lengths and the coupled pitch grow with the world
 // world: 'start' (the real start, a new game's default) or 'yard' (the M0 test yard, a debug scenario).
 function newState(seed, world) {
   const Wd = WORLDS[world === 'yard' ? 'yard' : 'start'], T = Wd.build();
@@ -791,7 +809,7 @@ function trainPoses(T, tr) {
   const out = [], back = reversePos(tr.front);
   let off = 0;
   for (const c of tr.consist) {
-    const inset = Math.min(0.6, c.len / 3);
+    const inset = Math.min(0.6 * SC, c.len / 3);
     const pf = trackWalk(T, back, off + inset).pos, pr = trackWalk(T, back, off + c.len - inset).pos;
     const a = edgeAt(T, T.edges[pf.e], pf.s), b = edgeAt(T, T.edges[pr.e], pr.s);
     out.push({ k: c.k, len: c.len, x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, yaw: Math.atan2(-(a.z - b.z), a.x - b.x) + (c.rev ? Math.PI : 0) });
@@ -1002,7 +1020,7 @@ function applyCommand(S, c, ev) {
       tr.mode = 'route'; tr.m = best.m;
       tr.route = { total: best.r.dist, left: best.r.dist, locks };
       // Sent onto a standing cut of cars: run up to it and couple it (section "trains", coupling).
-      if (S.trains.some(o => o !== tr && trainCanCouple(o) && trainSegs(T, o).some(([e, a, b]) => e === c.e && target.s >= a - 0.3 && target.s <= b + 0.3))) tr.route.couple = true;
+      if (S.trains.some(o => o !== tr && trainCanCouple(o) && trainSegs(T, o).some(([e, a, b]) => e === c.e && target.s >= a - 0.3 * SC && target.s <= b + 0.3 * SC))) tr.route.couple = true;
       ev.push({ t: 'routeSet', tr: tr.id });
       break;
     }
@@ -1059,7 +1077,7 @@ function trainTick(S, tr, ev) {
   // onto a switch set against it or past the gap at a dead end.
   if (driving || tr.v > 0) {
     const lead = leadPos(T, tr, tr.m);
-    const look = (tr.v * tr.v) / (2 * CFG.BRAKE) + 4;
+    const look = (tr.v * tr.v) / (2 * CFG.BRAKE) + 4 * SC;
     sc = trackScan(T, lead, look);
     stop = sc.stop; reason = sc.reason; sw = sc.sw;
     // Other trains ahead. The Overland runs up to its own set-out cars (its crew couples them, "The Overland").
@@ -1102,7 +1120,7 @@ function trainTick(S, tr, ev) {
       const occ = occupiedSwitches(S);
       for (const lk of tr.route.locks) {
         const W = T.switches[lk.sw];
-        if (W.lockedBy === tr.id && done > lk.at + L + 1 && occ[lk.sw] === undefined) W.lockedBy = null;
+        if (W.lockedBy === tr.id && done > lk.at + L + 1 * SC && occ[lk.sw] === undefined) W.lockedBy = null;
       }
     }
     if (!tr.owner) trainBurn(tr, ds); // wood and water drop with running (section "timetable")
@@ -1238,8 +1256,8 @@ function trainSplit(S, tr, k, ev) {
 // back next visit; while it has cars like that aboard it brings no new delivery.
 // Events: overlandArriving, overlandCoupled, overlandPickedUp, overlandSetOut, overlandLeft.
 const OVERLAND = { FIRST_STOCK: 100, DUE: [6 * 3600, 18 * 3600], COUPLE_S: 60, UNCOUPLE_S: 30 };
-const OVERLAND_LOCO = { k: 'loco', len: 5.2, mass: 3, power: 10, look: 'overland' };
-const OVERLAND_CARS = { flatcar: { k: 'flatcar', len: 2.6, mass: 0.5 }, boxcar: { k: 'boxcar', len: 2.6, mass: 0.5 } };
+const OVERLAND_LOCO = { k: 'loco', len: 5.2 * SC, mass: 3, power: 10, look: 'overland' };
+const OVERLAND_CARS = { flatcar: { k: 'flatcar', len: 2.6 * SC, mass: 0.5 }, boxcar: { k: 'boxcar', len: 2.6 * SC, mass: 0.5 } };
 // The fixed test delivery, until money and import orders exist (M1 round C). Each line is
 // [commodity, destination town (CARGO_TOWNS id), consignee kind, consignee id, how many]. Track materials go to
 // CONSTRUCTION (id 0, the hub's own track work); town goods to placeholder businesses (id 0 at the hub,
@@ -1261,7 +1279,7 @@ function overlandNewState() { return { phase: 'away', wait: 0, visits: 0, nextSt
 function overlandNewTrains(T, firstId) {
   const e = interchangeEdge(T), id = firstId === undefined ? 1 : firstId;
   return [
-    { id, name: 'The Overland', owner: 'overland', away: true, front: { e, s: ICH.ENTER_S + 6, d: 1 }, v: 0, mode: 'idle', m: 1,
+    { id, name: 'The Overland', owner: 'overland', away: true, front: { e, s: ICH.ENTER_S + 6 * SC, d: 1 }, v: 0, mode: 'idle', m: 1,
       route: null, status: 'Away', consist: [{ id: OVERLAND.FIRST_STOCK, ...OVERLAND_LOCO }] },
     { id: id + 1, name: 'Interchange cars', owner: 'interchange', front: { e, s: CFG.STOP_GAP, d: 1 }, v: 0, mode: 'idle', m: 1,
       route: null, status: 'Standing', consist: [] },
@@ -1319,7 +1337,7 @@ function overlandTick(S, ev) {
     const n = cut.consist.length;
     tr.consist = tr.consist.concat(cut.consist); cut.consist = [];
     ev.push({ t: 'overlandCoupled', cars: n });
-    if (tr.consist.some(c => overlandTakes(S, c))) { O.phase = 'out'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 + trainLength(tr)); }
+    if (tr.consist.some(c => overlandTakes(S, c))) { O.phase = 'out'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 * SC + trainLength(tr)); }
     else { O.phase = 'setout'; O.wait = OVERLAND.UNCOUPLE_S; tr.status = 'Setting out cars'; }
   } else if (O.phase === 'out') {
     // Off the map: the crew drops the cars it takes; their Outside goods are sold Outside, paid at the market's sell price.
@@ -1345,7 +1363,7 @@ function overlandTick(S, ev) {
     }
     tr.consist = tr.consist.slice(0, k);
     ev.push({ t: 'overlandSetOut', cars: out.length, stock: out.map(c => c.id), held: k - 1 });
-    O.phase = 'leave'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 + trainLength(tr));
+    O.phase = 'leave'; overlandGo(S, tr, 1, ICH.ENTER_S + 1 * SC + trainLength(tr));
   } else if (O.phase === 'leave') {
     tr.away = true; tr.route = null; tr.status = 'Away'; tr.m = 1;
     O.phase = 'away';
@@ -1412,13 +1430,14 @@ function overlandCheckSaveShape(st) {
 // (put the train on the timetable or take it off), ttHighball { tr } (wave it off without its stop actions).
 // Events: ttStarted, ttArrived, ttDeparted, ttDone, ttCancelled, ttAssigned, ttHighball, ttRefused, uncoupled,
 // coupled, tenderFuelled, waterTaken.
-const TT = { START_EARLY_S: 3600, IN_WATER_S: 600, DWELL_S: 300, PLAT_MAX_S: 900, BACK_S: 900, CANCEL_S: 6 * 3600, TOUCH: 0.35, SPOUT_MOVE: 40, BESIDE: 1.15, TENDER_AT: -1.87, SPOUT_REACH: 1.2 };
-const TT_TEST_STATIONS = [
+const TT = { START_EARLY_S: 3600, IN_WATER_S: 600, DWELL_S: 300, PLAT_MAX_S: 900, BACK_S: 900, CANCEL_S: 6 * 3600, TOUCH: 0.35 * SC, SPOUT_MOVE: 40 * SC, BESIDE: 0.55 * SC + 0.6, TENDER_AT: -1.87 * SC, SPOUT_REACH: 1.2 * SC };
+// D15: every number here is a place in the test yard, so the whole table is grown by SC (scaleDeep).
+const TT_TEST_STATIONS = scaleDeep([
   { id: 'hub', name: 'Hub (test)', tags: ['HUB', 'HUBWH'], track: { x0: 16, z0: -14, x1: -2, z1: -14 }, area: [-4, 18, -13, -9],
     board: { x: 17.2, z: -12.6 }, water: null, wood: { x: 8, z: -11.6 }, ra: null },
   { id: 'willow', name: 'Willow Ford (test)', tags: ['WILLOW'], track: { x0: -6.6, z0: 14, x1: 6.6, z1: 14 }, area: [-20, 20, 7, 13],
     board: { x: 10.9, z: 12.95 }, water: { x: 14.6, z: 14, sx: 13.3, sz: 12.9 }, wood: null, ra: [{ x: 19.6, z: 14 }, { x: -18.4, z: 14 }] },
-];
+]);
 const TT_TOWN_TAGS = { 0: ['HUB', 'HUBWH'], 1: ['WILLOW'] };
 // A station of the world's STATIONS table in the timetable's shape. Provisional choices: the stopping track is the
 // first of its stops; the area for goods is the stopping track plus 4u at each end and 9u to each side, widened to
@@ -1430,11 +1449,11 @@ const TT_TOWN_TAGS = { 0: ['HUB', 'HUBWH'], 1: ['WILLOW'] };
 function ttFromWorld(T, st) {
   const k = st.tracks[st.stops[0]], cx = (k.x0 + k.x1) / 2, cz = (k.z0 + k.z1) / 2;
   const lay = typeof BLD_LAYOUTS !== 'undefined' ? BLD_LAYOUTS[worldId(T)] || [] : [];
-  const near = kind => lay.filter(a => (a.kind || a.id.replace(/\d+$/, '')) === kind && Math.hypot(a.x - cx, a.z - cz) < 30 + Math.abs(k.x1 - k.x0) / 2)
+  const near = kind => lay.filter(a => (a.kind || a.id.replace(/\d+$/, '')) === kind && Math.hypot(a.x - cx, a.z - cz) < 30 * SC + Math.abs(k.x1 - k.x0) / 2)
     .sort((a, b) => Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz))[0] || null;
   const tw = near('watertower'), ws = near('woodstage');
   let water = null;
-  if (tw) { const n = trackNearest(T, tw.x, tw.z); water = { x: n.x, z: n.z, sx: tw.x - 1.3, sz: tw.z + 1.1 }; }
+  if (tw) { const n = trackNearest(T, tw.x, tw.z); water = { x: n.x, z: n.z, sx: tw.x - 1.3 * SC, sz: tw.z + 1.1 * SC }; }
   let ra = null;
   if (st.runAround && st.tracks[st.runAround.headshunt]) {
     const h = st.tracks[st.runAround.headshunt], sws = st.runAround.switches.map(i => T.switches[i]).filter(Boolean);
@@ -1442,21 +1461,21 @@ function ttFromWorld(T, st) {
       const lx = (T.nodes[sws[0].node].x + T.nodes[sws[1].node].x) / 2, lz = (T.nodes[sws[0].node].z + T.nodes[sws[1].node].z) / 2;
       const far = Math.hypot(h.x0 - lx, h.z0 - lz) > Math.hypot(h.x1 - lx, h.z1 - lz) ? [h.x0, h.z0, h.x1, h.z1] : [h.x1, h.z1, h.x0, h.z0];
       const hl = Math.hypot(far[2] - far[0], far[3] - far[1]) || 1;
-      const p1 = { x: far[0] + (far[2] - far[0]) / hl * 0.6, z: far[1] + (far[3] - far[1]) / hl * 0.6 };
+      const p1 = { x: far[0] + (far[2] - far[0]) / hl * 0.6 * SC, z: far[1] + (far[3] - far[1]) / hl * 0.6 * SC };
       const other = sws.map(W => T.nodes[W.node]).sort((a, b) => Math.hypot(b.x - far[0], b.z - far[1]) - Math.hypot(a.x - far[0], a.z - far[1]))[0];
       const ol = Math.hypot(other.x - lx, other.z - lz) || 1;
-      ra = [p1, { x: other.x + (other.x - lx) / ol * 6.7, z: other.z + (other.z - lz) / ol * 6.7 }];
+      ra = [p1, { x: other.x + (other.x - lx) / ol * 6.7 * SC, z: other.z + (other.z - lz) / ol * 6.7 * SC }];
     }
   }
   const tags = TT_TOWN_TAGS[st.town] || [], skip = [st.stops[0], 'interchange', st.runAround && st.runAround.headshunt];
   const alt = Object.keys(st.tracks).filter(n => !skip.includes(n)).map(n => st.tracks[n]);
-  const area = [Math.min(k.x0, k.x1) - 4, Math.max(k.x0, k.x1) + 4, Math.min(k.z0, k.z1) - 9, Math.max(k.z0, k.z1) + 9];
+  const area = [Math.min(k.x0, k.x1) - 4 * SC, Math.max(k.x0, k.x1) + 4 * SC, Math.min(k.z0, k.z1) - 9 * SC, Math.max(k.z0, k.z1) + 9 * SC];
   // The freight shed's bays (goods sorted there for a later stop hold the train like goods on the ground).
   const shed = near('freightshed'), bays = shed && typeof BLD_BAYS_BY !== 'undefined' && BLD_BAYS_BY[worldId(T)] ? BLD_BAYS_BY[worldId(T)][shed.id] : null;
-  if (bays) for (const b of bays.bays) { area[0] = Math.min(area[0], b.x - 1); area[1] = Math.max(area[1], b.x + 1); area[2] = Math.min(area[2], b.z - 1); area[3] = Math.max(area[3], b.z + 1); }
+  if (bays) for (const b of bays.bays) { area[0] = Math.min(area[0], b.x - 1 * SC); area[1] = Math.max(area[1], b.x + 1 * SC); area[2] = Math.min(area[2], b.z - 1 * SC); area[3] = Math.max(area[3], b.z + 1 * SC); }
   return { id: st.id, name: st.name, tags, track: k, alt,
     area,
-    board: { x: Math.min(k.x0, k.x1) - 2.5, z: cz - 2.2 }, water, wood: ws ? { x: ws.x, z: ws.z } : null, ra };
+    board: { x: Math.min(k.x0, k.x1) - 2.5 * SC, z: cz - 2.2 * SC }, water, wood: ws ? { x: ws.x, z: ws.z } : null, ra };
 }
 function ttStationDefs(T) {
   const w = typeof stationsOf === 'function' ? stationsOf(T) : null;
@@ -1479,7 +1498,7 @@ function ttSpanOf(T, a, b) {
     const r = findRoute(T, { e: a.e, s: a.s, d }, { e: b.e, s: b.s });
     if (r && (!best || r.dist < best.r.dist)) best = { r, d };
   }
-  if (!best || best.r.dist > chord * 1.02 + 0.2) return null;
+  if (!best || best.r.dist > chord * 1.02 + 0.2 * SC) return null;
   const segs = [], dirs = [], path = best.r.path;
   let d = best.d, s = a.s;
   for (let i = 0; i < path.length; i++) {
@@ -1503,12 +1522,12 @@ const ttStationCache = new WeakMap();
 function ttStations(S) {
   const T = S.track, sig = T.edges.length + '/' + T.nodes.length, c = ttStationCache.get(T);
   if (c && c.sig === sig) return c.list;
-  const pt = p => { const n = trackNearest(T, p.x, p.z); return n && n.dist < 0.3 ? { e: n.e, s: n.s } : null; };
+  const pt = p => { const n = trackNearest(T, p.x, p.z); return n && n.dist < 0.3 * SC ? { e: n.e, s: n.s } : null; };
   const list = ttStationDefs(T).map(d => {
     const a = pt({ x: d.track.x0, z: d.track.z0 }), b = pt({ x: d.track.x1, z: d.track.z1 });
     // Each end is looked up 0.3u inside the span, so an end exactly on a node finds the span's own edge.
     const span = k => {
-      const l = Math.hypot(k.x1 - k.x0, k.z1 - k.z0) || 1, ux = (k.x1 - k.x0) / l * 0.3, uz = (k.z1 - k.z0) / l * 0.3;
+      const l = Math.hypot(k.x1 - k.x0, k.z1 - k.z0) || 1, ux = (k.x1 - k.x0) / l * 0.3 * SC, uz = (k.z1 - k.z0) / l * 0.3 * SC;
       const a = pt({ x: k.x0 + ux, z: k.z0 + uz }), b = pt({ x: k.x1 - ux, z: k.z1 - uz }); return a && b ? ttSpanOf(T, a, b) : null; };
     const trk = span(d.track), ra = d.ra ? d.ra.map(pt) : null;
     const trks = trk ? [trk].concat((d.alt || []).map(span).filter(Boolean)) : [];
@@ -1613,7 +1632,7 @@ function ttReleaseRes(S) {
 function ttAtTrack(S, tr, k) {
   if (!k || tr.v > 0) return false;
   const segs = trainSegs(S.track, tr);
-  return segs.length > 0 && segs.every(([e, a, b]) => b - a < 1e-6 || k.segs.some(([e2, s0, s1]) => e === e2 && a >= s0 - 0.05 && b <= s1 + 0.05));
+  return segs.length > 0 && segs.every(([e, a, b]) => b - a < 1e-6 || k.segs.some(([e2, s0, s1]) => e === e2 && a >= s0 - 0.05 * SC && b <= s1 + 0.05 * SC));
 }
 // Goods for this station still aboard, or goods in its area waiting for a later stop of this service.
 function ttWorkDone(S, tr, svc, i, st) {
@@ -1825,10 +1844,10 @@ function ttCrewAt(S, tr) {
   if (a && (a.k === 'water' || a.k === 'fuel') && a.tr === tr.id) {
     if (P.act) return 'work';
     const sp = ttTaskSpot(S, a);
-    if (sp && Math.hypot(sp.x - P.x, sp.z - P.z) < 6) return 'work';
+    if (sp && Math.hypot(sp.x - P.x, sp.z - P.z) < 6 * SC) return 'work';
   }
   const loco = ttFuelLoco(tr), t = loco && loco.fuel <= FUEL_CAP - CFG.CORD_U && ttHeldCord(S) !== null ? ttTenderAt(S, tr, loco.id) : null;
-  return t && Math.hypot(t.x - P.x, t.z - P.z) < 12 ? 'cord' : false;
+  return t && Math.hypot(t.x - P.x, t.z - P.z) < 12 * SC ? 'cord' : false;
 }
 // The joint between the engine and its train (k as in uncouple { at: k }): behind a leading engine, ahead of a trailing one.
 function ttEngineJoint(tr) { const li = tr.consist.findIndex(c => c.k === 'loco'); return li <= 0 ? 1 : li; }
@@ -2475,12 +2494,14 @@ function cargoDebugItems(S) {
   for (let i = 0; i < 4; i++) itemCreate(S, out(), { kind: 'BAY', buildingId: 'freightshed', bay: 2 }, ev);
   ['spikes', 'nails', 'clothing'].forEach(c => itemCreate(S, wb(c, 0), { kind: 'BAY', buildingId: 'freightshed', bay: 3 }, ev));
   itemCreate(S, wb('mail', 1), { kind: 'BAY', buildingId: 'freightshed', bay: 3 }, ev);
-  // On the ground beside the dock: track materials for the railhead, and a pile of mixed freight.
+  // On the ground beside the dock: track materials for the railhead, and a pile of mixed freight. D15: the piles
+  // move with the (grown) dock, about their middle (-9, 12), but the items keep their spacing (they are human-sized).
+  const at = (x, z) => ({ kind: 'GROUND', x: Math.round(x + 900 * (1 - SC)), z: Math.round(z - 1200 * (1 - SC)) });
   [['rails', -1060, 1215], ['ties', -1060, 1255], ['ties', -1010, 1215], ['lumber', -1000, 1255], ['poles', -950, 1215]]
-    .forEach(([c, x, z]) => itemCreate(S, wb(c, 0, 'CONSTRUCTION'), { kind: 'GROUND', x, z }, ev));
+    .forEach(([c, x, z]) => itemCreate(S, wb(c, 0, 'CONSTRUCTION'), at(x, z), ev));
   [['spikes', -860, 1160], ['spikes', -860, 1160], ['bricks', -815, 1155], ['glass', -820, 1205], ['flour', -775, 1200],
    ['salt', -770, 1155], ['seed', -730, 1200], ['mail', -725, 1155], ['fabric', -685, 1160], ['meat', -680, 1205]]
-    .forEach(([c, x, z], i) => itemCreate(S, wb(c, i % 2, 'BUSINESS', i), { kind: 'GROUND', x, z }, ev));
+    .forEach(([c, x, z], i) => itemCreate(S, wb(c, i % 2, 'BUSINESS', i), at(x, z), ev));
   // Two in the boxcar (not drawn) and one in the player's hands.
   const box = S.trains[0].consist.find(c => c.k === 'boxcar');
   itemCreate(S, wb('flour', 1), { kind: 'CAR', stockId: box.id }, ev);
@@ -2539,14 +2560,18 @@ function cargoDebugItems(S) {
 // The player's work: P.use = { k: 'job', id } while walking to the next spot; P.act = { k: 'job', id, step, i, left,
 // total } during a step (left in game seconds; the time carried over from the tick that ended the last step goes into
 // the next one, so the total work time is exact). jobActorTick runs it around carryActorTick in the sim tick.
+// D15: the lengths grow with the track (x SC), so a job of the same shape needs the same ties, rails and spikes
+// (a tie bundle still lays 10 ties, now 8u of track; a rail is 8u long). Each step is quicker by SC (D12's 0.5, 1 and
+// 1.3 game minutes divided by 1.6), so a job of the same shape takes about the same real time although the player
+// walks further. The player is human-sized: STAND keeps them just off the (wider) ties and within REACH (1.5u).
 const JOB = {
-  STAKE: 2.5,        // stakes every 2.5u (D12)
-  TIE_GAP: 0.5,      // a tie every 0.5u
-  RAIL_LEN: 5,       // one rail pair per 5u stretch
+  STAKE: 2.5 * SC,   // stakes every 2.5u x SC (D12)
+  TIE_GAP: 0.5 * SC, // a tie every 0.5u x SC
+  RAIL_LEN: 5 * SC,  // one rail pair per 5u x SC stretch
   SPIKES_PER_TIE: 4,
-  SITE_R: 3,         // an item put down within 3u of a stake is on site
-  TIE_S: 30, RAIL_S: 60, SPIKE_S: 78,   // set a tie 0.5, drop a rail pair 1, drive a spike 1.3 game minutes (D12)
-  STAND: 0.9,        // the player stands this far beside the centre line
+  SITE_R: 3 * SC,    // an item put down within 3u x SC of a stake is on site
+  TIE_S: 30 / SC, RAIL_S: 60 / SC, SPIKE_S: 78 / SC,   // set a tie, drop a rail pair, drive a spike: 18.75, 37.5, 48.75 game seconds
+  STAND: 1.05,       // the player stands this far beside the centre line (just beyond the tie ends)
   AHEAD: 0.9,        // and this far ahead of the next piece, so the next few are in reach too
 };
 // Commodity id, pieces in a full bundle or keg (rails: single rails), and words for messages.
@@ -2713,18 +2738,18 @@ function jobStakeCmd(S, c, ev) {
   const job = { id: S.jobs.next, tick: S.tick, cmd, cls: p.cls, sw: p.sw !== null, len, geo, ends, side: 1, stakes: [],
     count: null, need: null, done: { ties: 0, rails: 0, spikes: 0, hardware: 0 }, loose: { ties: 0, rails: 0, spikes: 0 }, site: {} };
   // Keep clear of other jobs as of other track (the build tool's 1.6u spacing).
-  for (const j of S.jobs.list) for (let s = 0; s <= len + 1e-9; s += 0.25) {
+  for (const j of S.jobs.list) for (let s = 0; s <= len + 1e-9; s += 0.25 * SC) {
     const q = jobPoint(job, s);
     for (const E of j.geo.edges) if (bEdgeDist(j.geo, E, q.x, q.z) < BUILD.CLEAR - 0.01) return jobRefuse(ev, `Too close to job ${j.id + 1}, which is staked already`);
   }
   // Work from the side with more room from other track.
   const mid = jobPoint(job, len / 2), room = sd => {
-    const x = mid.x - mid.tz * sd * 1.2, z = mid.z + mid.tx * sd * 1.2;
+    const x = mid.x - mid.tz * sd * 1.2 * SC, z = mid.z + mid.tx * sd * 1.2 * SC;
     return S.track.edges.reduce((m, E) => Math.min(m, bEdgeDist(S.track, E, x, z)), Infinity);
   };
   job.side = room(-1) > room(1) + 1e-9 ? -1 : 1;
   for (let k = 0; k * JOB.STAKE <= len + 1e-9; k++) { const q = jobPoint(job, k * JOB.STAKE); job.stakes.push([Math.round(q.x * 100), Math.round(q.z * 100)]); }
-  if (len - (job.stakes.length - 1) * JOB.STAKE > 0.5) { const q = jobPoint(job, len); job.stakes.push([Math.round(q.x * 100), Math.round(q.z * 100)]); }
+  if (len - (job.stakes.length - 1) * JOB.STAKE > 0.5 * SC) { const q = jobPoint(job, len); job.stakes.push([Math.round(q.x * 100), Math.round(q.z * 100)]); }
   const ties = Math.max(1, Math.round(len / JOB.TIE_GAP)), rails = Math.max(1, Math.ceil(len / JOB.RAIL_LEN - 0.01));
   job.count = { ties, rails, spikes: ties * JOB.SPIKES_PER_TIE };
   job.need = { ties: Math.ceil(ties / JOB_MAT.ties.per), rails: Math.ceil(2 * rails / JOB_MAT.rails.per),
@@ -2801,7 +2826,7 @@ function jobActorTick(S, ev, poseCache) {
 function jobReturn(S, job, ev, placed) {
   let k = 0, n = 0;
   const spot = () => {
-    const s = Math.min(job.len, 0.5 + 0.6 * k++), q = jobPoint(job, s), off = job.side * 1.8;
+    const s = Math.min(job.len, 0.5 * SC + 0.6 * k++), q = jobPoint(job, s), off = job.side * 1.8 * SC;
     return { kind: 'GROUND', x: Math.round(clampX(q.x - q.tz * off) * 100), z: Math.round(clampZ(q.z + q.tx * off) * 100) };
   };
   for (const id of itemsAt(S, { kind: 'STOCKPILE', jobId: job.id })) {
@@ -2868,24 +2893,24 @@ function jobCheckSaveShape(st) {
 }
 // Debug only (rh.scenario('handbuild')): a 20u siding staked off the north main line, with a switch, and every
 // material it needs lying beside it. Not used in normal play.
-const JOB_DEBUG_PLAN = { from: 'switch', fwd: 1, side: -1, tx: -124, tz: -1780 };
+const JOB_DEBUG_PLAN = { from: 'switch', fwd: 1, side: -1, tx: Math.round(-124 * SC), tz: Math.round(-1780 * SC) };
 function jobDebugScenario(S) {
   const T = S.track, ev = [];
   // The north main line: the straight at z = -14 between x = 20 and x = -4. The switch goes 2u in from its east end, facing west.
-  const E = T.edges.find(E => E.k === 'S' && E.cls === 'main' && Math.abs(T.nodes[E.a].z + 14) < 1e-6 && Math.abs(T.nodes[E.b].z + 14) < 1e-6 && E.len > 20);
+  const E = T.edges.find(E => E.k === 'S' && E.cls === 'main' && Math.abs(T.nodes[E.a].z + 14 * SC) < 1e-6 && Math.abs(T.nodes[E.b].z + 14 * SC) < 1e-6 && E.len > 20 * SC);
   const A = T.nodes[E.a], east = A.x > T.nodes[E.b].x;
-  const job = jobStakeCmd(S, { t: 'stakeJob', ...JOB_DEBUG_PLAN, e: E.id, s: Math.round((east ? A.x - 18 : 18 - A.x) * 1000), fwd: east ? 1 : -1 }, ev);
+  const job = jobStakeCmd(S, { t: 'stakeJob', ...JOB_DEBUG_PLAN, e: E.id, s: Math.round((east ? A.x - 18 * SC : 18 * SC - A.x) * 1000), fwd: east ? 1 : -1 }, ev);
   if (!job) throw new Error('handbuild scenario: ' + (ev.find(e => e.t === 'jobRefused') || {}).why);
   const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: job.id }, contractId: null, due: null });
   const mats = [];
   for (const m of JOB_MATS) for (let i = 0; i < job.need[m]; i++) mats.push(m);
   mats.forEach((m, i) => {
-    const q = jobPoint(job, 1 + i * 1.1), off = job.side * 2;
+    const q = jobPoint(job, 1 * SC + i * 1.1), off = job.side * 2 * SC;
     itemCreate(S, wb(m), { kind: 'GROUND', x: Math.round((q.x - q.tz * off) * 100), z: Math.round((q.z + q.tx * off) * 100) }, ev);
   });
   for (const id of itemsAt(S, { kind: 'GROUND' })) jobDeliver(S, id, ev);
   const q = jobPoint(job, 0);
-  S.player.x = q.x - q.tz * job.side * 3; S.player.z = q.z + q.tx * job.side * 3;
+  S.player.x = q.x - q.tz * job.side * 3 * SC; S.player.z = q.z + q.tx * job.side * 3 * SC;
   if (S.overland) S.overland.phase = 'off'; // B4: no Overland visits in this test scenario, so its counts stay its own
   return S;
 }
@@ -2932,7 +2957,7 @@ const TOWN = {
   OFFER_SOD: 7 * 3600,      // offers are looked at once a day, at 07:00
   LOW_DAYS: 4, TARGET_DAYS: 14, OPEN_DAYS: 5, DUE_DAYS: 4, OFFER_GAP_S: 3 * 86400, SCARCE_PCT: 30, // OPEN_DAYS 5 (was 10, D4): first offers about day 3 (provisional)
   DOOR_OUT: 0.6,            // the door spot, this far out from the front wall
-  SIGN_NEAR: 9,             // the door label shows when the player is this close (page side)
+  SIGN_NEAR: 9 * SC,        // the door label shows when the player is this close (page side)
 };
 // Who lives where (provisional, section 15 and 21): hub 25 people in 9 households, 8 of them boarders;
 // Willow Ford 10 people in 4 households.
@@ -2976,14 +3001,15 @@ function townRate(B, c, winter) { return (B.uses[c] || 0) + (winter ? B.winter[c
 // ---- Buildings: plan sizes, doors and lots (plain data; the drawing is in "buildings") ----
 // Plan extent in the building's own frame [minX, maxX, minZ, maxZ]; local +z is the front (the street side).
 // door: the door's local x on the front; sign: where the name board is (local x, y, z), for the door label.
-const TOWN_KINDS = {
+// D15: town buildings grow with the world (their extents, doors and signs times SC) and so do the lots' places.
+const TOWN_KINDS = scaleDeep({
   store: { ext: [-1.9, 1.9, -1.3, 2.0], door: 0, sign: [0, 2.15, 1.4] },          // general store, false front, porch
   saloon: { ext: [-1.7, 1.7, -1.3, 2.0], door: 0, sign: [0, 2.45, 1.4] },         // saloon, taller stepped false front
   boarding: { ext: [-2.3, 2.3, -1.4, 2.0], door: -0.9, sign: [-0.9, 1.75, 1.95] }, // two storeys, small porch
   devyard: { ext: [-3.0, 3.0, -2.2, 2.2], door: 0, sign: [1.3, 1.25, 2.25] },     // fenced yard, gate at the front
   tradingpost: { ext: [-1.4, 1.4, -1.1, 1.4], door: 0, sign: [0, 1.75, 1.42] },   // Willow Ford: canvas store tent
   house: { ext: [-0.9, 0.9, -0.75, 0.75], door: -0.35, sign: null },             // a shanty home (4 at the hub)
-};
+});
 // Lots: kind, business (null for homes), town, and the position from the town's anchor (dx, dz in the anchor's
 // frame, yaw added to it; a world may give its own, as start: { dx, dz }). Both worlds have their station on the
 // track side of the depot, so the hub's lots are the same from its depot in each: a Main Street behind the depot
@@ -2992,20 +3018,20 @@ const TOWN_KINDS = {
 // x = -2.4), of the track (section 6: 1.2u from main, 1.0u from yard) and, in the real start, inside the hub
 // boundary. Willow Ford's general store stands beside its depot, west of the platform, among the settlers' cabins.
 const TOWN_LOTS = [
-  { id: 'store', kind: 'store', biz: 0, townId: 0, dx: 8.9, dz: -9.2, yaw: 0 },
-  { id: 'saloon', kind: 'saloon', biz: 3, townId: 0, dx: 14.0, dz: -9.2, yaw: 0 },
-  { id: 'boarding', kind: 'boarding', biz: 4, townId: 0, dx: -6.0, dz: -9.2, yaw: 0 },
-  { id: 'devyard', kind: 'devyard', biz: 2, townId: 0, dx: -12.8, dz: -9.4, yaw: 0 },
-  { id: 'house1', kind: 'house', biz: null, townId: 0, dx: -8.6, dz: -14.6, yaw: 0 },
-  { id: 'house2', kind: 'house', biz: null, townId: 0, dx: -4.2, dz: -14.6, yaw: 0 },
-  { id: 'house3', kind: 'house', biz: null, townId: 0, dx: 8.2, dz: -14.6, yaw: 0 },
-  { id: 'house4', kind: 'house', biz: null, townId: 0, dx: 12.4, dz: -14.6, yaw: 0 },
-  { id: 'wfstore', kind: 'tradingpost', biz: 1, townId: 1, dx: 0, dz: 0, yaw: 0, start: { dx: -8.1, dz: 0.4 } },
+  { id: 'store', kind: 'store', biz: 0, townId: 0, dx: 8.9 * SC, dz: -9.2 * SC, yaw: 0 },
+  { id: 'saloon', kind: 'saloon', biz: 3, townId: 0, dx: 14.0 * SC, dz: -9.2 * SC, yaw: 0 },
+  { id: 'boarding', kind: 'boarding', biz: 4, townId: 0, dx: -6.0 * SC, dz: -9.2 * SC, yaw: 0 },
+  { id: 'devyard', kind: 'devyard', biz: 2, townId: 0, dx: -12.8 * SC, dz: -9.4 * SC, yaw: 0 },
+  { id: 'house1', kind: 'house', biz: null, townId: 0, dx: -8.6 * SC, dz: -14.6 * SC, yaw: 0 },
+  { id: 'house2', kind: 'house', biz: null, townId: 0, dx: -4.2 * SC, dz: -14.6 * SC, yaw: 0 },
+  { id: 'house3', kind: 'house', biz: null, townId: 0, dx: 8.2 * SC, dz: -14.6 * SC, yaw: 0 },
+  { id: 'house4', kind: 'house', biz: null, townId: 0, dx: 12.4 * SC, dz: -14.6 * SC, yaw: 0 },
+  { id: 'wfstore', kind: 'tradingpost', biz: 1, townId: 1, dx: 0, dz: 0, yaw: 0, start: { dx: -8.1 * SC, dz: 0.4 * SC } },
 ];
 // Where each town is laid out from, in the world in use (worldUse points BLD_LAYOUT at it): the hub from its
 // depot; Willow Ford from its depot in the real start, and in the M0 test yard (which has no Willow Ford) from a
 // spot inside the yard's east loop, clear of the track.
-const TOWN_WILLOW_SPOT = { x: 23.4, z: -2.0, yaw: 0 };
+const TOWN_WILLOW_SPOT = { x: 23.4 * SC, z: -2.0 * SC, yaw: 0 };
 function townAnchor(townId) {
   const d = BLD_LAYOUT.find(a => a.id === (townId === 0 ? 'depot' : 'wfdepot'));
   return d ? { x: d.x, z: d.z, yaw: d.yaw || 0 } : TOWN_WILLOW_SPOT;
@@ -3167,7 +3193,7 @@ function townDebugScenario(S) {
   const d = townDoor(0);
   itemCreate(S, wb('flour', 0, k.id), { kind: 'CARRIED', actorId: 'player', carrier: 'HAND', slot: 0 }, ev);
   const s = townDoor(3);
-  for (let i = 0; i < 2; i++) itemCreate(S, wb('whiskey', 3, w.id), { kind: 'GROUND', x: Math.round((s.x - 2.6 - i * 0.6) * 100), z: Math.round((s.z + 0.9) * 100) }, ev);
+  for (let i = 0; i < 2; i++) itemCreate(S, wb('whiskey', 3, w.id), { kind: 'GROUND', x: Math.round((s.x - 2.6 * SC - i * 0.6) * 100), z: Math.round((s.z + 0.9) * 100) }, ev);
   S.player.x = d.x - 1.5; S.player.z = d.z + 1.2; S.player.f = Math.PI;
   if (S.overland) S.overland.phase = 'off';
   return S;
@@ -3235,7 +3261,7 @@ const ECON_CATEGORY_NAMES = { delivered: 'Delivered sales', haulage: 'Haulage', 
 // The businesses are the town section's (TOWN_BUSINESSES, builder C5): one list. Ids match the Overland's
 // test delivery (business 0 at the hub, 1 at Willow Ford). Town ids are CARGO_TOWNS ids.
 const ECON_BUSINESSES = TOWN_BUSINESSES;
-const ECON_TOWN_MILES = { 0: 0, 1: 12 };                      // provisional: miles from the hub (16u a mile)
+const ECON_TOWN_MILES = { 0: 0, 1: 12 };                      // provisional: miles from the hub (MILE_U, 25.6u a mile since D15)
 const ECON_OWN_USE = ['ties', 'rails', 'spikes', 'hardware'];  // ordered for our own track work: addressed to construction
 // What can be ordered: traded goods that are items (bulk needs gondolas; mail is not bought). Section 21 order.
 const ECON_ORDERABLE = Object.keys(COMMODITIES).filter(c => COMMODITIES[c].buy !== null && COMMODITIES[c].type !== 'bulk');
@@ -3403,17 +3429,17 @@ function econTelegraphKey() {
   const at = BLD_LAYOUT.find(a => a.id === 'depot'), ext = BLD_EXTENTS.depot, c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
   const w = (lx, lz) => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c });
   const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'telegraph') : null;
-  const stand = sp ? { x: sp.x, z: sp.z } : w(0.4, ext[3] + 0.37); // 0.37: just outside the walk grid's block, as C2's spot
+  const stand = sp ? { x: sp.x, z: sp.z } : w(0.4 * SC, ext[3] + 0.37); // 0.37: just outside the walk grid's block, as C2's spot
   // The bay window, 0.44u back from the standing spot towards the building (local -z).
-  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05, wz: stand.z - 0.44 * c };
+  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05 * SC, wz: stand.z - 0.44 * c };
 }
 // The office desk (D13, builder D1): the hub depot's 'desk' use spot from buildingSpots(), else worked out from the
 // depot's layout. x, z: where the player stands; wx, wy, wz: the depot wall behind it (the spot to tap).
 function econDeskSpot() {
   const at = BLD_LAYOUT.find(a => a.id === 'depot'), ext = BLD_EXTENTS.depot, c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
   const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'desk') : null;
-  const stand = sp ? { x: sp.x, z: sp.z } : { x: at.x - 1.3 * c + (ext[3] + 0.52) * s, z: at.z + 1.3 * s + (ext[3] + 0.52) * c };
-  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05, wz: stand.z - 0.44 * c };
+  const stand = sp ? { x: sp.x, z: sp.z } : { x: at.x - 1.3 * SC * c + (ext[3] + 0.52) * s, z: at.z + 1.3 * SC * s + (ext[3] + 0.52) * c };
+  return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05 * SC, wz: stand.z - 0.44 * c };
 }
 // Economy commands work from the telegraph key or from the office desk (D13): within r of either.
 function econAtKey(S, r) {
@@ -3647,7 +3673,7 @@ function econCheckSaveShape(st) {
 // Pure math: no three.js, no DOM.
 // N is the row length (cells along x) and NZ the number of rows; X0, Z0 the map's north-west corner.
 // MAXEXP caps one search: a goal cut off by a train on the large map would otherwise search every cell.
-const WALK = { CELL: 0.5, X0: -60, Z0: -60, N: 240, NZ: 240, R: 0.25, GRASS: 14, PLATFORM: 10, LOOK: 48, MAXEXP: 60000 };
+const WALK = { CELL: 0.5, X0: -60 * SC, Z0: -60 * SC, N: 384, NZ: 384, R: 0.25, GRASS: 14, PLATFORM: 10, LOOK: 48, MAXEXP: 60000 };
 function walkUseDims(T) {
   const w = worldOf(T).walk;
   WALK.X0 = w.x0; WALK.Z0 = w.z0; WALK.N = w.nx; WALK.NZ = w.nz;
@@ -3665,7 +3691,7 @@ function walkGrid(T, cart) {
   if (!G.cart) {
     const cost = G.cost.slice();
     for (const [x0, x1, z0, z1] of carryNoCartRects()) walkStampRect({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, yaw: 0 }, 0, i => { cost[i] = 0; });
-    G.cart = walkGridLayer(G.sig, cost, G.solid);
+    G.cart = walkGridLayer(G.sig, cost, G.solid, G.sc); // shares the search scratch with the plain grid (memory, D15)
   }
   return G.cart;
 }
@@ -3699,13 +3725,37 @@ function walkStampRect(f, m, fn) {
 function walkGridBuild(T) {
   const N = WALK.N, NZ = WALK.NZ, C = WALK.CELL, X0 = WALK.X0, Z0 = WALK.Z0, cost = new Uint8Array(N * NZ).fill(WALK.GRASS);
   // Hills: flat ground sampled every 0.25u (cell corners, edge midpoints, centres), 9 samples per cell.
+  // D15 (a map 4.8 times the cells): the samples are only taken where they can differ. Heights are never below 0 and
+  // the ground inside a terrain tile is the blend of its 4 corners, so a cell whose samples all fall in tiles with 4
+  // zero corners is flat, and one whose samples all fall in tiles with 4 raised corners is not. Only cells touching a
+  // tile with mixed corners (the foot of a hill) are sampled: the same result as sampling every cell, much quicker.
   terrainFlatAt(T, 0, 0); // works out the heights for this track if needed
-  const M = 2 * N + 1, MZ = 2 * NZ + 1, flat = new Uint8Array(M * MZ);
-  for (let j = 0; j < MZ; j++) for (let i = 0; i < M; i++) flat[j * M + i] = terrainHeight(X0 + i * C / 2, Z0 + j * C / 2) === 0 ? 1 : 0;
-  for (let j = 0; j < NZ; j++) for (let i = 0; i < N; i++) {
-    let ok = 1;
-    for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) ok &= flat[(2 * j + b) * M + 2 * i + a];
-    if (!ok) cost[j * N + i] = 0;
+  const TR = TERRAIN, TV = TR.NX + 1, th = TR.h, tcls = new Uint8Array(TR.NX * TR.NZ); // 0 all zero, 2 all raised, 1 mixed
+  for (let j = 0; j < TR.NZ; j++) for (let i = 0; i < TR.NX; i++) {
+    const a = th[j * TV + i], b = th[j * TV + i + 1], c = th[(j + 1) * TV + i], d = th[(j + 1) * TV + i + 1], nz = (a > 0) + (b > 0) + (c > 0) + (d > 0);
+    tcls[j * TR.NX + i] = nz === 0 ? 0 : nz === 4 ? 2 : 1;
+  }
+  const tileCol = x => Math.floor((x - TR.X0) / TR.TILE), tileRow = z => Math.floor((z - TR.Z0) / TR.TILE);
+  for (let j = 0; j < NZ; j++) {
+    const za = Z0 + j * C, r0 = tileRow(za), r1 = tileRow(za + C);
+    for (let i = 0; i < N; i++) {
+      const xa = X0 + i * C, c0 = tileCol(xa), c1 = tileCol(xa + C);
+      let any0 = false, any2 = false, mixed = false;
+      for (let r = r0; r <= r1 && !mixed; r++) for (let q = c0; q <= c1; q++) {
+        if (r < 0 || q < 0 || r >= TR.NZ || q >= TR.NX) { mixed = true; break; } // at or off the map's edge: sample
+        const k = tcls[r * TR.NX + q];
+        if (k === 1) { mixed = true; break; }
+        if (k === 0) any0 = true; else any2 = true;
+      }
+      let ok;
+      if (!mixed && !any2) ok = 1;
+      else if (!mixed && !any0) ok = 0;
+      else {
+        ok = 1;
+        for (let b = 0; b < 3 && ok; b++) for (let a = 0; a < 3; a++) if (terrainHeight(xa + a * C / 2, za + b * C / 2) !== 0) { ok = 0; break; }
+      }
+      if (!ok) cost[j * N + i] = 0;
+    }
   }
   // Buildings: platforms and the dock are walked on (cost 1.0); the rest block, grown by the player's radius.
   const fps = buildingFootprints(), solid = fps.filter(f => !f.flush);
@@ -3713,8 +3763,9 @@ function walkGridBuild(T) {
   for (const f of solid) walkStampRect(f, WALK.R, i => { cost[i] = 0; });
   return walkGridLayer(walkGridSig(T), cost, solid);
 }
-// A grid from its costs: connected areas, and the scratch arrays for the searches.
-function walkGridLayer(sig, cost, solid) {
+// A grid from its costs: connected areas, and the scratch arrays for the searches (sc; shared by the plain and the
+// handcart grid, as every search and train stamp starts afresh by bumping a counter in sc).
+function walkGridLayer(sig, cost, solid, sc) {
   const N = WALK.N, NN = N * WALK.NZ;
   // Connected areas over open cells (4 neighbours; a diagonal step needs both side cells open, so this
   // matches what A* can reach). Used to pick a reachable goal without searching the whole map.
@@ -3725,24 +3776,26 @@ function walkGridLayer(sig, cost, solid) {
     let qh = 0, qt = 0; q[qt++] = s0; comp[s0] = nc;
     while (qh < qt) {
       const c = q[qh++], ci = c % N;
-      const nb = [ci < N - 1 ? c + 1 : -1, ci > 0 ? c - 1 : -1, c + N < NN ? c + N : -1, c - N];
-      for (const n of nb) if (n >= 0 && cost[n] && comp[n] < 0) { comp[n] = nc; q[qt++] = n; }
+      if (ci < N - 1 && cost[c + 1] && comp[c + 1] < 0) { comp[c + 1] = nc; q[qt++] = c + 1; }
+      if (ci > 0 && cost[c - 1] && comp[c - 1] < 0) { comp[c - 1] = nc; q[qt++] = c - 1; }
+      if (c + N < NN && cost[c + N] && comp[c + N] < 0) { comp[c + N] = nc; q[qt++] = c + N; }
+      if (c - N >= 0 && cost[c - N] && comp[c - N] < 0) { comp[c - N] = nc; q[qt++] = c - N; }
     }
     nc++;
   }
-  return { sig, cost, comp, solid, g: new Int32Array(NN), from: new Int32Array(NN),
-    seen: new Uint32Array(NN), q: 0, dyn: new Uint32Array(NN), dq: 0, memo: null };
+  sc = sc || { g: new Int32Array(NN), from: new Int32Array(NN), seen: new Uint32Array(NN), q: 0, dyn: new Uint32Array(NN), dq: 0 };
+  return { sig, cost, comp, solid, sc, memo: null };
 }
 // Stamps the cells under the trains (vehicle footprint as insideTrain() sees it, which already includes
 // the player's radius). Returns them sorted, as part of the memo key.
 function walkTrainStamp(G, poses) {
-  const cells = [], dq = ++G.dq;
-  for (const p of poses) walkStampRect({ x: p.x, z: p.z, yaw: p.yaw, w: p.len + 0.4, d: 1.5 }, 0, i => {
-    if (G.dyn[i] !== dq) { G.dyn[i] = dq; cells.push(i); }
+  const cells = [], D = G.sc, dq = ++D.dq;
+  for (const p of poses) walkStampRect({ x: p.x, z: p.z, yaw: p.yaw, w: p.len + 0.4, d: 2 * TRAIN_HALF_W }, 0, i => {
+    if (D.dyn[i] !== dq) { D.dyn[i] = dq; cells.push(i); }
   });
   return cells.sort((a, b) => a - b);
 }
-function walkOpen(G, i) { return G.cost[i] > 0 && G.dyn[i] !== G.dq; }
+function walkOpen(G, i) { return G.cost[i] > 0 && G.sc.dyn[i] !== G.sc.dq; }
 // Nearest open cell to cell g (by distance in cells, ties by cell index), in connected area k (or any if k < 0).
 function walkNearest(G, g, k) {
   const N = WALK.N, NZ = WALK.NZ, gi = g % N, gj = (g - gi) / N;
@@ -3764,9 +3817,13 @@ function walkNearest(G, g, k) {
 // A* from cell s to cell goal over open cells. If the goal cannot be reached (a train cuts it off), the
 // path ends at the reached cell nearest the goal. Returns { cells (start first), reached, expanded }.
 function walkAStar(G, s, goal) {
-  const N = WALK.N, NZ = WALK.NZ, cost = G.cost, g = G.g, from = G.from, seen = G.seen, q = ++G.q;
+  const N = WALK.N, NZ = WALK.NZ, cost = G.cost, g = G.sc.g, from = G.sc.from, seen = G.sc.seen, q = ++G.sc.q;
   const gi = goal % N, gj = (goal - gi) / N;
-  const hOf = i => { const ci = i % N, dx = Math.abs(ci - gi), dz = Math.abs((i - ci) / N - gj); return dx > dz ? 100 * (dx - dz) + 140 * dz : 100 * (dz - dx) + 140 * dx; };
+  // The estimate prices the rest of the way as grass (D15): exact on open grass, so a long walk across the grown map
+  // expands about the cells along its way instead of a wide fan. Where the way crosses a platform (cheaper) the path
+  // may be a little longer than the cheapest; it is still the same every time.
+  const HS = WALK.GRASS * 10, HD = WALK.GRASS * 14;
+  const hOf = i => { const ci = i % N, dx = Math.abs(ci - gi), dz = Math.abs((i - ci) / N - gj); return dx > dz ? HS * (dx - dz) + HD * dz : HS * (dz - dx) + HD * dx; };
   // Binary heap ordered by (f, cell).
   const hf = [], hc = [];
   const less = (a, b) => hf[a] < hf[b] || (hf[a] === hf[b] && hc[a] < hc[b]);
@@ -3859,10 +3916,12 @@ function walkInBuilding(T, x, z) { return walkGrid(T).solid.some(f => walkRectHi
 
 // ==== Section: player ====
 // Rough footprint test: is (x, z) inside a vehicle (plus the player's own radius)?
+// TRAIN_HALF_W: half a vehicle's width (0.55u x SC since D15) plus the player's radius (0.2u, human-sized).
+const TRAIN_HALF_W = 0.55 * SC + 0.2;
 function insideTrain(poses, x, z) {
   for (const p of poses) {
     const fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw), dx = x - p.x, dz = z - p.z;
-    if (Math.abs(dx * fx + dz * fz) < p.len / 2 + 0.2 && Math.abs(dx * fz - dz * fx) < 0.75) return true;
+    if (Math.abs(dx * fx + dz * fz) < p.len / 2 + 0.2 && Math.abs(dx * fz - dz * fx) < TRAIN_HALF_W) return true;
   }
   return false;
 }
@@ -3878,6 +3937,9 @@ function pathClear(poses, x0, z0, x1, z1) {
 // allPoses: every vehicle on the map, used to check the way is clear.
 // T (optional): the track, for the walk grid. A spot inside a building or on a hill gives way to the spot
 // on the other side, and the path then leads round the train's end.
+// The spot beside a vehicle, from its centre line: half the (grown) car width plus 0.6u, so the player stands as
+// close to the car side as before D15 and the car stays within REACH (1.5u from the centre line).
+const BESIDE_TRAIN = 0.55 * SC + 0.6;
 function trainApproach(poses, x, z, view, allPoses, T) {
   let best = null;
   for (const p of poses) {
@@ -3887,20 +3949,20 @@ function trainApproach(poses, x, z, view, allPoses, T) {
     const cx = p.x + fx * t, cz = p.z + fz * t, dd = Math.hypot(x - cx, z - cz);
     if (!best || dd < best.dist) {
       const side = ((x - p.x) * fz - (z - p.z) * fx) >= 0 ? 1 : -1;
-      best = { dist: dd, x: clampX(cx + fz * 1.15 * side), z: clampZ(cz - fx * 1.15 * side), cx, cz, fx, fz, side };
+      best = { dist: dd, x: clampX(cx + fz * BESIDE_TRAIN * side), z: clampZ(cz - fx * BESIDE_TRAIN * side), cx, cz, fx, fz, side };
     }
   }
   if (best && view !== undefined && view !== null) {
     const ang = view / 256 * Math.PI * 2, vx = Math.cos(ang), vz = Math.sin(ang);
     const want = (best.fz * vx - best.fx * vz) >= 0 ? 1 : -1; // side whose outward normal faces the camera
     if (want !== best.side) {
-      const ox = clampX(best.cx + best.fz * 1.15 * want), oz = clampZ(best.cz - best.fx * 1.15 * want);
+      const ox = clampX(best.cx + best.fz * BESIDE_TRAIN * want), oz = clampZ(best.cz - best.fx * BESIDE_TRAIN * want);
       const all = allPoses || poses;
       if (pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; best.side = want; }
     }
   }
   if (best && T) {
-    const G = walkGrid(T), sd = -best.side, ox = clampX(best.cx + best.fz * 1.15 * sd), oz = clampZ(best.cz - best.fx * 1.15 * sd);
+    const G = walkGrid(T), sd = -best.side, ox = clampX(best.cx + best.fz * BESIDE_TRAIN * sd), oz = clampZ(best.cz - best.fx * BESIDE_TRAIN * sd);
     if (!G.cost[walkCell(best.x, best.z)] && G.cost[walkCell(ox, oz)]) { best.x = ox; best.z = oz; best.side = sd; }
   }
   return best;
@@ -3991,12 +4053,12 @@ const TOOL_KINDS = {
 // freight shed exactly as the test yard's do (8u east, on the platform track 3.41u north of the main line).
 const TOOL_PARKS = {
   yard: [
-    { id: 0, k: 'truck', x: -1190, z: 900, yaw: 192 },
-    { id: 1, k: 'cart', x: -1010, z: 860, yaw: 192 },
+    { id: 0, k: 'truck', x: Math.round(-1190 * SC), z: Math.round(900 * SC), yaw: 192 },   // D15: the spots move with the world
+    { id: 1, k: 'cart', x: Math.round(-1010 * SC), z: Math.round(860 * SC), yaw: 192 },
   ],
   start: [
-    { id: 0, k: 'truck', x: -390, z: Math.round((-TURN_OFF - 5) * 100), yaw: 192 },
-    { id: 1, k: 'cart', x: -210, z: Math.round((-TURN_OFF - 5.4) * 100), yaw: 192 },
+    { id: 0, k: 'truck', x: Math.round(-390 * SC), z: Math.round((-TURN_OFF - 5 * SC) * 100), yaw: 192 },
+    { id: 1, k: 'cart', x: Math.round(-210 * SC), z: Math.round((-TURN_OFF - 5.4 * SC) * 100), yaw: 192 },
   ],
 };
 let TOOL_PARK = TOOL_PARKS.yard;
@@ -4157,7 +4219,9 @@ const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1, biz: 1 };
 // train that is moving. Commands: { t: 'useCar', stock } walks to the car's door and gives 'reachedCar'
 // (the page then shows what is in it); carryPick { id } takes an item from a car; carryPut { stock } puts the
 // top carried item into a car.
-const CARRY_DOOR = { OUT: 0.8, WALK: 0.5, FLAT_END: 0.35, COMBINE_DOOR: 0.75 };
+// D15: along the car (FLAT_END, COMBINE_DOOR) grows with the cars; OUT is the car's half width (0.55u x SC) plus 0.25u,
+// and WALK (how far the player stands out from the door spot) is human-sized.
+const CARRY_DOOR = { OUT: 0.55 * SC + 0.25, WALK: 0.5, FLAT_END: 0.35 * SC, COMBINE_DOOR: 0.75 * SC };
 function carryCarOf(S, stockId) {
   for (const tr of S.trains) { const i = tr.consist.findIndex(c => c.id === stockId); if (i >= 0) return { tr, i, car: tr.consist[i] }; }
   return null;
@@ -4270,16 +4334,16 @@ const PAX = {
   SELL_S: 30,               // a ticket takes 0.5 game minutes to sell (section 9)
   BOARD_S: 6,               // boarding or stepping off: 0.1 game minutes each, per door (section 9)
   GIVE_UP_S: 3600,          // without a ticket a traveller waits up to 60 game minutes
-  FARE_CENTS_PER_MILE: 4, FARE_MIN: 10, U_PER_MILE: 16,
-  MILES: { 'hub|willow': 10 }, // the existing spur to Willow Ford is 160u, 10 miles (section 15)
+  FARE_CENTS_PER_MILE: 4, FARE_MIN: 10, U_PER_MILE: MILE_U,
+  MILES: { 'hub|willow': 10 }, // the existing spur to Willow Ford is 256u (160u x SC), 10 miles (section 15)
   LINE: { hub: 'willow', willow: 'hub' }, // where each station's travellers want to go (a two-station railroad in M1)
   MEAN_MIN: { hub: 20, willow: 45 }, // average game minutes between travellers (provisional); each gap is 0.5 to 1.5 times this
   OPEN: [6 * 3600, 21 * 3600], // travellers come between 06:00 and 21:00
   MAX_AT: 24,               // at most this many travellers wait at a station (queue plus platform); more do not come
   OVERLAND_MIN: 1, OVERLAND_MAX: 3, // travellers off each Overland visit, who go on to Willow Ford
   SEATS: { combine: 12, coach: 30 }, // passengers per car (section 7)
-  DOORS: { combine: [-1.25], coach: [-1.3, 1.3] }, // passenger doors along the car from its centre (u); the combine's at its passenger end
-  DOOR_OUT: 1.3,            // a door's boarding spot is this far from the car's centre line, on the platform side
+  DOORS: { combine: [-1.25 * SC], coach: [-1.3 * SC, 1.3 * SC] }, // passenger doors along the car from its centre (u, grown with the cars); the combine's at its passenger end
+  DOOR_OUT: 1.3 * SC,          // a door's boarding spot is this far from the car's centre line, on the platform side
   STAFF_OUT: 0.67,          // the player staffs the window standing this far out from the depot's wall
   QGAP: 0.6,                // queue spacing (u)
   REACH: 1.5,               // the first in line is served once within this of the window spot
@@ -4326,7 +4390,7 @@ function paxStations(T) {
     }).filter(Boolean);
   } else {
     out = fps.filter(f => f.kind === 'platform' || f.kind === 'wfplatform').map((f, i) => {
-      const depot = fps.filter(g => g.kind === 'depot' && dist(g, f) < 8).sort((a, b) => dist(a, f) - dist(b, f))[0] || null;
+      const depot = fps.filter(g => g.kind === 'depot' && dist(g, f) < 8 * SC).sort((a, b) => dist(a, f) - dist(b, f))[0] || null;
       return make(i === 0 ? 'hub' : f.id, f, depot, null);
     });
   }
@@ -4411,11 +4475,11 @@ function paxCarsAt(S, K, poseCache) {
       const seats = PAX.SEATS[c.k], p = poses[i];
       if (!seats || !p) return;
       const [lx, lz] = paxLocal(K, p.x, p.z), fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
-      if (Math.abs(lx) > K.plat.w / 2 || lz < K.plat.d / 2 + 0.5 || lz > K.plat.d / 2 + 1.4) return;
+      if (Math.abs(lx) > K.plat.w / 2 || lz < K.plat.d / 2 + 0.5 * SC || lz > K.plat.d / 2 + 1.4 * SC) return;
       if (Math.abs(fx * K.along[0] + fz * K.along[1]) < 0.97) return; // standing along the platform
-      // A door up to 0.5u past the platform's end still serves it: its spot is pulled back 0.3u inside the end.
+      // A door up to 0.5u (0.8u x SC from its spot) past the platform's end still serves it: its spot is pulled back 0.3u inside the end.
       const lim = K.plat.w / 2 - 0.3, doors = PAX.DOORS[c.k].map(t => [p.x + fx * t - K.out[0] * PAX.DOOR_OUT, p.z + fz * t - K.out[1] * PAX.DOOR_OUT])
-        .map(([dx, dz]) => { const [a, b] = paxLocal(K, dx, dz); return Math.abs(a) > lim + 0.8 ? null : paxWorld(K, Math.max(-lim, Math.min(lim, a)), b); })
+        .map(([dx, dz]) => { const [a, b] = paxLocal(K, dx, dz); return Math.abs(a) > lim + 0.8 * SC ? null : paxWorld(K, Math.max(-lim, Math.min(lim, a)), b); })
         .filter(Boolean);
       if (doors.length) out.push({ stock: c.id, tr, seats, doors });
     });
@@ -4557,7 +4621,7 @@ function paxTick(S, ev, poseCache) {
   if (hub && lp && ev.some(e => e.t === 'overlandSetOut')) {
     const n = PAX.OVERLAND_MIN + Math.floor(paxRand(X) * (PAX.OVERLAND_MAX - PAX.OVERLAND_MIN + 1));
     const fx = Math.cos(lp.yaw), fz = -Math.sin(lp.yaw), side = ((hub.plat.x - lp.x) * fz - (hub.plat.z - lp.z) * fx) >= 0 ? 1 : -1;
-    for (let i = 0; i < n; i++) paxAdd(S, 'outside', 'hub', PAX.LINE.hub, lp.x + fx * (i * 0.7 - 0.7) + fz * 1.3 * side, lp.z + fz * (i * 0.7 - 0.7) - fx * 1.3 * side, ev);
+    for (let i = 0; i < n; i++) paxAdd(S, 'outside', 'hub', PAX.LINE.hub, lp.x + fx * (i * 0.7 - 0.7) + fz * BESIDE_TRAIN * side, lp.z + fz * (i * 0.7 - 0.7) - fx * BESIDE_TRAIN * side, ev);
   }
   // 2. Each station: giving up, the queue, ticket sales, stepping off and boarding.
   for (const K of stations) {
@@ -5081,7 +5145,7 @@ function tutTarget(S) {
   if (c.key === 'accept' || c.key === 'order') { const k = econTelegraphKey(); return { x: k.x, z: k.z, k: 'telegraph' }; }
   if (c.key === 'switch') {
     const occ = occupiedSwitches(S);
-    const sw = S.track.switches.map((W, id) => ({ id, W })).filter(o => !switchLockReason(S, o.id, occ) && Math.abs(o.W.stand.ux - P.x) < 80)
+    const sw = S.track.switches.map((W, id) => ({ id, W })).filter(o => !switchLockReason(S, o.id, occ) && Math.abs(o.W.stand.ux - P.x) < 80 * SC)
       .sort((a, b) => Math.hypot(a.W.stand.ux - P.x, a.W.stand.uz - P.z) - Math.hypot(b.W.stand.ux - P.x, b.W.stand.uz - P.z) || a.id - b.id)[0];
     return sw ? { x: sw.W.stand.ux, z: sw.W.stand.uz, k: 'switch', sw: sw.id } : null;
   }
@@ -5168,6 +5232,7 @@ function migrate(save) {
   if (st.schemaVersion === 2) {
     // 2 -> 3 (carrying): the hand truck and handcart at their parking spots, and the player pushes neither.
     st.tools = carryNewTools(TOOL_PARKS.yard); // saves this old are in the test yard world (see 6 -> 7)
+    saveUnscale14(st, { tools: true });        // the spots as they were then: 13 -> 14 grows them again
     if (st.player && typeof st.player === 'object') st.player.tool = null;
     st.schemaVersion = 3;
   }
@@ -5179,7 +5244,10 @@ function migrate(save) {
   if (st.schemaVersion === 4) {
     // 4 -> 5 (interchange): the interchange track is added to the saved track, the Overland (away) and its
     // set-out cars (none) join the trains, and the Overland's visit state starts fresh.
+    const n0 = st.track && Array.isArray(st.track.nodes) ? st.track.nodes.length : 0, e0 = st.track && Array.isArray(st.track.edges) ? st.track.edges.length : 0;
+    const t0 = Array.isArray(st.trains) ? st.trains.length : 0;
     overlandMigrate(st);
+    saveUnscale14(st, { nodes: n0, edges: e0, trains: t0 }); // added at the M1 sizes: 13 -> 14 grows them
     st.schemaVersion = 5;
   }
   if (st.schemaVersion === 5) {
@@ -5197,6 +5265,7 @@ function migrate(save) {
   if (st.schemaVersion === 7) {
     // 7 -> 8 (timetable): the default train services with no engine on them, and full wood and water for our engines.
     ttMigrate(st);
+    saveUnscale14(st, { fuel: true }); // a full tender as it was then (u of range): 13 -> 14 grows it
     st.schemaVersion = 8;
   }
   if (st.schemaVersion === 8) {
@@ -5224,9 +5293,74 @@ function migrate(save) {
     if (st.player && typeof st.player === 'object') st.player.ride = null;
     st.schemaVersion = 13;
   }
+  if (st.schemaVersion === 13) {
+    // 13 -> 14 (the world scale, D15): every stored place, length and speed grows by SC (1.6), about the origin,
+    // so the old layout becomes the new one exactly and trains keep their timing (saveScale14).
+    saveScale14(st, SC);
+    st.schemaVersion = 14;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
+}
+// 13 -> 14 (D15): multiply every stored position, length and speed in a schema 13 state by k. Positions kept in
+// hundredths (items on the ground, tools, stakes, travellers, job commands) stay whole numbers (rounded); track
+// distances in thousandths in a job's command (s) too. Directions, angles, times and counts do not change.
+// A part that is not there or not shaped as expected is left alone; checkSaveShape then decides.
+function saveScale14(st, k) {
+  const num = v => typeof v === 'number' && Number.isFinite(v), arr = Array.isArray, obj = v => v && typeof v === 'object';
+  const m = (o, ...keys) => { if (obj(o)) for (const key of keys) if (num(o[key])) o[key] *= k; };
+  const mi = (o, ...keys) => { if (obj(o)) for (const key of keys) if (num(o[key])) o[key] = Math.round(o[key] * k); };
+  const track = T => {
+    if (!obj(T)) return;
+    if (arr(T.nodes)) for (const N of T.nodes) m(N, 'x', 'z');
+    if (arr(T.edges)) for (const E of T.edges) { m(E, 'len', 'cx', 'cz', 'R'); if (num(E.lim)) E.lim *= k; }
+    if (arr(T.switches)) for (const W of T.switches) m(W && W.stand, 'x', 'z', 'ux', 'uz');
+  };
+  const where = w => { if (obj(w) && w.kind === 'GROUND') mi(w, 'x', 'z'); };
+  track(st.track);
+  if (arr(st.trains)) for (const tr of st.trains) {
+    if (!obj(tr)) continue;
+    m(tr.front, 's'); m(tr, 'v');
+    if (obj(tr.route)) { m(tr.route, 'total', 'left'); if (arr(tr.route.locks)) for (const L of tr.route.locks) m(L, 'at'); }
+    if (arr(tr.consist)) for (const c of tr.consist) m(c, 'len', 'fuel', 'water');   // fuel and water are u of range
+  }
+  const P = st.player;
+  if (obj(P)) {
+    m(P, 'x', 'z', 'tx', 'tz');
+    for (const u of [P.use, P.act]) if (obj(u)) where(u.dest);
+  }
+  if (obj(st.items) && arr(st.items.where)) for (const w of st.items.where) where(w);
+  if (arr(st.tools)) for (const t of st.tools) mi(t, 'x', 'z');
+  if (obj(st.jobs) && arr(st.jobs.list)) for (const j of st.jobs.list) {
+    if (!obj(j)) continue;
+    m(j, 'len'); track(j.geo);
+    mi(j.cmd, 'x', 'z', 'tx', 'tz', 's');
+    if (arr(j.stakes)) for (const q of j.stakes) if (arr(q)) for (let i = 0; i < 2; i++) if (num(q[i])) q[i] = Math.round(q[i] * k);
+    if (obj(j.site)) for (const q of Object.values(j.site)) if (arr(q)) for (let i = 0; i < 2; i++) if (num(q[i])) q[i] = Math.round(q[i] * k);
+  }
+  if (obj(st.pax) && arr(st.pax.list)) for (const p of st.pax.list) {
+    if (!obj(p)) continue;
+    mi(p, 'x', 'z', 'tx', 'tz');
+    if (arr(p.path)) for (const q of p.path) if (arr(q)) for (let i = 0; i < 2; i++) if (num(q[i])) q[i] = Math.round(q[i] * k);
+  }
+}
+// The opposite of saveScale14 for parts that an older migrate step (before 13 -> 14) makes with today's constants,
+// which are already grown: what: { tools } (the tool spots), { nodes, edges, trains } (everything added after those
+// counts: the interchange track and the Overland's trains), { fuel } (our engines' wood and water).
+function saveUnscale14(st, what) {
+  const num = v => typeof v === 'number' && Number.isFinite(v);
+  if (what.tools && Array.isArray(st.tools)) for (const t of st.tools) for (const key of ['x', 'z']) if (num(t[key])) t[key] = Math.round(t[key] / SC);
+  if (what.nodes !== undefined && st.track && Array.isArray(st.track.nodes)) {
+    for (const N of st.track.nodes.slice(what.nodes)) { N.x /= SC; N.z /= SC; }
+    for (const E of st.track.edges.slice(what.edges)) { E.len /= SC; E.lim /= SC; }
+    if (Array.isArray(st.trains)) for (const tr of st.trains.slice(what.trains)) {
+      if (tr.front) tr.front.s /= SC;
+      for (const c of tr.consist || []) c.len /= SC;
+    }
+  }
+  if (what.fuel && Array.isArray(st.trains)) for (const tr of st.trains) if (tr && !tr.owner && Array.isArray(tr.consist))
+    for (const c of tr.consist) if (c && c.k === 'loco') { if (num(c.fuel)) c.fuel /= SC; if (num(c.water)) c.water /= SC; }
 }
 // Throws if the saved state is not shaped like a game: track, trains and player.
 function checkSaveShape(st) {
@@ -6312,10 +6446,10 @@ function jobDraw(S, alpha) {
 // the map edge is one more mesh. terrainHeight() uses the same two triangles per tile as the mesh.
 // The heights are worked out again from the current track each time buildTerrain runs.
 const TERRAIN = {
-  NX: 64, NZ: 64, TILE: 2, X0: -64, Z0: -64, CHUNK: 32,
-  FLAT_R: 7, BLEND_R: 16,        // corners within 7u stay flat, so every drawn point within 4u does too
-  FLAT: [{ x0: -25, x1: 25, z0: -20, z1: 24 }],
-  HMAX: 5.5, EDGE_FADE: 8, SKIRT: 120,
+  NX: 64, NZ: 64, TILE: 2 * SC, X0: -64 * SC, Z0: -64 * SC, CHUNK: 32,   // TILE, X0, Z0, NX, NZ and FLAT come from the world
+  FLAT_R: 7 * SC, BLEND_R: 16 * SC, // corners within 7u (x SC) stay flat, so every drawn point within 4u (x SC) does too
+  FLAT: [{ x0: -25 * SC, x1: 25 * SC, z0: -20 * SC, z1: 24 * SC }],
+  HMAX: 5.5 * SC, EDGE_FADE: 8 * SC, SKIRT: 120 * SC,    // D15: hills grow with the world
   h: null, meshes: [],
 };
 // Smooth value noise in [0, 1]: random values on a lattice every `cell` tiles, cosine blended.
@@ -6333,14 +6467,14 @@ const smooth01 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b -
 // Fills TERRAIN.h (one height per tile corner, (NX + 1) x (NZ + 1)) for the given track and its world.
 function terrainCompute(T) {
   const C = TERRAIN, W = worldOf(T).terrain;
-  C.NX = W.nx; C.NZ = W.nz; C.X0 = W.x0; C.Z0 = W.z0; C.FLAT = W.flat;
+  C.NX = W.nx; C.NZ = W.nz; C.X0 = W.x0; C.Z0 = W.z0; C.FLAT = W.flat; C.TILE = W.tile || 2 * SC;
   const nx = C.NX, nz = C.NZ, V = nx + 1, h = new Float32Array(V * (nz + 1)), n = Math.max(nx, nz);
   const st = rngSeed(CFG.SEED ^ 0x7e44a1);
   const big = terrainNoise(st, n, 12), small = terrainNoise(st, n, 5);
   // Distance from each corner to the nearest track: stamp the samples of every edge onto the grid.
   const dist = new Float32Array(V * (nz + 1)).fill(1e9), reach = Math.ceil(C.BLEND_R / C.TILE) + 1;
   for (const E of (T ? T.edges : [])) {
-    const k = Math.max(1, Math.ceil(E.len / 0.5));
+    const k = Math.max(1, Math.ceil(E.len / (0.5 * SC)));
     for (let s = 0; s <= k; s++) {
       const p = edgeAt(T, E, E.len * s / k);
       const ci = Math.round((p.x - C.X0) / C.TILE), cj = Math.round((p.z - C.Z0) / C.TILE);
@@ -7498,17 +7632,18 @@ function paxDraw(alpha, dt) {
 //         'switch' e = straight edge, s = distance from its node A (thousandths of u),
 //                  fwd = +1 towards node B or -1 towards node A, side = the arc's turn (+1 or -1)
 //   tx, tz = the target point (hundredths of u)
+// D15: every length here is its M1 size times SC (the sizes in the comments are the M1 ones); angles are unchanged.
 const BUILD = {
-  NODE_SNAP: 0.5,      // ends snap to dead ends within 0.5u
-  PAR: 1.6,            // parallel offsets of 1.6u from nearby straight track
-  PAR_SNAP: 0.5, PAR_BAND: 6,
-  CLEAR: 1.6,          // minimum centreline spacing to other track
-  SKIP: 1.6,           // the first and last 1.6u next to a joint are not spacing-checked
-  EARTH: 0.3,          // amber if the ground is more than 0.3u off the bed height
+  NODE_SNAP: 0.5 * SC, // ends snap to dead ends within 0.5u
+  PAR: 1.6 * SC,       // parallel offsets of 1.6u from nearby straight track
+  PAR_SNAP: 0.5 * SC, PAR_BAND: 6 * SC,
+  CLEAR: 1.6 * SC,     // minimum centreline spacing to other track
+  SKIP: 1.6 * SC,      // the first and last 1.6u next to a joint are not spacing-checked
+  EARTH: 0.3 * SC,     // amber if the ground is more than 0.3u off the bed height
   AHEAD_DEG: 1,        // straight if the target is within 1 degree of straight ahead
   HEAD_STEP: 15,       // straights snap to 15-degree headings
-  SW_THROUGH: 5, SW_R: 10, SW_DEG: 30, SW_END_SNAP: 0.3, SW_CLEAR: 1.5,
-  MIN_LEN: 0.5, R_TOP: 120, R_STEP: 0.25,
+  SW_THROUGH: 5 * SC, SW_R: 10 * SC, SW_DEG: 30, SW_END_SNAP: 0.3 * SC, SW_CLEAR: 1.5 * SC,
+  MIN_LEN: 0.5 * SC, R_TOP: 120 * SC, R_STEP: 0.25 * SC,
 };
 const B_TAU = Math.PI * 2, B_D2R = Math.PI / 180;
 function bWrap(a) { a %= B_TAU; if (a < 0) a += B_TAU; return a; }
@@ -7672,7 +7807,7 @@ function bPlanJoin(st, Q, He, out, g) {
   }
   if (!cands.length) return { why: 'Cannot join that track end smoothly from here' };
   const dist = Math.hypot(Q.x - st.x, Q.z - st.z);
-  const fair = cands.filter(c => c.len <= 3 * dist + 20);
+  const fair = cands.filter(c => c.len <= 3 * dist + 20 * SC);
   const pool = fair.length ? fair : cands;
   const minTurn = Math.min(...pool.map(c => c.turn));
   let best = null;
@@ -7748,7 +7883,7 @@ function bGeom(S, c) {
   } else {
     const vx = Q.x - st.x, vz = Q.z - st.z;
     const fwd = vx * st.hx + vz * st.hz, lat = vx * st.hz - vz * st.hx;
-    if (st.sw && (Math.hypot(vx, vz) < 1 || fwd < 0.5)) r = { pieces: [] };
+    if (st.sw && (Math.hypot(vx, vz) < 1 * SC || fwd < 0.5 * SC)) r = { pieces: [] };
     else if (fwd > BUILD.MIN_LEN && Math.abs(Math.atan2(lat, fwd)) <= BUILD.AHEAD_DEG * B_D2R) r = { pieces: [{ k: 'S', L: fwd }] };
     else {
       // Nearby straight track: offer its heading first, and snap the end to parallel offsets of 1.6u.
@@ -7758,7 +7893,7 @@ function bGeom(S, c) {
         if (E.k !== 'S') continue;
         const A = T.nodes[E.a], B = T.nodes[E.b], ux = (B.x - A.x) / E.len, uz = (B.z - A.z) / E.len;
         const along = (Q.x - A.x) * ux + (Q.z - A.z) * uz, off = (Q.x - A.x) * uz - (Q.z - A.z) * ux;
-        if (along < -2 || along > E.len + 2 || Math.abs(off) > BUILD.PAR_BAND || Math.abs(off) < 0.8) continue;
+        if (along < -2 * SC || along > E.len + 2 * SC || Math.abs(off) > BUILD.PAR_BAND || Math.abs(off) < 0.8 * SC) continue;
         if (!near || Math.abs(off) < Math.abs(near.off)) near = { ux, uz, off };
       }
       if (near) {
@@ -7865,18 +8000,18 @@ function buildPlan(S, c) {
     }
     all = all.concat(div.pts);
   }
-  if (minD < 0.05) return fail('Crosses other track: crossings are not built yet');
+  if (minD < 0.05 * SC) return fail('Crosses other track: crossings are not built yet');
   if (minD < BUILD.CLEAR - 0.01) return fail(`Too close to other track: ${bFmt(minD)}u, minimum ${BUILD.CLEAR}u`);
   const Wd = worldOf(T), MB = Wd.bounds, H = Wd.hub;
-  for (const p of all) if (p.x < MB.x0 + 0.5 || p.x > MB.x1 - 0.5 || p.z < MB.z0 + 0.5 || p.z > MB.z1 - 0.5) return fail('Off the edge of the map');
+  for (const p of all) if (p.x < MB.x0 + 0.5 * SC || p.x > MB.x1 - 0.5 * SC || p.z < MB.z0 + 0.5 * SC || p.z > MB.z1 - 0.5 * SC) return fail('Off the edge of the map');
   // The real start: track may be planned only inside the hub boundary (design-doc 6 "Where track may be built").
   if (H) for (const p of all) if (p.x < H.x0 || p.x > H.x1 || p.z < H.z0 || p.z > H.z1) return fail('Outside the hub boundary: track can only be planned inside it');
-  // Clearance to buildings (section 6): 1.2u main, 1.0u yard, platforms flush at 0.9u.
+  // Clearance to buildings (section 6): 1.2u main, 1.0u yard, platforms flush at 0.9u (all times SC since D15).
   if (typeof buildingFootprints === 'function') {
-    const clr = G.cls === 'main' || G.st.swMain ? 1.2 : 1.0;
+    const clr = (G.cls === 'main' || G.st.swMain ? 1.2 : 1.0) * SC;
     worldUse(T);
     for (const f of buildingFootprints()) {
-      const cs = Math.cos(f.yaw), sn = Math.sin(f.yaw), need = f.flush ? 0.9 - 0.01 : clr - 0.01;
+      const cs = Math.cos(f.yaw), sn = Math.sin(f.yaw), need = f.flush ? 0.9 * SC - 0.01 : clr - 0.01;
       for (const p of all) {
         const dx = p.x - f.x, dz = p.z - f.z, lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
         const d = Math.hypot(Math.max(0, Math.abs(lx) - f.w / 2), Math.max(0, Math.abs(lz) - f.d / 2));
@@ -7973,7 +8108,7 @@ function buildGhost(plan) {
     for (let j = 0; j < n; j++) {
       const p = edgeAt(T2, E, E.len * j / n), q = edgeAt(T2, E, E.len * (j + 1) / n);
       const off = (pt, o, y) => [pt.x - pt.tz * o, y, pt.z + pt.tx * o];
-      quad(col, off(p, -0.65, 0.235), off(q, -0.65, 0.235), off(q, 0.65, 0.235), off(p, 0.65, 0.235));
+      quad(col, off(p, -0.65 * SC, 0.235), off(q, -0.65 * SC, 0.235), off(q, 0.65 * SC, 0.235), off(p, 0.65 * SC, 0.235));
       for (const sd of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) quad(dark, off(p, sd - 0.05, 0.245), off(q, sd - 0.05, 0.245), off(q, sd + 0.05, 0.245), off(p, sd + 0.05, 0.245));
     }
   }
@@ -8003,13 +8138,13 @@ function buildDown(id, px, py) {
   for (const N of T.nodes) {
     if (ix.nodeEdges[N.id].length !== 1) continue;
     const d = Math.hypot(N.x - g.x, N.z - g.z);
-    if (d < 0.9 && (!best || d < best.d)) best = { n: N.id, d };
+    if (d < 0.9 * SC && (!best || d < best.d)) best = { n: N.id, d };
   }
   let start;
   if (best) start = { from: 'node', n: best.n };
   else {
     const nr = trackNearest(T, g.x, g.z);
-    if (nr && nr.dist < 0.75) start = { from: 'switch', e: nr.e, s: Math.round(nr.s * 1000) };
+    if (nr && nr.dist < 0.75 * SC) start = { from: 'switch', e: nr.e, s: Math.round(nr.s * 1000) };
     else start = { from: 'free', x: Math.round(g.x * 100), z: Math.round(g.z * 100) };
   }
   bt.drag = { id, x0: px, y0: py, gx: g.x, gz: g.z, start, moved: false };
@@ -8257,15 +8392,15 @@ const DBG_SCENARIOS = {
   yard: () => newState(CFG.SEED, 'yard'),
   // The real start (a new game), and the same at Willow Ford: the player on its platform.
   start: () => newState(CFG.SEED, 'start'),
-  willow: () => { const st = newState(CFG.SEED, 'start'); st.player.x = WFORD.x + 18; st.player.z = WFORD.z - 1.7; return st; },
+  willow: () => { const st = newState(CFG.SEED, 'start'); st.player.x = WFORD.x + 18 * SC; st.player.z = WFORD.z - 1.7 * SC; return st; },
   // The train stands on the passing siding, facing west, with switch 1 set to the siding.
   siding: () => {
     const st = newState(CFG.SEED, 'yard'), T = st.track, tr = st.trains[0];
-    const mid = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 && T.nodes[E.b].z > 17);
+    const mid = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 * SC && T.nodes[E.b].z > 17 * SC);
     tr.front = trackWalk(T, { e: mid.id, s: mid.len / 2, d: -1 }, trainLength(tr) / 2).pos;
     T.switches[0].state = 'R';
     tr.mode = 'idle'; tr.v = 0; tr.status = 'Stopped';
-    st.player.x = -6; st.player.z = 21;
+    st.player.x = -6 * SC; st.player.z = 21 * SC;
     return st;
   },
   // Cargo testing: items in the freight shed bays, on the ground by the dock, in the boxcar and in hand.
@@ -8276,7 +8411,7 @@ const DBG_SCENARIOS = {
     const st = newState(CFG.SEED, 'yard');
     st.time = 50 * 60;
     st.overland.testDelivery = true; // the fixed test delivery (B4's check), not import orders
-    st.player.x = 3.5; st.player.z = 22.5;
+    st.player.x = 3.5 * SC; st.player.z = 22.5 * SC;
     return st;
   },
   // Town (C5): accepted contracts for the general store's flour and the saloon's whiskey, a flour sack in hand
@@ -8292,10 +8427,10 @@ const DBG_SCENARIOS = {
   spur: () => {
     const st = newState(CFG.SEED, 'yard'), T = st.track, tr = st.trains[0], W = T.switches[2], E = T.edges[W.trunk];
     const d = E.b === W.node ? 1 : -1;
-    tr.front = { e: E.id, s: d > 0 ? E.len - 6 : 6, d };
+    tr.front = { e: E.id, s: d > 0 ? E.len - 6 * SC : 6 * SC, d };
     W.state = 'R';
-    tr.mode = 'run'; tr.m = 1; tr.v = 2; tr.status = 'Running forward';
-    st.player.x = -2; st.player.z = -11.5;
+    tr.mode = 'run'; tr.m = 1; tr.v = 2 * SC; tr.status = 'Running forward';
+    st.player.x = -2 * SC; st.player.z = -11.5 * SC;
     return st;
   },
 };
@@ -8856,7 +8991,7 @@ function rideDoors() {
     if (tr.owner || !ttStanding(tr) || !curPoses[tr.id]) continue;
     tr.consist.forEach((c, i) => {
       if (!PAX.SEATS[c.k] || !curPoses[tr.id][i]) return;
-      const d = rideDoorSpot(S, { tr, i, car: c }, curPoses), k = 0.75 / PAX.DOOR_OUT;
+      const d = rideDoorSpot(S, { tr, i, car: c }, curPoses), k = 0.75 * SC / PAX.DOOR_OUT;
       out.push({ stock: c.id, sx: d.x, sz: d.z, wx: d.dx + (d.x - d.dx) * k, wz: d.dz + (d.z - d.dz) * k });
     });
   }
@@ -9047,7 +9182,7 @@ function trainWhereText(S, tr) {
   if (tr.owner === 'overland' || tr.owner === 'interchange') return 'On the interchange track';
   const hub = sts[0];
   if (!hub) return `At x ${Math.round(p.x)}, z ${Math.round(p.z)}`;
-  const miles = Math.round(Math.hypot(p.x - (hub.track.x0 + hub.track.x1) / 2, p.z - (hub.track.z0 + hub.track.z1) / 2) / 16 * 10) / 10;
+  const miles = Math.round(Math.hypot(p.x - (hub.track.x0 + hub.track.x1) / 2, p.z - (hub.track.z0 + hub.track.z1) / 2) / MILE_U * 10) / 10;
   return `On the line, ${miles} miles from ${hub.name}`;
 }
 const minText = sec => { const m = Math.round(sec / 60); return m + (m === 1 ? ' minute' : ' minutes'); };
@@ -9475,7 +9610,7 @@ function onTap(px, py) {
     const t = groundAt(px, py);   // track lies on the ground, not on a deck
     if (!t) return;
     const n = trackNearest(S.track, t.x, t.z);
-    if (n && n.dist < 1.2) { send({ t: 'trainSendTo', tr: ui.panelTrain, e: n.e, s: Math.round(n.s * 1000) }); setSendMode(false); }
+    if (n && n.dist < 1.2 * SC) { send({ t: 'trainSendTo', tr: ui.panelTrain, e: n.e, s: Math.round(n.s * 1000) }); setSendMode(false); }
     else toast('Tap closer to a track.');
     return;
   }

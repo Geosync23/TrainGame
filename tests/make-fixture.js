@@ -12,9 +12,10 @@ const { openGame, stopServer } = require('./browser');
     const R = window.__railhead;
     // From schema 3: two freight items, and the player takes the hand truck and loads one.
     const S0 = R.newState(1866), carry = S0.schemaVersion >= 3, jobs = S0.schemaVersion >= 4;
+    const k = R.CFG.SCALE || 1; // schema 14 (D15): the world is 1.6x, so the scripted places grow with it
     if (carry) {
       const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
-      R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', x: -1050, z: 1000 }, null);
+      R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', x: Math.round(-1050 * k), z: Math.round(1000 * k) }, null);
       R.cargo.itemCreate(S0, wb('salt'), { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, null);
     }
     // From schema 4: a job staked 6u on from the spur's dead end, with a tie bundle lying beside it (on site).
@@ -22,8 +23,8 @@ const { openGame, stopServer } = require('./browser');
     if (jobs) {
       const T = S0.track, N = T.nodes.filter(N => T.edges.filter(E => (E.a === N.id || E.b === N.id)).length === 1 && !T.edges.some(E => E.fixed && (E.a === N.id || E.b === N.id))).sort((a, b) => a.x - b.x)[0]; // not the interchange's far end
       R.cargo.itemCreate(S0, { commodity: 'ties', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null },
-        { kind: 'GROUND', x: Math.round((N.x - 2) * 100), z: Math.round((N.z - 1.5) * 100) }, null);
-      stake = [{ tick: 50, cmd: { t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6) * 100), tz: Math.round(N.z * 100) } }];
+        { kind: 'GROUND', x: Math.round((N.x - 2 * k) * 100), z: Math.round((N.z - 1.5 * k) * 100) }, null);
+      stake = [{ tick: 50, cmd: { t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6 * k) * 100), tz: Math.round(N.z * 100) } }];
     }
     // From schema 7 (towns): a sack of flour already delivered to the hub's general store, and its shelf lower.
     if (S0.town) {
@@ -37,7 +38,7 @@ const { openGame, stopServer } = require('./browser');
       { tick: 100, cmd: { t: 'carryTool', tool: 0 } },
       { tick: 160, cmd: { t: 'carryPick', id: 0 } },
     ] : []).concat([
-      { tick: 300, cmd: { t: 'walkTo', x: -500, z: 800 } },
+      { tick: 300, cmd: { t: 'walkTo', x: Math.round(-500 * k), z: Math.round(800 * k) } },
     ]), 400);
     // With passengers (S.pax): one traveller in line at the hub's window and one with a ticket on the platform,
     // walking there, then 20 more ticks so their walks are saved part way.

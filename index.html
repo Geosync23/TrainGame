@@ -93,12 +93,14 @@
   #telTabs button { padding: 0 4px; font-size: 14px; }
   #telInfo { font-size: 14px; color: #5a4a3a; line-height: 1.3; }
   #telBody { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink); max-height: 36vh; overflow-y: auto; }
-  #telBody .row > span { line-height: 1.25; }
-  #telBody .q { min-width: 2em; text-align: center; font-variant-numeric: tabular-nums; }
-  #telBody small { color: #5a4a3a; font-size: 13px; }
-  #telBody .card { border-top: 1px solid var(--paper-2); padding-top: 6px; display: grid; gap: 6px; }
-  #telBody .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  #telBody button { font-size: 14px; padding: 0 8px; }
+  #officeBody { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink); }
+  #officeBody .row { display: flex; gap: 6px; align-items: center; }
+  :is(#telBody, #officeBody) .row > span { line-height: 1.25; }
+  :is(#telBody, #officeBody) .q { min-width: 2em; text-align: center; font-variant-numeric: tabular-nums; }
+  :is(#telBody, #officeBody) small { color: #5a4a3a; font-size: 13px; }
+  :is(#telBody, #officeBody) .card { border-top: 1px solid var(--paper-2); padding-top: 6px; display: grid; gap: 6px; }
+  :is(#telBody, #officeBody) .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  :is(#telBody, #officeBody) button { font-size: 14px; padding: 0 8px; }
   #telSend { background: var(--edge); color: var(--paper); }
   #telSend:disabled { opacity: 0.45; }
   .jobSign, .townSign { left: 0; top: 0; z-index: 1; width: max-content; max-width: 250px; box-sizing: border-box; pointer-events: none;
@@ -141,21 +143,70 @@
     #toast, #banner { top: calc(env(safe-area-inset-top) + 10px); }
     #toast.below { top: calc(env(safe-area-inset-top) + 82px); }
   }
-  /* The investor's tutorial (D2): the current task chip under the Build button, and its telegram card. */
-  #tutTask { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 108px); display: grid; justify-items: end; gap: 6px;
+  /* Office, telegrams, alerts and Look (D13, builder D1). */
+  #tgBtn { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 66px); padding: 0 8px; display: flex; gap: 4px; align-items: center; }
+  #tgBtn svg { width: 26px; height: 26px; display: block; }
+  #tgCount { background: var(--accent); color: #fff; border-radius: 10px; font-size: 13px; line-height: 1; padding: 3px 6px; font-variant-numeric: tabular-nums; }
+  #tgCount:empty { display: none; }
+  #alerts { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 122px); display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  #alerts button { width: 56px; min-width: 56px; padding: 0 2px; font-size: 12px; line-height: 1.15; border-left-width: 7px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  #alerts button b { font-size: 13px; }
+  #alerts button[data-k="wait"] { border-left-color: #c69a2c; }
+  #alerts button[data-k="late"] { border-left-color: var(--accent); }
+  #alerts button[data-k="stock"] { border-left-color: #5b6fa8; }
+  #alerts button[data-k="wood"] { border-left-color: var(--green); }
+  #tgSlide { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 104px); width: min(calc(100vw - 120px), 300px); min-height: 48px;
+    box-sizing: border-box; background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-left: 7px solid #c69a2c; border-radius: 8px;
+    padding: 6px 10px; font-size: 14px; line-height: 1.25; transform: translateX(calc(-100% - 20px)); transition: transform .3s; cursor: pointer; }
+  #tgSlide.show { transform: none; }
+  #tgSlide b, #tgSlide small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tgSlide small { color: #5a4a3a; font-size: 13px; }
+  .bigPanel { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); width: min(94vw, 400px); max-height: calc(100vh - 240px);
+    box-sizing: border-box; background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .bigPanel .row { display: flex; gap: 6px; align-items: center; }
+  .bigPanel .grow { flex: 1; min-width: 0; }
+  .bigPanel h2 { margin: 0; font-size: 18px; color: var(--ink); }
+  #officeHead { flex-wrap: wrap; }
+  #officeTabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; flex: 1 1 100%; order: 3; }
+  #officeTabs button { padding: 0 1px; font-size: 13px; min-width: 0; }
+  #officeInfo { font-size: 14px; color: #5a4a3a; line-height: 1.3; }
+  #officeBody, #inboxBody { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  #officeBody table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  #officeBody td, #officeBody th { padding: 3px 4px; border-bottom: 1px solid var(--paper-2); text-align: left; font-size: 13px; }
+  #officeBody td.n, #officeBody th.n { text-align: right; white-space: nowrap; }
+  #officeBody svg.spark { width: 56px; height: 18px; flex: none; }
+  #inboxBody { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink); }
+  #inboxBody .tg { border: 1px solid var(--paper-2); border-left: 6px solid var(--paper-2); border-radius: 6px; padding: 6px 8px; min-height: 48px; box-sizing: border-box; display: grid; gap: 4px; cursor: pointer; }
+  #inboxBody .tg[data-unread] { border-left-color: var(--accent); }
+  #inboxBody .tg[data-unread] b { color: var(--accent); }
+  #inboxBody .tg small { color: #5a4a3a; font-size: 13px; }
+  #inboxBody .tg .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  #inboxBody .tg .acts button { font-size: 14px; padding: 0 10px; }
+  #lookCard { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 70px); width: min(94vw, 380px); max-height: 52vh; overflow-y: auto;
+    box-sizing: border-box; background: var(--paper); border: 2px solid var(--edge); border-left: 7px solid #5b6fa8; border-radius: 10px; padding: 10px; display: grid; gap: 6px; }
+  #lookCard .row { display: flex; gap: 6px; align-items: center; }
+  #lookCard h2 { margin: 0; font-size: 18px; color: var(--ink); flex: 1; min-width: 0; }
+  #lookBody { font-size: 14px; color: var(--ink); line-height: 1.35; display: grid; gap: 3px; }
+  #lookBody small { color: #5a4a3a; font-size: 13px; }
+  #lookBtn[aria-pressed="true"] { background: #5b6fa8; border-color: #3c4d7d; color: #fff; }
+  @media (orientation: landscape) and (max-height: 500px) {
+    #tgBtn { top: calc(env(safe-area-inset-top) + 10px); right: calc(env(safe-area-inset-right) + 96px); }
+    #alerts { top: calc(env(safe-area-inset-top) + 66px); }
+    .bigPanel { left: auto; transform: none; right: calc(env(safe-area-inset-right) + 110px); bottom: calc(env(safe-area-inset-bottom) + 10px); width: 420px; max-height: calc(100vh - 76px); gap: 6px; }
+    #officeHead h2 { display: none; }
+    #officeTabs { flex: 1 1 auto; order: 0; }
+    #officeInfo { font-size: 13px; }
+    #lookCard { left: auto; transform: none; right: calc(env(safe-area-inset-right) + 110px); bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: calc(100vh - 76px); }
+  }
+  /* The investor's tutorial (D2): the current task chip under the telegraph button (portrait) or Build (landscape). */
+  #tutTask { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 122px); display: grid; justify-items: end; gap: 6px;
     max-width: min(64vw, 300px); }
   #tutChip { max-width: 100%; text-align: left; font-size: 14px; line-height: 1.2; padding: 4px 10px; border-left: 7px solid #c69a2c;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #tutChip small { display: block; font-size: 12px; font-weight: 400; color: #5a4a3a; }
   #tutChip.pulse { animation: tutPulse 1.2s ease-in-out 3; }
   @keyframes tutPulse { 50% { background: #f6d98a; } }
-  #tutCard { box-sizing: border-box; width: min(64vw, 300px); background: var(--paper); border: 2px solid var(--edge); border-left: 7px solid #c69a2c;
-    border-radius: 8px; padding: 8px 10px; color: var(--ink); font-size: 14px; line-height: 1.3; max-height: 60vh; overflow-y: auto; }
-  #tutCard b { display: block; font-size: 15px; } #tutCard small { display: block; color: #5a4a3a; margin-bottom: 4px; }
-  #tutCard p { margin: 4px 0 8px; }
-  #tutBtns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  #tutBtns button { font-size: 14px; }
-  @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } #tutCard { width: 300px; max-height: calc(100vh - 140px); } }
+  @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -174,14 +225,18 @@
 <div id="bottomleft" class="hud">
   <button id="rotL" aria-label="Turn view left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 3v5h5"/></svg></button>
   <button id="rotR" aria-label="Turn view right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 3v5h-5"/></svg></button>
+  <button id="lookBtn" aria-pressed="false" aria-label="Look: tap, then tap a thing to see its card">Look</button>
+  <button id="officeBtn" aria-pressed="false" hidden>Office</button>
 </div>
+<button id="tgBtn" class="hud" aria-label="Telegrams" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="1.5"/><path d="M3.5 7l8.5 6.5 8.5-6.5"/></svg><span id="tgCount"></span></button>
+<div id="alerts" class="hud" role="group" aria-label="Problems"></div>
+<div id="tgSlide" class="hud" role="status" aria-live="polite"><b id="tgSlideTitle"></b><small id="tgSlideFrom"></small></div>
 <button id="centre" class="hud" hidden>Centre</button>
 <button id="buildBtn" class="hud" aria-pressed="false">Build</button>
 <div id="buildLabel" class="hud" role="status" aria-live="polite" hidden></div>
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="tutTask" class="hud" hidden>
   <button id="tutChip" aria-expanded="false"><small>Current task</small><span id="tutChipText"></span></button>
-  <div id="tutCard" role="dialog" aria-label="Telegram" hidden><small id="tutFrom"></small><b id="tutTitle"></b><p id="tutBody"></p><div id="tutBtns"></div></div>
 </div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
@@ -204,6 +259,20 @@
   <div id="telTabs" role="group" aria-label="Telegraph"><button data-tab="order">Order</button><button data-tab="contracts">Contracts</button><button data-tab="ledger">Ledger</button></div>
   <div id="telInfo"></div>
   <div id="telBody"></div>
+</div>
+<div id="office" class="hud bigPanel" hidden>
+  <div class="row" id="officeHead"><h2 class="grow">Office</h2><button id="officeClose" aria-label="Close">X</button>
+  <div id="officeTabs" role="group" aria-label="Office"><button data-tab="contracts">Contracts</button><button data-tab="market">Market</button><button data-tab="ledger">Ledger</button><button data-tab="trains">Trains</button><button data-tab="timetable">Timetable</button></div></div>
+  <div id="officeInfo"></div>
+  <div id="officeBody"></div>
+</div>
+<div id="inbox" class="hud bigPanel" hidden>
+  <div class="row"><h2 class="grow">Telegrams</h2><button id="inboxAll">All read</button><button id="inboxClose" aria-label="Close">X</button></div>
+  <div id="inboxBody"></div>
+</div>
+<div id="lookCard" class="hud" hidden>
+  <div class="row"><h2 id="lookTitle"></h2><button id="lookClose" aria-label="Close">X</button></div>
+  <div id="lookBody"></div>
 </div>
 <div id="carPanel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="carTitle">Car</h2><button id="carClose" aria-label="Close">X</button></div>
@@ -7888,15 +7957,20 @@ function jobOnEvent(e) {
 }
 // A tap on a staked job (within 1u of its centre line) starts work on it. Returns true when the tap was used.
 function jobTap(g) {
-  if (!g) return false;
+  const id = jobHitAt(g);
+  if (id === null) return false;
+  send({ t: 'jobWork', id });
+  return true;
+}
+// The job whose centre line is within 1u of a ground point, or null.
+function jobHitAt(g) {
+  if (!g) return null;
   let best = null;
   for (const j of S.jobs.list) for (const E of j.geo.edges) {
     const d = bEdgeDist(j.geo, E, g.x, g.z);
     if (d < 1 && (!best || d < best.d)) best = { id: j.id, d };
   }
-  if (!best) return false;
-  send({ t: 'jobWork', id: best.id });
-  return true;
+  return best ? best.id : null;
 }
 
 // ==== Section: debug ====
@@ -8224,7 +8298,7 @@ function resetViewsFromState() {
 function doTick() {
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
-  const changed = pending.some(c => /^train|^throwSwitch$/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland|^(orderPlaced|contract|credit)|^(un)?coupled$|^tt(Assigned|Departed|Arrived|Done)$|^waterTaken$|^tenderFuelled$/.test(e.t));
+  const changed = pending.some(c => /^train|^throwSwitch$|^tg/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland|^(orderPlaced|contract|credit)|^(un)?coupled$|^tt(Assigned|Departed|Arrived|Done)$|^waterTaken$|^tenderFuelled$|^telegram$|^tgAnswered$/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
@@ -8259,6 +8333,7 @@ function handleEvent(e) {
   else if (e.t === 'toolLeft') toast(`${TOOL_KINDS[S.tools[e.tool].k].name} left at its spot.`);
   else if (/^job/.test(e.t)) jobOnEvent(e);
   else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
+  else if (/^(telegram|tg|reachedDesk)/.test(e.t)) officeOnEvent(e);
   else if (e.t === 'reachedBiz' || e.t === 'bizDelivered') townOnEvent(e);
   else if (/^(desk|pax)/.test(e.t)) paxOnEvent(e);
   else if (/^ride/.test(e.t)) rideOnEvent(e);
@@ -8273,7 +8348,7 @@ function carryHud() {
   let text = '';
   if (carrier === 'HAND') text = held.length ? 'Carrying: ' + held.map(label).join(', ') : '';
   else text = `${TOOL_KINDS[S.tools[P.tool].k].name} ${held.length}/${CARGO_CARRY_CAP[carrier]}` + (held.length ? ': ' + held.map(label).join(', ') : '');
-  const hide = !text || ui.panelTrain !== null || carUi.stock !== null || telUi.open || (typeof bt !== 'undefined' && bt.on);
+  const hide = !text || ui.panelTrain !== null || carUi.stock !== null || telUi.open || bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on);
   const sig = (hide ? '-' : text) + '|' + held.length;
   if (sig === carryHudSig) return;
   carryHudSig = sig;
@@ -8290,7 +8365,7 @@ $('carryPut').addEventListener('click', () => {
 // It closes when the player walks more than 3u from the door, or the car is taken or moves off.
 const carUi = { stock: null, sig: '' };
 const CAR_NAMES = { boxcar: 'Boxcar', flatcar: 'Flatcar', combine: 'Combine' };
-function openCarPanel(stock) { closePanel(); closeTelPanel(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
+function openCarPanel(stock) { closePanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
 function closeCarPanel() { carUi.stock = null; carUi.sig = ''; $('carPanel').hidden = true; }
 function carPanelUpdate() {
   if (carUi.stock === null) return;
@@ -8320,7 +8395,7 @@ $('carClose').addEventListener('click', closeCarPanel);
 // together is page-side only (telUi.draft) until Send order sends it as one command.
 const telUi = { open: false, tab: 'order', draft: {}, sig: '' };
 const TEL_CREDIT_STEP = 50000; // Borrow and Repay move $500 at a time
-function openTelPanel() { closePanel(); closeCarPanel(); telUi.open = true; telUi.sig = ''; $('telPanel').hidden = false; telPanelUpdate(); }
+function openTelPanel() { closePanel(); closeCarPanel(); closeOffice(); closeInbox(); closeLook(); telUi.open = true; telUi.sig = ''; $('telPanel').hidden = false; telPanelUpdate(); }
 function closeTelPanel() { telUi.open = false; telUi.sig = ''; $('telPanel').hidden = true; }
 // Send a telegraph command; while paused, run one tick so it takes effect at once (as Lay track does).
 function telSend(cmd) { send(cmd); if (speed === 0) doTick(); }
@@ -8337,6 +8412,65 @@ function telContractText(k) {
   const what = `${k.quantity} ${C.name.toLowerCase()}` + (k.kind === 'STANDING' ? ` a week for ${k.repeatWeeks} weeks` : '');
   return `<b>${b.name}</b> (${econTownName(k.townId)}): ${what}, <span class="money">${econMoney(k.pricePerUnit)}</span> each, due ${econWhen(k.due)}.`;
 }
+// The telegraph panel's parts, shared with the office view (D1): the goods to order (market: with sell prices
+// and an 8-week line of buy prices), the contracts, the credit buttons and the latest ledger entries, and one
+// handler for their buttons (data-act).
+function econSpark(hist) {
+  if (!hist || !hist.length) return '<svg class="spark" viewBox="0 0 56 18" aria-hidden="true"></svg>';
+  if (hist.length < 2) hist = [hist[0], hist[0]];   // one week so far: a flat line
+  const lo = Math.min(...hist), hi = Math.max(...hist), span = hi - lo || 1;
+  const pts = hist.map((v, i) => `${Math.round(i * 54 / (hist.length - 1)) + 1},${Math.round(16 - (v - lo) * 14 / span)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 56 18" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="#6e4426" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+function econOrderHtml(E, draft, market, sendId) {
+  const lines = ECON_ORDERABLE.filter(c => draft[c] > 0).map(c => ({ c, n: draft[c] })), cost = lines.reduce((s, l) => s + l.n * E.market.buy[l.c], 0), n = lines.reduce((s, l) => s + l.n, 0);
+  let h = `<div class="row"><span class="grow">${n ? `${n} item${n > 1 ? 's' : ''}, <span class="money">${econMoney(cost)}</span>` : 'Choose goods below.'}</span><button id="${sendId}" data-act="send"${n ? '' : ' disabled'}>Send order</button></div>`;
+  for (const o of E.orders) h += `<div><small>Waiting for the Overland (${econWhen(o.due)}): ` + o.lines.map(l => `${l.n} ${COMMODITIES[l.c].name.toLowerCase()}`).join(', ') + '.</small></div>';
+  for (const c of ECON_ORDERABLE) {
+    const q = draft[c] || 0, sell = E.market.sell[c];
+    const label = market ? `${COMMODITIES[c].name}<br><small class="money">buy ${econMoney(E.market.buy[c])}${sell ? ', sell ' + econMoney(sell) : ''}</small></span>${econSpark(E.market.history[c])}`
+      : `${COMMODITIES[c].name} <small class="money">${econMoney(E.market.buy[c])}</small></span>`;
+    h += `<div class="row" data-c="${c}"><span class="grow">${label}` +
+      `<button data-act="dec" data-c="${c}" aria-label="One less ${COMMODITIES[c].name}">-</button><span class="q">${q}</span><button data-act="inc" data-c="${c}" aria-label="One more ${COMMODITIES[c].name}">+</button></div>`;
+  }
+  return h;
+}
+function econContractsHtml(E, pastN) {
+  let h = '';
+  const offers = E.contracts.filter(k => k.status === 'OFFERED'), open = E.contracts.filter(k => k.status === 'ACTIVE' || k.status === 'LATE');
+  const past = E.contracts.filter(k => /^(DONE|CANCELLED)$/.test(k.status)).slice(-pastN);
+  if (!offers.length && !open.length) h += '<div>No offers or contracts at the moment.</div>';
+  for (const k of offers) h += `<div class="card" data-k="${k.id}"><span>Offer: ${telContractText(k)}</span><div class="row"><button data-act="accept" data-id="${k.id}">Accept</button><button data-act="decline" data-id="${k.id}">Decline</button></div></div>`;
+  for (const k of open) {
+    const left = telContractLeft(k), C = COMMODITIES[k.commodity];
+    h += `<div class="card" data-k="${k.id}"><span>${k.status === 'LATE' ? '<b>Late.</b> ' : ''}${telContractText(k)} ${k.delivered} of ${k.quantity} delivered` +
+      (k.kind === 'STANDING' ? ` (week ${k.period + 1})` : '') + '.</span>' +
+      (left ? `<div class="row"><button data-act="orderFor" data-id="${k.id}">Order ${left} ${C.name.toLowerCase()} (${econMoney(left * E.market.buy[k.commodity])})</button></div>` : '') + '</div>';
+  }
+  for (const k of past) h += `<div><small>${k.status === 'DONE' ? 'Done' : 'Cancelled'}: ${econBiz(k.counterparty).name}, ${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}.</small></div>`;
+  return h;
+}
+function econCreditHtml(E) {
+  return `<div class="row"><button data-act="borrow"${E.loan + TEL_CREDIT_STEP > ECON.CREDIT_LIMIT ? ' disabled' : ''}>Borrow ${econMoney(TEL_CREDIT_STEP)}</button>` +
+    `<button data-act="repay"${E.loan < TEL_CREDIT_STEP ? ' disabled' : ''}>Repay ${econMoney(TEL_CREDIT_STEP)}</button></div>`;
+}
+function econLatestHtml(E, n) {
+  const last = E.ledger.slice(-n).reverse();
+  let h = last.length ? '' : '<div>No money in or out yet.</div>';
+  for (const L of last) h += `<div class="row"><span class="grow">${econWhen(L.t)} ${ECON_CATEGORY_NAMES[L.category] || L.category}<br><small>${L.counterparty}</small></span><span class="money">${econMoney(L.amount)}</span></div>`;
+  return h;
+}
+function econActClick(b) {
+  const a = b.dataset.act, c = b.dataset.c, id = Number(b.dataset.id);
+  if (a === 'inc') telUi.draft[c] = Math.min(ECON.ORDER_MAX_LINE, (telUi.draft[c] || 0) + 1);
+  else if (a === 'dec') telUi.draft[c] = Math.max(0, (telUi.draft[c] || 0) - 1);
+  else if (a === 'send') telSend({ t: 'econOrder', lines: telDraftLines() });
+  else if (a === 'accept') telSend({ t: 'contractAccept', id });
+  else if (a === 'decline') telSend({ t: 'contractDecline', id });
+  else if (a === 'orderFor') { const k = S.econ.contracts[id]; telSend({ t: 'econOrder', lines: [{ c: k.commodity, n: telContractLeft(k), contract: id }] }); }
+  else if (a === 'borrow') telSend({ t: 'creditDraw', amount: TEL_CREDIT_STEP });
+  else if (a === 'repay') telSend({ t: 'creditRepay', amount: TEL_CREDIT_STEP });
+}
 function telPanelUpdate() {
   if (!telUi.open) return;
   const P = S.player, key = econTelegraphKey(), E = S.econ;
@@ -8350,35 +8484,14 @@ function telPanelUpdate() {
   const info = $('telInfo'), body = $('telBody');
   let h = '';
   if (telUi.tab === 'order') {
-    const lines = telDraftLines(), cost = lines.reduce((s, l) => s + l.n * E.market.buy[l.c], 0), n = lines.reduce((s, l) => s + l.n, 0);
     info.textContent = `Cash ${econMoney(E.cash)}. Pay on order; an order sent now comes on the Overland, ${econWhen(econNextVisit(S.time))}.`;
-    h += `<div class="row"><span class="grow">${n ? `${n} item${n > 1 ? 's' : ''}, <span class="money">${econMoney(cost)}</span>` : 'Choose goods below.'}</span><button id="telSend" data-act="send"${n ? '' : ' disabled'}>Send order</button></div>`;
-    for (const o of E.orders) h += `<div><small>Waiting for the Overland (${econWhen(o.due)}): ` + o.lines.map(l => `${l.n} ${COMMODITIES[l.c].name.toLowerCase()}`).join(', ') + '.</small></div>';
-    for (const c of ECON_ORDERABLE) {
-      const q = telUi.draft[c] || 0;
-      h += `<div class="row" data-c="${c}"><span class="grow">${COMMODITIES[c].name} <small class="money">${econMoney(E.market.buy[c])}</small></span>` +
-        `<button data-act="dec" data-c="${c}" aria-label="One less ${COMMODITIES[c].name}">-</button><span class="q">${q}</span><button data-act="inc" data-c="${c}" aria-label="One more ${COMMODITIES[c].name}">+</button></div>`;
-    }
+    h = econOrderHtml(E, telUi.draft, false, 'telSend');
   } else if (telUi.tab === 'contracts') {
     info.textContent = 'Reputation: ' + CARGO_TOWNS.map(t => `${t.name} ${E.reputation[t.id]}`).join(', ') + '. Late deliveries pay 10% less a day.';
-    const offers = E.contracts.filter(k => k.status === 'OFFERED'), open = E.contracts.filter(k => k.status === 'ACTIVE' || k.status === 'LATE');
-    const past = E.contracts.filter(k => /^(DONE|CANCELLED)$/.test(k.status)).slice(-3);
-    if (!offers.length && !open.length) h += '<div>No offers or contracts at the moment.</div>';
-    for (const k of offers) h += `<div class="card" data-k="${k.id}"><span>Offer: ${telContractText(k)}</span><div class="row"><button data-act="accept" data-id="${k.id}">Accept</button><button data-act="decline" data-id="${k.id}">Decline</button></div></div>`;
-    for (const k of open) {
-      const left = telContractLeft(k), C = COMMODITIES[k.commodity];
-      h += `<div class="card" data-k="${k.id}"><span>${k.status === 'LATE' ? '<b>Late.</b> ' : ''}${telContractText(k)} ${k.delivered} of ${k.quantity} delivered` +
-        (k.kind === 'STANDING' ? ` (week ${k.period + 1})` : '') + '.</span>' +
-        (left ? `<div class="row"><button data-act="orderFor" data-id="${k.id}">Order ${left} ${C.name.toLowerCase()} (${econMoney(left * E.market.buy[k.commodity])})</button></div>` : '') + '</div>';
-    }
-    for (const k of past) h += `<div><small>${k.status === 'DONE' ? 'Done' : 'Cancelled'}: ${econBiz(k.counterparty).name}, ${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}.</small></div>`;
+    h = econContractsHtml(E, 3);
   } else {
     info.textContent = `Cash ${econMoney(E.cash)}. Credit line: ${econMoney(E.loan)} of ${econMoney(ECON.CREDIT_LIMIT)} drawn, 1% a week.`;
-    h += `<div class="row"><button data-act="borrow"${E.loan + TEL_CREDIT_STEP > ECON.CREDIT_LIMIT ? ' disabled' : ''}>Borrow ${econMoney(TEL_CREDIT_STEP)}</button>` +
-      `<button data-act="repay"${E.loan < TEL_CREDIT_STEP ? ' disabled' : ''}>Repay ${econMoney(TEL_CREDIT_STEP)}</button></div>`;
-    const last = E.ledger.slice(-12).reverse();
-    if (!last.length) h += '<div>No money in or out yet.</div>';
-    for (const L of last) h += `<div class="row"><span class="grow">${econWhen(L.t)} ${ECON_CATEGORY_NAMES[L.category] || L.category}<br><small>${L.counterparty}</small></span><span class="money">${econMoney(L.amount)}</span></div>`;
+    h = econCreditHtml(E) + econLatestHtml(E, 12);
   }
   body.innerHTML = h;
 }
@@ -8386,15 +8499,7 @@ $('telTabs').addEventListener('click', e => { const b = e.target.closest('button
 $('telBody').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
-  const a = b.dataset.act, c = b.dataset.c, id = Number(b.dataset.id);
-  if (a === 'inc') telUi.draft[c] = Math.min(ECON.ORDER_MAX_LINE, (telUi.draft[c] || 0) + 1);
-  else if (a === 'dec') telUi.draft[c] = Math.max(0, (telUi.draft[c] || 0) - 1);
-  else if (a === 'send') telSend({ t: 'econOrder', lines: telDraftLines() });
-  else if (a === 'accept') telSend({ t: 'contractAccept', id });
-  else if (a === 'decline') telSend({ t: 'contractDecline', id });
-  else if (a === 'orderFor') { const k = S.econ.contracts[id]; telSend({ t: 'econOrder', lines: [{ c: k.commodity, n: telContractLeft(k), contract: id }] }); }
-  else if (a === 'borrow') telSend({ t: 'creditDraw', amount: TEL_CREDIT_STEP });
-  else if (a === 'repay') telSend({ t: 'creditRepay', amount: TEL_CREDIT_STEP });
+  econActClick(b);
   telPanelUpdate();
 });
 $('telClose').addEventListener('click', closeTelPanel);
@@ -8419,12 +8524,13 @@ function cashHud() {
   cashHudText = t; $('cash').textContent = t;
   if (c < 0) $('cash').dataset.neg = ''; else delete $('cash').dataset.neg;
 }
-function openPanel(trId) { closeCarPanel(); closeTelPanel(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; ttPanelSig = ''; updateHud(); }
+function openPanel(trId) { closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; ttPanelSig = ''; updateHud(); }
 // The job signs' labels (hand-building, builder B2): one small card per staked job, standing on its sign board,
 // saying what the job still needs ("Bring 2 tie bundles and 1 spike keg"), or that it is ready or being built.
 // Words from jobNeeds through jobNeedsText (build tool section). Below the buttons (z-index 1, no taps), and
 // hidden while it would overlap a button or panel, so it never covers them.
-const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel', 'telPanel', 'cash'];
+const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel', 'telPanel', 'cash',
+  'tgBtn', 'alerts', 'tgSlide', 'office', 'inbox', 'lookCard'];
 const jobSigns = {};
 function jobSignText(S, job) {
   const P = S.player, needs = jobNeedsText(jobNeeds(S, job)), c = job.count, d = job.done;
@@ -8585,7 +8691,7 @@ function paxHud() {
   const X = S.pax;
   if (!X) return;
   const D = X.desk, KD = D && paxStation(S.track, D.st), queued = id => X.list.filter(p => p.st === id && p.s === 'queue').length;
-  const hideDesk = !KD || ui.panelTrain !== null || carUi.stock !== null || (typeof bt !== 'undefined' && bt.on);
+  const hideDesk = !KD || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on);
   const text = !KD ? '' : D.on ? `Ticket window, ${paxName(KD.id)}: ${queued(KD.id)} in line, ${X.sold[KD.id] || 0} sold` : 'Walking to the ticket window';
   const dsig = (hideDesk ? '-' : text);
   if (dsig !== paxDeskSig) { paxDeskSig = dsig; $('paxDesk').hidden = hideDesk; $('paxDeskText').textContent = text; }
@@ -8641,7 +8747,7 @@ function rideDoors() {
 }
 function rideHud() {
   const P = S.player, R = P.ride, el = $('ride');
-  const hide = !R || ui.panelTrain !== null || carUi.stock !== null || telUi.open;
+  const hide = !R || ui.panelTrain !== null || carUi.stock !== null || telUi.open || bigPanelOpen() || lookUi.open;
   let text = '', moving = false;
   if (R) {
     const f = rideCarOf(S, R.stock), at = f && curPoses ? rideAtPlatform(S, R.stock, curPoses) : null;
@@ -8690,7 +8796,14 @@ function updateHud() {
   townSignHud();
   paxHud();
   rideHud();
-  tutHud();
+  tutHud();            // before the slide-in, which keeps clear of the tutorial chip
+  officeUpdate();      // office, telegrams, alerts and Look (D1)
+  officeBtnHud();
+  inboxUpdate();
+  tgBtnHud();
+  tgSlideHud();
+  alertsHud();
+  lookUpdate();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -8747,7 +8860,7 @@ function ttCardHud() {
   let near = null;
   for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 && (!near || d < near.d)) near = { st, d }; }
   const card = $('ttCard');
-  const hide = !near || ui.panelTrain !== null || carUi.stock !== null || (typeof bt !== 'undefined' && bt.on);
+  const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
   const b = ttBoard(S, near.st.id);
   const sig = near.st.id + b.signal + b.lines.map(l => l.time + l.name + l.state).join('|');
@@ -8774,37 +8887,424 @@ function ttCardHud() {
   }
   card.style.visibility = show ? 'visible' : 'hidden';
 }
+// ---- Office, telegrams, alerts and Look (M1 package 7, builder D1, design-doc D13) ----
+// The office view opens at the hub depot's office desk: tap the depot wall at the desk (econTelTap) and the
+// player walks there (useDesk, 'reachedDesk'); while standing there an Office button shows in the bottom row.
+// Tabs: Contracts, Market (prices with an 8-week line, import orders), Ledger, Trains, Timetable. It does not
+// pause the game; it closes with its X or beyond ECON.TEL_REACH from the desk. The order list, contracts and the
+// credit buttons are the telegraph panel's own (econOrderHtml, econContractsHtml, econCreditHtml, econActClick).
+// Telegrams (sim: section "telegrams and alerts"): each new one slides in under the clock for TG_SLIDE_MS; the
+// telegraph button (top right, with the unread count) opens the inbox. Alerts: one icon per kind of active problem
+// at the right edge; a tap moves the camera to the next one of that kind. Look: tap Look, then a thing, for its card.
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+const landscapeUi = () => window.matchMedia('(orientation: landscape) and (max-height: 500px)').matches;
+const officeUi = { open: false, tab: 'contracts', sig: '' };
+const inboxUi = { open: false, sig: '', expanded: null };
+const lookUi = { armed: false, open: false, pick: null, sig: '' };
+const OFFICE_TAB_NAMES = { contracts: 'Contracts', market: 'Market', ledger: 'Ledger', trains: 'Trains', timetable: 'Timetable' };
+const TG_SLIDE_MS = 4500;
+function bigPanelOpen() { return officeUi.open || inboxUi.open; }
+function openOffice() {
+  closePanel(); closeCarPanel(); closeTelPanel(); closeInbox(); closeLook();
+  officeUi.open = true; officeUi.sig = ''; $('office').hidden = false; officeUpdate();
+}
+function closeOffice() { officeUi.open = false; officeUi.sig = ''; $('office').hidden = true; }
+// Money in and out by category for game time >= t0.
+function officeTotals(E, t0) {
+  const by = {};
+  let inn = 0, out = 0;
+  for (let i = E.ledger.length - 1; i >= 0 && E.ledger[i].t >= t0; i--) {
+    const L = E.ledger[i];
+    by[L.category] = (by[L.category] || 0) + L.amount;
+    if (L.amount > 0) inn += L.amount; else out += L.amount;
+  }
+  return { by, inn, out };
+}
+// Where a train is, in words.
+function trainWhereText(S, tr) {
+  if (trainOff(tr)) return tr.owner === 'overland' ? 'Away (it comes in at 06:00 and 18:00)' : 'Not on the map';
+  const p = trainPoses(S.track, tr)[0], sts = ttStations(S);
+  let near = null;
+  for (const st of sts) { const k = st.track, d = Math.hypot(p.x - (k.x0 + k.x1) / 2, p.z - (k.z0 + k.z1) / 2); if (!near || d < near.d) near = { st, d }; }
+  if (near && near.d < 20) return 'At ' + near.st.name;
+  if (tr.owner === 'overland' || tr.owner === 'interchange') return 'On the interchange track';
+  const hub = sts[0];
+  if (!hub) return `At x ${Math.round(p.x)}, z ${Math.round(p.z)}`;
+  const miles = Math.round(Math.hypot(p.x - (hub.track.x0 + hub.track.x1) / 2, p.z - (hub.track.z0 + hub.track.z1) / 2) / 16 * 10) / 10;
+  return `On the line, ${miles} miles from ${hub.name}`;
+}
+const minText = sec => { const m = Math.round(sec / 60); return m + (m === 1 ? ' minute' : ' minutes'); };
+// A timetable train's next stop and delay, in words: { next, delay }.
+function trainRunText(S, tr) {
+  const run = ttRunOf(S, tr.id), on = S.tt && S.tt.services.some(s => s.train === tr.id);
+  if (!run) return { next: on ? 'On the timetable, between runs' : 'Not on the timetable', delay: on ? 'None' : '' };
+  const svc = S.tt.services[run.svc], stop = svc.stops[run.i], st = ttStation(S, stop.st), name = st ? st.name : stop.st;
+  const at = run.ph === 'at', sod = at && stop.dep !== null ? stop.dep : stop.arr, late = sod === null ? 0 : S.time - ttAt(run.day, sod);
+  const next = at ? (stop.dep !== null ? `At ${name}, leaves ${ttClock(stop.dep)}` : `At ${name}, the end of the run`) : `${name}, due ${ttClock(stop.arr)}`;
+  const why = run.why ? ` (${run.why.replace(/^Waiting: /, '')})` : '';
+  return { next: `${svc.name}: ${next}`, delay: late > 59 ? minText(late) + ' late' + why : 'On time' + why };
+}
+function consistText(S, tr) {
+  return tr.consist.map(c => c.k === 'loco' ? 'engine' : `${(CAR_NAMES[c.k] || c.k).toLowerCase()} ${c.id}` + (CARGO_CAR_RULES[c.k] ? ` (${itemsAt(S, { kind: 'CAR', stockId: c.id }).length} items)` : '')).join(', ');
+}
+function locoText(tr) {
+  const L = trainLocos(tr)[0];
+  return L ? `Wood ${Math.floor(L.fuel / CFG.CORD_U * 10) / 10} of ${CFG.TENDER_CORDS} cords, water ${Math.round(L.water / CFG.WATER_U * 100)}%` : '';
+}
+const TT_ACT_NAMES = { work: 'goods', wood: 'wood', water: 'water' };
+function officeHtml() {
+  const E = S.econ, info = $('officeInfo');
+  const day0 = Math.floor((S.time + CFG.DAY_START_S) / 86400) * 86400 - CFG.DAY_START_S, week0 = Math.floor((S.time + CFG.DAY_START_S) / ECON.WEEK_S) * ECON.WEEK_S - CFG.DAY_START_S;
+  let h = '';
+  if (officeUi.tab === 'contracts') {
+    info.textContent = 'Reputation: ' + CARGO_TOWNS.map(t => `${t.name} ${E.reputation[t.id]}`).join(', ') + '. Late deliveries pay 10% less a day.';
+    h = econContractsHtml(E, 20);
+  } else if (officeUi.tab === 'market') {
+    info.textContent = `Cash ${econMoney(E.cash)}. Buy and sell prices of the Overland market, with the last 8 weeks. Pay on order; it comes on the Overland, ${econWhen(econNextVisit(S.time))}.`;
+    h = econOrderHtml(E, telUi.draft, true, 'officeSend');
+  } else if (officeUi.tab === 'ledger') {
+    const d = officeTotals(E, day0), w = officeTotals(E, week0), cats = ECON_CATEGORIES.filter(c => d.by[c] || w.by[c]);
+    info.textContent = `Cash ${econMoney(E.cash)}. Credit line: ${econMoney(E.loan)} of ${econMoney(ECON.CREDIT_LIMIT)} drawn, 1% a week.`;
+    h += '<table><tr><th></th><th class="n">Today</th><th class="n">This week</th></tr>';
+    for (const c of cats) h += `<tr><td>${esc(ECON_CATEGORY_NAMES[c] || c)}</td><td class="n">${d.by[c] ? econMoney(d.by[c]) : '-'}</td><td class="n">${w.by[c] ? econMoney(w.by[c]) : '-'}</td></tr>`;
+    h += `<tr><td><b>Money in</b></td><td class="n">${econMoney(d.inn)}</td><td class="n">${econMoney(w.inn)}</td></tr>`;
+    h += `<tr><td><b>Money out</b></td><td class="n">${econMoney(d.out)}</td><td class="n">${econMoney(w.out)}</td></tr></table>`;
+    h += `<div><b>Loans:</b> ${econMoney(E.loan)} owed to the Eastern investors` + (E.loan ? `, ${econMoney(Math.round(E.loan * ECON.CREDIT_PERMILLE_WEEK / 1000))} interest next Monday.` : '.') + '</div>';
+    h += econCreditHtml(E) + econLatestHtml(E, 6);
+  } else if (officeUi.tab === 'trains') {
+    info.textContent = 'Every train on the line: where it is, wood and water, delay and cars.';
+    for (const tr of S.trains) {
+      if (tr.owner === 'cut' && !tr.consist.length) continue;
+      if (tr.owner === 'interchange') { if (tr.consist.length) h += `<div class="card"><span><b>Cars on the interchange</b><br>${esc(consistText(S, tr))}</span></div>`; continue; }
+      if (tr.owner === 'cut') { h += `<div class="card"><span><b>Cars standing</b> <small>${esc(trainWhereText(S, tr))}</small><br>${esc(consistText(S, tr))}</span></div>`; continue; }
+      if (tr.owner === 'overland') { h += `<div class="card"><span><b>The Overland</b> <small>${esc(S.overland.phase === 'away' ? 'away' : 'at the interchange')}</small><br>${esc(trainWhereText(S, tr))}</span></div>`; continue; }
+      const r = trainRunText(S, tr);
+      h += `<div class="card" data-tr="${tr.id}"><span><b>${esc(tr.name)}</b> <small>${esc(tr.status || '')}</small><br>Where: ${esc(trainWhereText(S, tr))}<br>${esc(locoText(tr))}<br>` +
+        `Next: ${esc(r.next)}` + (r.delay ? `<br>Delay: ${esc(r.delay)}` : '') + `<br>Cars: ${esc(consistText(S, tr))}</span></div>`;
+    }
+  } else {
+    info.textContent = 'The train services and their stops. Start puts our engine on a service; Stop takes it off.';
+    const eng = S.trains.find(t => !t.owner && trainLocos(t).length);
+    for (const svc of S.tt.services) {
+      const run = S.tt.runs.find(r => r.svc === svc.id), tr = svc.train !== null ? S.trains[svc.train] : null;
+      h += `<div class="card" data-svc="${svc.id}"><span><b>${esc(svc.name)}</b><br><small>${tr ? 'Engine: ' + esc(tr.name) : 'No engine on it'}` +
+        (run ? ', running' + (run.why ? ': ' + esc(run.why) : '') : '') + '</small></span>';
+      h += '<table><tr><th>Station</th><th class="n">Arrives</th><th class="n">Leaves</th><th>Work</th></tr>';
+      svc.stops.forEach((p, i) => {
+        const st = ttStation(S, p.st), cur = run && run.i === i;
+        h += `<tr${cur ? ' style="font-weight:600"' : ''}><td>${esc(st ? st.name : p.st)}</td><td class="n">${p.arr === null ? '-' : ttClock(p.arr)}</td><td class="n">${p.dep === null ? '-' : ttClock(p.dep)}</td>` +
+          `<td>${esc(p.acts.map(a => TT_ACT_NAMES[a] || a).concat(p.turn ? ['run round'] : []).join(', '))}</td></tr>`;
+      });
+      h += '</table><div class="row">' + (tr ? `<button data-act="ttOff" data-svc="${svc.id}" data-tr="${tr.id}">Stop this service</button>`
+        : `<button data-act="ttOn" data-svc="${svc.id}" data-tr="${eng ? eng.id : -1}"${eng ? '' : ' disabled'}>Start with ${esc(eng ? eng.name : 'an engine')}</button>`) + '</div></div>';
+    }
+  }
+  return h;
+}
+function officeUpdate() {
+  if (!officeUi.open) return;
+  if (!econAtDesk(S)) { closeOffice(); return; }
+  const E = S.econ, live = officeUi.tab === 'trains' || officeUi.tab === 'timetable';
+  const sig = JSON.stringify([officeUi.tab, telUi.draft, E.cash, E.loan, E.ledger.length, E.orders.map(o => o.id), E.contracts.map(k => k.status + k.delivered + ':' + k.period),
+    econNextVisit(S.time), Math.floor((S.time + CFG.DAY_START_S) / 86400), live ? Math.floor(S.time / 300) : 0, live ? S.tt.services.map(s => s.train) : 0, live ? S.tt.runs.map(r => r.svc + r.ph + r.i) : 0]);
+  if (sig === officeUi.sig) return;
+  officeUi.sig = sig;
+  document.querySelectorAll('#officeTabs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tab === officeUi.tab)));
+  const body = $('officeBody'), top = body.scrollTop;
+  body.innerHTML = officeHtml();
+  body.scrollTop = top;
+}
+$('officeTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { officeUi.tab = b.dataset.tab; $('officeBody').scrollTop = 0; officeUpdate(); } });
+$('officeBody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.dataset.act === 'ttOn' || b.dataset.act === 'ttOff') {
+    const tr = Number(b.dataset.tr);
+    if (tr >= 0) telSend({ t: 'ttAssign', tr, on: b.dataset.act === 'ttOn', svc: Number(b.dataset.svc) });
+  } else econActClick(b);
+  officeUi.sig = ''; officeUpdate();
+});
+$('officeClose').addEventListener('click', closeOffice);
+// The Office button (bottom row): while the player stands at the desk.
+let officeBtnSig = '';
+function officeBtnHud() {
+  const show = !!S.econ && econAtDesk(S, CFG.REACH) && !(typeof bt !== 'undefined' && bt.on), sig = show + '|' + officeUi.open;
+  if (sig === officeBtnSig) return;
+  officeBtnSig = sig; $('officeBtn').hidden = !show; $('officeBtn').setAttribute('aria-pressed', String(officeUi.open));
+}
+$('officeBtn').addEventListener('click', () => { if (officeUi.open) closeOffice(); else openOffice(); });
+// ---- The inbox ----
+function openInbox(id) {
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook();
+  inboxUi.open = true; inboxUi.sig = ''; $('inbox').hidden = false; tgSlideHide();
+  if (id !== undefined && id !== null) { inboxUi.expanded = id; const g = tgGet(S, id); if (g && !g.read) telSend({ t: 'tgRead', id }); }
+  inboxUpdate();
+}
+function closeInbox() { inboxUi.open = false; inboxUi.sig = ''; $('inbox').hidden = true; }
+function inboxUpdate() {
+  if (!inboxUi.open || !S.tg) return;
+  const L = S.tg.list, sig = L.length + ':' + (L.length ? L[L.length - 1].id : '') + ':' + L.map(g => (g.read ? 1 : 0) + '' + g.answered).join('') + ':' + inboxUi.expanded;
+  if (sig === inboxUi.sig) return;
+  inboxUi.sig = sig;
+  let h = L.length ? '' : '<div>No telegrams yet.</div>';
+  for (let i = L.length - 1; i >= 0; i--) {
+    const g = L[i], open = inboxUi.expanded === g.id;
+    h += `<div class="tg" data-id="${g.id}"${g.read ? '' : ' data-unread'}><b>${esc(g.title)}</b><small>${esc(g.from)}, ${esc(econWhen(g.t))}</small>`;
+    if (open) {
+      if (g.body) h += `<div>${esc(g.body)}</div>`;
+      if (g.buttons && g.answered === null) h += '<div class="acts">' + g.buttons.map((b, n) => `<button data-b="${n}" data-id="${g.id}">${esc(b.label)}</button>`).join('') + '</div>';
+      else if (g.buttons) h += `<small>Answered: ${esc(g.buttons[g.answered].label)}</small>`;
+    }
+    h += '</div>';
+  }
+  $('inboxBody').innerHTML = h;
+}
+$('inboxBody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b && b.dataset.b !== undefined) { telSend({ t: 'tgAnswer', id: Number(b.dataset.id), b: Number(b.dataset.b) }); closeInbox(); return; }
+  const c = e.target.closest('.tg');
+  if (!c) return;
+  const id = Number(c.dataset.id), g = tgGet(S, id);
+  inboxUi.expanded = inboxUi.expanded === id ? null : id;
+  if (g && !g.read) telSend({ t: 'tgRead', id });
+  inboxUpdate();
+});
+$('inboxAll').addEventListener('click', () => { telSend({ t: 'tgRead', id: -1 }); inboxUpdate(); });
+$('inboxClose').addEventListener('click', closeInbox);
+$('tgBtn').addEventListener('click', () => { if (inboxUi.open) closeInbox(); else openInbox(); });
+let tgBtnSig = '';
+function tgBtnHud() {
+  const n = S.tg ? S.tg.list.reduce((a, g) => a + (g.read ? 0 : 1), 0) : 0, sig = n + '|' + inboxUi.open;
+  if (sig === tgBtnSig) return;
+  tgBtnSig = sig; $('tgCount').textContent = n ? String(n) : '';
+  $('tgBtn').setAttribute('aria-label', n ? `Telegrams, ${n} unread` : 'Telegrams'); $('tgBtn').setAttribute('aria-pressed', String(inboxUi.open));
+}
+// ---- The slide-in under the clock ----
+// New telegrams are found by the inbox's next id (so ones sent outside a tick show too); a loaded game starts with none new.
+const tgSlide = { queue: [], id: null, until: 0, S: null, next: 0, ms: TG_SLIDE_MS };
+function tgSlideHide() {
+  tgSlide.id = null; tgSlide.until = 0; $('tgSlide').classList.remove('show'); $('toast').style.top = '';
+}
+function tgSlideHud() {
+  const el = $('tgSlide'), now = performance.now();
+  if (!S.tg) return;
+  if (tgSlide.S !== S) { tgSlide.S = S; tgSlide.next = S.tg.next; tgSlide.queue = []; tgSlideHide(); }
+  for (; tgSlide.next < S.tg.next; tgSlide.next++) tgSlide.queue.push(tgSlide.next);
+  if (tgSlide.id !== null && now > tgSlide.until) tgSlideHide();
+  if (tgSlide.id !== null || !tgSlide.queue.length || bigPanelOpen() || ui.sendMode || (typeof bt !== 'undefined' && bt.on)) return;
+  const ids = tgSlide.queue.splice(0), g = tgGet(S, ids[ids.length - 1]);
+  if (!g || g.read) return;
+  const more = ids.length - 1;
+  $('tgSlideTitle').textContent = g.title;
+  $('tgSlideFrom').textContent = g.from + (more ? `, and ${more} more` : '') + '. Tap to read.';
+  // Under the clock, and below the right-hand buttons (the tutorial chip, alerts) where it would meet them.
+  let top = $('topleft').getBoundingClientRect().bottom + 6;
+  const w = el.offsetWidth, h = Math.max(el.offsetHeight, 48), x0 = el.getBoundingClientRect().left + w + 20; // its left edge once shown
+  const right = ['tgBtn', 'tutTask'].map(id => $(id)).concat([...$('alerts').children]).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
+  for (let k = 0; k < 4; k++) { const q = right.find(r => r.left < x0 + w && r.top < top + h && r.bottom > top); if (!q) break; top = q.bottom + 6; }
+  el.style.top = Math.round(top) + 'px';
+  el.classList.add('show'); tgSlide.id = g.id; tgSlide.until = now + tgSlide.ms;
+  // Messages (the toast) move down below the telegram while it shows.
+  const r = el.getBoundingClientRect(), t = $('toast');
+  if (t.getBoundingClientRect().top < r.bottom + 6) t.style.top = Math.round(r.bottom + 8) + 'px';
+}
+$('tgSlide').addEventListener('click', () => { const id = tgSlide.id; tgSlideHide(); openInbox(id); });
+function officeOnEvent(e) {
+  if (e.t === 'tgRefused') toast(e.why + '.');
+  else if (e.t === 'reachedDesk') toast('The office desk: tap Office to open the books.');
+}
+// ---- Alerts: one icon per kind of problem at the right edge ----
+const ALERT_KINDS = [['wait', 'Wait', 'Train waiting'], ['late', 'Late', 'Contract late'], ['stock', 'Stock', 'Out of stock'], ['wood', 'Wood', 'No wood']];
+const alertUi = { last: -1e9, groups: {}, sig: '', idx: {} };
+function alertsHud() {
+  const now = performance.now();
+  if (now - alertUi.last < 400) return;   // looked at about twice a second
+  alertUi.last = now;
+  const hide = (typeof bt !== 'undefined' && bt.on) || (!landscapeUi() && bigPanelOpen()) || !S.tg;
+  const list = hide ? [] : alertsOf(S), groups = {};
+  for (const a of list) (groups[a.k] = groups[a.k] || []).push(a);
+  alertUi.groups = groups;
+  const chip = $('tutTask'), top = chip && !chip.hidden && chip.getClientRects().length ? Math.round(chip.getBoundingClientRect().bottom + 6) + 'px' : '';
+  if ($('alerts').style.top !== top) $('alerts').style.top = top;
+  const box = $('alerts'), sig = ALERT_KINDS.map(([k]) => (groups[k] || []).length).join(',');
+  if (sig !== alertUi.sig) {
+    alertUi.sig = sig; box.textContent = '';
+    for (const [k, word, name] of ALERT_KINDS) {
+      const n = (groups[k] || []).length;
+      if (!n) continue;
+      const b = document.createElement('button');
+      b.dataset.k = k; b.setAttribute('aria-label', `${name}: ${n}. Tap to look`);
+      b.innerHTML = `<b>${word}</b>${n > 1 ? `<span>${n}</span>` : ''}`;
+      box.appendChild(b);
+    }
+  }
+  // An icon that would overlap another button or panel is hidden (the debug bar, Centre, panels).
+  for (const b of box.children) {
+    const q = b.getBoundingClientRect();
+    let show = q.bottom <= window.innerHeight - 4;
+    for (const id of ['dbgBar', 'centre', 'panel', 'telPanel', 'carPanel', 'lookCard', 'office', 'inbox']) {
+      const o = $(id);
+      if (!show || !o || o.hidden || !o.getClientRects().length) continue;
+      const r = o.getBoundingClientRect();
+      if (q.left < r.right && q.right > r.left && q.top < r.bottom && q.bottom > r.top) show = false;
+    }
+    b.style.visibility = show ? 'visible' : 'hidden';
+  }
+}
+// A tap on an alert moves the camera to the next problem of that kind (the Centre button brings it back).
+function alertGo(k) {
+  const g = alertUi.groups[k];
+  if (!g || !g.length) return null;
+  const i = (alertUi.idx[k] || 0) % g.length, a = g[i];
+  alertUi.idx[k] = i + 1;
+  cam.ox = a.x - cam.fx; cam.oz = a.z - cam.fz;
+  toast(`${a.title}. ${a.body}`);
+  return a;
+}
+$('alerts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) alertGo(b.dataset.k); });
+// ---- Look: tap Look, then a thing, to see its card ----
+function closeLook() { lookUi.open = false; lookUi.pick = null; lookUi.sig = ''; $('lookCard').hidden = true; }
+function setLookArmed(on) { lookUi.armed = on; $('lookBtn').setAttribute('aria-pressed', String(on)); }
+$('lookBtn').addEventListener('click', () => { closeLook(); setLookArmed(!lookUi.armed); if (lookUi.armed) toast('Tap something to look at it.'); });
+$('lookClose').addEventListener('click', closeLook);
+// What a Look tap points at: an item, a traveller, a train or car, a business, a job or a switch stand.
+function lookPickAt(px, py) {
+  const it = itemHitAt(px, py);
+  if (it) return { k: 'item', id: it.id };
+  if (S.pax) {
+    let best = null;
+    for (const p of S.pax.list) {
+      if (p.s === 'aboard') continue;
+      const q = toScreen(p.x / 100, 0.9, p.z / 100), d = Math.hypot(q.x - px, q.y - py);
+      if (d < 22 && (!best || d < best.d)) best = { id: p.id, d };
+    }
+    if (best) return { k: 'pax', id: best.id };
+  }
+  raycaster.setFromCamera(ndc(px, py), camera);
+  const hits = raycaster.intersectObjects(view.trainGroup.children, false).filter(h => h.object.visible);
+  if (hits.length) {
+    const tr = S.trains[hits[0].object.userData.train], stock = hits[0].object.userData.stock, f = carryCarOf(S, stock);
+    if (tr && (tr.owner === 'interchange' || tr.owner === 'cut' || (!tr.owner && f && f.car.k !== 'loco'))) return { k: 'car', id: stock };
+    if (tr) return { k: 'train', id: tr.id };
+  }
+  const biz = townHitAt(px, py);
+  if (biz !== null) return { k: 'biz', id: biz };
+  const job = jobHitAt(groundAt(px, py));
+  if (job !== null) return { k: 'job', id: job };
+  for (const W of S.track.switches) { const p = toScreen(W.stand.x, 0.6, W.stand.z); if (Math.hypot(p.x - px, p.y - py) < 34) return { k: 'sw', id: W.id }; }
+  return null;
+}
+function lookTap(px, py) {
+  setLookArmed(false);
+  const pick = lookPickAt(px, py);
+  if (!pick) { toast('Nothing to look at there.'); return; }
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox();
+  lookUi.pick = pick; lookUi.open = true; lookUi.sig = ''; $('lookCard').hidden = false; lookUpdate();
+}
+const placeConsignee = c => !c ? '?' : c.kind === 'BUSINESS' ? (econBiz(c.id) || { name: 'a business' }).name : c.kind === 'WAREHOUSE' ? 'The hub warehouse (our own goods)'
+  : c.kind === 'CONSTRUCTION' ? 'Our own track work' : c.kind === 'CAMP' ? 'The construction camp' : c.kind === 'OUTSIDE' ? 'Outside (the Overland market)' : c.kind;
+function placeText(S, w) {
+  if (!w) return 'Used up';
+  if (w.kind === 'GROUND') return 'On the ground';
+  if (w.kind === 'BAY') return `In bay ${w.bay + 1} of the freight shed`;
+  if (w.kind === 'CARRIED') return w.actorId === 'player' ? 'Carried by you' : 'Being carried';
+  if (w.kind === 'CAR') { const f = carryCarOf(S, w.stockId); return f ? `In ${(CAR_NAMES[f.car.k] || 'car').toLowerCase()} ${w.stockId}` + (f.tr.owner ? '' : ` of ${f.tr.name}`) : 'In a car'; }
+  if (w.kind === 'STOCKPILE') return `On site for job ${w.jobId + 1}`;
+  if (w.kind === 'BUSINESS') return 'At ' + (econBiz(w.businessId) || { name: 'a business' }).name;
+  return w.kind;
+}
+// The card for a Look pick, as plain data: { title, lines } (null when the thing is gone).
+function lookCardOf(S, pick) {
+  const I = S.items, label = id => { const wb = I.waybill[id], T = CARGO_TAGS[itemTag(wb)]; return `${tgGood(wb.commodity)} (${T ? T.letter : '?'})`; };
+  if (pick.k === 'item') {
+    const id = pick.id, wb = I.waybill[id];
+    if (!wb || !I.alive[id]) return null;
+    const C = COMMODITIES[wb.commodity], T = CARGO_TAGS[itemTag(wb)], k = wb.contractId !== null ? S.econ.contracts[wb.contractId] : null;
+    return { title: `Waybill: ${C ? C.name : wb.commodity}`, lines: [
+      `Item ${id}, a ${cargoName(C ? C.type : '')}` + (wb.pieces !== undefined ? ` (${wb.pieces} pieces left)` : ''),
+      `Tag: ${T ? T.letter + ', ' + T.name : '?'}`,
+      `To: ${placeConsignee(wb.consignee)}` + (wb.destTownId !== 'OUTSIDE' && wb.consignee.kind !== 'OUTSIDE' ? `, ${econTownName(wb.destTownId)}` : ''),
+      `From: ${wb.originTownId === 'OUTSIDE' ? 'Outside, by the Overland' : econTownName(wb.originTownId)}`,
+      k ? `Contract: ${(econBiz(k.counterparty) || {}).name}, ${k.quantity} ${tgGood(k.commodity)}, due ${econWhen(k.due)}` : 'Contract: none',
+      `Now: ${placeText(S, I.where[id])}`] };
+  }
+  if (pick.k === 'car') {
+    const f = carryCarOf(S, pick.id);
+    if (!f) return null;
+    const ids = itemsAt(S, { kind: 'CAR', stockId: pick.id }), R = CARGO_CAR_RULES[f.car.k], cnt = {};
+    for (const id of ids) cnt[label(id)] = (cnt[label(id)] || 0) + 1;
+    const used = R ? ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0) : 0;
+    return { title: `${CAR_NAMES[f.car.k] || 'Car'} ${f.car.id}`, lines: [
+      f.tr.owner === 'interchange' ? 'Standing on the interchange track' : f.tr.owner === 'cut' ? 'Standing, not coupled to an engine' : f.tr.owner === 'overland' ? 'On the Overland' : `In ${f.tr.name}`,
+      ids.length ? `Holds ${ids.length} item${ids.length > 1 ? 's' : ''}` + (R ? `, ${Math.round(used * 100 / R.cap)}% full` : '') + ':' : 'Empty'].concat(Object.keys(cnt).map(n => `${cnt[n]} x ${n}`)) };
+  }
+  if (pick.k === 'train') {
+    const tr = S.trains[pick.id];
+    if (!tr || trainOff(tr)) return null;
+    if (tr.owner) return { title: tr.owner === 'overland' ? 'The Overland' : 'Cars', lines: [trainWhereText(S, tr), 'Cars: ' + consistText(S, tr), tr.owner === 'overland' ? 'Its own crew drives it.' : ''].filter(Boolean) };
+    const r = trainRunText(S, tr);
+    return { title: tr.name, lines: [`Status: ${tr.status || 'Stopped'}`, `Next stop: ${r.next}`].concat(r.delay ? [`Delay: ${r.delay}`] : []).concat([locoText(tr), 'Consist: ' + consistText(S, tr), `Where: ${trainWhereText(S, tr)}`]) };
+  }
+  if (pick.k === 'biz') {
+    const B = townBiz(pick.id);
+    if (!B) return null;
+    const day = Math.floor((S.time + CFG.DAY_START_S) / 86400), winter = townWinter(day);
+    const goods = townGoods(B).filter(c => townRate(B, c, winter) > 0);
+    const ks = S.econ.contracts.filter(k => k.counterparty === B.id);
+    const wants = ks.filter(k => k.status === 'ACTIVE' || k.status === 'LATE').map(k => `${k.quantity - k.delivered} ${tgGood(k.commodity)}, due ${econWhen(k.due)}` + (k.status === 'LATE' ? ' (late)' : ''));
+    const offers = ks.filter(k => k.status === 'OFFERED').map(k => `${k.quantity} ${tgGood(k.commodity)}`);
+    return { title: B.name, lines: [`In ${econTownName(B.townId)}`, 'Stock: ' + (goods.map(c => `${tgGood(c)} ${townStock(S, B.id, c)}`).join(', ') || 'nothing used'),
+      'Wants: ' + (wants.length ? wants.join('; ') : 'nothing under contract')].concat(offers.length ? ['Offers waiting at the office: ' + offers.join(', ')] : []) };
+  }
+  if (pick.k === 'job') {
+    const job = jobGet(S, pick.id);
+    if (!job) return null;
+    const tx = jobSignText(S, job), c = job.count, d = job.done;
+    return { title: tx.title, lines: [tx.needs ? 'Needs: ' + tx.needs : 'Has everything it needs on site', `Ties ${d.ties} of ${c.ties}, rail pairs ${d.rails} of ${c.rails}, spikes ${d.spikes} of ${c.spikes}`, tx.needs ? '' : 'Tap the stakes to work'].filter(Boolean) };
+  }
+  if (pick.k === 'pax') {
+    const p = S.pax.list.find(q => q.id === pick.id);
+    if (!p) return null;
+    const what = { queue: 'In line for a ticket', wait: 'Waiting for the train', board: 'Boarding the train', aboard: 'On the train', off: 'Stepping off', leave: 'Leaving the station' }[p.s] || p.s;
+    return { title: `Traveller to ${paxPlaceName(p.to)}`, lines: [`From: ${paxPlaceName(p.from)}`, `Going to: ${paxPlaceName(p.to)}`, what, p.fare ? `Ticket bought (${econMoney(p.fare)})` : 'No ticket yet',
+      `Here for ${minText(S.time - p.t0)}`] };
+  }
+  if (pick.k === 'sw') {
+    const W = S.track.switches[pick.id];
+    if (!W) return null;
+    const why = switchLockReason(S, W.id);
+    return { title: `Switch ${W.id}`, lines: [`Set ${W.state === 'N' ? 'straight (green)' : 'to the turn-off (red)'}`, why ? `Locked: ${why}` : 'Free: tap it to throw it'] };
+  }
+  return null;
+}
+function lookUpdate() {
+  if (!lookUi.open) return;
+  const c = lookCardOf(S, lookUi.pick);
+  if (!c) { closeLook(); return; }
+  const sig = c.title + '|' + c.lines.join('|');
+  if (sig === lookUi.sig) return;
+  lookUi.sig = sig;
+  $('lookTitle').textContent = c.title;
+  const box = $('lookBody'); box.textContent = '';
+  for (const l of c.lines) { const d = document.createElement('div'); d.textContent = l; box.appendChild(d); }
+}
 
-// ---- The investor's tutorial (D2): the current task chip and its telegram card ----
-// The chip under the Build button names the step in hand ("Current task") and pulses when a new step's telegram
-// comes; a tap opens the card with that telegram (with its OK and Skip tutorial buttons while unanswered) and
-// marks it read. The brass marker in the world (tutDraw) stands over the place the step needs.
-const tutUi = { sig: '', open: false, step: -2 };
+// ---- The investor's tutorial (D2): the current task chip ----
+// The chip under the telegraph button names the step in hand ("Current task") and pulses when a new step's telegram
+// comes; a tap opens the inbox (D1) at that telegram, with its OK and Skip tutorial buttons while unanswered, and
+// marks it read. The chip hides while the office, the inbox or a Look card is open (they use that part of the
+// screen in landscape). The brass marker in the world (tutDraw) stands over the place the step needs.
+const tutUi = { step: -2, hide: null };
 function tutHud() {
-  const c = tutCurrent(S), box = $('tutTask');
-  if (!c) { if (!box.hidden) { box.hidden = true; tutUi.open = false; tutUi.sig = ''; tutUi.step = -2; } return; }
-  box.hidden = false;
+  const c = tutCurrent(S), box = $('tutTask'), hide = !c || bigPanelOpen() || lookUi.open;
+  if (hide !== tutUi.hide) { tutUi.hide = hide; box.hidden = hide; }
+  if (!c) { tutUi.step = -2; return; }
   if (c.step !== tutUi.step) {
     tutUi.step = c.step; $('tutChipText').textContent = c.title;
     const ch = $('tutChip'); ch.classList.remove('pulse'); void ch.offsetWidth; ch.classList.add('pulse');
   }
-  const g = tgGet(S, c.tg), sig = c.step + ':' + tutUi.open + ':' + (g ? g.answered + ':' + g.body : '');
-  if (sig === tutUi.sig) return;
-  tutUi.sig = sig;
-  $('tutCard').hidden = !tutUi.open || !g; $('tutChip').setAttribute('aria-expanded', String(tutUi.open));
-  if (!tutUi.open || !g) return;
-  $('tutFrom').textContent = 'Telegram from ' + g.from; $('tutTitle').textContent = g.title; $('tutBody').textContent = g.body;
-  const bt = $('tutBtns'); bt.textContent = '';
-  const add = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); bt.appendChild(b); };
-  const shut = () => { tutUi.open = false; tutUi.sig = ''; };
-  if (g.buttons && g.answered === null) g.buttons.forEach((b, i) => add(b.label, () => { send({ t: 'tgAnswer', id: g.id, b: i }); shut(); }));
-  else add('Close', shut);
 }
-$('tutChip').addEventListener('click', () => {
-  tutUi.open = !tutUi.open; tutUi.sig = '';
-  const c = tutCurrent(S), g = c && tgGet(S, c.tg);
-  if (tutUi.open && g && !g.read) send({ t: 'tgRead', id: g.id });
-});
+$('tutChip').addEventListener('click', () => { const c = tutCurrent(S); if (c) openInbox(c.tg); });
 // The hint marker: a brass diamond turning and bobbing over the place the step in hand needs (one draw call).
 let tutMark = null;
 function tutDraw() {
@@ -8845,6 +9345,8 @@ function pickAt(px, py) {
   return null;
 }
 function onTap(px, py) {
+  if (lookUi.open) { closeLook(); return; }          // Look (D1): a tap elsewhere closes the card
+  if (lookUi.armed) { lookTap(px, py); return; }     // the one tap after Look: inspect what is there
   const g = groundAt(px, py);
   if (ui.sendMode) {
     if (!g) return;
@@ -8911,19 +9413,25 @@ function rideTap(px, py, hit) {
 // while carrying by hand, a tap on the ground puts the item down there. With a hand truck or handcart, a tap on
 // the ground just walks (pushing it); the Put down button in the carry readout puts an item down on the spot.
 // Returns true when the tap was used.
-function carryTap(px, py, g) {
-  const near = (x, y, z, r) => { const p = toScreen(x, y, z), d = Math.hypot(p.x - px, p.y - py); return d < r ? d : null; };
-  for (const T of S.tools) if (near(T.x / 100, 0.4, T.z / 100, 30) !== null) { send({ t: 'carryTool', tool: T.id }); return true; }
-  const held = carryHeld(S), cap = CARGO_CARRY_CAP[carryCarrier(S)], I = S.items;
+// The item on the ground or in a bay nearest a tap (within 30 px on screen), or null: { id, d, bay }.
+function itemHitAt(px, py) {
+  const I = S.items;
   let item = null;
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
     if (!w || (w.kind !== 'GROUND' && w.kind !== 'BAY')) continue;
     const pose = typeof cargoView !== 'undefined' && cargoView.poses && cargoView.poses[i];
     const sp = carrySpot(w), y = pose ? (pose.y + pose.top) / 2 : w.kind === 'BAY' ? 0.45 : 0.15;
-    const d = near(pose ? pose.x : sp.x, y, pose ? pose.z : sp.z, 30);
-    if (d !== null && (!item || d < item.d)) item = { id: i, d, bay: w.kind === 'BAY' };
+    const p = toScreen(pose ? pose.x : sp.x, y, pose ? pose.z : sp.z), d = Math.hypot(p.x - px, p.y - py);
+    if (d < 30 && (!item || d < item.d)) item = { id: i, d, bay: w.kind === 'BAY' };
   }
+  return item;
+}
+function carryTap(px, py, g) {
+  const near = (x, y, z, r) => { const p = toScreen(x, y, z), d = Math.hypot(p.x - px, p.y - py); return d < r ? d : null; };
+  for (const T of S.tools) if (near(T.x / 100, 0.4, T.z / 100, 30) !== null) { send({ t: 'carryTool', tool: T.id }); return true; }
+  const held = carryHeld(S), cap = CARGO_CARRY_CAP[carryCarrier(S)];
+  const item = itemHitAt(px, py);
   if (item && held.length < cap) { send({ t: 'carryPick', id: item.id }); return true; }
   if (held.length) {
     let bay = null;
@@ -8956,6 +9464,13 @@ function carryTap(px, py, g) {
 // it puts the top one down there (the sim refuses goods for another business, with the reason). Picked on the
 // ground and at two heights up the walls, so a tap on the front wall or the roof counts too. Homes are not used.
 function townTap(px, py) {
+  const biz = townHitAt(px, py);
+  if (biz === null) return false;
+  send(carryHeld(S).length ? { t: 'carryPut', biz } : { t: 'useBiz', biz });
+  return true;
+}
+// The business whose building or door a tap is on, or null.
+function townHitAt(px, py) {
   let best = null;
   for (const f of townFootprints()) {
     if (f.biz === null) continue;
@@ -8969,9 +9484,7 @@ function townTap(px, py) {
     }
     if (hit !== null && (!best || hit < best.d)) best = { biz: f.biz, d: hit };
   }
-  if (!best) return false;
-  send(carryHeld(S).length ? { t: 'carryPut', biz: best.biz } : { t: 'useBiz', biz: best.biz });
-  return true;
+  return best ? best.biz : null;
 }
 // Train taps (C3). A tap on the gap between two vehicles (within 24 px of the joint on screen) uncouples there; a tap
 // on an engine while carrying a cord of wood puts it on the tender; a tap on a water tower's spout takes water.
@@ -9000,10 +9513,12 @@ function ttTap(px, py, hit) {
   return false;
 }
 // The telegraph key (economy): a tap on the depot's office bay window walks there and opens the telegraph panel.
+// The office desk (D1) is tapped the same way, on the depot wall behind its spot; the nearer of the two wins.
 function econTelTap(px, py) {
-  const k = econTelegraphKey(), p = toScreen(k.wx, k.wy, k.wz);
-  if (Math.hypot(p.x - px, p.y - py) > 36) return false;
-  send({ t: 'useTelegraph' });
+  const k = econTelegraphKey(), p = toScreen(k.wx, k.wy, k.wz), dk = Math.hypot(p.x - px, p.y - py);
+  const d = econDeskSpot(), q = toScreen(d.wx, d.wy, d.wz), dd = Math.hypot(q.x - px, q.y - py);
+  if (Math.min(dk, dd) > 36) return false;
+  send({ t: dd < dk ? 'useDesk' : 'useTelegraph' });
   return true;
 }
 function groundAtY(px, py, y) {
@@ -9233,6 +9748,8 @@ window.__railhead = {
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
+  office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,
+    officeTotals, get ui() { return { office: officeUi, inbox: inboxUi, look: lookUi, slide: tgSlide, alerts: alertUi }; } },
   econ: { ECON, ECON_CATEGORIES, ECON_BUSINESSES, ECON_ORDERABLE, econNewState, econPost, econCheckMoney, econTelegraphKey, econNextVisit, econPack,
     contractOffer, contractDeliver, econLotFee, econSoldOutside, econMoney, econWhen, econDeliveredPrice, panel: telUi },
   town: { TOWN, TOWN_BUSINESSES, TOWN_KINDS, TOWN_LOTS, townNewState, townPlaced, townFootprints, townDoor, townSignSpot, townStock, townPending,

@@ -23,7 +23,7 @@ Status: approved by the designer (survey answers recorded as D12, 2026-11-01). R
 | C | C5 | Placeholder town (after C1): businesses as stock holders with weekly use, contracts, delivery to business doors. Merged (schema 10), npm test passed (24 checks) | new "town" |
 Round D survey (answers in its database, collection `answers`, doc `round-d`): https://claude.ai/artifact/AJG1v9NjZkQxbhmc81ZJQn (source `plans/m1-round-d-survey.html`)
 
-| D | D1 | Office panels at the desk with an Office button (Contracts, Market, Ledger, Trains, Timetable), telegrams sliding in under the clock with an inbox button, alerts, the Look button and inspect cards (D13) | HUD and panels, input |
+| D | D1 | Office panels at the desk with an Office button (Contracts, Market, Ledger, Trains, Timetable), telegrams sliding in under the clock with an inbox button, alerts, the Look button and inspect cards (D13). Merged (schema 11), npm test passed (28 checks) | HUD and panels, input |
 | D | D2 | Tutorial: the investor telegrams for days 1 and 2, with Skip tutorial. Merged (schema 12; includes D1's telegram rules, schema 11), npm test passed (26 checks) | new "tutorial" |
 | D | D5 | Riding your own train as a passenger (D13). Merged (schema 13), npm test passed (27 checks) | trains, player |
 | D | D7 | Willow Ford platform dwell: trains do platform work (boarding, alighting) at the platform for a few minutes before moving to the spout | timetable, passengers |

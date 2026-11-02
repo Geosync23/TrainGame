@@ -18,14 +18,17 @@ module.exports = async function checkCarry() {
   const settle = () => page.waitForTimeout(150);
   const camSettle = () => page.waitForTimeout(900); // the camera follows the character with a soft lag
   try {
-    // Items to work with, near the player (who starts at -10.5, 11.2), and the camera close in.
+    // Items to work with, near the player, and the camera close in. (Placed as in M1 around the player, who then
+    // started at -10.5, 11.2 and since D15 starts at those x 1.6; items keep their size and spacing.)
     await R(() => {
-      const R = window.__railhead, C = R.cargo, S = R.state;
+      const R = window.__railhead, C = R.cargo, S = R.state, P = S.player;
+      const dx = Math.round(P.x * 100) + 1050, dz = Math.round(P.z * 100) - 1120;
+      window.__off = { dx, dz };
       const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
       const at = [['flour', -1050, 1000], ['salt', -1130, 940], ['beans', -1210, 940], ['coffee', -1290, 940], ['rails', -1370, 940],
         ['seed', -1130, 870], ['grain', -1210, 870], ['nails', -1290, 870], ['tinned', -1370, 870], ['hardware', -1450, 870]];
       window.__ids = {};
-      for (const [c, x, z] of at) window.__ids[c] = C.itemCreate(S, wb(c), { kind: 'GROUND', x, z }, null).id;
+      for (const [c, x, z] of at) window.__ids[c] = C.itemCreate(S, wb(c), { kind: 'GROUND', x: x + dx, z: z + dz }, null).id;
       R.camera.zoom = 2;
     });
     await camSettle();
@@ -68,7 +71,7 @@ module.exports = async function checkCarry() {
     if (wg.kind !== 'GROUND' || Math.hypot(wg.x / 100 - gx, wg.z / 100 - gz) > 0.1) problems.push('tap on the ground while carrying: not put down there (' + JSON.stringify(wg) + ')');
     if (await carriedN() !== 0) problems.push('still carrying after putting down');
     // Moving cancels an action: start a pick-up, then walk away during it.
-    await R(id => { const R = window.__railhead; R.send({ t: 'carryPick', id }); for (let i = 0; i < 40 && !R.state.player.act; i++) R.step(1); R.send({ t: 'walkTo', x: -1000, z: 1150 }); R.step(10); }, ids.flour);
+    await R(id => { const R = window.__railhead; R.send({ t: 'carryPick', id }); for (let i = 0; i < 40 && !R.state.player.act; i++) R.step(1); const o = window.__off; R.send({ t: 'walkTo', x: -1000 + o.dx, z: 1150 + o.dz }); R.step(10); }, ids.flour);
     if (JSON.parse(await where(ids.flour)).kind !== 'GROUND') problems.push('walking away during a pick-up did not cancel it');
 
     // 4. Take the hand truck by tapping its parking spot.
@@ -88,7 +91,7 @@ module.exports = async function checkCarry() {
     if (!ev.some(e => e.t === 'carryRefused' && /full \(3/.test(e.why))) problems.push('a fourth item on the hand truck was not refused');
     ev = await R(() => { const R = window.__railhead; return R.simTick(R.state, [{ t: 'carryTool', tool: 0 }]).concat(...Array.from({ length: 30 }, () => R.simTick(R.state, []))); });
     if (!ev.some(e => e.t === 'carryRefused' && /Unload/.test(e.why))) problems.push('a loaded hand truck could be left');
-    await R(() => { const R = window.__railhead; R.send({ t: 'walkTo', x: -1000, z: 1180 }); R.step(30); });
+    await R(() => { const R = window.__railhead, o = window.__off; R.send({ t: 'walkTo', x: -1000 + o.dx, z: 1180 + o.dz }); R.step(30); });
     await camSettle();
     const text3 = await page.textContent('#carryText');
     if (!/^Hand truck 3\/3/.test(text3)) problems.push('carry readout with the hand truck: "' + text3 + '"');
@@ -119,10 +122,11 @@ module.exports = async function checkCarry() {
     // The handcart is stopped at the platform's edge.
     const plat = await R(() => {
       const R = window.__railhead, S = R.state, evs = [];
-      R.send({ t: 'walkTo', x: 0, z: 1230 });
+      // Towards the middle of the platform (M1: (0, 12.3), 0.4u south of its centre line; x 1.6 since D15).
+      const f = R.buildings.footprints().find(f => f.kind === 'platform'), to = { t: 'walkTo', x: Math.round(f.x * 100), z: Math.round((f.z + 0.4 * R.CFG.SCALE) * 100) };
+      R.send(to);
       for (let i = 0; i < 200; i++) { R.step(1); }
-      const f = R.buildings.footprints().find(f => f.kind === 'platform');
-      evs.push(...R.simTick(S, [{ t: 'walkTo', x: 0, z: 1230 }]));
+      evs.push(...R.simTick(S, [to]));
       for (let i = 0; i < 5; i++) evs.push(...R.simTick(S, []));
       const inside = Math.abs(S.player.x - f.x) < f.w / 2 && Math.abs(S.player.z - f.z) < f.d / 2;
       return { inside, refused: evs.some(e => e.t === 'carryRefused' && /platform/.test(e.why)), x: S.player.x, z: S.player.z };
@@ -150,14 +154,15 @@ module.exports = async function checkCarry() {
       const run = drop => {
         const S = R.newState(42);
         const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
-        const a = C.itemCreate(S, wb('flour'), { kind: 'GROUND', x: -1000, z: 1100 }, null).id;
-        const b = C.itemCreate(S, wb('salt'), { kind: 'GROUND', x: -900, z: 1000 }, null).id;
+        const k = R.CFG.SCALE;   // places in the yard, x 1.6 since D15
+        const a = C.itemCreate(S, wb('flour'), { kind: 'GROUND', x: Math.round(-1000 * k), z: Math.round(1100 * k) }, null).id;
+        const b = C.itemCreate(S, wb('salt'), { kind: 'GROUND', x: Math.round(-900 * k), z: Math.round(1000 * k) }, null).id;
         const script = [
           { tick: 0, cmd: { t: 'carryPick', id: a } },
           { tick: 40, cmd: { t: 'carryPut', b: 'freightshed', bay: 1 } },
           { tick: 120, cmd: { t: 'carryTool', tool: 0 } },
           { tick: 200, cmd: { t: 'carryPick', id: b } },
-          { tick: 260, cmd: { t: 'carryPut', x: -1200, z: 1150 } },
+          { tick: 260, cmd: { t: 'carryPut', x: Math.round(-1200 * k), z: Math.round(1150 * k) } },
         ];
         R.simRun(S, drop ? script.slice(0, -1) : script, 400);
         return { h: R.stateHash(S), cons: C.itemCheckConservation(S).length };
@@ -188,7 +193,7 @@ module.exports = async function checkCarry() {
       out.start = cords.length;
       run(S, { t: 'carryTool', tool: 1 }, 150);
       if (S.player.tool !== 1) out.bad.push('could not take the handcart in the real start');
-      run(S, { t: 'carryPick', id: cords[0] }, 120);
+      run(S, { t: 'carryPick', id: cords[0] }, 200);   // (D15: the wood stage is about 52u from the handcart's spot, some 140 ticks' walk)
       if (held(S).length !== 1 || S.items.where[cords[0]].carrier !== 'HANDCART') out.bad.push('a cord did not go on the handcart: ' + JSON.stringify(S.items.where[cords[0]]));
       const P = S.player, wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null });
       out.others = {};
@@ -206,11 +211,11 @@ module.exports = async function checkCarry() {
       if (!ev.some(e => e.t === 'carryRefused' && /full \(6/.test(e.why))) out.bad.push('a seventh cord on the handcart was not refused');
       // Onto the tender from the handcart, cord by cord (No. 1 at the platform, its tender 3 cords short).
       const L = S.trains[0].consist.find(c => c.k === 'loco');
-      L.fuel = R.tt.FUEL_CAP - 3 * 120;
+      L.fuel = R.tt.FUEL_CAP - 3 * R.CFG.CORD_U;
       out.fuel = [];
       for (let k = 0; k < 3; k++) {
         const e3 = run(S, { t: 'fuelTender', tr: 0 }, 250);
-        out.fuel.push({ held: held(S).length, cords: Math.round(L.fuel / 120), onPlatform: R.carry.carryNoCartAt(S.player.x, S.player.z), refused: e3.filter(e => /Refused/.test(e.t)).map(e => e.why) });
+        out.fuel.push({ held: held(S).length, cords: Math.round(L.fuel / R.CFG.CORD_U), onPlatform: R.carry.carryNoCartAt(S.player.x, S.player.z), refused: e3.filter(e => /Refused/.test(e.t)).map(e => e.why) });
       }
       if (out.fuel.map(f => f.held).join() !== '5,4,3' || out.fuel.map(f => f.cords).join() !== '2,3,4') out.bad.push('cords from the handcart onto the tender, one at a time: ' + JSON.stringify(out.fuel));
       if (out.fuel.some(f => f.onPlatform)) out.bad.push('the handcart went onto the platform to fuel the tender');

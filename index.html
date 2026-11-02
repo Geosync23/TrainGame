@@ -303,7 +303,7 @@ const CFG = {
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
   DAY_START_S: 5 * 3600,     // the game starts at 05:00
-  WALK: 2.25, RUN: 3.5,      // player speeds, u per game minute (section 4)
+  WALK: 2.8, RUN: 4.4,       // player speeds, u per game minute (section 4; D15: a quarter faster than M1's 2.25 and 3.5)
   ACCEL_K: 2.0 * SC,         // a = 2.0 x power / mass, u/min^2 (section 7), times the scale so times stay the same
   BRAKE: 3.0 * SC,           // u/min^2
   TENDER_FIRST: 0.6,         // speed cap factor running tender-first
@@ -316,7 +316,7 @@ const CFG = {
   REACH: 1.5,                // interactables are in reach within 1.5u
   GEOM: { main: { minR: 12 * SC, revStraight: 3 * SC }, yard: { minR: 8 * SC, revStraight: 2 * SC } },
   GAUGE_HALF: 0.38 * SC,
-  ZOOM_MIN: 0.6, ZOOM_MAX: 4, VIEW_MIN_U: 14,
+  ZOOM_MIN: 0.4, ZOOM_MAX: 4, VIEW_MIN_U: 14, // D15: 0.4x to 4x (was 0.6x)
   ISO_EL: Math.atan(1 / Math.SQRT2), // 35.264 degrees
   CAM_LAG_S: 0.2,
   HOLD_MS: 220, TAP_MOVE_PX: 10,
@@ -5478,12 +5478,17 @@ class Kit {
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const cyl = (rt, rb, h, s) => new THREE.CylinderGeometry(rt, rb, h, s || SEG);
 const ico = (r, d) => new THREE.IcosahedronGeometry(r, d === undefined ? 1 : d);
-const RAIL_TOP = 0.21;
+// D15: track and rolling stock are 1.6x (CFG.SCALE) the M1 sizes; people, carried items and hand tools are not.
+// The vehicle recipes below keep their M1 numbers (rail top RAIL_TOP_M1) and the finished geometry is grown by WS
+// about the vehicle's centre on the rail line, so a car's length, width and height all match S1's x1.6 lengths and gauge.
+const WS = CFG.SCALE;
+const RAIL_TOP_M1 = 0.21, RAIL_TOP = RAIL_TOP_M1 * WS;
+function growMesh(m) { m.geometry.scale(WS, WS, WS); return m; }
 
 function modelLoco(look) {
   // From the style page, shifted so the vehicle centre is at x = 0; smokebox end is +x.
   // look 'overland': the Overland's engine, with a blue-grey cab and wheels so it is told apart from No. 1.
-  const k = new Kit(), B = RAIL_TOP, X = 0.48, H = Math.PI / 2;
+  const k = new Kit(), B = RAIL_TOP_M1, X = 0.48, H = Math.PI / 2;
   const RED = look === 'overland' ? '#4a5f78' : PAL.red;
   k.add(box(3.3, 0.2, 0.9), PAL.loco, X - 0.1, B + 0.5, 0);
   k.add(cyl(0.42, 0.42, 2.0), PAL.loco, X + 0.55, B + 1.0, 0, 0, 0, H);
@@ -5500,31 +5505,31 @@ function modelLoco(look) {
   for (const zz of [-0.25, 0, 0.25]) k.add(box(1.2, 0.16, 0.22), PAL.trunk, X - 2.35, B + 1.48, zz); // cordwood load
   const wheel = (x, r) => { for (const dz of [-0.47, 0.47]) k.add(cyl(r, r, 0.1), RED, X + x, B + r, dz, H); };
   [-0.55, 0.15, 0.85].forEach(x => wheel(x, 0.32)); wheel(1.45, 0.18); wheel(-1.95, 0.2); wheel(-2.75, 0.2);
-  return k.mesh();
+  return growMesh(k.mesh());
 }
 // Flatcar (M1 package 2): a plank deck on a centre sill, with stake posts along the sides. The deck top is at
 // FLAT_DECK; the cargo drawing lays long bundles along it and stands crates at its ends.
-const FLAT_DECK = RAIL_TOP + 0.58;
+const FLAT_DECK = (RAIL_TOP_M1 + 0.58) * WS;
 function modelFlatcar() {
-  const k = new Kit(), B = RAIL_TOP, H = Math.PI / 2;
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
   k.add(box(2.6, 0.16, 1.0), PAL.trim, 0, B + 0.5, 0);
   k.add(box(2.4, 0.14, 0.3), PAL.loco, 0, B + 0.35, 0);
   for (const x of [-1.25, -0.42, 0.42, 1.25]) for (const dz of [-0.47, 0.47]) k.add(box(0.06, 0.2, 0.06), PAL.trunk, x, B + 0.68, dz);
   for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
-  return k.mesh();
+  return growMesh(k.mesh());
 }
 function modelBoxcar() {
-  const k = new Kit(), B = RAIL_TOP, H = Math.PI / 2;
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
   k.add(box(2.6, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
   k.add(box(2.5, 1.0, 0.95), PAL.red, 0, B + 1.08, 0);
   k.add(box(2.6, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
   k.add(box(0.7, 0.8, 0.97), PAL.trim, 0, B + 1.05, 0);
   for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
-  return k.mesh();
+  return growMesh(k.mesh());
 }
 function modelCombine() {
   // Passenger end (windows) and baggage end (door), in the style page's colours.
-  const k = new Kit(), B = RAIL_TOP, H = Math.PI / 2;
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
   k.add(box(2.8, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
   k.add(box(2.7, 1.0, 0.95), PAL.wall, 0, B + 1.08, 0);
   for (const x of [-1.05, -0.6, -0.15]) k.add(box(0.3, 0.32, 0.97), PAL.glass, x, B + 1.2, 0);
@@ -5532,7 +5537,7 @@ function modelCombine() {
   k.add(box(2.8, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
   k.add(box(1.9, 0.14, 0.6), PAL.roof, -0.2, B + 1.73, 0);
   for (const x of [-0.9, 0.9]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
-  return k.mesh();
+  return growMesh(k.mesh());
 }
 // The chunky kit (character pitch 1). Faces +z. Legs and arms are separate so they can swing.
 function modelChunky() {
@@ -5653,9 +5658,9 @@ const ITEM_TINT = { rails: '#6a6a70', ties: '#6b4a2c', lumber: '#d2b07a', cordwo
 // of the laid track's rail (0.08 wide, from 0.11 to RAIL_TOP), stretched along z per instance; the spike is a tiny
 // iron head. All are vertex-coloured so their InstancedMeshes share KIT_MAT.
 const JOB_LOOK = {
-  STAKE_OFF: 0.8,      // stakes stand this far either side of the centre line, just outside the ties (0.6) and bed (0.75)
-  STRING_Y: 0.14,      // the string runs this high between the stakes
-  SIGN_OFF: 1.7,       // the sign stands this far to the work side of the job's start, 0.6u back along it
+  STAKE_OFF: 0.8 * WS, // stakes stand this far either side of the centre line, just outside the ties (0.6 x WS) and bed (0.75 x WS)
+  STRING_Y: 0.14,      // the string runs this high between the stakes (stakes, string and sign are human-sized)
+  SIGN_OFF: 1.7 * WS,  // the sign stands this far to the work side of the job's start, 0.6 x WS back along it
   SPIKE_COL: '#7d7b76',// fresh iron: lighter than PAL.rail so the heads read on a dark tie
   FLAG_COL: '#c4502e', // surveyor's flag on each stake
   STRING_COL: '#e4d6b6',
@@ -5663,9 +5668,9 @@ const JOB_LOOK = {
 function jobPieceGeos() {
   const geo = k => k.mesh().geometry;
   return {
-    tie: geo(new Kit().add(box(0.22, 0.08, 1.2), PAL.tie, 0, 0, 0)),
-    rail: geo(new Kit().add(box(0.08, 0.1, 1), PAL.rail, 0, 0, 0)),
-    spike: geo(new Kit().add(box(0.055, 0.035, 0.055), JOB_LOOK.SPIKE_COL, 0, 0, 0).add(box(0.02, 0.05, 0.02), JOB_LOOK.SPIKE_COL, 0, -0.035, 0)),
+    tie: geo(new Kit().add(box(0.22 * WS, 0.08 * WS, 1.2 * WS), PAL.tie, 0, 0, 0)),
+    rail: geo(new Kit().add(box(0.08 * WS, 0.1 * WS, 1), PAL.rail, 0, 0, 0)),
+    spike: geo(new Kit().add(box(0.055, 0.035, 0.055), JOB_LOOK.SPIKE_COL, 0, 0, 0).add(box(0.02, 0.05, 0.02), JOB_LOOK.SPIKE_COL, 0, -0.035, 0)).scale(WS, WS, WS),
   };
 }
 // A spike maul for the player's right hand, in the arm group's frame (the hand is at y = -0.31; the handle
@@ -5688,7 +5693,7 @@ function jobStaticKit(jobs, hAt) {
     const edge = (p, o) => { const x = p.x - p.tz * o, z = p.z + p.tx * o; return [x, hAt(x, z) + 0.02, z]; };
     for (let i = 0; i < n; i++) {            // the bed: one ribbon of quads along the job, like the laid ballast
       const p = jobPoint(job, job.len * i / n), q = jobPoint(job, job.len * (i + 1) / n);
-      const a = edge(p, -0.75), b = edge(q, -0.75), c = edge(q, 0.75), d = edge(p, 0.75);
+      const a = edge(p, -0.75 * WS), b = edge(q, -0.75 * WS), c = edge(q, 0.75 * WS), d = edge(p, 0.75 * WS);
       bed.push(...a, ...c, ...b, ...a, ...d, ...c);
     }
     const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bed, 3));
@@ -5721,7 +5726,7 @@ function jobStaticKit(jobs, hAt) {
 // Where a job's sign stands (and its label is anchored): beside the start, on the work side, a little back.
 function jobSignSpot(job) {
   const q = jobPoint(job, 0), o = JOB_LOOK.SIGN_OFF * job.side;
-  return { x: q.x - q.tz * o - q.tx * 0.6, z: q.z + q.tx * o - q.tz * 0.6, tx: q.tx, tz: q.tz };
+  return { x: q.x - q.tz * o - q.tx * 0.6 * WS, z: q.z + q.tx * o - q.tz * 0.6 * WS, tx: q.tx, tz: q.tz };
 }
 
 // ==== Section: renderer and camera ====
@@ -5743,9 +5748,20 @@ Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, n
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
 scene.add(sun); scene.add(sun.target);
 // Direction towards the sun (or moon), set by applyDaylight; starts as piece 1's noon sun from the south-west.
-const sunDir = new THREE.Vector3(10, 50, 28).normalize(), SUN_DIST = 58;
+const sunDir = new THREE.Vector3(10, 50, 28).normalize();
+// The shadow box (half size SHADOW_R round the point looked at) and the sun's distance grow with the ground in view
+// (D15: zoomed out to 0.4x a portrait phone sees about 130u of ground front to back). Never below the M1 box (24u),
+// so close up shadows keep their detail; the shadow map stays 1024 pixels, so far out they are softer.
+let SUN_DIST = 58, SHADOW_R = 24;
+function fitShadowBox(hw, hh) {
+  const R = Math.max(24, Math.ceil(Math.hypot(hw, hh / Math.sin(CFG.ISO_EL)) / 4) * 4 + 4); // in 4u steps: few re-fits while pinching
+  if (R === SHADOW_R) return;
+  SHADOW_R = R; SUN_DIST = Math.max(58, R + 34);
+  Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 1, far: SUN_DIST + R + 40 });
+  sun.shadow.camera.updateProjectionMatrix();
+}
 
-const cam = { yawIdx: 0, yaw: Math.PI / 4, zoom: 1.25, fx: 0, fz: 0, ox: 0, oz: 0 };
+const cam = { yawIdx: 0, yaw: Math.PI / 4, zoom: 1.5, fx: 0, fz: 0, ox: 0, oz: 0 }; // D15: starts a little closer (was 1.25)
 function camYawTarget() { return Math.PI / 4 + cam.yawIdx * Math.PI / 2; }
 function placeCamera() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -5759,7 +5775,8 @@ function placeCamera() {
   camera.position.set(tx + Math.sin(cam.yaw) * Math.cos(el) * r, 0.5 + Math.sin(el) * r, tz + Math.cos(cam.yaw) * Math.cos(el) * r);
   camera.lookAt(tx, 0.5, tz);
   camera.updateProjectionMatrix();
-  // The shadow box follows the view; the sun's direction comes from the day and night section.
+  // The shadow box follows the view and grows with it; the sun's direction comes from the day and night section.
+  fitShadowBox(hw, hh);
   sun.target.position.set(tx, 0, tz); sun.target.updateMatrixWorld();
   sun.position.copy(sun.target.position).addScaledVector(sunDir, SUN_DIST);
 }
@@ -5790,19 +5807,20 @@ function buildWorld(S) {
       const p = pts[i], q = pts[i + 1];
       const off = (pt, o, y) => [pt.x - pt.tz * o, y, pt.z + pt.tx * o];
       const yb = 0.03 + lift;
-      quad(ballast, off(p, -0.75, yb), off(q, -0.75, yb), off(q, 0.75, yb), off(p, 0.75, yb));
+      const bw = 0.75 * WS; // ballast half width (D15: track drawing is 1.6x; the gauge is CFG.GAUGE_HALF)
+      quad(ballast, off(p, -bw, yb), off(q, -bw, yb), off(q, bw, yb), off(p, bw, yb));
       for (const side of [-CFG.GAUGE_HALF, CFG.GAUGE_HALF]) {
-        const y0 = 0.11 + lift, y1 = RAIL_TOP + lift, a = side - 0.04, b = side + 0.04;
+        const y0 = 0.11 * WS + lift, y1 = RAIL_TOP + lift, a = side - 0.04 * WS, b = side + 0.04 * WS;
         quad(rails, off(p, a, y1), off(q, a, y1), off(q, b, y1), off(p, b, y1));
         quad(rails, off(p, a, y0), off(q, a, y0), off(q, a, y1), off(p, a, y1));
         quad(rails, off(p, b, y0), off(q, b, y0), off(q, b, y1), off(p, b, y1));
       }
     }
-    const count = Math.max(1, Math.floor(E.len / 0.55));
+    const count = Math.max(1, Math.floor(E.len / (0.55 * WS)));
     for (let i = 0; i < count; i++) {
       const pt = edgeAt(T, E, (i + 0.5) * E.len / count);
       const jitter = (rngNext(tieRng) - 0.5) * 2 * Math.PI / 180;
-      ties.push({ x: pt.x, z: pt.z, y: 0.07 + lift, yaw: Math.atan2(-pt.tz, pt.tx) + jitter });
+      ties.push({ x: pt.x, z: pt.z, y: 0.07 * WS + lift, yaw: Math.atan2(-pt.tz, pt.tx) + jitter });
     }
   }
   const ribbon = (arr, color) => {
@@ -5811,11 +5829,13 @@ function buildWorld(S) {
     m.receiveShadow = true; G.add(m); return m;
   };
   ribbon(ballast, PAL.dirt); ribbon(rails, PAL.rail);
-  const tieMesh = new THREE.InstancedMesh(box(0.22, 0.08, 1.2), new THREE.MeshStandardMaterial({ color: PAL.tie, flatShading: true, roughness: 0.9, metalness: 0 }), ties.length);
+  const tieMesh = new THREE.InstancedMesh(box(0.22 * WS, 0.08 * WS, 1.2 * WS), new THREE.MeshStandardMaterial({ color: PAL.tie, flatShading: true, roughness: 0.9, metalness: 0 }), ties.length);
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
   ties.forEach((t, i) => { q.setFromAxisAngle(up, t.yaw); mtx.compose(new THREE.Vector3(t.x, t.y, t.z), q, one); tieMesh.setMatrixAt(i, mtx); });
-  tieMesh.receiveShadow = true; G.add(tieMesh);
-  // Switch stands (posts merged) and a buffer stop at each dead end.
+  tieMesh.receiveShadow = true; tieMesh.name = 'trackTies'; G.add(tieMesh);
+  // Switch stands (posts merged) and a buffer stop at each dead end. D15: the stand (lever post, its foot bar and the
+  // target disc) stays human-sized, as a person throws it; it stands where the track data puts it (W.stand), beside
+  // the wider track. Buffer stops are track furniture and grow with the track.
   const posts = new Kit();
   for (const W of T.switches) {
     const st = W.stand, yaw = Math.atan2(st.hx, st.hz);
@@ -5825,9 +5845,9 @@ function buildWorld(S) {
   for (const N of T.nodes) {
     if (ix.nodeEdges[N.id].length !== 1) continue;
     const E = T.edges[ix.nodeEdges[N.id][0]], t = outTangent(T, E, N.id), yaw = Math.atan2(-t.z, t.x);
-    const bx = N.x - t.x * 0.2, bz = N.z - t.z * 0.2;
-    posts.add(box(0.25, 0.5, 1.1), PAL.trim, bx, 0.25, bz, 0, yaw, 0);
-    posts.add(box(0.12, 0.2, 1.3), PAL.red, bx + t.x * 0.1, 0.5, bz + t.z * 0.1, 0, yaw, 0);
+    const bx = N.x - t.x * 0.2 * WS, bz = N.z - t.z * 0.2 * WS;
+    posts.add(box(0.25 * WS, 0.5 * WS, 1.1 * WS), PAL.trim, bx, 0.25 * WS, bz, 0, yaw, 0);
+    posts.add(box(0.12 * WS, 0.2 * WS, 1.3 * WS), PAL.red, bx + t.x * 0.1 * WS, 0.5 * WS, bz + t.z * 0.1 * WS, 0, yaw, 0);
   }
   G.add(posts.mesh());
   buildBuildings(G);
@@ -5855,11 +5875,12 @@ function ttBuildBoards(G, S) {
   ttView.lamps = [];
   for (const st of list) {
     const b = st.board;
-    k.add(box(0.1, 1.9, 0.1), PAL.trim, b.x, 0.95, b.z);
-    k.add(box(0.5, 0.36, 0.05), '#e8dcc0', b.x, 1.55, b.z + 0.06);
-    k.add(box(0.56, 0.42, 0.04), PAL.trim, b.x, 1.55, b.z + 0.03);
-    const lamp = new THREE.Mesh(cyl(0.11, 0.11, 0.04, 10), ttView.mats.red);
-    lamp.position.set(b.x, 2.0, b.z + 0.07); lamp.rotation.x = Math.PI / 2;
+    // D15: the board is a signal for engine crews, so it grows with the trains (x WS about its foot).
+    k.add(box(0.1 * WS, 1.9 * WS, 0.1 * WS), PAL.trim, b.x, 0.95 * WS, b.z);
+    k.add(box(0.5 * WS, 0.36 * WS, 0.05 * WS), '#e8dcc0', b.x, 1.55 * WS, b.z + 0.06 * WS);
+    k.add(box(0.56 * WS, 0.42 * WS, 0.04 * WS), PAL.trim, b.x, 1.55 * WS, b.z + 0.03 * WS);
+    const lamp = new THREE.Mesh(cyl(0.11 * WS, 0.11 * WS, 0.04 * WS, 10), ttView.mats.red);
+    lamp.position.set(b.x, 2.0 * WS, b.z + 0.07 * WS); lamp.rotation.x = Math.PI / 2;
     lamp.userData.st = st.id; G.add(lamp); ttView.lamps.push(lamp);
   }
   if (list.length) G.add(k.mesh());
@@ -6125,8 +6146,8 @@ function cargoFlatPoses(S) {
     for (const id of byCar[sid]) {
       const long = itemType(S, id) === 'longBundle';
       let lx, lz, ly, yaw;
-      if (long) { const r = nl++, layer = r >> 2; lx = (((r >> 1) & 1) - 0.5) * 0.96; lz = ((r & 1) - 0.5) * 0.36; ly = FLAT_DECK + 0.004 + layer * 0.176; yaw = Math.PI / 2; }
-      else { const r = nc++, layer = r >> 2; lx = ((r >> 1) & 1 ? 1 : -1) * 1.1; lz = ((r & 1) - 0.5) * 0.4; ly = FLAT_DECK + 0.004 + layer * 0.351; yaw = 0; }
+      if (long) { const r = nl++, layer = r >> 2; lx = (((r >> 1) & 1) - 0.5) * 0.96 * WS; lz = ((r & 1) - 0.5) * 0.36 * WS; ly = FLAT_DECK + 0.004 + layer * 0.176; yaw = Math.PI / 2; }
+      else { const r = nc++, layer = r >> 2; lx = ((r >> 1) & 1 ? 1 : -1) * 1.1 * WS; lz = ((r & 1) - 0.5) * 0.4 * WS; ly = FLAT_DECK + 0.004 + layer * 0.351; yaw = 0; }
       cargoFlatV.set(lx, ly, lz); m.localToWorld(cargoFlatV);
       out[id] = { x: cargoFlatV.x, y: cargoFlatV.y, z: cargoFlatV.z, yaw: m.rotation.y + yaw };
     }
@@ -6235,10 +6256,10 @@ function jobGeom(job) {
   for (let i = 0; i < job.count.ties; i++) {
     const s = jobTieAt(job, i), p = jobPoint(job, s), y = jobH(p.x, p.z) + lift(s);
     const jit = ((i * 7) % 11 - 5) / 5 * Math.PI / 180; // up to 1 degree, a fixed pattern (the laid track's is seeded)
-    ties.push({ x: p.x, y: y + 0.07, z: p.z, yaw: Math.atan2(-p.tz, p.tx) + jit });
+    ties.push({ x: p.x, y: y + 0.07 * WS, z: p.z, yaw: Math.atan2(-p.tz, p.tx) + jit });
     for (let q = 0; q < JOB.SPIKES_PER_TIE; q++) {
-      const r = q < 2 ? -1 : 1, o = q % 2 ? 1 : -1, n = r * G + o * 0.075, a = o * r > 0 ? 0.045 : -0.045;
-      spikes.push({ x: p.x - p.tz * n + p.tx * a, y: y + 0.1225, z: p.z + p.tx * n + p.tz * a, yaw: Math.atan2(p.tx, p.tz) });
+      const r = q < 2 ? -1 : 1, o = q % 2 ? 1 : -1, n = r * G + o * 0.075 * WS, a = (o * r > 0 ? 0.045 : -0.045) * WS;
+      spikes.push({ x: p.x - p.tz * n + p.tx * a, y: y + 0.1225 * WS, z: p.z + p.tx * n + p.tz * a, yaw: Math.atan2(p.tx, p.tz) });
     }
   }
   for (let k = 0; k < job.count.rails; k++) {
@@ -6247,7 +6268,7 @@ function jobGeom(job) {
       const s0 = a + (b - a) * j / m, s1 = a + (b - a) * (j + 1) / m, p = jobPoint(job, s0), q = jobPoint(job, s1);
       for (const o of [-G, G]) {
         const x0 = p.x - p.tz * o, z0 = p.z + p.tx * o, x1 = q.x - q.tz * o, z1 = q.z + q.tx * o, x = (x0 + x1) / 2, z = (z0 + z1) / 2;
-        segs.push({ x, y: jobH(x, z) + lift((s0 + s1) / 2) + 0.161, z, yaw: Math.atan2(x1 - x0, z1 - z0), len: Math.hypot(x1 - x0, z1 - z0) });
+        segs.push({ x, y: jobH(x, z) + lift((s0 + s1) / 2) + 0.161 * WS, z, yaw: Math.atan2(x1 - x0, z1 - z0), len: Math.hypot(x1 - x0, z1 - z0) });
       }
     }
     rails.push(segs);
@@ -6260,7 +6281,7 @@ function jobGeom(job) {
 function jobPile(job, m) {
   const P = (jobView.piles[job.id] = jobView.piles[job.id] || {});
   if (!P[m]) {
-    const q = jobPoint(job, Math.min(job.len, 0.6 + 1.3 * JOB_MATS.indexOf(m))), o = job.side * 2.6;
+    const q = jobPoint(job, Math.min(job.len, (0.6 + 1.3 * JOB_MATS.indexOf(m)) * WS)), o = job.side * 2.6 * WS;
     P[m] = jobPileAt(q.x - q.tz * o, q.z + q.tx * o, Math.atan2(q.tx, q.tz));
   }
   return P[m];
@@ -6325,7 +6346,7 @@ function jobFill(S, work) {
     const nt = Math.max(0, L.ties - (mine && work.step === 'tie' ? 1 : 0));
     if (nt) {
       const p = jobPile(job, 'ties'), cx = Math.cos(p.yaw), sx = -Math.sin(p.yaw);
-      for (let j = 0; j < nt; j++) { const lx = (j % 3 - 1) * 0.25; jobPut('tie', p.x + cx * lx, p.y + 0.044 + Math.floor(j / 3) * 0.084, p.z + sx * lx, p.yaw); }
+      for (let j = 0; j < nt; j++) { const lx = (j % 3 - 1) * 0.25 * WS; jobPut('tie', p.x + cx * lx, p.y + (0.044 + Math.floor(j / 3) * 0.084) * WS, p.z + sx * lx, p.yaw); }
     }
     // Loose rails: laid out on the ground in pairs beside the stretches they are for, on the work side
     // (the next pair beside the next stretch to rail, any more beside the one after).
@@ -6333,9 +6354,9 @@ function jobFill(S, work) {
     for (let j = 0; j < nr; j++) {
       const want = d.rails + (mine && work.acting && work.step === 'rail' ? 1 : 0) + Math.floor(j / 2), k = Math.min(job.count.rails - 1, want);
       const a = jobPoint(job, k * JOB.RAIL_LEN), b = jobPoint(job, Math.min(job.len, (k + 1) * JOB.RAIL_LEN));
-      const o = job.side * (1.3 + 0.17 * (j % 2) + 0.4 * (want - k)); // spare pairs past the end lie further out
+      const o = job.side * (1.3 + 0.17 * (j % 2) + 0.4 * (want - k)) * WS; // spare pairs past the end lie further out
       const x0 = a.x - a.tz * o, z0 = a.z + a.tx * o, x1 = b.x - b.tz * o, z1 = b.z + b.tx * o, x = (x0 + x1) / 2, z = (z0 + z1) / 2;
-      jobPut('rail', x, jobH(x, z) + 0.053, z, Math.atan2(x1 - x0, z1 - z0), Math.hypot(x1 - x0, z1 - z0) - 0.1);
+      jobPut('rail', x, jobH(x, z) + 0.053 * WS, z, Math.atan2(x1 - x0, z1 - z0), Math.hypot(x1 - x0, z1 - z0) - 0.1);
     }
     // An opened spike keg (a cargo keg, no lid drawn) with spike heads showing on top.
     if (L.spikes > 0) {
@@ -6375,7 +6396,7 @@ function jobAnimate(work, pl) {
     for (const r of g.rails[work.i]) jobPut('rail', r.x, r.y + lift, r.z, r.yaw, r.len);
   } else if (work.acting && work.step === 'spike') {
     const p = g.spikes[work.i], c = t * 3 - Math.floor(t * 3), struck = Math.min(3, Math.floor(t * 3) + (c >= 0.72 ? 1 : 0));
-    jobPut('spike', p.x, p.y + 0.06 * (1 - struck / 3), p.z, p.yaw);
+    jobPut('spike', p.x, p.y + 0.06 * WS * (1 - struck / 3), p.z, p.yaw);
   }
 }
 // The player's work poses (design-doc 17 "Work"), on top of the walk and carry poses: right arm up holding the tie
@@ -6641,8 +6662,13 @@ function applyDaylight(S, dt) {
 // buildingFootprints() is plain data (no three.js): the sim's walk grid reads it, so the player walks round buildings.
 // Assumes the ground is flat (height 0) under the footprints; terrain can read buildingFootprints().
 const BLD_COL = { plat: '#a39684', tank: '#8a6a48', canvas: '#e4d6b6', tin: '#55534f' };
-const BLD_EDGE = 14 - 0.9;            // the platform edge, flush at 0.9u from the main line at z = 14
-const BLD_PLATFORM_TOP = 0.3;
+// D15: every building, position and plan size here is 1.6x (WS) its M1 number, about the world's origin, to match
+// S1's x1.6 track and layouts. Recipes keep their M1 numbers and bldPlacer grows them by WS about each building's
+// origin. Kept human-sized: the platform and dock height (BLD_PLATFORM_TOP, a step a person takes), benches, and the
+// distance from a wall to the spot where a person stands to use something (BLD_SPOTS).
+const BLD_EDGE_M1 = 14 - 0.9;          // M1: the platform edge, flush at 0.9u from the main line at z = 14 (now 1.44u from z = 22.4)
+const BLD_PLATFORM_TOP = 0.3;          // D15: stays a person's step up (0.48u at x1.6 would be above a person's knee)
+const bldGrow = list => list.map(a => ({ ...a, x: a.x * WS, z: a.z * WS })); // an M1 layout about the origin, x WS
 // Where each building stands: centre x, z and yaw (local +z faces the track); y lifts lamps onto the platform.
 // The platform (D12) is 20u long and 2.4u deep. The depot and shanty stand 1u further back than in M0
 // (a whole number of walk grid cells; the depot's office bay still steps onto the platform's back edge); the water tower moved east along the
@@ -6652,17 +6678,17 @@ const BLD_PLATFORM_TOP = 0.3;
 // Old saves (from before M1 package 9) are in the test yard world, so they keep the yard's buildings beside
 // their own track, exactly as before; only a new game gets the real start's buildings.
 const BLD_LAYOUTS = {};
-BLD_LAYOUTS.yard = [
-  { id: 'platform', x: 0, z: BLD_EDGE - 1.2, yaw: 0 },
+BLD_LAYOUTS.yard = bldGrow([ // M1 numbers, grown by WS about the origin
+  { id: 'platform', x: 0, z: BLD_EDGE_M1 - 1.2, yaw: 0 },
   { id: 'depot', x: -2.4, z: 9.6, yaw: 0 },
   { id: 'shanty', x: 2.4, z: 9.4, yaw: 0 },
   { id: 'watertower', x: 14.6, z: 11.8, yaw: 0 },
-  { id: 'freightshed', x: -15.6, z: BLD_EDGE - 1.7, yaw: 0 },
+  { id: 'freightshed', x: -15.6, z: BLD_EDGE_M1 - 1.7, yaw: 0 },
   { id: 'lamp1', x: -7.5, z: 11.4, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'lamp2', x: 7.5, z: 11.4, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'lamp3', x: 16.2, z: 12.4, yaw: 0 },
   { id: 'lamp4', x: -12.9, z: 10.6, yaw: 0 },
-];
+]);
 // The real start (M1 package 9). The hub's station stands on the north side of the platform track
 // (z = HUB_PZ, 3.41u north of the main line), laid out as the test yard's station moved 8u east (the same
 // distances from the track, so every clearance is the same), without the telegraph shanty (the telegraph is
@@ -6670,26 +6696,28 @@ BLD_LAYOUTS.yard = [
 // Willow Ford: a 16u platform on the north side of its main track, the small depot behind it, a water tower,
 // two lamps and four cabins as scenery (unstaffed; its businesses come later).
 const HUB_PZ = -TURN_OFF;
+// D15: offsets from HUB_PZ (the platform track) and WFORD are M1's x WS; with S1's track (TURN_OFF and WFORD x1.6)
+// that is exactly the M1 layout grown 1.6x about the origin.
 BLD_LAYOUTS.start = [
-  { id: 'platform', x: 8, z: HUB_PZ - 0.9 - 1.2, yaw: 0 },
-  { id: 'depot', x: 5.6, z: HUB_PZ - 4.4, yaw: 0 },
-  { id: 'tpole', x: 8.6, z: HUB_PZ - 4.4, yaw: 0 },
-  { id: 'watertower', x: 22.6, z: HUB_PZ - 2.2, yaw: 0 },
-  { id: 'woodstage', x: 27.5, z: HUB_PZ - 3.1, yaw: 0 },
-  { id: 'freightshed', x: -7.6, z: HUB_PZ - 2.6, yaw: 0 },
-  { id: 'lamp1', x: 0.5, z: HUB_PZ - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'lamp2', x: 15.5, z: HUB_PZ - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'lamp3', x: 20, z: HUB_PZ - 1.6, yaw: 0 },
-  { id: 'lamp4', x: -4.9, z: HUB_PZ - 3.4, yaw: 0 },
-  { id: 'wfplatform', x: WFORD.x + 20, z: WFORD.z - 0.9 - 1.2, yaw: 0 },
-  { id: 'wfdepot', kind: 'depot', x: WFORD.x + 17.6, z: WFORD.z - 4.4, yaw: 0 },
-  { id: 'wftower', kind: 'watertower', x: WFORD.x + 33, z: WFORD.z - 2.2, yaw: 0 },
-  { id: 'wflamp1', kind: 'lamp', x: WFORD.x + 13, z: WFORD.z - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'wflamp2', kind: 'lamp', x: WFORD.x + 27, z: WFORD.z - 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'cabin1', x: WFORD.x + 6, z: WFORD.z - 9, yaw: 0.25 },
-  { id: 'cabin2', x: WFORD.x + 13.5, z: WFORD.z - 13, yaw: -0.15 },
-  { id: 'cabin3', x: WFORD.x + 25, z: WFORD.z - 11.5, yaw: 0.1 },
-  { id: 'cabin4', x: WFORD.x + 32.5, z: WFORD.z - 8.5, yaw: -0.35 },
+  { id: 'platform', x: 8 * WS, z: HUB_PZ - (0.9 + 1.2) * WS, yaw: 0 },
+  { id: 'depot', x: 5.6 * WS, z: HUB_PZ - 4.4 * WS, yaw: 0 },
+  { id: 'tpole', x: 8.6 * WS, z: HUB_PZ - 4.4 * WS, yaw: 0 },
+  { id: 'watertower', x: 22.6 * WS, z: HUB_PZ - 2.2 * WS, yaw: 0 },
+  { id: 'woodstage', x: 27.5 * WS, z: HUB_PZ - 3.1 * WS, yaw: 0 },
+  { id: 'freightshed', x: -7.6 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0 },
+  { id: 'lamp1', x: 0.5 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp2', x: 15.5 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp3', x: 20 * WS, z: HUB_PZ - 1.6 * WS, yaw: 0 },
+  { id: 'lamp4', x: -4.9 * WS, z: HUB_PZ - 3.4 * WS, yaw: 0 },
+  { id: 'wfplatform', x: WFORD.x + 20 * WS, z: WFORD.z - (0.9 + 1.2) * WS, yaw: 0 },
+  { id: 'wfdepot', kind: 'depot', x: WFORD.x + 17.6 * WS, z: WFORD.z - 4.4 * WS, yaw: 0 },
+  { id: 'wftower', kind: 'watertower', x: WFORD.x + 33 * WS, z: WFORD.z - 2.2 * WS, yaw: 0 },
+  { id: 'wflamp1', kind: 'lamp', x: WFORD.x + 13 * WS, z: WFORD.z - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wflamp2', kind: 'lamp', x: WFORD.x + 27 * WS, z: WFORD.z - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'cabin1', x: WFORD.x + 6 * WS, z: WFORD.z - 9 * WS, yaw: 0.25 },
+  { id: 'cabin2', x: WFORD.x + 13.5 * WS, z: WFORD.z - 13 * WS, yaw: -0.15 },
+  { id: 'cabin3', x: WFORD.x + 25 * WS, z: WFORD.z - 11.5 * WS, yaw: 0.1 },
+  { id: 'cabin4', x: WFORD.x + 32.5 * WS, z: WFORD.z - 8.5 * WS, yaw: -0.35 },
 ];
 let BLD_LAYOUT = BLD_LAYOUTS.yard;
 function bldKindOf(at) { return at.kind || bldKind(at.id); }
@@ -6700,8 +6728,8 @@ function bldKindOf(at) { return at.kind || bldKind(at.id); }
 function bldBaysOf(layout) {
   const out = {};
   for (const at of layout.filter(a => bldKindOf(a) === 'freightshed')) {
-    const c = Math.cos(at.yaw), s = Math.sin(at.yaw), lz = 1.21;
-    out[at.id] = { yaw: at.yaw, y: BLD_PLATFORM_TOP, bays: [-1.6, -0.55, 0.55, 1.6].map(lx => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c })) };
+    const c = Math.cos(at.yaw), s = Math.sin(at.yaw), lz = 1.21 * WS;
+    out[at.id] = { yaw: at.yaw, y: BLD_PLATFORM_TOP, bays: [-1.6 * WS, -0.55 * WS, 0.55 * WS, 1.6 * WS].map(lx => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c })) };
   }
   return out;
 }
@@ -6732,17 +6760,24 @@ function bldVary(rng) {
   const dh = (rngNext(rng) * 2 - 1) * 4 / 360, dl = (rngNext(rng) * 2 - 1) * 0.06, hsl = {};
   return hex => { new THREE.Color(hex).getHSL(hsl); return new THREE.Color().setHSL((hsl.h + dh + 1) % 1, hsl.s, Math.min(1, hsl.l * (1 + dl))); };
 }
-// Puts parts given in a building's local frame into the shared kits.
-function bldPlacer(kit, glow, at, vary) {
+// Puts parts given in a building's local frame into the shared kits. D15: parts (sizes and positions) are grown by sc
+// (WS) about the building's origin; b.raw() gives a placer in true units (not grown) for human-sized parts and heights,
+// and b.on(dy) one whose grown parts stand dy (true units, not grown) higher, on a platform or dock top.
+function bldPlacer(kit, glow, at, vary, sc, lift) {
+  if (sc === undefined) sc = WS;
+  lift = lift || 0;
   const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), at.yaw || 0);
   const v = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const place = (k, geo, col, x, y, z, rx, ry, rz) => {
-    v.set(x, y, z).applyQuaternion(qy);
+    if (sc !== 1) geo.scale(sc, sc, sc);
+    v.set(x * sc, y * sc, z * sc).applyQuaternion(qy);
     q.setFromEuler(e.set(rx || 0, ry || 0, rz || 0)).premultiply(qy);
     e.setFromQuaternion(q, 'XYZ');
-    k.add(geo, col, at.x + v.x, (at.y || 0) + v.y, at.z + v.z, e.x, e.y, e.z);
+    k.add(geo, col, at.x + v.x, (at.y || 0) + lift + v.y, at.z + v.z, e.x, e.y, e.z);
   };
   return {
+    raw: () => bldPlacer(kit, glow, at, vary, 1, lift),
+    on: dy => bldPlacer(kit, glow, at, vary, sc, lift + dy),
     add: (geo, hex, x, y, z, rx, ry, rz) => place(kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
     glow: (geo, x, y, z, rx, ry, rz) => place(glow, geo, PAL.win, x, y, z, rx, ry, rz),
     // A glowing window in a trim frame, on a wall facing z (side 'z') or x (side 'x'); s = -1 faces the minus side.
@@ -6756,7 +6791,8 @@ function bldPlacer(kit, glow, at, vary) {
 
 // Plan extent of each kind in local coordinates [minX, maxX, minZ, maxZ]. Plain data, so the sim
 // (walk grid) and buildingFootprints() can read it without three.js; each recipe returns its own entry.
-const BLD_EXTENTS = {
+// D15: BLD_EXT_M1 holds the M1 sizes the recipes draw with; BLD_EXTENTS (what everything else reads) is them x WS.
+const BLD_EXT_M1 = {
   platform: [-10, 10, -1.2, 1.2],       // 20u long (D12; train No. 1 is 10.8u), 2.4u deep
   depot: [-2.3, 2.3, -1.3, 1.48],
   shanty: [-0.85, 1.15, -0.75, 0.75],
@@ -6768,10 +6804,13 @@ const BLD_EXTENTS = {
   tpole: [-0.12, 0.12, -0.12, 0.12],
   cabin: [-1.2, 1.2, -1, 1],
 };
+const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) => [k, e.map(v => v * WS)]));
 // Use spots in a building's local frame [x, z] (local +z faces the track): where a person stands to use
 // something inside. Just outside the walk grid's block (the footprint grown by 0.25u), on the platform.
+// D15: x along the wall grows with the building; the person stands 0.85u in front of the depot's front: past the walk
+// grid's block (front + 0.25u) by more than one 0.5u cell, so the spot's cell is open, and well within reach (1.5u).
 const BLD_SPOTS = {
-  depot: { ticket: [1.6, 2.0], telegraph: [0.4, 2.0], desk: [-1.3, 2.0] },
+  depot: { ticket: [1.6 * WS, 1.48 * WS + 0.85], telegraph: [0.4 * WS, 1.48 * WS + 0.85], desk: [-1.3 * WS, 1.48 * WS + 0.85] },
 };
 // Use spots as world points [{ building, kind, x, z }]: the ticket window, telegraph key and office desk of
 // each depot (C1's telegraph, C4's passengers). Plain data, no three.js.
@@ -6787,15 +6826,14 @@ function buildingSpots() {
 const BLD_RECIPES = {
   // Platform, 20u long and 2.4u deep (D12), with a canopy over the middle 10u and a bench under it.
   // The canopy stops 0.05u short of the track-side edge and clears the depot's office bay roof (0.4u below it, and 0.2u to the side in plan).
+  // D15: the slab is grown in plan but keeps its step height; the canopy and its posts grow; the bench stays human-sized.
   platform(b) {
-    const [x0, x1, z0, z1] = BLD_EXTENTS.platform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP;
-    b.add(box(len, top + 0.05, dep), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    const [x0, x1, z0, z1] = BLD_EXT_M1.platform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP, r = b.raw();
+    r.add(box(len * WS, top + 0.05, dep * WS), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
     b.add(box(10, 0.12, 1.75), PAL.roof, 0, 2.05, z1 - 0.05 - 1.75 / 2);
-    for (const x of [-4.6, -1.55, 1.55, 4.6]) for (const z of [-0.3, 0.8]) b.add(cyl(0.06, 0.06, 1.75), PAL.trim, x, top + 0.875, z);
-    const bx = 3.1, bz = -0.55;    // the bench, facing the track
-    b.add(box(1.2, 0.07, 0.34), PAL.trim, bx, top + 0.4, bz);
-    b.add(box(1.2, 0.3, 0.05), PAL.trim, bx, top + 0.65, bz - 0.16);
-    for (const x of [-0.5, 0.5]) b.add(box(0.07, 0.37, 0.3), PAL.loco, bx + x, top + 0.18, bz);
+    const ph = 2.05 - top / WS; // posts from the platform top up into the canopy
+    for (const x of [-4.6, -1.55, 1.55, 4.6]) for (const z of [-0.3, 0.8]) b.on(top).add(cyl(0.06, 0.06, ph), PAL.trim, x, ph / 2, z);
+    bldBench(r, 3.1 * WS, -0.55 * WS, top);   // the bench, facing the track
     return BLD_EXTENTS.platform;
   },
   // Small depot (style test page station): ticket window, telegraph, and the agent's office in the bay.
@@ -6842,25 +6880,23 @@ const BLD_RECIPES = {
   },
   // Freight shed: 4 bays on a loading dock at platform height (one in front of each door, see BLD_BAYS);
   // red siding and a grey tin roof.
+  // D15: the dock keeps the platform's step height; the shed on it grows.
   freightshed(b) {
-    const top = BLD_PLATFORM_TOP;
-    b.add(box(4.6, top + 0.05, 3.4), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
-    b.add(box(4.4, 1.5, 2.4), PAL.red, 0, top + 0.74, -0.5);
-    b.add(bldPrism(4.7, 2.9, 0.7), BLD_COL.tin, 0, top + 1.49, -0.5);
-    for (const x of [-1.6, -0.55, 0.55, 1.6]) b.add(box(0.85, 1.1, 0.05), PAL.trim, x, top + 0.55, 0.725);
-    b.add(box(4.1, 0.06, 0.06), PAL.loco, 0, top + 1.18, 0.75);
-    for (const x of [-1.2, 1.2]) b.win(x, top + 1.0, -1.7, 0.5, 0.4, 'z', -1);
+    const top = BLD_PLATFORM_TOP, d = b.on(top);
+    b.raw().add(box(4.6 * WS, top + 0.05, 3.4 * WS), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    d.add(box(4.4, 1.5, 2.4), PAL.red, 0, 0.74, -0.5);
+    d.add(bldPrism(4.7, 2.9, 0.7), BLD_COL.tin, 0, 1.49, -0.5);
+    for (const x of [-1.6, -0.55, 0.55, 1.6]) d.add(box(0.85, 1.1, 0.05), PAL.trim, x, 0.55, 0.725);
+    d.add(box(4.1, 0.06, 0.06), PAL.loco, 0, 1.18, 0.75);
+    for (const x of [-1.2, 1.2]) d.win(x, 1.0, -1.7, 0.5, 0.4, 'z', -1);
     // (The three loose crates that stood on the dock in M0 are gone: real items now sit in the bays.)
     return BLD_EXTENTS.freightshed;
   },
   // Willow Ford's platform: 16u long and 2.4u deep, the same height and stone as the hub's, with a bench.
   wfplatform(b) {
-    const [x0, x1, z0, z1] = BLD_EXTENTS.wfplatform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP;
-    b.add(box(len, top + 0.05, dep), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
-    const bx = -2.2, bz = -0.55;
-    b.add(box(1.2, 0.07, 0.34), PAL.trim, bx, top + 0.4, bz);
-    b.add(box(1.2, 0.3, 0.05), PAL.trim, bx, top + 0.65, bz - 0.16);
-    for (const x of [-0.5, 0.5]) b.add(box(0.07, 0.37, 0.3), PAL.loco, bx + x, top + 0.18, bz);
+    const [x0, x1, z0, z1] = BLD_EXT_M1.wfplatform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP, r = b.raw();
+    r.add(box(len * WS, top + 0.05, dep * WS), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    bldBench(r, -2.2 * WS, -0.55 * WS, top);
     return BLD_EXTENTS.wfplatform;
   },
   // Wood stage: a raised deck at tender height holding stacked cordwood, under a lean-to roof.
@@ -6902,6 +6938,12 @@ const BLD_RECIPES = {
   },
 };
 function bldKind(id) { return id.replace(/\d+$/, ''); }
+// A platform bench (human-sized, D15), facing the track; r is a raw placer, (bx, bz) its centre, top the platform top.
+function bldBench(r, bx, bz, top) {
+  r.add(box(1.2, 0.07, 0.34), PAL.trim, bx, top + 0.4, bz);
+  r.add(box(1.2, 0.3, 0.05), PAL.trim, bx, top + 0.65, bz - 0.16);
+  for (const x of [-0.5, 0.5]) r.add(box(0.07, 0.37, 0.3), PAL.loco, bx + x, top + 0.18, bz);
+}
 
 // Plan rectangles {id, kind, x, z, w, d, yaw, flush}, for the player's walk grid and so other code
 // (terrain, the build tool, the crowd) can keep clear. Pure data: no three.js. flush marks the ones
@@ -6915,7 +6957,7 @@ function buildingFootprints() {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, c = Math.cos(at.yaw), s = Math.sin(at.yaw);
       out.push({ id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush });
     };
-    if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95], false); rect('freightdock', [-2.3, 2.3, 0.95, ext[3]], true); }
+    if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
     else rect(at.id, ext, kind === 'platform' || kind === 'wfplatform');
   }
   return out.concat(townFootprints()); // the town's businesses and homes (section "town")
@@ -6951,20 +6993,20 @@ function bldStandY(x, z) {
 // The hub boundary (design-doc 15), drawn subtly: a pale dashed line 1 cm above the ground (below the 3 cm
 // ballast where it crosses track) with a short survey stake at each corner and every 16u. In the merged mesh.
 function bldHubBoundary(kit, H) {
-  const dash = 1.6, gap = 2.4, col = '#cfc4a4', stake = '#d8d0bc';
+  const dash = 1.6 * WS, gap = 2.4 * WS, every = 16 * WS, col = '#cfc4a4', stake = '#d8d0bc'; // D15: spacing x WS, stakes human-sized
   const side = (x0, z0, x1, z1) => {
     const len = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / len, uz = (z1 - z0) / len, along = Math.abs(ux) > 0.5;
     for (let a = 0; a + dash <= len + 1e-9; a += dash + gap) {
       const m = a + dash / 2;
-      kit.add(box(along ? dash : 0.09, 0.012, along ? 0.09 : dash), col, x0 + ux * m, 0.006, z0 + uz * m);
+      kit.add(box(along ? dash : 0.09 * WS, 0.012, along ? 0.09 * WS : dash), col, x0 + ux * m, 0.006, z0 + uz * m);
     }
-    for (let a = 0; a <= len + 1e-9; a += 16) kit.add(box(0.07, 0.36, 0.07), stake, x0 + ux * a, 0.18, z0 + uz * a);
+    for (let a = 0; a <= len + 1e-9; a += every) kit.add(box(0.07, 0.36, 0.07), stake, x0 + ux * a, 0.18, z0 + uz * a);
   };
   side(H.x0, H.z0, H.x1, H.z0); side(H.x1, H.z0, H.x1, H.z1); side(H.x1, H.z1, H.x0, H.z1); side(H.x0, H.z1, H.x0, H.z0);
 }
 // Lamp positions, for the day and night section (real point lights for the nearest ones).
 function buildingLights() {
-  return BLD_LAYOUT.filter(a => bldKindOf(a) === 'lamp').map(a => ({ x: a.x, y: (a.y || 0) + 1.73, z: a.z }));
+  return BLD_LAYOUT.filter(a => bldKindOf(a) === 'lamp').map(a => ({ x: a.x, y: (a.y || 0) + 1.73 * WS, z: a.z }));
 }
 function buildBuildings(G) {
   const kit = new Kit(), glow = new Kit();
@@ -7104,8 +7146,8 @@ function townBuildingsDraw(G) {
     const biz = townPlaced().filter(L => L.townId === P.id && L.biz !== null), A = townAnchor(P.id);
     if (P.id === 0 && biz.length && !A.yaw) {
       const fronts = biz.map(L => { const K = TOWN_KINDS[L.kind]; return { a: townWorld(L, K.ext[0], K.ext[3]), b: townWorld(L, K.ext[1], K.ext[3]) }; });
-      const x0 = Math.min(...fronts.map(f => f.a.x)) - 0.5, x1 = Math.max(...fronts.map(f => f.b.x)) + 0.5, z = Math.max(...fronts.map(f => f.a.z));
-      kit.add(box(x1 - x0, 0.02, 1.8), TOWN_COL.street, (x0 + x1) / 2, 0.002, z + 0.2 + 0.9);
+      const x0 = Math.min(...fronts.map(f => f.a.x)) - 0.5 * WS, x1 = Math.max(...fronts.map(f => f.b.x)) + 0.5 * WS, z = Math.max(...fronts.map(f => f.a.z));
+      kit.add(box(x1 - x0, 0.02, 1.8 * WS), TOWN_COL.street, (x0 + x1) / 2, 0.002, z + (0.2 + 0.9) * WS);
     }
     if (!kit.p.length) continue;
     const m = kit.mesh(); m.name = 'townBuildings' + P.id; G.add(m);
@@ -7126,12 +7168,12 @@ function townBuildingsDraw(G) {
 // the vertex shader picks the colour and folds away the shapes that person does not have.
 // Limb poses are worked out on the CPU and written straight into the instance matrices.
 const CROWD = {
-  WALK: 2.0,            // citizen walk, u per game minute (section 4)
+  WALK: 2.5,            // citizen walk, u per game minute (section 4; D15: a quarter faster than M1's 2.0, like the player)
   STRIDE: 0.675,        // walk cycles per u: 1.8 per real second at walk speed and 1x (section 17)
   LEG_SW: 25 * Math.PI / 180, ARM_SW: 20 * Math.PI / 180, BOB: 0.02,
   BREATH: 0.015, BREATH_HZ: 0.35, DRIFT: 8 * Math.PI / 180,
-  AREA: { x0: -40, x1: 40, z0: -30, z1: 32 }, // where walkers roam on the test map
-  BALLAST: 0.95,        // paths keep this far from a track centre line where they can
+  AREA: { x0: -64, x1: 64, z0: -48, z1: 51.2 }, // where walkers roam on the test map (M1's x 1.6; each world sets its own)
+  BALLAST: 0.95 * CFG.SCALE, // paths keep this far from a track centre line where they can (just past the ballast)
   MAX: 1000,
   SEED: 0x5eed4,
   PAX: 96,              // room per kit for travellers (section "passengers"), drawn after the walkers in the same meshes
@@ -8089,10 +8131,10 @@ function buildClear() {
 function buildEndMarkers() {
   if (bt.ends) { scene.remove(bt.ends); bt.ends.geometry.dispose(); bt.ends = null; }
   const T = S.track, ix = trackIndex(T), ends = T.nodes.filter(N => ix.nodeEdges[N.id].length === 1 && !T.edges[ix.nodeEdges[N.id][0]].fixed);
-  const geo = new THREE.RingGeometry(0.32, 0.46, 20); geo.rotateX(-Math.PI / 2);
+  const geo = new THREE.RingGeometry(0.32 * WS, 0.46 * WS, 20); geo.rotateX(-Math.PI / 2);
   const m = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: PAL.brass }), Math.max(1, ends.length));
   const mtx = new THREE.Matrix4();
-  ends.forEach((N, i) => { mtx.makeTranslation(N.x, 0.27, N.z); m.setMatrixAt(i, mtx); });
+  ends.forEach((N, i) => { mtx.makeTranslation(N.x, RAIL_TOP + 0.06, N.z); m.setMatrixAt(i, mtx); });
   m.count = ends.length; m.visible = bt.on; m.renderOrder = 6;
   bt.ends = m; scene.add(m);
 }
@@ -8886,7 +8928,9 @@ function townSignHud() {
     if (sig !== L.sig) { L.sig = sig; L.el.dataset.k = tx.k; L.b.textContent = tx.title; L.s.textContent = tx.body; L.w = 0; }
     const p = toScreen(sp.x, sp.y + 0.35, sp.z);
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; L.x = -1e9; }
-    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), y = p.y;
+    // D15: the grown buildings put their name boards higher on screen; while the board itself is on screen the label
+    // is held just inside the top edge rather than dropped.
+    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), y = p.y > 0 ? Math.max(p.y, L.h + 4) : p.y;
     if (Math.abs(x - L.x) >= 0.5 || Math.abs(y - L.y) >= 0.5) { L.x = x; L.y = y; L.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`; }
     const r = { l: x - L.w / 2, r: x + L.w / 2, t: y - L.h, b: y };
     let show = p.x > 0 && p.x < W && r.t > 0 && r.b < H;
@@ -8959,7 +9003,7 @@ function paxHud() {
     if (wsig !== C.wsig) { C.wsig = wsig; C.win.textContent = `Tickets (${n})`; C.ww = 0; }
     const showW0 = n > 0 && !(D && D.st === K.id) && !(typeof bt !== 'undefined' && bt.on);
     if (showW0 && !C.ww) { C.win.style.visibility = 'hidden'; C.win.hidden = false; C.ww = C.win.offsetWidth; C.wh = C.win.offsetHeight; }
-    const wp = toScreen(K.window.x, 1.9, K.window.z);
+    const wp = toScreen(K.window.x, 1.9 * WS, K.window.z);
     const wr = { l: wp.x - C.ww / 2, r: wp.x + C.ww / 2, t: wp.y - C.wh, b: wp.y };
     const wkey = showW0 ? Math.round(wr.l) + ',' + Math.round(wr.t) + ',' + C.ww : '-';
     // The page is only touched when the button moves, or every 20 frames (buttons and panels open and close).
@@ -9019,7 +9063,7 @@ function rideHud() {
     if (dd < 8 && (!near || dd < near.dd)) near = { ...d, dd };
   }
   if (near && !rideUi.bw) { btn.style.visibility = 'hidden'; btn.hidden = false; rideUi.bw = btn.offsetWidth; rideUi.bh = btn.offsetHeight; }
-  const p = near ? toScreen(near.wx, 1.7, near.wz) : null;
+  const p = near ? toScreen(near.wx, 1.7 * WS, near.wz) : null;
   const r = p ? { l: p.x - rideUi.bw / 2, r: p.x + rideUi.bw / 2, t: p.y - rideUi.bh, b: p.y } : null;
   const show = !!r && paxClear(r);
   const bsig = show ? Math.round(r.l) + ',' + Math.round(r.t) : '-';
@@ -9110,7 +9154,7 @@ const ttCardUi = { st: null, sig: '', w: 0, h: 0 };
 function ttCardHud() {
   const P = S.player;
   let near = null;
-  for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 && (!near || d < near.d)) near = { st, d }; }
+  for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 * WS && (!near || d < near.d)) near = { st, d }; }
   const card = $('ttCard');
   const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
@@ -9125,7 +9169,7 @@ function ttCardHud() {
     for (const l of b.lines) { const d = document.createElement('div'); d.textContent = `${l.time} to ${l.to}: ${l.state}`; box.appendChild(d); }
     card.hidden = false; ttCardUi.w = card.offsetWidth; ttCardUi.h = card.offsetHeight;
   }
-  const p = toScreen(near.st.board.x, 1.9, near.st.board.z), W = window.innerWidth;
+  const p = toScreen(near.st.board.x, 1.9 * WS, near.st.board.z), W = window.innerWidth;
   const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2)), y = Math.max(64, p.y - ttCardUi.h - 6);
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
@@ -9567,7 +9611,7 @@ function tutDraw() {
     tutMark.scale.y = 1.6; tutMark.name = 'tutMark'; scene.add(tutMark);
   }
   tutMark.visible = true;
-  tutMark.position.set(t.x, terrainHeight(t.x, t.z) + 3.6 + Math.sin(animT * 3) * 0.15, t.z);
+  tutMark.position.set(t.x, terrainHeight(t.x, t.z) + 3.6 * WS + Math.sin(animT * 3) * 0.15, t.z); // D15: over the 1.6x trains
   tutMark.rotation.y = animT * 1.5;
 }
 
@@ -9755,7 +9799,7 @@ function ttJointHit(px, py) {
   S.trains.forEach(tr => {
     if (trainOff(tr) || tr.owner === 'overland' || tr.owner === 'interchange' || tr.consist.length < 2) return;
     for (let k = 1; k < tr.consist.length; k++) {
-      const j = ttJointAt(S, tr, k), p = toScreen(j.x, 0.7, j.z), d = Math.hypot(p.x - px, p.y - py);
+      const j = ttJointAt(S, tr, k), p = toScreen(j.x, 0.7 * WS, j.z), d = Math.hypot(p.x - px, p.y - py);
       if (d < 24 && (!best || d < best.d)) best = { tr: tr.id, at: k, d };
     }
   });
@@ -9768,7 +9812,7 @@ function ttTap(px, py, hit) {
     send({ t: 'fuelTender', tr: hit.id }); return true;
   }
   for (const st of ttStations(S)) if (st.water) {
-    const p = toScreen(st.water.x, 2.4, st.water.z - 0.9), q = toScreen(st.water.x, 1.2, st.water.z);
+    const p = toScreen(st.water.x, 2.4 * WS, st.water.z - 0.9 * WS), q = toScreen(st.water.x, 1.2 * WS, st.water.z); // D15: the grown tower
     if (Math.hypot(p.x - px, p.y - py) < 36 || Math.hypot(q.x - px, q.y - py) < 30) { send({ t: 'takeWater' }); return true; }
   }
   return false;
@@ -10020,7 +10064,7 @@ window.__railhead = {
     carPanel: carUi, cargoFlatPoses: st => cargoFlatPoses(st || S) },
   get jobsView() { return jobView; },   // drawing hand-building (B2): job meshes, instance counts, the work in hand
   jobSignText: job => jobSignText(S, job), jobSignSpot, jobGeom,
-  trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.isInstancedMesh && o.geometry.parameters && o.geometry.parameters.depth === 1.2 ? o.count : 0), 0),
+  trackTieCount: () => view.staticGroup.children.reduce((n, o) => n + (o.name === 'trackTies' ? o.count : 0), 0),
   pax: { PAX, paxStations: T => paxStations(T || S.track), paxStation: (id, T) => paxStation(T || S.track, id), paxQueueSlots, paxFare, paxAdd, paxUnstaffed, paxCarsAt, stationDepartures, paxTrainServes, paxDebugScenario, paxNewStore, paxLook, paxPlaceName,
     get view() { return paxView; }, get kits() { return crowd.kits; } },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },

@@ -1,9 +1,9 @@
 // Check: the station buildings (piece 3b).
 // - Every building footprint keeps the section 6 clearance from every track edge, sampled every 0.25u:
-//   platform and freight dock flush at 0.9u, other buildings 1.2u from main track, 1.0u from yard track.
+//   platform and freight dock flush at 0.9u, other buildings 1.2u from main track, 1.0u from yard track (all x SC since D15).
 // - Footprints keep clear of the switch stands and the spots where the player stands to throw them.
 // - The platform top is 0.3u (found by a ray straight down onto the buildings mesh).
-// - The platform is 20u long and 2.4u deep (D12), with a canopy over its middle 10u only, the canopy kept
+// - The platform is 20u long and 2.4u deep (D12; x SC since D15), with a canopy over its middle 10u only, the canopy kept
 //   inside the platform's track-side edge.
 // - No two footprints overlap (except the depot's office bay stepping onto the platform's back edge and the
 //   lamps standing on it), and the hand truck and handcart parking spots stay clear of every footprint.
@@ -19,7 +19,7 @@ module.exports = async function checkBuildings() {
     try {
       if (orientation === 'portrait') {
         const found = await page.evaluate(() => {
-          const R = window.__railhead, B = R.buildings, T = R.state.track, out = [];
+          const R = window.__railhead, B = R.buildings, T = R.state.track, out = [], SC = R.CFG.SCALE;
           if (!B) return ['window.__railhead.buildings is missing'];
           const fps = B.footprints();
           const need = ['platform', 'depot', 'freightshed', 'freightdock', 'watertower', 'shanty'];
@@ -34,7 +34,7 @@ module.exports = async function checkBuildings() {
           for (const f of fps) {
             let worst = null;
             for (const E of T.edges) {
-              const need = f.flush ? 0.9 : (E.cls === 'yard' ? 1.0 : 1.2);
+              const need = (f.flush ? 0.9 : (E.cls === 'yard' ? 1.0 : 1.2)) * SC;
               const n = Math.max(1, Math.ceil(E.len / 0.25));
               for (let i = 0; i <= n; i++) {
                 const p = R.edgeAt(T, E, E.len * i / n), d = dist(f, p.x, p.z);
@@ -51,20 +51,20 @@ module.exports = async function checkBuildings() {
           if (plat) {
             let best = Infinity;
             for (const E of T.edges) for (let i = 0; i <= 40; i++) { const p = R.edgeAt(T, E, E.len * i / 40); best = Math.min(best, dist(plat, p.x, p.z)); }
-            if (best > 0.95) out.push(`platform edge is ${best.toFixed(3)}u from the track, not flush at 0.9u`);
+            if (best > 0.95 * SC) out.push(`platform edge is ${best.toFixed(3)}u from the track, not flush at ${0.9 * SC}u`);
             // Platform top: a ray straight down near the west end, away from the canopy and lamps.
-            const rc = new THREE.Raycaster(new THREE.Vector3(plat.x - plat.w / 2 + 1.5, 20, plat.z + plat.d / 2 - 0.3), new THREE.Vector3(0, -1, 0));
+            const rc = new THREE.Raycaster(new THREE.Vector3(plat.x - plat.w / 2 + 1.5 * SC, 20, plat.z + plat.d / 2 - 0.3), new THREE.Vector3(0, -1, 0));
             const hit = rc.intersectObject(B.meshes[0], false)[0];
             if (!hit) out.push('the ray down onto the platform hit nothing');
             else if (Math.abs(hit.point.y - 0.3) > 1e-3) out.push(`platform top is at ${hit.point.y.toFixed(3)}u, expected 0.3u`);
             // Size (D12): 20u along the track, 2.4u deep.
-            if (Math.abs(plat.w - 20) > 1e-6 || Math.abs(plat.d - 2.4) > 1e-6) out.push(`platform is ${plat.w}u x ${plat.d}u, expected 20u x 2.4u`);
+            if (Math.abs(plat.w - 20 * SC) > 1e-6 || Math.abs(plat.d - 2.4 * SC) > 1e-6) out.push(`platform is ${plat.w}u x ${plat.d}u, expected ${20 * SC}u x ${2.4 * SC}u`);
             // Canopy: the first thing a ray down meets, sampled along the platform's middle line.
             const topAt = (x, z) => { const h = new THREE.Raycaster(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0)).intersectObject(B.meshes[0], false)[0]; return h ? h.point.y : 0; };
             const zEdge = plat.z + plat.d / 2;
-            for (let dx = -9.5; dx <= 9.5; dx += 0.5) {
-              if (Math.abs(Math.abs(dx) - 5) < 0.3) continue;          // the canopy's own ends
-              const y = topAt(plat.x + dx, zEdge - 0.25), want = Math.abs(dx) < 5;
+            for (let dx = -9.5 * SC; dx <= 9.5 * SC + 1e-9; dx += 0.5 * SC) {
+              if (Math.abs(Math.abs(dx) - 5 * SC) < 0.3 * SC) continue;          // the canopy's own ends
+              const y = topAt(plat.x + dx, zEdge - 0.25), want = Math.abs(dx) < 5 * SC;
               if (want !== y > 1.9) out.push(`canopy: at ${dx}u from the platform's middle the top is at ${y.toFixed(2)}u (${want ? 'expected the canopy' : 'expected no canopy'})`);
             }
             if (topAt(plat.x, zEdge + 0.02) > 1) out.push('canopy reaches past the platform\'s track-side edge');
@@ -94,7 +94,7 @@ module.exports = async function checkBuildings() {
         problems.push(...found);
       }
       // Centre the camera on the station: put the player on the platform (the camera follows the player).
-      await page.evaluate(() => { const P = window.__railhead.state.player; P.x = -0.5; P.z = 11.4; });
+      await page.evaluate(() => { const P = window.__railhead.state.player, k = window.__railhead.CFG.SCALE; P.x = -0.5 * k; P.z = 11.4 * k; });
       await page.waitForTimeout(1500);
       await page.screenshot({ path: screenshotPath('buildings-' + orientation) });
       const calm = await page.evaluate(() => window.__railhead.drawCalls);

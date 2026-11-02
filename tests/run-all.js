@@ -29,6 +29,7 @@ const checks = {
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
   'riding our own train (board, ride, step off, save)': require('./check-ride'),
+  'tutorial (the investor\'s telegrams, days 1 and 2)': require('./check-tutorial'),
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
 };
 

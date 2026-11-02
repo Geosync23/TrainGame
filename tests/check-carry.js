@@ -123,7 +123,7 @@ module.exports = async function checkCarry() {
     const plat = await R(() => {
       const R = window.__railhead, S = R.state, evs = [];
       // Towards the middle of the platform (M1: (0, 12.3), 0.4u south of its centre line; x 1.6 since D15).
-      const f = R.buildings.footprints().find(f => f.kind === 'platform'), to = { t: 'walkTo', x: Math.round(f.x * 100), z: Math.round((f.z + 0.4 * R.CFG.SCALE) * 100) };
+      const f = R.buildings.footprints().find(f => f.id === 'platform'), to = { t: 'walkTo', x: Math.round(f.x * 100), z: Math.round((f.z + 0.4 * R.CFG.SCALE) * 100) };
       R.send(to);
       for (let i = 0; i < 200; i++) { R.step(1); }
       evs.push(...R.simTick(S, [to]));
@@ -141,7 +141,7 @@ module.exports = async function checkCarry() {
     // 8. The no-handcart rectangles match the platform and freight shed footprints (plus 0.2u).
     const rectOk = await R(() => {
       const R = window.__railhead, fp = R.buildings.footprints(), rects = R.carry.carryNoCartRects(), out = [];
-      const pl = fp.find(f => f.kind === 'platform'), sh = fp.filter(f => f.kind === 'freightshed');
+      const pl = fp.find(f => f.id === 'platform'), sh = fp.filter(f => f.kind === 'freightshed');
       const box = fs => [Math.min(...fs.map(f => f.x - f.w / 2)) - 0.2, Math.max(...fs.map(f => f.x + f.w / 2)) + 0.2, Math.min(...fs.map(f => f.z - f.d / 2)) - 0.2, Math.max(...fs.map(f => f.z + f.d / 2)) + 0.2];
       for (const [want, got] of [[box([pl]), rects[0]], [box(sh), rects[1]]]) if (want.some((v, i) => Math.abs(v - got[i]) > 0.01)) out.push(JSON.stringify(want) + ' vs ' + JSON.stringify(got));
       return out;

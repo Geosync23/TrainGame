@@ -60,7 +60,10 @@ module.exports = async function checkBuildings() {
             // Size (D12): 20u along the track, 2.4u deep.
             if (Math.abs(plat.w - 20 * SC) > 1e-6 || Math.abs(plat.d - 2.4 * SC) > 1e-6) out.push(`platform is ${plat.w}u x ${plat.d}u, expected ${20 * SC}u x ${2.4 * SC}u`);
             // Canopy: the first thing a ray down meets, sampled along the platform's middle line.
-            const topAt = (x, z) => { const h = new THREE.Raycaster(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0)).intersectObject(B.meshes[0], false)[0]; return h ? h.point.y : 0; };
+            // The canopy roof is its own mesh (it turns see-through near the player), the posts and slab are in the buildings mesh.
+            if (!B.roof || !B.roof.mesh) out.push('no canopy roof mesh (window.__railhead.buildings.roof.mesh)');
+            const roofMeshes = [B.meshes[0]].concat(B.roof && B.roof.mesh ? [B.roof.mesh] : []);
+            const topAt = (x, z) => { const h = new THREE.Raycaster(new THREE.Vector3(x, 20, z), new THREE.Vector3(0, -1, 0)).intersectObjects(roofMeshes, false)[0]; return h ? h.point.y : 0; };
             const zEdge = plat.z + plat.d / 2;
             for (let dx = -9.5 * SC; dx <= 9.5 * SC + 1e-9; dx += 0.5 * SC) {
               if (Math.abs(Math.abs(dx) - 5 * SC) < 0.3 * SC) continue;          // the canopy's own ends
@@ -74,7 +77,7 @@ module.exports = async function checkBuildings() {
           for (let i = 0; i < fps.length; i++) for (let j = i + 1; j < fps.length; j++) {
             const a = fps[i], b = fps[j], pair = [a.id, b.id].sort().join('+');
             if (pair === 'depot+platform' || pair === 'freightdock+freightshed') continue;
-            if ((a.kind === 'lamp' && b.kind === 'platform') || (b.kind === 'lamp' && a.kind === 'platform')) continue; // lamps stand on it
+            if ((a.kind === 'lamp' && b.id === 'platform') || (b.kind === 'lamp' && a.id === 'platform')) continue; // lamps stand on it
             if (overlap(a, b)) out.push(`${a.id} overlaps ${b.id}`);
           }
           // The hand truck and handcart parking spots (W3) stay at least 0.3u clear of every footprint.

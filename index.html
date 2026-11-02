@@ -4096,15 +4096,15 @@ const TOOL_KINDS = {
 };
 // Parking spots east of the freight shed, on the side away from the track (hundredths of a u). yaw: the way the tool faces (0-255 code).
 // One list per world (TOOL_PARK is the one in use, see bldUseWorld). The real start's sit beside the hub's
-// freight shed exactly as the test yard's do (8u east, on the platform track 3.41u north of the main line).
+// freight shed as the test yard's do, moved west (wide platforms) so the handcart stays clear of the deeper hub platform.
 const TOOL_PARKS = {
   yard: [
     { id: 0, k: 'truck', x: Math.round(-1190 * SC), z: Math.round(900 * SC), yaw: 192 },   // D15: the spots move with the world
     { id: 1, k: 'cart', x: Math.round(-1010 * SC), z: Math.round(860 * SC), yaw: 192 },
   ],
   start: [
-    { id: 0, k: 'truck', x: Math.round(-390 * SC), z: Math.round((-TURN_OFF - 5 * SC) * 100), yaw: 192 },
-    { id: 1, k: 'cart', x: Math.round(-210 * SC), z: Math.round((-TURN_OFF - 5.4 * SC) * 100), yaw: 192 },
+    { id: 0, k: 'truck', x: Math.round(-450 * SC), z: Math.round((-TURN_OFF - 5 * SC) * 100), yaw: 192 },
+    { id: 1, k: 'cart', x: Math.round(-300 * SC), z: Math.round((-TURN_OFF - 5.4 * SC) * 100), yaw: 192 },
   ],
 };
 let TOOL_PARK = TOOL_PARKS.yard;
@@ -4120,7 +4120,7 @@ function carryNoCartRects() {
   const out = [], r = 0.2;
   for (const at of BLD_LAYOUT) {
     const k = bldKindOf(at), e = BLD_EXTENTS[k];  // the platforms and the freight shed (yaw 0), straight from the layout's sizes
-    if (k === 'platform' || k === 'wfplatform' || k === 'freightshed') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
+    if (bldIsPlatform(k) || k === 'freightshed') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
   }
   return (carryNoCartCache = out);
 }
@@ -4435,7 +4435,7 @@ function paxStations(T) {
       return make(st.id, f, depot, sp);
     }).filter(Boolean);
   } else {
-    out = fps.filter(f => f.kind === 'platform' || f.kind === 'wfplatform').map((f, i) => {
+    out = fps.filter(f => bldIsPlatform(f.kind)).map((f, i) => {
       const depot = fps.filter(g => g.kind === 'depot' && dist(g, f) < 8 * SC).sort((a, b) => dist(a, f) - dist(b, f))[0] || null;
       return make(i === 0 ? 'hub' : f.id, f, depot, null);
     });
@@ -6806,10 +6806,11 @@ const BLD_COL = { plat: '#a39684', tank: '#8a6a48', canvas: '#e4d6b6', tin: '#55
 // origin. Kept human-sized: the platform and dock height (BLD_PLATFORM_TOP, a step a person takes), benches, and the
 // distance from a wall to the spot where a person stands to use something (BLD_SPOTS).
 const BLD_EDGE_M1 = 14 - 0.9;          // M1: the platform edge, flush at 0.9u from the main line at z = 14 (now 1.44u from z = 22.4)
+const BLD_PLAT_DEEP_M1 = 6;           // the platforms' depth, front to back, in M1 units (9.6u; was 2.4, 3.84u)
 const BLD_PLATFORM_TOP = 0.3;          // D15: stays a person's step up (0.48u at x1.6 would be above a person's knee)
 const bldGrow = list => list.map(a => ({ ...a, x: a.x * WS, z: a.z * WS })); // an M1 layout about the origin, x WS
 // Where each building stands: centre x, z and yaw (local +z faces the track); y lifts lamps onto the platform.
-// The platform (D12) is 20u long and 2.4u deep. The depot and shanty stand 1u further back than in M0
+// The platform (D12) is 20u long and 2.4u deep in M1 units (the real start's are 6 deep since the wide platforms, below). The depot and shanty stand 1u further back than in M0
 // (a whole number of walk grid cells; the depot's office bay still steps onto the platform's back edge); the water tower moved east along the
 // track past the platform's end and switch 1's stand, so engines can still take water clear of the platform.
 // Each world has its own layout (BLD_LAYOUTS); BLD_LAYOUT is the one in use (bldUseWorld, from worldUse).
@@ -6818,7 +6819,7 @@ const bldGrow = list => list.map(a => ({ ...a, x: a.x * WS, z: a.z * WS })); // 
 // their own track, exactly as before; only a new game gets the real start's buildings.
 const BLD_LAYOUTS = {};
 BLD_LAYOUTS.yard = bldGrow([ // M1 numbers, grown by WS about the origin
-  { id: 'platform', x: 0, z: BLD_EDGE_M1 - 1.2, yaw: 0 },
+  { id: 'platform', kind: 'yardplatform', x: 0, z: BLD_EDGE_M1 - 1.2, yaw: 0 },
   { id: 'depot', x: -2.4, z: 9.6, yaw: 0 },
   { id: 'shanty', x: 2.4, z: 9.4, yaw: 0 },
   { id: 'watertower', x: 14.6, z: 11.8, yaw: 0 },
@@ -6837,22 +6838,26 @@ BLD_LAYOUTS.yard = bldGrow([ // M1 numbers, grown by WS about the origin
 const HUB_PZ = -TURN_OFF;
 // D15: offsets from HUB_PZ (the platform track) and WFORD are M1's x WS; with S1's track (TURN_OFF and WFORD x1.6)
 // that is exactly the M1 layout grown 1.6x about the origin.
+// Wide platforms (D15 follow-up, the designer's playtest): both platforms are 6 M1 units (9.6u) deep instead of 2.4;
+// the track-side edge stays 0.9 x WS from the platform track, so the platform and everything standing on or behind
+// it (depot, telegraph pole, the lamps on the platform; the towns follow their depots) moved back by BLD_WIDE_BACK.
+const BLD_WIDE_BACK = (BLD_PLAT_DEEP_M1 - 2.4) * WS;
 BLD_LAYOUTS.start = [
-  { id: 'platform', x: 8 * WS, z: HUB_PZ - (0.9 + 1.2) * WS, yaw: 0 },
-  { id: 'depot', x: 5.6 * WS, z: HUB_PZ - 4.4 * WS, yaw: 0 },
-  { id: 'tpole', x: 8.6 * WS, z: HUB_PZ - 4.4 * WS, yaw: 0 },
+  { id: 'platform', x: 8 * WS, z: HUB_PZ - 0.9 * WS - BLD_PLAT_DEEP_M1 / 2 * WS, yaw: 0 },
+  { id: 'depot', x: 5.6 * WS, z: HUB_PZ - 4.4 * WS - BLD_WIDE_BACK, yaw: 0 },
+  { id: 'tpole', x: 8.6 * WS, z: HUB_PZ - 4.4 * WS - BLD_WIDE_BACK, yaw: 0 },
   { id: 'watertower', x: 22.6 * WS, z: HUB_PZ - 2.2 * WS, yaw: 0 },
   { id: 'woodstage', x: 27.5 * WS, z: HUB_PZ - 3.1 * WS, yaw: 0 },
   { id: 'freightshed', x: -7.6 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0 },
-  { id: 'lamp1', x: 0.5 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'lamp2', x: 15.5 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp1', x: 0.5 * WS, z: HUB_PZ - 2.6 * WS - BLD_WIDE_BACK, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp2', x: 15.5 * WS, z: HUB_PZ - 2.6 * WS - BLD_WIDE_BACK, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'lamp3', x: 20 * WS, z: HUB_PZ - 1.6 * WS, yaw: 0 },
   { id: 'lamp4', x: -4.9 * WS, z: HUB_PZ - 3.4 * WS, yaw: 0 },
-  { id: 'wfplatform', x: WFORD.x + 20 * WS, z: WFORD.z - (0.9 + 1.2) * WS, yaw: 0 },
-  { id: 'wfdepot', kind: 'depot', x: WFORD.x + 17.6 * WS, z: WFORD.z - 4.4 * WS, yaw: 0 },
+  { id: 'wfplatform', x: WFORD.x + 20 * WS, z: WFORD.z - 0.9 * WS - BLD_PLAT_DEEP_M1 / 2 * WS, yaw: 0 },
+  { id: 'wfdepot', kind: 'depot', x: WFORD.x + 17.6 * WS, z: WFORD.z - 4.4 * WS - BLD_WIDE_BACK, yaw: 0 },
   { id: 'wftower', kind: 'watertower', x: WFORD.x + 33 * WS, z: WFORD.z - 2.2 * WS, yaw: 0 },
-  { id: 'wflamp1', kind: 'lamp', x: WFORD.x + 13 * WS, z: WFORD.z - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'wflamp2', kind: 'lamp', x: WFORD.x + 27 * WS, z: WFORD.z - 2.6 * WS, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wflamp1', kind: 'lamp', x: WFORD.x + 13 * WS, z: WFORD.z - 2.6 * WS - BLD_WIDE_BACK, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wflamp2', kind: 'lamp', x: WFORD.x + 27 * WS, z: WFORD.z - 2.6 * WS - BLD_WIDE_BACK, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'cabin1', x: WFORD.x + 6 * WS, z: WFORD.z - 9 * WS, yaw: 0.25 },
   { id: 'cabin2', x: WFORD.x + 13.5 * WS, z: WFORD.z - 13 * WS, yaw: -0.15 },
   { id: 'cabin3', x: WFORD.x + 25 * WS, z: WFORD.z - 11.5 * WS, yaw: 0.1 },
@@ -6860,6 +6865,8 @@ BLD_LAYOUTS.start = [
 ];
 let BLD_LAYOUT = BLD_LAYOUTS.yard;
 function bldKindOf(at) { return at.kind || bldKind(at.id); }
+// The platform kinds (flush with the track, a deck people stand on): the hub's, Willow Ford's and the test yard's.
+function bldIsPlatform(kind) { return kind === 'platform' || kind === 'wfplatform' || kind === 'yardplatform'; }
 // Freight shed bays as pure data (no three.js), read by the sim (section "cargo") and the item props.
 // One bay in front of each of the shed's 4 doors, on the dock (top at platform height). Each bay holds
 // 8 items in 2 columns x 2 rows x 2 layers; slot positions are worked out by cargoBaySlot in "world rendering".
@@ -6902,7 +6909,8 @@ function bldVary(rng) {
 // Puts parts given in a building's local frame into the shared kits. D15: parts (sizes and positions) are grown by sc
 // (WS) about the building's origin; b.raw() gives a placer in true units (not grown) for human-sized parts and heights,
 // and b.on(dy) one whose grown parts stand dy (true units, not grown) higher, on a platform or dock top.
-function bldPlacer(kit, glow, at, vary, sc, lift) {
+// roof (optional): a third kit for roofs that turn see-through near the player (b.roof; without it they go to kit).
+function bldPlacer(kit, glow, at, vary, sc, lift, roof) {
   if (sc === undefined) sc = WS;
   lift = lift || 0;
   const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), at.yaw || 0);
@@ -6915,9 +6923,10 @@ function bldPlacer(kit, glow, at, vary, sc, lift) {
     k.add(geo, col, at.x + v.x, (at.y || 0) + lift + v.y, at.z + v.z, e.x, e.y, e.z);
   };
   return {
-    raw: () => bldPlacer(kit, glow, at, vary, 1, lift),
-    on: dy => bldPlacer(kit, glow, at, vary, sc, lift + dy),
+    raw: () => bldPlacer(kit, glow, at, vary, 1, lift, roof),
+    on: dy => bldPlacer(kit, glow, at, vary, sc, lift + dy, roof),
     add: (geo, hex, x, y, z, rx, ry, rz) => place(kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
+    roof: (geo, hex, x, y, z, rx, ry, rz) => place(roof || kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
     glow: (geo, x, y, z, rx, ry, rz) => place(glow, geo, PAL.win, x, y, z, rx, ry, rz),
     // A glowing window in a trim frame, on a wall facing z (side 'z') or x (side 'x'); s = -1 faces the minus side.
     win(x, y, z, w, h, side, s) {
@@ -6932,13 +6941,14 @@ function bldPlacer(kit, glow, at, vary, sc, lift) {
 // (walk grid) and buildingFootprints() can read it without three.js; each recipe returns its own entry.
 // D15: BLD_EXT_M1 holds the M1 sizes the recipes draw with; BLD_EXTENTS (what everything else reads) is them x WS.
 const BLD_EXT_M1 = {
-  platform: [-10, 10, -1.2, 1.2],       // 20u long (D12; train No. 1 is 10.8u), 2.4u deep
+  platform: [-10, 10, -BLD_PLAT_DEEP_M1 / 2, BLD_PLAT_DEEP_M1 / 2], // the hub's: 20u long (D12; train No. 1 is 10.8u), 6u deep (9.6u since the wide platforms)
+  yardplatform: [-10, 10, -1.2, 1.2],   // the M0 test yard's (old saves): 20u x 2.4u, as before
   depot: [-2.3, 2.3, -1.3, 1.48],
   shanty: [-0.85, 1.15, -0.75, 0.75],
   watertower: [-0.95, 0.95, -0.95, 0.95],
   freightshed: [-2.35, 2.35, -1.95, 1.7],
   lamp: [-0.15, 0.15, -0.15, 0.15],
-  wfplatform: [-8, 8, -1.2, 1.2],       // Willow Ford: 16u (provisional), no canopy
+  wfplatform: [-8, 8, -BLD_PLAT_DEEP_M1 / 2, BLD_PLAT_DEEP_M1 / 2], // Willow Ford: 16u (provisional), as deep as the hub's, no canopy
   woodstage: [-3, 3, -2, 2],            // 3 x 2 tiles (design-doc 15)
   tpole: [-0.12, 0.12, -0.12, 0.12],
   cabin: [-1.2, 1.2, -1, 1],
@@ -6963,18 +6973,9 @@ function buildingSpots() {
 }
 // Recipes: each draws its parts and returns its plan extent (its BLD_EXTENTS entry).
 const BLD_RECIPES = {
-  // Platform, 20u long and 2.4u deep (D12), with a canopy over the middle 10u and a bench under it.
-  // The canopy stops 0.05u short of the track-side edge and clears the depot's office bay roof (0.4u below it, and 0.2u to the side in plan).
-  // D15: the slab is grown in plan but keeps its step height; the canopy and its posts grow; the bench stays human-sized.
-  platform(b) {
-    const [x0, x1, z0, z1] = BLD_EXT_M1.platform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP, r = b.raw();
-    r.add(box(len * WS, top + 0.05, dep * WS), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
-    b.add(box(10, 0.12, 1.75), PAL.roof, 0, 2.05, z1 - 0.05 - 1.75 / 2);
-    const ph = 2.05 - top / WS; // posts from the platform top up into the canopy
-    for (const x of [-4.6, -1.55, 1.55, 4.6]) for (const z of [-0.3, 0.8]) b.on(top).add(cyl(0.06, 0.06, ph), PAL.trim, x, ph / 2, z);
-    bldBench(r, 3.1 * WS, -0.55 * WS, top);   // the bench, facing the track
-    return BLD_EXTENTS.platform;
-  },
+  // Platforms: the hub's (20u long, D12) and the test yard's, with a canopy over the middle 10u and a bench.
+  platform(b) { return bldPlatform(b, BLD_EXT_M1.platform, 3.1, true); },
+  yardplatform(b) { return bldPlatform(b, BLD_EXT_M1.yardplatform, 3.1, true); },
   // Small depot (style test page station): ticket window, telegraph, and the agent's office in the bay.
   depot(b) {
     b.add(box(4.3, 0.3, 2.1), PAL.trim, 0, 0.1, 0);
@@ -7031,13 +7032,8 @@ const BLD_RECIPES = {
     // (The three loose crates that stood on the dock in M0 are gone: real items now sit in the bays.)
     return BLD_EXTENTS.freightshed;
   },
-  // Willow Ford's platform: 16u long and 2.4u deep, the same height and stone as the hub's, with a bench.
-  wfplatform(b) {
-    const [x0, x1, z0, z1] = BLD_EXT_M1.wfplatform, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP, r = b.raw();
-    r.add(box(len * WS, top + 0.05, dep * WS), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
-    bldBench(r, -2.2 * WS, -0.55 * WS, top);
-    return BLD_EXTENTS.wfplatform;
-  },
+  // Willow Ford's platform: 16u long, as deep as the hub's, the same height and stone, with a bench; no canopy.
+  wfplatform(b) { return bldPlatform(b, BLD_EXT_M1.wfplatform, -2.2, false); },
   // Wood stage: a raised deck at tender height holding stacked cordwood, under a lean-to roof.
   woodstage(b) {
     for (const x of [-2.7, 0, 2.7]) for (const z of [-1.7, 1.7]) b.add(box(0.16, 0.9, 0.16), PAL.trim, x, 0.45, z);
@@ -7077,6 +7073,23 @@ const BLD_RECIPES = {
   },
 };
 function bldKind(id) { return id.replace(/\d+$/, ''); }
+// A platform slab of plan ext (M1 units, local +z the track side), with a bench (human-sized, D15) facing the track
+// 0.65 M1 units in from the back edge at x = benchX, and optionally a canopy over the middle 10u along the track-side
+// edge: the canopy stops 0.05 short of that edge and is 1.75 deep, on 8 posts, all grown by WS. The slab is grown in plan
+// but keeps its step height (BLD_PLATFORM_TOP). The canopy roof goes to the placer's roof kit (its own mesh, which
+// turns see-through near the player: bldRoofFade); the posts stay in the main mesh.
+function bldPlatform(b, ext, benchX, canopy) {
+  const [x0, x1, z0, z1] = ext, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP, r = b.raw();
+  r.add(box(len * WS, top + 0.05, dep * WS), BLD_COL.plat, (x0 + x1) / 2 * WS, (top - 0.05) / 2, (z0 + z1) / 2 * WS);
+  if (canopy) {
+    const cz = z1 - 0.05 - 1.75 / 2;
+    b.roof(box(10, 0.12, 1.75), PAL.roof, 0, 2.05, cz);
+    const ph = 2.05 - top / WS; // posts from the platform top up into the canopy
+    for (const x of [-4.6, -1.55, 1.55, 4.6]) for (const z of [z1 - 1.5, z1 - 0.4]) b.on(top).add(cyl(0.06, 0.06, ph), PAL.trim, x, ph / 2, z);
+  }
+  bldBench(r, benchX * WS, (z0 + 0.65) * WS, top);   // the bench, facing the track
+  return ext.map(v => v * WS);
+}
 // A platform bench (human-sized, D15), facing the track; r is a raw placer, (bx, bz) its centre, top the platform top.
 function bldBench(r, bx, bz, top) {
   r.add(box(1.2, 0.07, 0.34), PAL.trim, bx, top + 0.4, bz);
@@ -7097,7 +7110,7 @@ function buildingFootprints() {
       out.push({ id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush });
     };
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
-    else rect(at.id, ext, kind === 'platform' || kind === 'wfplatform');
+    else rect(at.id, ext, bldIsPlatform(kind));
   }
   return out.concat(townFootprints()); // the town's businesses and homes (section "town")
 }
@@ -7147,18 +7160,69 @@ function bldHubBoundary(kit, H) {
 function buildingLights() {
   return BLD_LAYOUT.filter(a => bldKindOf(a) === 'lamp').map(a => ({ x: a.x, y: (a.y || 0) + 1.73 * WS, z: a.z }));
 }
+// ---- Roofs that turn see-through (D15: the platform canopy must not hide the player or the platform) ----
+// The canopies are their own mesh (bldRoof.mesh, 1 draw call plus its shadow) with their own material, always drawn as
+// transparent; bldRoofFade (every frame) eases its opacity to ROOF_FADE.LOW while the player is under a canopy or
+// within ROOF_FADE.NEAR of it in plan, or whenever a canopy lies between the player and the camera, and back to 1 when
+// the player walks away. While faded it does not write depth, so the player, travellers and the platform behind it
+// draw through. It still casts its shadow (the shade under a roof). All canopies fade together (one mesh).
+const ROOF_FADE = { LOW: 0.15, NEAR: 3, RATE: 8 };
+const bldRoof = { mesh: null, rects: [], opacity: 1, target: 1 };
+// The canopies' plan rectangles in world units {x, z, yaw, lx0, lx1, lz0, lz1, y (underside)}, from the layout.
+function bldRoofRects() {
+  const out = [];
+  for (const at of BLD_LAYOUT) {
+    const k = bldKindOf(at);
+    if (k !== 'platform' && k !== 'yardplatform') continue;
+    const z1 = BLD_EXT_M1[k][3];
+    out.push({ x: at.x, z: at.z, yaw: at.yaw || 0, lx0: -5 * WS, lx1: 5 * WS, lz0: (z1 - 0.05 - 1.75) * WS, lz1: (z1 - 0.05) * WS, y: (2.05 - 0.06) * WS + (at.y || 0) });
+  }
+  return out;
+}
+// Is (x, z) within m of roof rectangle r (in plan)?
+function bldRoofNear(r, x, z, m) {
+  const c = Math.cos(r.yaw), s = Math.sin(r.yaw), dx = x - r.x, dz = z - r.z, lx = dx * c - dz * s, lz = dx * s + dz * c;
+  return lx > r.lx0 - m && lx < r.lx1 + m && lz > r.lz0 - m && lz < r.lz1 + m;
+}
+// Should the roofs be faded for a player standing at (x, y, z) (y: feet) with the camera at yaw cy, elevation el?
+function bldRoofWantFaded(x, y, z, cy, el) {
+  const dx = Math.sin(cy) * Math.cos(el), dy = Math.sin(el), dz = Math.cos(cy) * Math.cos(el); // towards the camera
+  for (const r of bldRoof.rects) {
+    if (bldRoofNear(r, x, z, ROOF_FADE.NEAR)) return true;
+    for (const h of [0.1, 0.9, 1.8]) { // feet, middle and head: does the line to the camera pass under the roof?
+      const t = (r.y - (y + h)) / dy;
+      if (t > 0 && bldRoofNear(r, x + dx * t, z + dz * t, 0.4)) return true;
+    }
+  }
+  return false;
+}
+function bldRoofFade(x, y, z, dt) {
+  const R = bldRoof;
+  if (!R.mesh) return;
+  R.target = bldRoofWantFaded(x, y, z, cam.yaw, CFG.ISO_EL) ? ROOF_FADE.LOW : 1;
+  R.opacity += (R.target - R.opacity) * (1 - Math.exp(-dt * ROOF_FADE.RATE));
+  if (Math.abs(R.opacity - R.target) < 0.005) R.opacity = R.target;
+  const M = R.mesh.material;
+  M.opacity = R.opacity; M.depthWrite = R.opacity > 0.99;
+}
 function buildBuildings(G) {
-  const kit = new Kit(), glow = new Kit();
+  const kit = new Kit(), glow = new Kit(), roof = new Kit();
   BLD_LAYOUT.forEach((at, i) => {
     const kind = bldKindOf(at);
     const vary = kind === 'lamp' ? null : bldVary(rngSeed(CFG.SEED * 31 + 101 * (i + 1)));
-    BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary));
+    BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary, undefined, 0, roof));
   });
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
   const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'buildingGlow'; G.add(g);
+  bldRoof.mesh = null; bldRoof.rects = bldRoofRects();
+  if (roof.p.length) {
+    const r = roof.mesh(); r.name = 'buildingRoofs';
+    r.material = KIT_MAT.clone(); r.material.transparent = true; r.material.opacity = bldRoof.opacity; r.material.depthWrite = bldRoof.opacity > 0.99;
+    bldRoof.mesh = r; G.add(r);
+  }
   townBuildingsDraw(G); // the towns' businesses and homes: their own meshes per town, so a town out of view is skipped
-  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
+  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], roof: bldRoof, roofRects: () => bldRoof.rects, roofWantFaded: bldRoofWantFaded, footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
 }
 
 // ---- Town buildings (M1 package 4, builder C5) ----
@@ -9305,13 +9369,24 @@ function ttOnEvent(e) {
   else if (e.t === 'ttRunAround') toast('The engine runs round its train.');
   else if (e.t === 'ttCancelled' && e.why !== 'taken off the timetable') toast(`${S.tt.services[e.svc].name} is cancelled: ${e.why}.`);
 }
-// The train order board card (C3): shown above a station's board while the player is within 12u of it, listing
+// The train order board card (C3): shown above a station's board while the player is within 12u of it (x WS), listing
 // the next departures. The board's lamp in the world is red (hold) or green (a train is leaving on its reservation).
+// Since the wide platforms moved the depot back, it also shows within 6u (x WS) of the station's ticket window spot,
+// so the departure board is still read while selling tickets; the card then stands over the ticket window spot.
 const ttCardUi = { st: null, sig: '', w: 0, h: 0 };
+function ttCardTicketSpot(id) {
+  const st = (stationsOf(S.track) || []).find(t => t.id === id);
+  return st ? buildingSpots().find(p => p.building === st.depot && p.kind === 'ticket') || null : null;
+}
 function ttCardHud() {
   const P = S.player;
   let near = null;
-  for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 * WS && (!near || d < near.d)) near = { st, d }; }
+  for (const st of ttStations(S)) if (st.board) {
+    const tk = ttCardTicketSpot(st.id), db = Math.hypot(st.board.x - P.x, st.board.z - P.z);
+    const dt = tk ? Math.hypot(tk.x - P.x, tk.z - P.z) * 2 : Infinity; // a ticket window at 6u counts as a board at 12u
+    const d = Math.min(db, dt), at = dt < db ? tk : st.board;            // the card stands over the nearer of the two
+    if (d < 12 * WS && (!near || d < near.d)) near = { st, d, at };
+  }
   const card = $('ttCard');
   const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
@@ -9326,7 +9401,7 @@ function ttCardHud() {
     for (const l of b.lines) { const d = document.createElement('div'); d.textContent = `${l.time} to ${l.to}: ${l.state}`; box.appendChild(d); }
     card.hidden = false; ttCardUi.w = card.offsetWidth; ttCardUi.h = card.offsetHeight;
   }
-  const p = toScreen(near.st.board.x, 1.9 * WS, near.st.board.z), W = window.innerWidth;
+  const p = toScreen(near.at.x, 1.9 * WS, near.at.z), W = window.innerWidth;
   const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2)), y = Math.max(64, p.y - ttCardUi.h - 6);
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
@@ -10142,6 +10217,7 @@ function render(alpha, dt) {
   cam.fx += (px - cam.fx) * k; cam.fz += (pz - cam.fz) * k;
   cam.yaw += (camYawTarget() - cam.yaw) * (1 - Math.exp(-dt * 10));
   placeCamera();
+  bldRoofFade(px, pl.position.y, pz, dt); // the platform canopy turns see-through near the player (D15)
   cargoDraw(S);           // item props and tags (section "cargo")
   applyDaylight(S, dt);
   updateCrowd(dt);

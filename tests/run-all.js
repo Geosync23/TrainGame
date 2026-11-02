@@ -19,6 +19,7 @@ const checks = {
   'build tool (laying track and switches)': require('./check-build'),
   'M0 acceptance criteria': require('./check-m0'),
   'carrying (by hand, hand truck, handcart)': require('./check-carry'),
+  'feet on the platforms and the freight dock (drawn)': require('./check-feet'),
   'cargo (items, waybills, bays)': require('./check-cargo'),
   'interchange (the Overland, loading cars by hand)': require('./check-interchange'),
   'hand-building track (construction jobs)': require('./check-handbuild'),

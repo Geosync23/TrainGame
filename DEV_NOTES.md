@@ -393,4 +393,4 @@ The integrator merges the branches into `ccr-59cb4c1f-rnscv9`, runs `npm test`, 
 
 ## Next
 
-All of M1 is built and merged (2026-11-02). Next: republish the playable link and prepare the end-of-M1 review for the designer. Start from `plans/handover.md`.
+All of M1 is built and merged (2026-11-02). The playable link https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s has the end-of-M1 build, and the end-of-M1 review page is published: https://claude.ai/artifact/CKNAh874bKoJ1EZWAX9zEB (source `plans/m1-review.html`; screenshots are put in at publish time from `test-output/`). Its answers save in the page's database as one document, `answers/m1-review` (keys `<group>.<item>` for the builders' choices, `q.<id>` for the next-step questions). Next: wait for the designer's answers, record them as a decision (D14) in design-doc section 0, then do what they choose. Start from `plans/handover.md`.

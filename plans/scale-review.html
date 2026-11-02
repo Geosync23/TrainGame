@@ -1,0 +1,220 @@
+<title>Railhead Scale Check</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column: what changed, pictures, results, then question slips; a fixed save bar at the foot. */
+:root {
+  --paper: #f3f1ea; --slip: #fffdf7; --ink: #262420; --muted: #6c675c;
+  --rule: #d9d3c4; --brass: #8a6418; --brass-soft: #f1e4c4; --ok: #2f6b3a; --ok-soft: #dcebd9; --warn: #9a4a1c; --warn-soft: #f6e0d2;
+  --f-display: "Zilla Slab", Georgia, serif;
+  --f-body: "Source Sans 3", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-body); }
+.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 120px; display: grid; gap: 28px; }
+.wrap > section { display: grid; gap: 12px; min-width: 0; }
+h1 { font: 700 1.9rem/1.15 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 700 1.35rem/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 500 1.1rem/1.3 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--brass); }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 .75rem var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.play { display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 4px;
+  background: var(--brass); color: var(--slip); font-weight: 600; text-decoration: none; justify-self: start; }
+.shots { display: grid; grid-auto-flow: column; grid-auto-columns: min(70%, 240px); gap: 12px; overflow-x: auto;
+  padding-bottom: 8px; scroll-snap-type: x mandatory; }
+.shots figure { margin: 0; scroll-snap-align: start; display: grid; gap: 6px; align-content: start; }
+.shots img { width: 100%; border: 1px solid var(--rule); border-radius: 4px; display: block; background: var(--slip); }
+.shots figcaption { font-size: .85rem; color: var(--muted); }
+.slip { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.res { display: grid; gap: 12px; }
+.res-row { display: grid; gap: 4px; }
+.pill { font: 500 .72rem var(--f-mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 3px; padding: 1px 6px; justify-self: start; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.you { background: var(--brass-soft); color: var(--brass); }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; }
+td.n { text-align: right; white-space: nowrap; }
+.gap { border-left: 3px solid var(--warn); padding-left: 10px; }
+details.group { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; }
+details.group > summary { list-style: none; cursor: pointer; padding: 14px 16px; min-height: 48px; box-sizing: border-box;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font: 500 1.2rem var(--f-mono); color: var(--brass); }
+details.group[open] > summary::after { content: "\2212"; }
+.gcount { font: 500 .75rem var(--f-mono); color: var(--muted); white-space: nowrap; }
+.gbody { padding: 0 16px 16px; display: grid; gap: 14px; }
+.keepall { justify-self: start; background: transparent; color: var(--brass); border: 1px solid var(--brass); }
+.item { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.item p { font-size: .95rem; }
+.who { font: 500 .7rem var(--f-mono); color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule);
+  border-radius: 4px; cursor: pointer; font-size: .95rem; }
+.seg label:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.seg input { accent-color: var(--brass); width: 18px; height: 18px; margin: 0; }
+.opts { display: grid; gap: 8px; border: 0; margin: 0; padding: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px; min-height: 48px; box-sizing: border-box;
+  border: 1px solid var(--rule); border-radius: 4px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.opt input { margin-top: 4px; accent-color: var(--brass); width: 18px; height: 18px; flex: none; }
+.opt span { min-width: 0; }
+.tag { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--brass);
+  border: 1px solid var(--brass); border-radius: 3px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+label.note { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+textarea { font: 16px/1.4 var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 8px 10px; min-height: 44px; resize: vertical; box-sizing: border-box; width: 100%; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--slip); border-top: 1px solid var(--rule);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+.bar-in { max-width: 680px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#status { font: 500 .8rem var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+#status.ok { color: var(--ok); }
+button { font: 600 1rem var(--f-body); min-height: 48px; padding: 0 20px; border-radius: 4px; border: 0;
+  background: var(--brass); color: var(--slip); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:12px">
+    <span class="eyebrow">M1 fix round, step 1 of 2</span>
+    <h1>Railhead scale check</h1>
+    <p class="muted">You chose to see the new size before the rest is built. Everything except people is now 1.6 times bigger. Please play it or look at the pictures, then answer below. Your answers save on this page as you go.</p>
+    <a class="play" href="https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s" target="_blank" rel="noopener">Play the new build</a>
+    <p class="muted" style="font-size:.85rem">This is a new link, so it starts a new game. Your game on the old M1 link is kept there. (Saved games do convert to the new sizes; the checks test that.)</p>
+  </header>
+
+  <section>
+    <h2>What changed</h2>
+    <ul class="plain">
+      <li><b>Bigger world, same people.</b> Track, trains and cars, the platform, buildings and distances are 1.6 times bigger. The engine and tender are now about 8 people long. The map is 640 by 320 units, with open land around the hub. Willow Ford is still 10 miles away.</li>
+      <li><b>Same times.</b> Trains run faster to match, so the timetable, fares and wood use are as before. You walk a quarter faster. Hand-building steps are quicker, so a siding of the same shape takes the same real time.</li>
+      <li><b>Camera.</b> It starts a little closer (1.5x), and you can zoom out to 0.4x to see a whole train and platform.</li>
+      <li><b>Feet on the floor.</b> You stand on the platforms and the freight dock and step up and down at their edges.</li>
+      <li><b>Three small gaps fixed.</b> Materials put down at a building job can be picked back up. A switch inside a platform track no longer cancels its trains. An item in the wrong bay shows a yellow warning mark.</li>
+    </ul>
+    <div class="shots" id="shots" aria-label="Screenshots, swipe sideways"></div>
+    <p class="muted" style="font-size:.85rem">Swipe the pictures sideways. They come from the checks on the test machine at phone size.</p>
+  </section>
+
+  <section>
+    <h2>Choices made while building</h2>
+    <ul class="plain">
+      <li>The platform and dock stay at a single step's height. At 1.6 times they would come above a person's knee.</li>
+      <li>Things a person handles stay person-sized: switch stands, benches, carried goods, the hand truck and the handcart.</li>
+      <li>The spots where you stand beside a car stay within arm's reach of the wider cars.</li>
+      <li>The bigger train blocked the way to the water tower spout, so fuelling at the hub failed. That is fixed: you can now walk the last short bit straight to a spot beside a train.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Test results</h2>
+    <div class="slip res">
+      <div class="res-row"><span class="pill ok">Passed</span><h3>All 30 checks</h3><p class="muted">Including old saves loading and converting, and the same result every time from the same start.</p></div>
+      <div class="res-row"><span class="pill ok">Passed</span><h3>The test player's week</h3><p class="muted">14 of 14 timetabled runs ran, none cancelled. The pressure test still passes: No. 1 and the Overland came in 9 to 10 minutes apart.</p></div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>The test player's week</th><th class="n">Before</th><th class="n">Now</th></tr></thead>
+      <tbody>
+        <tr><td>Latest any train ran</td><td class="n">0 min</td><td class="n">7 min</td></tr>
+        <tr><td>Tickets sold at the hub</td><td class="n">173</td><td class="n">120</td></tr>
+        <tr><td>Cash at the end of the week</td><td class="n">$2,500.52</td><td class="n">$2,479.72</td></tr>
+        <tr><td>Draw calls, busiest scene (budget 100)</td><td class="n">73</td><td class="n">86</td></tr>
+      </tbody>
+    </table></div>
+    <p class="gap">The test player sold fewer tickets and ran a little late. It is a simple program that plays carefully, and the bigger station gives it longer walks between jobs. I have not looked into it further yet; it is on the list to watch in your retest.</p>
+  </section>
+
+  <section>
+    <h2>Your answers</h2>
+    <div id="qs" style="display:grid;gap:16px"></div>
+  </section>
+</div>
+<div class="bar"><div class="bar-in"><span id="status">Connecting...</span><button id="save" type="button">Save answers</button></div></div>
+
+<script>
+const SHOTS = __SHOTS__;
+const QS = [
+  { id: 'size', q: 'Does the new size look right?',
+    o: [['right', 'Yes, it looks right', 1], ['bigger', 'Bigger still (say what in the note)'], ['smaller', 'A bit too big; bring it back part of the way'], ['notyet', 'I have not played it yet']] },
+  { id: 'zoom', q: 'The camera starts at 1.5x. Is that a good starting distance?',
+    o: [['keep', 'Yes, keep 1.5x', 1], ['closer', 'Start closer'], ['farther', 'Start farther out']] },
+  { id: 'walk', q: 'You walk a quarter faster than before. How does it feel?',
+    o: [['keep', 'Right as it is', 1], ['faster', 'Still too slow for the bigger station'], ['slower', 'Too fast']] },
+  { id: 'next', q: 'Shall I build the rest of the round now?', ctx: 'The see-through platform roof, crossings (track no longer walkable elsewhere), the cutaway view into cars, and the departure board on the depot walls. Then one review at the end.',
+    o: [['go', 'Yes, go ahead', 1], ['changes', 'First change what I describe in my note, then go ahead'], ['wait', 'Wait; I want to talk about it first']] },
+  { id: 'else', q: 'Anything else about the new size?', o: [] },
+];
+const answers = {};
+const statusEl = document.getElementById('status'), saveBtn = document.getElementById('save');
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+const shotsEl = document.getElementById('shots');
+for (const s of SHOTS) { const f = el('figure'); const i = el('img'); i.src = s.src; i.alt = s.cap; i.loading = 'lazy'; f.append(i, el('figcaption', null, s.cap)); shotsEl.append(f); }
+function noteBox(key, label) {
+  const nl = el('label', 'note', label); const ta = el('textarea'); ta.id = 'note-' + key; ta.rows = 1;
+  ta.addEventListener('input', () => setA(key, 'note', ta.value)); nl.append(ta); return nl;
+}
+const qsEl = document.getElementById('qs');
+QS.forEach((Q, i) => {
+  const s = el('section', 'slip'); s.append(el('div', 'eyebrow', 'Question ' + (i + 1) + ' of ' + QS.length));
+  const h = el('h3', null, Q.q); h.id = 'q-' + Q.id; s.append(h);
+  if (Q.ctx) s.append(el('p', 'muted', Q.ctx));
+  if (Q.o.length) {
+    const fs = el('fieldset', 'opts'); fs.setAttribute('aria-labelledby', h.id);
+    for (const [v, label, sug] of Q.o) {
+      const l = el('label', 'opt'); const r = el('input'); r.type = 'radio'; r.name = 'q.' + Q.id; r.value = v; r.id = 'q.' + Q.id + '-' + v;
+      r.addEventListener('change', () => setA('q.' + Q.id, 'choice', v));
+      const t = el('span', null, label); if (sug) t.append(el('span', 'tag', 'Suggested'));
+      l.append(r, t); fs.append(l);
+    }
+    s.append(fs);
+  }
+  s.append(noteBox('q.' + Q.id, Q.o.length ? 'Note (optional)' : 'Your answer')); qsEl.append(s);
+});
+function render() {
+  for (const Q of QS) {
+    const key = 'q.' + Q.id, a = answers[key] || {};
+    for (const [v] of Q.o) document.getElementById(key + '-' + v).checked = a.choice === v;
+    const ta = document.getElementById('note-' + key); if (document.activeElement !== ta) ta.value = a.note || '';
+  }
+}
+render();
+let ref = null, dirty = false, saving = false, timer = null;
+function setA(id, k, v) { answers[id] = Object.assign({}, answers[id], { [k]: v }); dirty = true; status('Not saved yet'); clearTimeout(timer); timer = setTimeout(save, 1500); }
+function status(t, ok) { statusEl.textContent = t; statusEl.className = ok ? 'ok' : ''; }
+async function save() {
+  if (!ref) { status('Saving is not available here'); return; }
+  if (saving) { clearTimeout(timer); timer = setTimeout(save, 800); return; }
+  if (!dirty) return;
+  saving = true; dirty = false; saveBtn.disabled = true;
+  try { await ref.set({ answers, savedAt: Date.now() }); status('Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), true); }
+  catch (e) { dirty = true; status('Could not save: ' + ((e && e.message) || 'try again')); }
+  finally { saving = false; saveBtn.disabled = false; }
+}
+saveBtn.addEventListener('click', () => { dirty = true; clearTimeout(timer); save(); });
+(async () => {
+  const to = setTimeout(() => status('Still connecting; your choices are kept on screen'), 10000);
+  let db = null;
+  try { db = window.claude ? await window.claude.use('db') : null; } catch (e) { db = null; }
+  clearTimeout(to);
+  if (!db) { status('Saving is not available here'); saveBtn.disabled = true; return; }
+  ref = db.doc('answers/scale-review');
+  try {
+    const snap = await ref.get();
+    if (snap.exists) { const d = snap.data(); if (d && d.answers) for (const k in d.answers) if (!answers[k]) answers[k] = d.answers[k]; render(); status('Loaded your saved answers', true); }
+    else status('Nothing saved yet');
+  } catch (e) { status('Could not load saved answers'); }
+})();
+</script>

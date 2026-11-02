@@ -12,6 +12,8 @@
 // - Same commands twice, same hash (with the Overland's test delivery, so it sets out cars). Walk grid build time, memory and a long walk's tick time are reported.
 // - Draw calls in the busiest views (the hub with the train, the Overland's cars and 200 walkers, and Willow
 //   Ford with the train) stay under 100, portrait and landscape; screenshots at noon of both stations.
+// - (D13) A new game has 8 cords of wood on the ground at the hub's wood stage, off every footprint, on open walk
+//   grid cells the handcart may reach; item conservation passes; the test yard (?world=yard) still starts with none.
 
 const { openGame, screenshotPath } = require('./browser');
 
@@ -38,6 +40,24 @@ module.exports = async function checkWorldStart() {
         const errs = R.trackValidate(T);
         if (errs.length) P('track validator: ' + errs.join('; '));
         if (T.switches.length !== 4) P(`${T.switches.length} switches, expected 4 (interchange, platform track, 2 at Willow Ford)`);
+        // (D13) The starting cords at the hub's wood stage.
+        {
+          const hub = R.tt.ttStation(S, 'hub'), ws = fps.find(f => f.id === 'woodstage'), Wk = Wd.walk, grid = Wd.walkGrid(T);
+          const open = (x, z) => { const cx = Math.floor((x - Wk.X0) / Wk.CELL), cz = Math.floor((z - Wk.Z0) / Wk.CELL); return grid.cost[cz * Wk.N + cx] > 0; };
+          const all = []; for (let i = 0; i < S.items.next; i++) if (S.items.alive[i]) all.push(i);
+          const cords = all.filter(i => S.items.waybill[i].commodity === 'cordwood' && S.items.where[i].kind === 'GROUND');
+          out.cords = cords.length;
+          if (all.length !== 8 || cords.length !== 8) P(`a new game should start with exactly 8 cords (items: ${all.length}, cords on the ground: ${cords.length})`);
+          for (const i of cords) {
+            const x = S.items.where[i].x / 100, z = S.items.where[i].z / 100;
+            if (Math.hypot(x - hub.wood.x, z - hub.wood.z) > 6) P(`cord ${i} at ${x}, ${z} is not at the wood stage`);
+            if (fps.some(f => Math.abs(x - f.x) < f.w / 2 && Math.abs(z - f.z) < f.d / 2)) P(`cord ${i} lies inside a building's footprint`);
+            if (!open(x, z) || R.carry.carryNoCartAt(x, z)) P(`cord ${i} is not on open ground the handcart can reach`);
+          }
+          if (!ws) P('no wood stage');
+          const cons = R.cargo.itemCheckConservation(S);
+          if (cons.length) P('item conservation in a new game: ' + cons.join('; '));
+        }
         // Clearances (section 6), as check-buildings.js does for the test yard.
         const dist = (f, x, z) => {
           const c = Math.cos(f.yaw), s = Math.sin(f.yaw), dx = x - f.x, dz = z - f.z, lx = dx * c - dz * s, lz = dx * s + dz * c;
@@ -153,6 +173,9 @@ module.exports = async function checkWorldStart() {
         let mxT = 0, sum = 0, nT = 0;
         for (let i = 0; i < 2000 && st.player.mode !== 'idle'; i++) { const t = performance.now(); R.simTick(st, []); const d = performance.now() - t; mxT = Math.max(mxT, d); sum += d; nT++; }
         out.walk = { ticks: nT, avg: sum / nT, max: mxT, end: Math.hypot(st.player.x - Wd.WFORD.x - 18, st.player.z - Wd.WFORD.z + 1.7) };
+        // (D13) Only the real start has the starting cords. (Last: a test-yard state points the layout tables at the yard.)
+        if (R.newState(1866, 'yard').items.next !== 0) P('the test yard should start with no items');
+        R.newState(1866);
         return out;
       });
       problems.push(...r.bad);
@@ -163,6 +186,7 @@ module.exports = async function checkWorldStart() {
       if (!(r.overland.setOut >= 2)) problems.push(`the Overland set out ${r.overland.setOut} cars by 07:00 (phase ${r.overland.phase})`);
       if (r.overland.conservation.length) problems.push('item conservation: ' + r.overland.conservation.join('; '));
       if (r.walk.end > 1) problems.push(`a walk from the hub to Willow Ford ended ${r.walk.end.toFixed(1)}u short`);
+      console.log(`  starting cords at the hub's wood stage: ${r.cords}`);
       console.log(`  spur ${r.spur.toFixed(2)}u; smallest building clearance margin ${r.minClear.toFixed(2)}u; ${r.spots} use spots; highest ground ${r.maxHeight.toFixed(2)}u`);
       console.log(`  routes: ${r.routes.join(', ')}`);
       console.log(`  walk grid ${r.cells} cells, built in ${r.buildMs.toFixed(1)} ms, ${r.mb.toFixed(1)} MB with the handcart grid; hub to Willow Ford on foot ${r.walk.ticks} ticks, ${r.walk.avg.toFixed(2)} ms a tick on average, ${r.walk.max.toFixed(1)} ms at most`);

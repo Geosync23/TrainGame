@@ -167,8 +167,73 @@ module.exports = async function checkCarry() {
     if (det[0].h === det[2].h) problems.push('a different carrying command list gave the same hash');
     if (det[0].cons) problems.push('item conservation failed in the determinism run');
 
-    console.log(`  draw calls: carrying by hand ${dcHand}, pushing a loaded hand truck ${dcTruck}; determinism hash ${det[0].h}`);
-    if (dcTruck >= 100 || dcHand >= 100) problems.push('draw calls over 100');
+    // 10. Cordwood on the handcart (D13), in the real start (a new game: 8 cords at the hub's wood stage).
+    // Other long bundles stay by hand only; no long bundle on the hand truck; cords go onto the tender cord by cord.
+    const cart = await R(() => {
+      const R = window.__railhead, C = R.cargo, out = { bad: [] };
+      const fresh = () => R.newState(1866, 'start');
+      const cordsOf = S => C.itemsAt(S, { kind: 'GROUND' }).filter(i => S.items.waybill[i].commodity === 'cordwood');
+      const run = (S, cmd, n) => { const ev = R.simTick(S, cmd ? [cmd] : []); for (let i = 0; i < (n || 0); i++) ev.push(...R.simTick(S, [])); return ev; };
+      const held = S => R.carry.carryHeld(S);
+      // The hand truck: a cord is refused.
+      const S1 = fresh();
+      run(S1, { t: 'carryTool', tool: 0 }, 150);
+      if (S1.player.tool !== 0) out.bad.push('could not take the hand truck in the real start');
+      let ev = run(S1, { t: 'carryPick', id: cordsOf(S1)[0] });
+      if (!ev.some(e => e.t === 'carryRefused' && /hand truck/.test(e.why))) out.bad.push('a cord was not refused on the hand truck: ' + JSON.stringify(ev.filter(e => /Refused/.test(e.t))));
+      if (C.itemCanMove(S1, cordsOf(S1)[0], { kind: 'CARRIED', actorId: 'player', carrier: 'HANDTRUCK', slot: 0 }) === null) out.bad.push('itemCanMove allows a cord on the hand truck');
+      // The handcart: cords yes; ties, rails, lumber and poles no.
+      const S = fresh(), cords = cordsOf(S);
+      out.start = cords.length;
+      run(S, { t: 'carryTool', tool: 1 }, 150);
+      if (S.player.tool !== 1) out.bad.push('could not take the handcart in the real start');
+      run(S, { t: 'carryPick', id: cords[0] }, 120);
+      if (held(S).length !== 1 || S.items.where[cords[0]].carrier !== 'HANDCART') out.bad.push('a cord did not go on the handcart: ' + JSON.stringify(S.items.where[cords[0]]));
+      const P = S.player, wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null });
+      out.others = {};
+      for (const c of ['ties', 'rails', 'lumber', 'poles']) {
+        const id = C.itemCreate(S, wb(c), { kind: 'GROUND', x: Math.round((P.x + 0.6) * 100), z: Math.round(P.z * 100) }, null).id;
+        const e2 = run(S, { t: 'carryPick', id });
+        out.others[c] = (e2.find(e => e.t === 'carryRefused') || {}).why || 'not refused';
+        if (!/by hand only/.test(out.others[c])) out.bad.push(c + ' was not refused on the handcart: ' + out.others[c]);
+        C.itemConsume(S, id, 'construction', null);
+      }
+      for (let k = 1; k < 6; k++) run(S, { t: 'carryPick', id: cords[k] }, 120);
+      out.loaded = held(S).length;
+      if (out.loaded !== 6) out.bad.push('the handcart holds ' + out.loaded + ' cords, not 6');
+      ev = run(S, { t: 'carryPick', id: cords[6] });
+      if (!ev.some(e => e.t === 'carryRefused' && /full \(6/.test(e.why))) out.bad.push('a seventh cord on the handcart was not refused');
+      // Onto the tender from the handcart, cord by cord (No. 1 at the platform, its tender 3 cords short).
+      const L = S.trains[0].consist.find(c => c.k === 'loco');
+      L.fuel = R.tt.FUEL_CAP - 3 * 120;
+      out.fuel = [];
+      for (let k = 0; k < 3; k++) {
+        const e3 = run(S, { t: 'fuelTender', tr: 0 }, 250);
+        out.fuel.push({ held: held(S).length, cords: Math.round(L.fuel / 120), onPlatform: R.carry.carryNoCartAt(S.player.x, S.player.z), refused: e3.filter(e => /Refused/.test(e.t)).map(e => e.why) });
+      }
+      if (out.fuel.map(f => f.held).join() !== '5,4,3' || out.fuel.map(f => f.cords).join() !== '2,3,4') out.bad.push('cords from the handcart onto the tender, one at a time: ' + JSON.stringify(out.fuel));
+      if (out.fuel.some(f => f.onPlatform)) out.bad.push('the handcart went onto the platform to fuel the tender');
+      out.used = S.items.used.filter(u => u.reason === 'fuel').length;
+      if (out.used !== 3) out.bad.push(out.used + ' cords consumed as fuel, expected 3');
+      out.cons = C.itemCheckConservation(S);
+      if (out.cons.length) out.bad.push('item conservation with cords on the handcart: ' + out.cons.join('; '));
+      // The conservation check still catches a long bundle that is not cordwood on the handcart.
+      const S2 = fresh(), t = C.itemCreate(S2, wb('ties'), { kind: 'GROUND', x: 3000, z: -1000 }, null).id;
+      S2.items.where[t] = { kind: 'CARRIED', actorId: 'player', carrier: 'HANDCART', slot: 0 };
+      if (!C.itemCheckConservation(S2).length) out.bad.push('the conservation check missed a tie bundle on the handcart');
+      // Drawn: show the loaded handcart in the page (3 cords left on it).
+      R.importSave(JSON.stringify({ state: S })); R.camera.zoom = 2;
+      R.send({ t: 'walkTo', x: Math.round((S.player.x - 3) * 100), z: Math.round((S.player.z + 2.2) * 100) }); R.step(40);
+      return out;
+    });
+    problems.push(...cart.bad);
+    await camSettle();
+    await page.screenshot({ path: screenshotPath('carry-handcart-cords-portrait') });
+    const dcCart = await R(() => window.__railhead.drawCalls);
+    console.log(`  cords on the handcart: ${cart.start} at the wood stage, ${cart.loaded} loaded, fuel ${JSON.stringify(cart.fuel.map(f => f.held + ' left, tender ' + f.cords))}; refused: ${JSON.stringify(cart.others)}`);
+
+    console.log(`  draw calls: carrying by hand ${dcHand}, pushing a loaded hand truck ${dcTruck}, the handcart with cords ${dcCart}; determinism hash ${det[0].h}`);
+    if (dcTruck >= 100 || dcHand >= 100 || dcCart >= 100) problems.push('draw calls over 100');
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
   } finally { await browser.close(); }
   return problems;

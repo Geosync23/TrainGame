@@ -17,21 +17,21 @@
 //      the timetable (a tap on the train, then Timetable). (The freight shed has a Hub bay by default since D4, so
 //      no bay is retagged.)
 //   2. The Willow Ford train's station work: water at the tower (at the hub as the train comes in, since D4),
-//      wood on the tender (cords carried by hand from the piles at the platform's west end, where the tender stands
-//      between runs, and beside the water tower), goods for Willow Ford loaded into No. 1's boxcar at the hub, the run-around
+//      wood on the tender (cords from the piles at the platform's west end, where the tender stands between runs, and
+//      beside the water tower; since D13 two or more cords go on the handcart, up to 6, and onto the tender cord by
+//      cord from it; a single cord, or one on the platform, by hand), goods for Willow Ford loaded into No. 1's boxcar at the hub, the run-around
 //      at Willow Ford (uncouple the engine, water), unloading there and carrying the goods to the store's door.
 //      It walks to Willow Ford as soon as the hub's work for the departure is done, and back once the train has left.
 //   3. Freight at the hub: unload the Overland's set-out cars into the freight shed's bays (hand truck for crates,
-//      sacks and kegs; long bundles by hand), then deliver from the bays to the business doors; cordwood to the
-//      tender or the pile; track materials to the job's stakes.
+//      sacks and kegs; long bundles by hand, cordwood on the handcart), then deliver from the bays to the business
+//      doors; cordwood to the tender or the pile; track materials to the job's stakes.
 //   4. Every morning at the telegraph: accept the towns' offers it can fill and order what open contracts still
-//      need, plus cordwood to keep about 14 cords at hand.
-//   5. Otherwise: staff the ticket window while travellers queue (06:00 to 21:00), else work the track job.
+//      need, plus cordwood: when fewer than 12 cords are at hand or coming, enough for 16.
+//   5. Otherwise: staff the hub's ticket window while travellers queue (06:00 to 21:00), else work the track job.
+//      (Not Willow Ford's since D13: it is unstaffed, and its travellers pay the fare on arrival.)
 //
-// Day 1 has no wood for the afternoon train (the first cords can only come on the 18:00 Overland), so after the
-// morning run the bot takes No. 1 off the timetable (also once the afternoon run has started at the platform) and
-// puts it back on once that service is too late to start (6 hours after its departure; a known gap, see the report
-// in DEV_NOTES and backlog.md).
+// A new game has 8 cords at the hub's wood stage (D13), so day 1's afternoon train runs like every other (until D13
+// the bot took No. 1 off the timetable for it, as no wood came before the 18:00 Overland).
 //
 // Use: const bot = botFactory(window.__railhead, mem) in the page (BOT_SRC is this function's source);
 // each tick: const cmds = bot.decide(S); const ev = R.simTick(S, cmds); bot.observe(S, ev).
@@ -39,7 +39,7 @@
 
 function botFactory(R, mem0) {
   const mem = mem0 || {
-    setup: 0, telDay: -1, offDay1: 0, skip: {}, refusals: {}, last: null, notes: [],
+    setup: 0, telDay: -1, skip: {}, refusals: {}, last: null, notes: [],
     stats: { cmds: 0, picks: 0, puts: 0, doors: 0, fuel: 0, water: 0, uncouple: 0, tickets: 0, jobTicks: 0 },
   };
   const H = 3600, M = 60;
@@ -104,6 +104,18 @@ function botFactory(R, mem0) {
   const pileCount = (S, k) => alive(S, (i, w, wb) => wb.commodity === 'cordwood' && (k === undefined ? onPile(S, w) : onPileK(w, k))).length;
   const cordsAtHub = S => alive(S, (i, w, wb) => wb.commodity === 'cordwood' && (w.kind !== 'CAR' || !carOfOurs(S, w.stockId)) && (w.kind !== 'GROUND' || w.x < 10000));
   const job = S => S.jobs.list[0] || null;
+  // The handcart (D13: cordwood may ride it, up to 6): its tool index, whether the player pushes it, and whether a
+  // spot is one it cannot reach (the platform and the dock).
+  const CART_CAP = 6;
+  const cartIdx = S => S.tools.findIndex(t => t.k === 'cart');
+  const pushing = (S, k) => S.player.tool !== null && S.tools[S.player.tool].k === k;
+  const noCart = (x, z) => R.carry.carryNoCartAt(x, z);
+  // Room for cords right now: in the tender (No. 1 standing at the hub) and on the piles.
+  function cordRoom(S) {
+    const L = no1(S).consist.find(c => c.k === 'loco');
+    const tender = no1AtHub(S) && L ? Math.floor((R.tt.FUEL_CAP - L.fuel) / 120 + 1e-9) : 0;
+    return tender + Math.max(0, PILE_KEEP[0] - pileCount(S, 0)) + Math.max(0, PILE_KEEP[1] - pileCount(S, 1));
+  }
   // Where an item is, for walking (null when not on the map or not reachable).
   function spotOf(S, id) {
     const w = I(S).where[id];
@@ -126,7 +138,7 @@ function botFactory(R, mem0) {
     const used = alive(S, (i, w, wb) => w.kind === 'GROUND' && wb.commodity === 'cordwood');
     for (let k = 0; k < 2; k++) {
       if (pileCount(S, k) >= PILE_KEEP[k]) continue;
-      for (const [x, z] of G.piles[k]) if (!used.some(id => d2(I(S).where[id].x / 100, I(S).where[id].z / 100, x, z) < 0.3)) return { x: cm(x), z: cm(z) };
+      for (const [x, z] of G.piles[k]) if (!(pushing(S, 'cart') && noCart(x, z)) && !used.some(id => d2(I(S).where[id].x / 100, I(S).where[id].z / 100, x, z) < 0.3)) return { x: cm(x), z: cm(z) };
     }
     return null;
   }
@@ -178,11 +190,12 @@ function botFactory(R, mem0) {
     mem.putKey = 'put:' + id + ':' + JSON.stringify(d);
     return send(S, putCmd(S, d), 'deliver ' + I(S).waybill[id].commodity);
   }
-  // Take or leave the hand truck so the next move uses the right carrier.
-  function toolFor(S, wantTruck) {
-    const P = S.player, has = P.tool !== null;
-    if (wantTruck && !has) return send(S, { t: 'carryTool', tool: 0 }, 'take the hand truck');
-    if (!wantTruck && has) return send(S, { t: 'carryTool', tool: P.tool }, 'leave the ' + (S.tools[P.tool].k === 'truck' ? 'hand truck' : 'handcart'));
+  // Take or leave the hand truck or the handcart so the next move uses the right carrier.
+  // want: true or 'truck' (the hand truck), 'cart' (the handcart), false (by hand).
+  function toolFor(S, want) {
+    const P = S.player, has = P.tool !== null, k = want === true ? 'truck' : want || null;
+    if (has && (!k || S.tools[P.tool].k !== k)) return send(S, { t: 'carryTool', tool: P.tool }, 'leave the ' + (S.tools[P.tool].k === 'truck' ? 'hand truck' : 'handcart'));
+    if (k && !has) return k === 'cart' ? send(S, { t: 'carryTool', tool: cartIdx(S) }, 'take the handcart') : send(S, { t: 'carryTool', tool: 0 }, 'take the hand truck');
     return null;
   }
   function pick(S, id, why) { mem.pickKey = 'pick:' + id; mem.fromBay = mem.fromBay || {}; if (I(S).where[id].kind === 'BAY') mem.fromBay[id] = 1; else delete mem.fromBay[id]; mem.fromGround = I(S).where[id].kind === 'GROUND'; return send(S, { t: 'carryPick', id }, why); }
@@ -215,8 +228,14 @@ function botFactory(R, mem0) {
   function freightTask(S, maxRank) {
     const P = S.player, h = held(S);
     if (h.length) {
+      // With the handcart: more cords from close by, while there is somewhere for them (the tender or the piles).
+      if (pushing(S, 'cart') && h.length < CART_CAP && h.length < cordRoom(S)) {
+        const more = hubWork(S).filter(it => I(S).waybill[it.id].commodity === 'cordwood' && rank(S, it) <= 2 && !noCart(it.sp[0], it.sp[1]) && d2(it.sp[0], it.sp[1], P.x, P.z) < 8)
+          .sort((a, b) => d2(a.sp[0], a.sp[1], P.x, P.z) - d2(b.sp[0], b.sp[1], P.x, P.z) || a.id - b.id);
+        if (more.length) return pick(S, more[0].id, 'load the handcart with wood');
+      }
       // With a hand truck that has room, take more from the same place for the same kind of destination.
-      if (P.tool !== null && h.length < 3) {
+      if (pushing(S, 'truck') && h.length < 3) {
         const top = h[h.length - 1], dk = JSON.stringify(Object.keys(destOf(S, top) || {}));
         const more = hubWork(S).filter(it => !isLong(S, it.id) && JSON.stringify(Object.keys(it.d)) === dk && d2(it.sp[0], it.sp[1], P.x, P.z) < 6 && rank(S, it) >= 3)
           .sort((a, b) => d2(a.sp[0], a.sp[1], P.x, P.z) - d2(b.sp[0], b.sp[1], P.x, P.z));
@@ -229,10 +248,18 @@ function botFactory(R, mem0) {
     const near = (a, b) => d2(a.sp[0], a.sp[1], P.x, P.z) - d2(b.sp[0], b.sp[1], P.x, P.z) || a.id - b.id;
     const r = Math.min(...work.map(x => rank(S, x))), mine = work.filter(x => rank(S, x) === r);
     const long = mine.filter(x => isLong(S, x.id)).sort(near), small = mine.filter(x => !isLong(S, x.id)).sort(near);
+    // Cords of wood (D13): two or more the handcart can reach, with room for two or more, go on the handcart, but it is
+    // fetched from its spot (by the freight shed) only when no departure is near; once pushed it takes any cord it reaches.
+    const cords = r <= 2 ? long.filter(x => I(S).waybill[x.id].commodity === 'cordwood' && !noCart(x.sp[0], x.sp[1])) : [];
+    if ((maxRank === undefined && cords.length >= 2 && cordRoom(S) >= 2) || (pushing(S, 'cart') && cords.length)) {
+      if (!pushing(S, 'cart')) return toolFor(S, 'cart');
+      return pick(S, cords[0].id, 'wood onto the handcart');
+    }
     // The hand truck for crates, sacks and kegs going to the bays or the doors when there are two or more; long
     // bundles by hand (first, while the hands are free).
     const truck = small.length >= 2 && (r === 3 || r === 4);
     let it;
+    if (pushing(S, 'cart')) return toolFor(S, false);
     if (P.tool !== null) { if (truck || (small.length && !long.length)) it = small[0]; else return toolFor(S, false); }
     else if (long.length) it = long[0];
     else if (truck) return toolFor(S, true);
@@ -259,7 +286,7 @@ function botFactory(R, mem0) {
     const why = run.why || '';
     if (/uncouple the engine/.test(why) && tr.consist.length > 1 && !skipped(S, 'uncouple')) { mem.stats.uncouple++; mem.taskKey = 'uncouple'; return send(S, { t: 'uncouple', tr: 0, at: R.tt.ttEngineJoint(tr) }, 'uncouple for the run-around'); }
     const L = tr.consist.find(c => c.k === 'loco');
-    if (/take water/.test(why) && L && L.water < 319.9 && !skipped(S, 'water')) { if (S.player.tool !== null) return toolFor(S, false); mem.stats.water++; mem.taskKey = 'water'; return send(S, { t: 'takeWater' }, 'take water'); }
+    if (/take water/.test(why) && L && L.water < 319.9 && !skipped(S, 'water')) { if (S.player.tool !== null) return held(S).length ? deliverTop(S) : toolFor(S, false); mem.stats.water++; mem.taskKey = 'water'; return send(S, { t: 'takeWater' }, 'take water'); }
     return null;
   }
   // Does the hub still owe the departing train anything (water, wood, goods for Willow Ford)?
@@ -291,7 +318,7 @@ function botFactory(R, mem0) {
       if (n > 0) lines.push({ c: c.commodity, n, contract: c.id });
     }
     const cords = cordsAtHub(S).length + E.orders.reduce((n, o) => n + o.lines.filter(l => l.c === 'cordwood').reduce((a, l) => a + l.n, 0), 0);
-    if (cords < 8) lines.push({ c: 'cordwood', n: 12 - cords });
+    if (cords < 12) lines.push({ c: 'cordwood', n: 16 - cords });
     if (day === 0) lines.push({ c: 'ties', n: 4 }, { c: 'rails', n: 2 }, { c: 'spikes', n: 2 });
     if (!lines.length) return null;
     return send(S, { t: 'econOrder', lines }, 'order by telegraph');
@@ -306,20 +333,6 @@ function botFactory(R, mem0) {
     }
     if (mem.setup === 2) { mem.setup = 3; return send(S, { t: 'useTrain', tr: 0 }, 'walk to No. 1'); }
     if (mem.setup === 3) { mem.setup = 4; return send(S, { t: 'ttAssign', tr: 0, on: true }, 'put No. 1 on the timetable'); }
-    return null;
-  }
-  // Day 1: no wood for the afternoon train until the evening Overland. Off the timetable after the morning run, on again
-  // once the afternoon service can no longer start that day (6 hours after its departure, 20:00 since D4).
-  function day1Task(S) {
-    const day = dayOf(S), sod = sodOf(S);
-    if (day !== 0) return null;
-    const svc = S.tt.services;
-    const r1 = runOf(S);
-    if (mem.offDay1 === 0 && svc[0].last === 0 && (!r1 || (r1.svc === 1 && r1.i === 0 && r1.ph === 'at')) && sod > 12 * H) {
-      if (!no1AtHub(S) || !atHub(S)) return null;
-      mem.offDay1 = 1; return send(S, { t: 'ttAssign', tr: 0, on: false }, 'off the timetable: no wood for the afternoon');
-    }
-    if (mem.offDay1 === 1 && sod > svc[1].stops[0].dep + 6 * H + M && atHub(S)) { mem.offDay1 = 2; return send(S, { t: 'ttAssign', tr: 0, on: true }, 'back on the timetable'); }
     return null;
   }
   function tripTask(S) {
@@ -350,6 +363,8 @@ function botFactory(R, mem0) {
   function windowTask(S, min) {
     const sod = sodOf(S), st = atHub(S) ? 'hub' : atWF(S) ? 'willow' : null;
     if (!st || sod < 6 * H || sod > 21 * H || queueAt(S, st) < min) return null;
+    // Willow Ford is unstaffed (D13): its travellers board without a ticket and pay on arrival, so no need to sell there.
+    if (R.pax.paxUnstaffed(S.track, st)) return null;
     if (S.pax.desk && S.pax.desk.st === st) return 'stay';
     if (held(S).length || S.player.tool !== null) return null;
     return send(S, { t: 'staffWindow', st }, 'staff the ticket window');
@@ -376,7 +391,7 @@ function botFactory(R, mem0) {
     const staffed = !!S.pax.desk;
     if (walking && !working) return [];
     if ((working || staffed) && S.tick % 4) return [];             // look up from the work now and then
-    const tasks = [setupTask, trainTask, day1Task, tripTask, telegraphTask];
+    const tasks = [setupTask, trainTask, tripTask, telegraphTask];
     for (const f of tasks) { const r = f(S); if (r) return r; }
     if (atWF(S)) { const r = wfWork(S); if (r) return r; const w = windowTask(S, 1); return w === 'stay' || !w ? [] : w; }
     if (!atHub(S)) return [];

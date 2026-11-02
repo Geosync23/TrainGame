@@ -7929,7 +7929,7 @@ function bStart(S, c) {
     const fwd = c.fwd > 0 ? 1 : -1, turn = c.side > 0 ? 1 : -1;
     let s = c.s / 1000, room = fwd > 0 ? E.len - s : s;
     if (Math.abs(room - BUILD.SW_THROUGH) <= BUILD.SW_END_SNAP) { s = fwd > 0 ? E.len - BUILD.SW_THROUGH : BUILD.SW_THROUGH; room = BUILD.SW_THROUGH; }
-    if (room < BUILD.SW_THROUGH) return { why: `A switch needs 5u of straight: only ${bFmt(Math.max(0, room))}u here` };
+    if (room < BUILD.SW_THROUGH) return { why: `A switch needs ${bFmt(BUILD.SW_THROUGH)}u of straight: only ${bFmt(Math.max(0, room))}u here` };
     if ((fwd > 0 ? s : E.len - s) < BUILD.SW_END_SNAP) return { why: 'Too close to a joint: start the switch further along' };
     // Trains on this track: refused while one moves on it, or stands over the switch's own length (its through leg,
     // which the turnout's diverging leg runs beside) plus SW_CLEAR at each end. A train standing elsewhere on the

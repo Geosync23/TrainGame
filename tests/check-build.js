@@ -52,7 +52,7 @@ const spurEnd = () => {
   const N = ends.sort((a, b) => a.x - b.x)[0]; // the spur end is the westmost dead end
   const E = T.edges.find(E => E.a === N.id || E.b === N.id), O = T.nodes[E.a === N.id ? E.b : E.a];
   const L = Math.hypot(N.x - O.x, N.z - O.z);
-  return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length };
+  return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length, k: window.__railhead.CFG.SCALE };
 };
 
 async function checkDebugBuild(problems) {
@@ -64,11 +64,11 @@ async function checkDebugBuild(problems) {
     const btnBox = await page.locator('#buildBtn').boundingBox();
     if (btnBox.width < 48 || btnBox.height < 48) problems.push('Build button is smaller than 48 px');
 
-    // 1. Continue the spur from its dead end, 6u straight ahead.
-    const spur = await R(spurEnd);
-    await lookAt(spur.x - 3, spur.z, 0.7);
+    // 1. Continue the spur from its dead end, 6u (x SC, D15) straight ahead.
+    const spur = await R(spurEnd), SC = spur.k;
+    await lookAt(spur.x - 3 * SC, spur.z, 0.7);
     let seen = null;
-    await drag(spur, { x: spur.x + spur.hx * 6, z: spur.z + spur.hz * 6 }, async () => { seen = await label(); });
+    await drag(spur, { x: spur.x + spur.hx * 6 * SC, z: spur.z + spur.hz * 6 * SC }, async () => { seen = await label(); });
     if (!seen || seen.k !== 'ok') problems.push(`spur: preview was not green (${seen && seen.k}: ${seen && seen.text})`);
     if (!(await page.isVisible('#buildConfirm'))) problems.push('spur: Lay track / Cancel did not appear after release');
     else {
@@ -81,13 +81,13 @@ async function checkDebugBuild(problems) {
       return { edges: T.edges.length, from: E && (E.a === n || E.b === n), len: E && E.len, k: E && E.k, errs: R.trackValidate(T) };
     }, [spur.n, spur.edges]);
     if (after1.edges !== spur.edges + 1 || !after1.from || after1.k !== 'S') problems.push(`spur: expected one new straight from the dead end, got ${JSON.stringify(after1)}`);
-    else if (Math.abs(after1.len - 6) > 0.3) problems.push(`spur: new straight is ${after1.len.toFixed(2)}u, expected about 6u`);
+    else if (Math.abs(after1.len - 6 * SC) > 0.3 * SC) problems.push(`spur: new straight is ${after1.len.toFixed(2)}u, expected about ${6 * SC}u`);
     if (after1.errs.length) problems.push('spur: track not valid after laying: ' + after1.errs.join('; '));
 
-    // 2. A switch on the north main line (z = -14), dragged west and towards the inside of the oval.
-    await lookAt(7, -12, 0.7);
+    // 2. A switch on the north main line (z = -14 x SC), dragged west and towards the inside of the oval.
+    await lookAt(7 * SC, -12 * SC, 0.7);
     const sw0 = await R(() => window.__railhead.state.track.switches.length);
-    await drag({ x: 10, z: -14 }, { x: 2, z: -10.5 }, async () => {
+    await drag({ x: 10 * SC, z: -14 * SC }, { x: 2 * SC, z: -10.5 * SC }, async () => {
       seen = await label();
       seen.cmd = await R(() => JSON.stringify(window.__railhead.buildTool.cmd));
       await page.screenshot({ path: screenshotPath('build-ghost-switch-portrait') });
@@ -100,21 +100,21 @@ async function checkDebugBuild(problems) {
     });
     if (after2.sw !== sw0 + 1) problems.push(`switch: expected ${sw0 + 1} switches, found ${after2.sw}`);
     else {
-      if (Math.abs(after2.node.z + 14) > 1e-6 || Math.abs(after2.node.x - 10) > 0.2) problems.push(`switch: placed at ${after2.node.x.toFixed(2)}, ${after2.node.z.toFixed(2)} instead of 10, -14`);
-      if (Math.abs(after2.rev.R - 10) > 1e-9) problems.push('switch: diverging leg is not radius 10');
-      if (!(after2.stand && after2.stand.z < -14)) problems.push('switch: the stand is not on the side away from the diverging leg');
+      if (Math.abs(after2.node.z + 14 * SC) > 1e-6 || Math.abs(after2.node.x - 10 * SC) > 0.2 * SC) problems.push(`switch: placed at ${after2.node.x.toFixed(2)}, ${after2.node.z.toFixed(2)} instead of ${10 * SC}, ${-14 * SC}`);
+      if (Math.abs(after2.rev.R - 10 * SC) > 1e-9) problems.push(`switch: diverging leg is not radius ${10 * SC}`);
+      if (!(after2.stand && after2.stand.z < -14 * SC)) problems.push('switch: the stand is not on the side away from the diverging leg');
     }
     if (after2.errs.length) problems.push('switch: track not valid after laying: ' + after2.errs.join('; '));
 
-    // 3. Red preview: from the new spur end, a curve far too tight (radius about 2.5u).
+    // 3. Red preview: from the new spur end, a curve far too tight (radius about 2.5u x SC).
     const end2 = await R(([e0]) => { const T = window.__railhead.state.track, E = T.edges[e0]; return T.nodes[E.b]; }, [spur.edges]);
-    await lookAt(end2.x - 2, end2.z - 2, 0.7);
-    // Heading west: 2u ahead and 4u to the side.
-    await drag(end2, { x: end2.x + spur.hx * 2 - spur.hz * 4, z: end2.z + spur.hz * 2 + spur.hx * 4 }, async () => {
+    await lookAt(end2.x - 2 * SC, end2.z - 2 * SC, 0.7);
+    // Heading west: 2u ahead and 4u to the side (x SC).
+    await drag(end2, { x: end2.x + (spur.hx * 2 - spur.hz * 4) * SC, z: end2.z + (spur.hz * 2 + spur.hx * 4) * SC }, async () => {
       seen = await label();
       await page.screenshot({ path: screenshotPath('build-ghost-red-portrait') });
     });
-    if (!seen || seen.k !== 'bad' || !/Curve too tight: [\d.]+u, minimum 8u/.test(seen.text)) problems.push(`red preview: label was ${seen && seen.k}: ${seen && seen.text}`);
+    if (!seen || seen.k !== 'bad' || !new RegExp(`Curve too tight: [\\d.]+u, minimum ${8 * SC}u`).test(seen.text)) problems.push(`red preview: label was ${seen && seen.k}: ${seen && seen.text}`);
     const ghostRed = await R(() => !!window.__railhead.buildTool.ghost);
     if (!ghostRed) problems.push('red preview: no ghost track was drawn');
     if (!(await page.isVisible('#buildConfirm'))) problems.push('red preview: Cancel did not appear');
@@ -148,34 +148,35 @@ async function checkDebugBuild(problems) {
 
     // 6. The sim alone: a loop with a passing siding and two switches, then a yard move over it.
     const sim = await R(() => {
-      const R = window.__railhead, S = R.newState(1866), out = { steps: [] };
+      const R = window.__railhead, S = R.newState(1866), out = { steps: [] }, SC = R.CFG.SCALE;
       const run = (cmd) => { const ev = R.simTick(S, [{ t: 'buildTrack', ...cmd }]); const e = ev.find(e => e.t === 'trackBuilt' || e.t === 'buildRefused'); out.steps.push(e); return e; };
       const T = () => S.track;
-      const nodeAt = (x, z) => T().nodes.find(N => Math.hypot(N.x - x, N.z - z) < 1e-6).id;
-      const h = v => Math.round(v * 100);
+      // The M0 loop's places, grown with the world (D15: curve radii and the yard are x SC), as in check-m0.js.
+      const h = v => Math.round(v * SC * 100), at = v => Math.round(v * SC * 100) / 100, near = (a, v) => Math.abs(a - at(v)) < 1e-6;
+      const nodeAt = (x, z) => T().nodes.find(N => Math.hypot(N.x - at(x), N.z - at(z)) < 1e-6).id;
       run({ from: 'free', x: h(-20), z: h(30), h: 0, tx: h(20), tz: h(30) });              // bottom straight, 40u
       run({ from: 'node', n: nodeAt(20, 30), tx: h(20), tz: h(54) });                      // east half circle
       run({ from: 'node', n: nodeAt(20, 54), tx: h(-20), tz: h(54) });                     // top straight
       run({ from: 'node', n: nodeAt(-20, 54), tx: h(-20), tz: h(30) });                    // west half circle, joins the start
-      const bottom = T().edges.find(E => E.k === 'S' && T().nodes[E.a].z === 30 && T().nodes[E.b].z === 30).id;
-      const swA = run({ from: 'switch', e: bottom, s: 3000, fwd: 1, side: 1, tx: h(0), tz: h(26) });    // switch A at x = -17
-      const nr = R.trackNearest(T(), 17, 30);
+      const bottom = T().edges.find(E => E.k === 'S' && near(T().nodes[E.a].z, 30) && near(T().nodes[E.b].z, 30)).id;
+      const swA = run({ from: 'switch', e: bottom, s: Math.round(3000 * SC), fwd: 1, side: 1, tx: h(0), tz: h(26) });    // switch A at x = -17 (x SC)
+      const nr = R.trackNearest(T(), at(17), at(30));
       const Eb = T().edges[nr.e], fwdB = T().nodes[Eb.b].x > T().nodes[Eb.a].x ? -1 : 1;
-      const sidingEnd = T().nodes.find(N => Math.abs(N.x) < 1e-6 && Math.abs(N.z - 26) < 1e-6);
+      const sidingEnd = T().nodes.find(N => Math.abs(N.x) < 1e-6 && near(N.z, 26));
       const swB = run({ from: 'switch', e: nr.e, s: Math.round(nr.s * 1000), fwd: fwdB, side: -1, tx: h(0.2), tz: h(26.1) });  // switch B at x = 17, joins A's siding
       out.ok = out.steps.every(e => e && e.t === 'trackBuilt');
       out.errs = R.trackValidate(T());
       out.switches = T().switches.length;
       out.sidingEnd = !!sidingEnd;
       const ix = T().nodes.map(N => T().edges.filter(E => E.a === N.id || E.b === N.id).length);
-      out.deadEnds = ix.filter((n, i) => n === 1 && T().nodes[i].z > 20).length;
+      out.deadEnds = ix.filter((n, i) => n === 1 && T().nodes[i].z > 20 * SC).length;
       // The siding's middle: the straight that ends at (0, 26).
-      const sid = T().edges.find(E => E.k === 'S' && E.cls === 'yard' && [E.a, E.b].some(n => Math.abs(T().nodes[n].x) < 1e-6 && Math.abs(T().nodes[n].z - 26) < 1e-6));
+      const sid = T().edges.find(E => E.k === 'S' && E.cls === 'yard' && [E.a, E.b].some(n => Math.abs(T().nodes[n].x) < 1e-6 && near(T().nodes[n].z, 26)));
       out.sidingEdge = sid && sid.id;
       // Put No. 1 on the top straight of the new loop (test only) and send it to the siding.
-      const top = T().edges.find(E => E.k === 'S' && T().nodes[E.a].z === 54 && T().nodes[E.b].z === 54);
+      const top = T().edges.find(E => E.k === 'S' && near(T().nodes[E.a].z, 54) && near(T().nodes[E.b].z, 54));
       const tr = S.trains[0];
-      tr.front = { e: top.id, s: 20, d: 1 }; tr.v = 0; tr.mode = 'idle'; tr.route = null;
+      tr.front = { e: top.id, s: 20 * SC, d: 1 }; tr.v = 0; tr.mode = 'idle'; tr.route = null;
       const ev0 = R.simTick(S, [{ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) }]);
       out.routeSet = ev0.some(e => e.t === 'routeSet');
       const swIds = [swA && swA.sw, swB && swB.sw];
@@ -189,24 +190,25 @@ async function checkDebugBuild(problems) {
       out.hashStable = R.stateHash(JSON.parse(JSON.stringify(S))) === R.stateHash(S);
       // Refusals: a switch under the train in a fresh yard, and a switch with no room.
       const S2 = R.newState(1866);
-      const ref = R.simTick(S2, [{ t: 'buildTrack', from: 'switch', e: 2, s: 6000, fwd: 1, side: -1, tx: 400, tz: 1100 }]);
+      const ref = R.simTick(S2, [{ t: 'buildTrack', from: 'switch', e: 2, s: Math.round(6000 * SC), fwd: 1, side: -1, tx: h(4), tz: h(11) }]);
       out.refusedTrain = (ref.find(e => e.t === 'buildRefused') || {}).why;
-      const ref2 = R.simTick(S2, [{ t: 'buildTrack', from: 'switch', e: 0, s: 6000, fwd: 1, side: -1, tx: -1000, tz: 1100 }]);
+      const ref2 = R.simTick(S2, [{ t: 'buildTrack', from: 'switch', e: 0, s: Math.round(6000 * SC), fwd: 1, side: -1, tx: h(-10), tz: h(11) }]);
       out.refusedRoom = (ref2.find(e => e.t === 'buildRefused') || {}).why;
       // (D4) The real start: a switch on the platform track while No. 1 stands on it elsewhere is allowed (and No. 1
       // keeps its place when the track is split); one where No. 1 stands, or while it moves on that track, is refused.
       {
         const S3 = R.newState(1866, 'start'), T3 = S3.track, tr3 = S3.trains[0];
-        const E = T3.edges.find(E => E.cls === 'yard' && E.k === 'S' && T3.nodes[E.b].x === -36);
+        const E = T3.edges.find(E => E.cls === 'yard' && E.k === 'S' && Math.abs(T3.nodes[E.b].x + 36 * SC) < 1e-6);
         const at = s => { const A = T3.nodes[E.a], B = T3.nodes[E.b]; return { x: A.x + (B.x - A.x) * s / E.len, z: A.z + (B.z - A.z) * s / E.len }; };
         const sw = (S, s, side) => { const p = at(s); return { t: 'buildTrack', from: 'switch', e: E.id, s: Math.round(s * 1000), fwd: 1, side, tx: Math.round(p.x * 100), tz: Math.round(p.z * 100) }; };
         const why = ev => (ev.find(e => e.t === 'buildRefused') || {}).why || null;
         out.d4 = { trainS: [tr3.front.s] };
-        out.d4.under = why(R.simTick(JSON.parse(JSON.stringify(S3)), [sw(S3, tr3.front.s + 2, 1)]));
-        const Sm = JSON.parse(JSON.stringify(S3)); Sm.trains[0].mode = 'run'; Sm.trains[0].v = 0.5;
-        out.d4.moving = why(R.simTick(Sm, [sw(Sm, 45, 1)]));
+        out.d4.under = why(R.simTick(JSON.parse(JSON.stringify(S3)), [sw(S3, tr3.front.s + 2 * SC, 1)]));
+        const Sm = JSON.parse(JSON.stringify(S3)); Sm.trains[0].mode = 'run'; Sm.trains[0].v = 0.5 * SC;
+        out.d4.moving = why(R.simTick(Sm, [sw(Sm, 45 * SC, 1)]));
         // East of the train (s 3: the train stands beyond the cut, on a new piece) and west of it (s 45).
-        for (const s of [3, 45]) {
+        for (const s0 of [3, 45]) {
+          const s = s0 * SC;
           let res = null;
           for (const side of [1, -1]) {
             const Sx = JSON.parse(JSON.stringify(S3)), before = R.trainPoses(Sx.track, Sx.trains[0]).map(p => [p.x.toFixed(3), p.z.toFixed(3)].join()).join(';');
@@ -219,7 +221,7 @@ async function checkDebugBuild(problems) {
             res.stillSame = after === R.trainPoses(Sx.track, Sx.trains[0]).map(p => [p.x.toFixed(3), p.z.toFixed(3)].join()).join(';');
             break;
           }
-          out.d4['s' + s] = res;
+          out.d4['s' + s0] = res;
         }
       }
       return out;
@@ -234,7 +236,7 @@ async function checkDebugBuild(problems) {
     if (sim.frontEdge !== sim.sidingEdge) problems.push(`sim loop: the train's leading end stopped on edge ${sim.frontEdge}, not the siding edge ${sim.sidingEdge}`);
     if (!sim.hashStable) problems.push('sim loop: the built track does not survive a save round trip');
     if (!/train/.test(sim.refusedTrain || '')) problems.push(`refusal: a switch under the train was not refused (${sim.refusedTrain})`);
-    if (!/5u of straight/.test(sim.refusedRoom || '')) problems.push(`refusal: a switch with no room was not refused (${sim.refusedRoom})`);
+    if (!new RegExp(`${5 * SC}u of straight`).test(sim.refusedRoom || '')) problems.push(`refusal: a switch with no room was not refused (${sim.refusedRoom})`);
     {
       const d = sim.d4;
       if (!/standing where the switch would go/.test(d.under || '')) problems.push('a switch where No. 1 stands on the platform track should be refused: ' + JSON.stringify(d));
@@ -260,10 +262,10 @@ async function checkPlanOnly(problems) {
   try {
     if (await R(() => window.__railhead.buildTool.instant)) problems.push('plan only: instant build is on without ?debug=1');
     await page.tap('#buildBtn'); await settle();
-    const spur = await R(spurEnd);
-    await lookAt(spur.x - 3, spur.z, 0.7);
+    const spur = await R(spurEnd), SC = spur.k;
+    await lookAt(spur.x - 3 * SC, spur.z, 0.7);
     let seen = null;
-    await drag(spur, { x: spur.x + spur.hx * 6, z: spur.z + spur.hz * 6 }, async () => { seen = await label(); });
+    await drag(spur, { x: spur.x + spur.hx * 6 * SC, z: spur.z + spur.hz * 6 * SC }, async () => { seen = await label(); });
     if (!seen || seen.k !== 'ok') problems.push(`plan only: the plan preview was not green (${seen && seen.k}: ${seen && seen.text})`);
     if (!(await R(() => !!window.__railhead.buildTool.ghost))) problems.push('plan only: no ghost track was drawn');
     if (!(await page.isVisible('#buildConfirm'))) problems.push('plan only: Cancel did not appear after release');

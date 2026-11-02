@@ -29,7 +29,7 @@ const { openGame, screenshotPath } = require('./browser');
 // Page elements that must never overlap one another (when visible), measured by their bounding boxes in the page.
 // The toast is a passing message and is left out.
 function layoutProblems() {
-  const ids = ['clock', 'speeds', 'cash', 'buildBtn', 'tgBtn', 'alerts', 'rotL', 'rotR', 'lookBtn', 'officeBtn', 'centre', 'carry', 'paxDesk',
+  const ids = ['clock', 'speeds', 'cash', 'buildBtn', 'tgBtn', 'alerts', 'rotL', 'rotR', 'lookBtn', 'officeBtn', 'centre', 'carry', 'paxDesk', 'ride', 'rideBoard',
     'tutTask', 'tgSlide', 'office', 'inbox', 'lookCard', 'panel', 'telPanel', 'carPanel', 'dbgBar'];
   const vis = e => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
   const boxes = [];

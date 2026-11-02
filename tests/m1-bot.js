@@ -2,11 +2,11 @@
 //
 // The bot plays the real start through the game's own commands only: the same commands the page's taps and
 // buttons send (walkTo, carryPick, carryPut, carryTool, useCar, useTelegraph, econOrder, contractAccept, stakeJob,
-// jobWork, staffWindow, uncouple, takeWater, fuelTender, ttAssign, setBayTag). It never edits the state and uses
+// jobWork, staffWindow, uncouple, takeWater, fuelTender, ttAssign, setBayTag, boardCar, stepOff). It never edits the state and uses
 // no debug tools. It reads the state the way a player reads the screen (where things are, what a train waits for,
 // what a contract still needs), and it reads each tick's events the way a player reads the messages.
 //
-// It walks like a player on a phone: tap to walk never runs (running exists only with Shift on a keyboard), so the
+// It walks like a player on a phone (and rides No. 1 between the stations, boardCar and stepOff, since D13): tap to walk never runs (running exists only with Shift on a keyboard), so the
 // bot never sets run. It sends at most one command a tick, and only when the player is free (standing, no action
 // in progress), except that staffing the ticket window and working the track job are interrupted when something
 // more important comes up.
@@ -21,7 +21,9 @@
 //      beside the water tower; since D13 two or more cords go on the handcart, up to 6, and onto the tender cord by
 //      cord from it; a single cord, or one on the platform, by hand), goods for Willow Ford loaded into No. 1's boxcar at the hub, the run-around
 //      at Willow Ford (uncouple the engine, water), unloading there and carrying the goods to the store's door.
-//      It walks to Willow Ford as soon as the hub's work for the departure is done, and back once the train has left.
+//      Since D13 it rides No. 1: it boards the combine shortly before each departure (12 minutes at the hub, 20 at
+//      Willow Ford, where the train leaves from the water tower's spout) and steps off once the train stands at the
+//      other station (at the hub that is under the spout, where it takes water). It walks only after missing a train.
 //   3. Freight at the hub: unload the Overland's set-out cars into the freight shed's bays (hand truck for crates,
 //      sacks and kegs; long bundles by hand, cordwood on the handcart), then deliver from the bays to the business
 //      doors; cordwood to the tender or the pile; track materials to the job's stakes.
@@ -341,13 +343,26 @@ function botFactory(R, mem0) {
     if (atHub(S) && run && run.i >= 1 && run.i <= 1) { if (held(S).length) return deliverTop(S); if (P.tool !== null) return toolFor(S, false); return send(S, { t: 'walkTo', x: cm(G.wfWait[0]), z: cm(G.wfWait[1]) }, 'walk to Willow Ford'); }
     // (Not before the morning's telegraph: since D4 the run starts 60 minutes early and can be ready before 07:02.)
     // Not too early either: Willow Ford is about 93 minutes' walk, the train takes about 85.
+    // Since D13 it rides No. 1 instead: it boards the combine at the platform shortly before the departure (and keeps
+    // selling tickets until then); the walk is only for a train it missed (the first rule above).
     if (atHub(S) && run && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '') && !hubOwes(S) && !held(S).length && P.tool === null && (mem.telDay === dayOf(S) || sodOf(S) >= 11 * H + 30 * M)
-      && sodOf(S) >= svcStop(S, run).dep - 20 * M) {
-      return send(S, { t: 'walkTo', x: cm(G.wfWait[0]), z: cm(G.wfWait[1]) }, 'walk to Willow Ford ahead of the train');
-    }
-    // Back to the hub once the train has left Willow Ford (or there is no train to meet) and the store has its goods.
+      && sodOf(S) >= svcStop(S, run).dep - 12 * M && !skipped(S, 'board')) return board(S, 'hub');
+    // (Since D13 the bot rides No. 1 back: it boards once Willow Ford's work is done and the train waits for its time.)
+    if (atWF(S) && run && run.i === 1 && run.ph === 'at' && /its time/.test(run.why || '') && !wfWork(S) && !held(S).length && P.tool === null
+      && sodOf(S) >= svcStop(S, run).dep - 20 * M && !skipped(S, 'board')) return board(S, 'willow');
+    // Back to the hub on foot once the train has left Willow Ford without the bot (or there is no train to meet) and the store has its goods.
     if (atWF(S) && (!run || run.i === 2 || (run.i === 0 && run.ph === 'go')) && !wfWork(S)) { if (held(S).length) return deliverTop(S); return send(S, { t: 'walkTo', x: cm(G.stand[0]), z: cm(G.stand[1]) }, 'walk back to the hub (to the water tower: the train takes water on the way in)'); }
     return null;
+  }
+  // Board No. 1's combine (stock 1) at this station's platform, to ride to the other station (D13).
+  function board(S, from) { mem.rideFrom = from; mem.taskKey = 'board'; return send(S, { t: 'boardCar', stock: 1 }, 'board No. 1 at ' + from); }
+  // Aboard No. 1: step off once it stands at the other station (at Willow Ford's platform, or at the hub's water tower
+  // on the way in, where the bot then takes water); otherwise sit and ride.
+  function rideTask(S) {
+    const tr = no1(S), standing = tr.v === 0 && (tr.mode === 'idle' || tr.mode === 'stop') && !(tr.cw > 0);
+    const here = atHub(S) ? 'hub' : atWF(S) ? 'willow' : null;
+    if (standing && here && here !== mem.rideFrom) { mem.stats.rides = (mem.stats.rides || 0) + 1; return send(S, { t: 'stepOff' }, 'step off at ' + here); }
+    return [];
   }
   // A departure from the hub is near (or its run has started): the player should be at the station.
   function standby(S) {
@@ -386,6 +401,7 @@ function botFactory(R, mem0) {
     places(S);
     const P = S.player;
     if (P.act && P.act.k !== 'job') return [];                       // an action in progress: wait for it
+    if (P.ride) return rideTask(S);                                  // riding No. 1 (since D13)
     const walking = P.mode === 'to' || P.mode === 'dir';
     const working = (P.use && P.use.k === 'job') || (P.act && P.act.k === 'job');
     const staffed = !!S.pax.desk;
@@ -430,7 +446,7 @@ function botFactory(R, mem0) {
           if (c.t === 'carryPick') skip(S, 'pick:' + c.id);
           else if ((c.t === 'carryPut' || c.t === 'fuelTender') && mem.putKey) skip(S, mem.putKey);
           else if (c.t === 'contractAccept') skip(S, 'offer:' + c.id, 100000);
-          else if (mem.taskKey && (c.t === 'uncouple' || c.t === 'takeWater' || c.t === 'jobWork')) skip(S, mem.taskKey, 30);
+          else if (mem.taskKey && (c.t === 'uncouple' || c.t === 'takeWater' || c.t === 'jobWork' || c.t === 'boardCar')) skip(S, mem.taskKey, 30);
         }
         if (e.t === 'jobStopped') skip(S, 'job', 75);
       }

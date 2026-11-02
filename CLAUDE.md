@@ -50,6 +50,7 @@ If either file doesn't exist yet, create it in the first session and keep it cur
 - **Workers stay inside the lead session** (added 2026-11-01): hire them as helpers within the session, not as separate sessions.
 
 ## Memory and handover
+- **Never hand over below 45 to 50% of your context** (added 2026-11-02): a lead with less used keeps working, even when a big task is coming up. Check the actual figure; do not guess.
 - From about 60% of your context, judge case by case whether to hand over: if a big task is coming up, hand over before starting it; otherwise keep working a little longer.
 - 80% is the hard cap: never go above it.
 - Warn me early when your memory is getting full, or when the next task looks big enough to fill it. Don't wait for the automatic summary.

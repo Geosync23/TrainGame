@@ -23,8 +23,10 @@ Status: approved by the designer (survey answers recorded as D12, 2026-11-01). R
 | C | C5 | Placeholder town (after C1): businesses as stock holders with weekly use, contracts, delivery to business doors. Merged (schema 10), npm test passed (24 checks) | new "town" |
 Round D survey (answers in its database, collection `answers`, doc `round-d`): https://claude.ai/artifact/AJG1v9NjZkQxbhmc81ZJQn (source `plans/m1-round-d-survey.html`)
 
-| D | D1 | Office panels and HUD (Contracts, Market, Ledger, Trains, Timetable; telegram tape, alerts, Look/inspect) | waits for the round D survey |
-| D | D2 | Tutorial: the investor telegrams for days 1 and 2 | waits for the round D survey |
+| D | D1 | Office panels at the desk with an Office button (Contracts, Market, Ledger, Trains, Timetable), telegrams sliding in under the clock with an inbox button, alerts, the Look button and inspect cards (D13) | HUD and panels, input |
+| D | D2 | Tutorial: the investor telegrams for days 1 and 2, with Skip tutorial (after D1's telegram inbox) | new "tutorial" |
+| D | D5 | Riding your own train as a passenger (D13) | trains, player |
+| D | D6 | Cordwood on the handcart, fares paid on arrival at unstaffed stations, 8 starting cords (D13) | carrying, passengers, new-game setup |
 | D | D3 | M1 acceptance check with a "reasonable player" bot playing a week; report gaps. Merged, npm test passed (25 checks) |
 
 Proposed in the plan (not decided until the designer answers): hand-building pace (tie 0.5, rail pair 1, spike 1.3 game minutes; a 20u siding about 5 real minutes at 1x), one tap keeps working, 4 spikes per tie, no helpers before M3, no earthwork in M1, cancelled jobs return all materials, platform 20u x 2.4u, track crossable on foot anywhere in M1, review once per round.

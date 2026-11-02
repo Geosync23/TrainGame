@@ -1,6 +1,9 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
-## Start here (latest): scale step done, waiting for the designer's scale check
+## Start here (latest, 2026-11-02 evening)
+After the designer's first look at the 1.6x build, D16 and D17 were built and pushed (commit f8856be; 32 checks pass): platforms 9.6u deep with everything behind them moved back; the canopy fades see-through near or over the player (check-roof); a new walk animation (GAIT, check-walk); a slower clock (one game minute = 1.0 real second, 7.5 ticks a second at 1x) with walk speeds back to 2.8 / 4.4. Playable link updated (version 4). Waiting for the designer to play it and answer the scale check page https://claude.ai/artifact/RPbPS5SWB7cRUAqxr3KL4T (answers/scale-review). Note: on screen the walk is 6.5 steps a second (short legs; the feet do not slide) - watch the designer's reaction. The walking-speed survey (D17) is https://claude.ai/artifact/E7Uqbtnynk4pbFVttfSohn.
+
+## Earlier: scale step done, waiting for the designer's scale check
 - DONE and pushed (commit 445b6f9 and after): the 1.6x scale (D15) merged with the feet fix and the three gap fixes. Full `npm test`: 30 of 30 pass (check-interchange once failed on a tap under heavy machine load and passed alone; a known slow-machine wobble). Save schema 14 (old saves convert by x1.6). Draw calls: hub at start zoom 70, busiest scene zoomed out to 0.4x 86 (budget 100).
 - Game fixes made while integrating: a moving train's walk-grid footprint reaches ahead (player no longer ends up inside a moving train); a walk to a spot beside a train goes the last bit straight (`walkLineOpen`; the bigger train blocked the water spout, which cancelled every afternoon Willow Ford train); build-tool message reads `BUILD.SW_THROUGH`.
 - Bot week (check-m1) after scale: 14 of 14 runs, none cancelled, worst 7 min late (was 0); pressure gap 9 to 10 min (passes); tickets 120 (was 173); cash $2,479.72 (was $2,500.52). Not investigated yet; watch it. The bot's morning boarding at Willow Ford fails with "The train moved off" (was so before the scale too; see backlog).

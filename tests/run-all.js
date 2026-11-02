@@ -16,6 +16,7 @@ const checks = {
   'debug tools (?debug=1)': require('./check-debug'),
   'ground and light (terrain, day and night)': require('./check-world'),
   'people (crowd of 200 walkers)': require('./check-people'),
+  'the walk (feet do not slide, speeds)': require('./check-walk'),
   'build tool (laying track and switches)': require('./check-build'),
   'M0 acceptance criteria': require('./check-m0'),
   'carrying (by hand, hand truck, handcart)': require('./check-carry'),

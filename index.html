@@ -8903,7 +8903,7 @@ const ttCardUi = { st: null, sig: '', w: 0, h: 0 };
 function ttCardHud() {
   const P = S.player;
   let near = null;
-  for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 && (!near || d < near.d)) near = { st, d }; }
+  for (const st of ttStations(S)) if (st.board) { const d = Math.hypot(st.board.x - P.x, st.board.z - P.z); if (d < 12 * WS && (!near || d < near.d)) near = { st, d }; }
   const card = $('ttCard');
   const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }

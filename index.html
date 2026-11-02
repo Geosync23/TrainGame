@@ -3889,7 +3889,12 @@ function walkPlan(S, poses) {
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   const s = walkOpen(G, s0) ? s0 : walkNearest(G, s0, -1);
   let memo;
-  if (s < 0) memo = { key, cells: [], escape: false, exact: false, expanded: 0 };
+  // Already on such a last bit (below): the player's cell is shut by a train's stamp, the player is clear of it and
+  // the target is close and straight ahead, so keep going straight (stepping back to an open cell would undo it).
+  const onTail = s !== s0 && G.cost[s0] > 0 && G.cost[g0] > 0 && Math.hypot(P.tx - P.x, P.tz - P.z) <= 5 * WALK.CELL
+    && !insideTrain(all, P.x, P.z) && pathClear(all, P.x, P.z, P.tx, P.tz) && walkLineOpen(G, P.x, P.z, P.tx, P.tz);
+  if (onTail) memo = { key, cells: [], escape: false, exact: true, tail: true, expanded: 0 };
+  else if (s < 0) memo = { key, cells: [], escape: false, exact: false, expanded: 0 };
   else {
     const k = G.comp[s], goal = walkOpen(G, g0) && G.comp[g0] === k ? g0 : walkNearest(G, g0, k);
     const r = walkAStar(G, s, goal);
@@ -3898,9 +3903,12 @@ function walkPlan(S, poses) {
     // can be shut although the target is clear of the train, and the nearest open cell's centre can then be out of
     // reach of what stands on the track (a spot beside the tender is 1.48u from its centre line, reach is 1.5u).
     // When the target cell is shut only by a train and the target itself is clear, walk the last bit straight to it.
+    // The last bit may be up to 5 cells long (2.5u): between a train and a building (the tender under the water
+    // tower's spout) the whole row of cells beside the train can be shut, so the nearest open cell is past the train's
+    // end; the straight line must then stay clear of the trains and on cells the plain grid has open (no building or hill).
     if (!exact && r.reached && goal >= 0 && G.cost[g0] > 0 && G.comp[g0] === k) {
       const [gx, gz] = walkCentre(goal);
-      if (Math.hypot(P.tx - gx, P.tz - gz) <= 1.5 * WALK.CELL && pathClear(all, gx, gz, P.tx, P.tz)) exact = tail = true;
+      if (Math.hypot(P.tx - gx, P.tz - gz) <= 5 * WALK.CELL && pathClear(all, gx, gz, P.tx, P.tz) && walkLineOpen(G, gx, gz, P.tx, P.tz)) exact = tail = true;
     }
     memo = { key, cells: r.cells, escape: s !== s0, exact, tail, expanded: r.expanded };
   }
@@ -3954,6 +3962,13 @@ function insideTrain(poses, x, z) {
     if (Math.abs(dx * fx + dz * fz) < p.len / 2 + 0.2 && Math.abs(dx * fz - dz * fx) < TRAIN_HALF_W) return true;
   }
   return false;
+}
+// Are the points along the straight line from (x0, z0) to (x1, z1), every 0.25u, on cells the plain walk grid has open
+// (no building, hill or water; trains are not looked at)?
+function walkLineOpen(G, x0, z0, x1, z1) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.25));
+  for (let i = 0; i <= n; i++) if (!(G.cost[walkCell(x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n)] > 0)) return false;
+  return true;
 }
 // Can the player walk in a straight line from (x0, z0) to (x1, z1) without running into a train?
 function pathClear(poses, x0, z0, x1, z1) {

@@ -24,7 +24,7 @@ const DAY = 10800, WEEK = 7 * DAY, MID = 3 * DAY + 12 * 450; // day 4, 17:00 (45
 
 // In the page: the bot, and a runner that records what the check needs.
 const RUNNER = `window.__m1 = (() => {
-  const R = window.__railhead, factory = (0, eval)('(' + window.__m1src + ')');
+  const R = window.__railhead, factory = (0, eval)('(' + window.__m1src + ')'), SC = R.CFG.SCALE;
   const sod = S => (S.time + 18000) % 86400, day = S => Math.floor((S.time + 18000) / 86400);
   const hm = S => 'day ' + (day(S) + 1) + ' ' + String(Math.floor(sod(S) / 3600)).padStart(2, '0') + ':' + String(Math.floor(sod(S) % 3600 / 60)).padStart(2, '0');
   function newRec() { return { tt: [], daily: [], moves: { toBay: 0, fromBay: 0, toDoor: 0, toWillowStore: 0, toTrain: 0, toJob: 0, toCart: 0 }, ordered: 0, arrived: 0,
@@ -32,9 +32,9 @@ const RUNNER = `window.__m1 = (() => {
   function start(seed) { return { S: R.newState(seed), bot: factory(R), rec: newRec() }; }
   function waitingTrain(S) {
     const tr = S.trains[0], ps = R.trainPoses(S.track, tr);
-    if (tr.v > 0 || tr.mode === 'route' || !ps.length || !ps.every(p => p.x > -12 && p.x < 34 && p.z < -2.5 && p.z > -4.5)) return false;
+    if (tr.v > 0 || tr.mode === 'route' || !ps.length || !ps.every(p => p.x > -12 * SC && p.x < 34 * SC && p.z < -2.5 * SC && p.z > -4.5 * SC)) return false;   // the hub's platform track (x SC, D15)
     const L = tr.consist.find(c => c.k === 'loco'), run = R.tt.ttRunOf(S, 0);
-    return (run && run.ph === 'at' && /^Waiting: (the station work|take water|load wood)/.test(run.why || '')) || (L && L.fuel <= R.tt.FUEL_CAP - 120);
+    return (run && run.ph === 'at' && /^Waiting: (the station work|take water|load wood)/.test(run.why || '')) || (L && L.fuel <= R.tt.FUEL_CAP - R.CFG.CORD_U);
   }
   function step(X, n) {
     const { S, bot, rec } = X;
@@ -115,7 +115,7 @@ module.exports = async function checkM1() {
       const k = S.econ.contracts.map(c => ({ id: c.id, kind: c.kind, biz: c.counterparty, c: c.commodity, q: c.quantity, status: c.status, period: c.period }));
       const left = []; for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && !/BUSINESS|STOCKPILE/.test(S.items.where[i].kind)) left.push(S.items.waybill[i].commodity + '@' + S.items.where[i].kind);
       const S0 = R.newState(1866), hub = R.tt.ttStation(S0, 'hub');
-      const startCords = R.cargo.itemsAt(S0, { kind: 'GROUND' }).filter(i => S0.items.waybill[i].commodity === 'cordwood' && Math.hypot(S0.items.where[i].x / 100 - hub.wood.x, S0.items.where[i].z / 100 - hub.wood.z) < 6).length;
+      const startCords = R.cargo.itemsAt(S0, { kind: 'GROUND' }).filter(i => S0.items.waybill[i].commodity === 'cordwood' && Math.hypot(S0.items.where[i].x / 100 - hub.wood.x, S0.items.where[i].z / 100 - hub.wood.z) < 6 * R.CFG.SCALE).length;
       const fares = S.econ.ledger.filter(L => L.category === 'fares'), onArr = fares.filter(L => L.ref && L.ref.kind === 'FARE');
       return { startCords, faresOnArrival: { n: onArr.length, cents: onArr.reduce((a, L) => a + L.amount, 0), byRoute: onArr.reduce((o, L) => { o[L.counterparty] = (o[L.counterparty] || 0) + 1; return o; }, {}) }, hash: R.stateHash(S), rec: A.rec, stats: A.bot.mem.stats, refusals: A.bot.mem.refusals, notes: A.bot.mem.notes, contracts: k, cash: S.econ.cash, money: R.econ.econCheckMoney(S), cons: R.cargo.itemCheckConservation(S),
         mid: A.mid ? A.mid.hash : null, tick: S.tick, jobs: S.jobs.list.length, edges: S.track.edges.length, left, sold: S.pax.sold, gaveUp: S.pax.rep,

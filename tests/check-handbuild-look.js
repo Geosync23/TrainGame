@@ -101,9 +101,6 @@ module.exports = async function checkHandbuildLook() {
       let ticks = 0, mid = null;
       for (const target of [8, 30, 120, 260, 450, 700, 1100]) {   // 450: spiking stretch 2 (D15: the steps are quicker by SC)
         await R(n => window.__railhead.step(n), target - ticks); ticks = target;
-        // At 450 (spiking stretch 2) the player may be walking between spikes (2026-11-02: the walk is slower):
-        // go on a tick at a time, up to 150, until a spike is being driven.
-        if (target === 450) ticks += await R(() => { const H = window.__railhead, P = H.state.player; let k = 0; while (k < 150 && !(P.act && P.act.step === 'spike')) { H.step(1); k++; } return k; });
         await frames();
         const c = await R(() => {
           const H = window.__railhead, S = H.state, j = S.jobs.list[0], v = H.jobsView, pl = v.placed[j.id];

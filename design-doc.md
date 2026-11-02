@@ -99,7 +99,7 @@ The game has three nested loops: a minute-to-minute loop of physical work, a dai
 
 Walk to the thing that needs doing, do it, see the result. Examples: a train arrives, you uncouple a car, unload crates onto a hand truck, sort them into the freight shed bays by destination tag, and push the handcart to the general store. Each action takes a visible amount of game time and moves a physical item.
 
-### Daily loop (one game day, about 18 real minutes)
+### Daily loop (one game day, about 24 real minutes since D17)
 
 | Time | What happens | Typical player activity |
 | --- | --- | --- |
@@ -153,22 +153,24 @@ Your residence decides where you wake each morning. You start in rooms above the
 
 ## 4. Time, calendar and world scale
 
-One game minute lasts 0.75 real seconds at 1x speed, so a full day is 18 real minutes. All simulation time is stored as an integer count of game seconds since the start of the game.
+One game minute lasts 1.0 real second at 1x speed (D17; was 0.75), so a full day is 24 real minutes. All simulation time is stored as an integer count of game seconds since the start of the game.
 
 ### Clock and speed
 
+> **Changed 2026-11-02 (D17):** the game clock is slower: one game minute lasts 1.0 real second at 1x (was 0.75), so a game day is 24 real minutes (was 18) and the sim runs 7.5 ticks a real second at 1x (was 10). Walking speeds stay as D15 set them in game time, so everything on screen moves a quarter slower while a day's work still fits the timetable. The simulation (ticks of 8 game seconds) is unchanged.
+
 | Constant | Value | Notes |
 | --- | --- | --- |
-| `REAL_SECONDS_PER_GAME_MINUTE` | 0.75 | At 1x. |
+| `REAL_SECONDS_PER_GAME_MINUTE` | 1.0 | At 1x. A game day is 24 real minutes. |
 | Speeds | Pause, 1x, 2x, 4x | Pause is always allowed. Planning UIs do not auto-pause. |
-| Sim tick | 10 ticks per real second at 1x | 1 tick = 8 game seconds. At 4x, 40 ticks per real second. |
+| Sim tick | 7.5 ticks per real second at 1x | 1 tick = 8 game seconds. At 2x, 15; at 4x, 30 ticks per real second. |
 | Day start | 05:00 | You wake at 05:00. |
 | Sleep | Allowed 20:00 to 02:00 | Skips to 05:00 at 32x sim speed (simulated, not jumped), so trains still run. Blocked if a task assigned only to the player is due before 05:00. |
 
 ### Calendar
 
 - Week: 7 days. Monday to Saturday are work days. Saturday evening is payday. Sunday has reduced service: only trains marked "Sunday" run, and businesses close except the saloon, hotel and church.
-- Season: 14 days. Year: 4 seasons, 56 days (about 17 hours at 1x).
+- Season: 14 days. Year: 4 seasons, 56 days (about 22 hours at 1x; D17).
 - Start date: Monday, Spring 1, 1866.
 - Seasons change daylight hours (sunrise 05:00 in summer to 07:00 in winter, sunset 21:00 to 17:00), terrain colors, and demand (cordwood and lamp oil in winter; grain harvest in autumn).
 - Weather: clear, overcast, rain, snow (winter only), blizzard (rare, winter). Rain slows walking 10% and halts grading. Snow halts all line construction. A blizzard can close a line until a crew clears it (a task).
@@ -203,12 +205,12 @@ All speeds are in units per game minute, so they scale with game speed.
 | Player run (hold Shift) | 3.5 |
 | Player with hand truck or handcart | 1.8 |
 | Citizen walk | 2.0 |
-| Train, mainline maximum | 4.0 (about 5.3u per real second at 1x) |
+| Train, mainline maximum | 4.0 (about 4u per real second at 1x since D17) |
 | Train, running tender-first | 2.4 (60%) |
 | Train, yard and station limit | 1.0 |
 | Train, through a diverging switch | 1.5 |
 
-At these speeds a 240u trip takes about an hour of game time (45 real seconds), and walking the length of a 40u platform takes about 18 game minutes.
+At these speeds a 240u trip takes about an hour of game time (60 real seconds since D17), and walking the length of a 40u platform takes about 18 game minutes.
 
 ## 5. Player character and controls
 
@@ -1248,7 +1250,7 @@ railhead/
 
 ### Simulation loop
 
-- Fixed tick of 8 game seconds. At 1x, 10 ticks per real second; at 2x, 20; at 4x, 40; during sleep, up to 320 (time-boxed to 8 ms of work per frame, the rest carried over).
+- Fixed tick of 8 game seconds. At 1x, 7.5 ticks per real second (D17; was 10); at 2x, 15; at 4x, 30; during sleep, up to 240 (time-boxed to 8 ms of work per frame, the rest carried over).
 - Systems run in this order every tick:
   1. Apply queued commands (player input, UI actions).
   2. Advance time; update daylight and weather.

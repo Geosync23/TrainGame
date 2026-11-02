@@ -301,10 +301,9 @@ const CFG = {
   SEED: 1866,
   SCALE: SC,                 // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
-  TICKS_PER_REAL_S: 10,      // at 1x
+  TICKS_PER_REAL_S: 7.5,     // at 1x: one game minute is 1.0 real second, a day 24 real minutes (section 4; D17, was 10)
   DAY_START_S: 5 * 3600,     // the game starts at 05:00
-  WALK: 2.0, RUN: 3.2,       // player speeds, u per game minute (section 4; 2026-11-02: slowed from D15's 2.8 and 4.4, the designer found them too fast)
-  TOOL_WALK: 1.6,            // pushing the hand truck or handcart, u per game minute (walk or run alike)
+  WALK: 2.8, RUN: 4.4,       // player speeds, u per game minute (section 4; D15: a quarter faster than M1's 2.25 and 3.5; D17 slowed the clock instead of the walk)
   ACCEL_K: 2.0 * SC,         // a = 2.0 x power / mass, u/min^2 (section 7), times the scale so times stay the same
   BRAKE: 3.0 * SC,           // u/min^2
   TENDER_FIRST: 0.6,         // speed cap factor running tender-first
@@ -4022,7 +4021,7 @@ function playerTick(S, ev, poseCache) {
   }
   if (P.mode !== 'to' && P.mode !== 'dir') return;
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id]));
-  const step = (P.tool !== null && P.tool !== undefined ? CFG.TOOL_WALK : P.run ? CFG.RUN : CFG.WALK) * DT_MIN, T = S.track;
+  const step = (P.run ? CFG.RUN : CFG.WALK) * DT_MIN, T = S.track;
   // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building?
   // A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
   const into = (x0, z0, x1, z1, bld) => (insideTrain(poses, x1, z1) && !insideTrain(poses, x0, z0))
@@ -4376,7 +4375,7 @@ function carryCheckSaveShape(st) {
 // the ticket window. C2's layout may name them with a `station` field on the footprints; otherwise the first
 // platform is the hub. Departures come from stationDepartures, which returns nothing until train services exist (C3).
 const PAX = {
-  STEP: 24,                 // hundredths of a u per tick: 1.8 u per game minute, citizen walk (section 4; a little slower than the player's 2.0)
+  STEP: 27,                 // hundredths of a u per tick: 2.0 u per game minute, citizen walk (section 4)
   SELL_S: 30,               // a ticket takes 0.5 game minutes to sell (section 9)
   BOARD_S: 6,               // boarding or stepping off: 0.1 game minutes each, per door (section 9)
   GIVE_UP_S: 3600,          // without a ticket a traveller waits up to 60 game minutes
@@ -5627,7 +5626,7 @@ function modelChunky() {
 // shortens the time on the ground, adds a small hop, swings the arms harder and holds them a little forward.
 // Nothing here touches the game state: it reads distances already drawn.
 const GAIT = {
-  V_WALK: 2.0,         // u per game minute that counts as a normal walk (the player's CFG.WALK)
+  V_WALK: 2.8,         // u per game minute that counts as a normal walk (the player's CFG.WALK; a run, CFG.RUN 4.4, is 1.57 x)
   AMP0: 0.38, AMP_K: 0.3, AMP_MAX: 0.8, // leg swing either side (radians): AMP0 + AMP_K x speed / V_WALK, at most AMP_MAX
   AMP_MIN: 0.02,       // the smallest swing used for the stride length (only to keep it above 0)
   RUN0: 1.15, RUN1: 1.5, // speed / V_WALK where the gait turns into a run (blend between)
@@ -7372,7 +7371,7 @@ function townBuildingsDraw(G) {
 // Limb poses are worked out on the CPU (the walk, GAIT in the models section) and written straight into the
 // instance matrices.
 const CROWD = {
-  WALK: 1.8,            // citizen walk, u per game minute (section 4; 2026-11-02: a little slower than the player's 2.0)
+  WALK: 2.5,            // citizen walk, u per game minute (section 4; D15: a quarter faster than M1's 2.0, like the player)
   BREATH: 0.015, BREATH_HZ: 0.35, DRIFT: 8 * Math.PI / 180,
   AREA: { x0: -64, x1: 64, z0: -48, z1: 51.2 }, // where walkers roam on the test map (M1's x 1.6; each world sets its own)
   BALLAST: 0.95 * CFG.SCALE, // paths keep this far from a track centre line where they can (just past the ballast)

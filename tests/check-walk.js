@@ -6,7 +6,8 @@
 // - The hips drop at heel strike; running and pushing lean forward more than walking.
 // - Stopping eases out: the legs and arms are back to standing (under 0.05 radians) one real second later.
 // - Crowd walkers' planted feet (from the instance matrices) do not slide either (turning on the spot aside).
-// - Speeds: walk 2.0, run 3.2, pushing a tool 1.6, travellers about 1.8 u per game minute.
+// - Speeds: walk 2.8, run 4.4 (pushing a tool goes at the same speeds), travellers about 2.0 u per game minute (D17:
+//   the clock is slower instead, one game minute a real second at 1x).
 // Screenshots (portrait, zoom 1.5): walk-walk-1..3, walk-run-1..3, walk-push-1..3 under test-output/.
 
 const { openGame, screenshotPath } = require('./browser');
@@ -16,9 +17,9 @@ module.exports = async function checkWalk() {
   const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
   const R = (fn, arg) => page.evaluate(fn, arg);
   try {
-    const sp = await R(() => { const R = window.__railhead; return { walk: R.CFG.WALK, run: R.CFG.RUN, tool: R.CFG.TOOL_WALK, pax: R.pax.PAX.STEP / 100 / (R.CFG.TICK_GAME_S / 60) }; });
-    if (sp.walk !== 2.0 || sp.run !== 3.2 || sp.tool !== 1.6) problems.push('player speeds are ' + JSON.stringify(sp));
-    if (Math.abs(sp.pax - 1.8) > 0.05) problems.push(`travellers walk ${sp.pax.toFixed(2)} u per game minute (expected about 1.8)`);
+    const sp = await R(() => { const R = window.__railhead; return { walk: R.CFG.WALK, run: R.CFG.RUN, tool: R.CFG.WALK, pax: R.pax.PAX.STEP / 100 / (R.CFG.TICK_GAME_S / 60) }; });
+    if (sp.walk !== 2.8 || sp.run !== 4.4) problems.push('player speeds are ' + JSON.stringify(sp));
+    if (Math.abs(sp.pax - 2.0) > 0.05) problems.push(`travellers walk ${sp.pax.toFixed(2)} u per game minute (expected about 2.0)`);
 
     // Walks the player's real model through the walk in steady 1/60 s frames at 1x (the test machine draws far
     // slower than a phone, so this does not wait for real frames): the gait advances by the distance moved, the

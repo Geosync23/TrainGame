@@ -193,7 +193,7 @@ module.exports = async function checkCarry() {
       out.start = cords.length;
       run(S, { t: 'carryTool', tool: 1 }, 150);
       if (S.player.tool !== 1) out.bad.push('could not take the handcart in the real start');
-      run(S, { t: 'carryPick', id: cords[0] }, 350);   // (D15: the wood stage is about 52u from the handcart's spot, some 245 ticks' push at 1.6 u/min)
+      run(S, { t: 'carryPick', id: cords[0] }, 200);   // (D15: the wood stage is about 52u from the handcart's spot, some 140 ticks' walk)
       if (held(S).length !== 1 || S.items.where[cords[0]].carrier !== 'HANDCART') out.bad.push('a cord did not go on the handcart: ' + JSON.stringify(S.items.where[cords[0]]));
       const P = S.player, wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null });
       out.others = {};
@@ -214,7 +214,7 @@ module.exports = async function checkCarry() {
       L.fuel = R.tt.FUEL_CAP - 3 * R.CFG.CORD_U;
       out.fuel = [];
       for (let k = 0; k < 3; k++) {
-        const e3 = run(S, { t: 'fuelTender', tr: 0 }, 450);   // the handcart is pushed at 1.6 u/min
+        const e3 = run(S, { t: 'fuelTender', tr: 0 }, 250);
         out.fuel.push({ held: held(S).length, cords: Math.round(L.fuel / R.CFG.CORD_U), onPlatform: R.carry.carryNoCartAt(S.player.x, S.player.z), refused: e3.filter(e => /Refused/.test(e.t)).map(e => e.why) });
       }
       if (out.fuel.map(f => f.held).join() !== '5,4,3' || out.fuel.map(f => f.cords).join() !== '2,3,4') out.bad.push('cords from the handcart onto the tender, one at a time: ' + JSON.stringify(out.fuel));

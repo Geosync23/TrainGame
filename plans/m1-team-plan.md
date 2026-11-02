@@ -24,7 +24,7 @@ Status: approved by the designer (survey answers recorded as D12, 2026-11-01). R
 Round D survey (answers in its database, collection `answers`, doc `round-d`): https://claude.ai/artifact/AJG1v9NjZkQxbhmc81ZJQn (source `plans/m1-round-d-survey.html`)
 
 | D | D1 | Office panels at the desk with an Office button (Contracts, Market, Ledger, Trains, Timetable), telegrams sliding in under the clock with an inbox button, alerts, the Look button and inspect cards (D13) | HUD and panels, input |
-| D | D2 | Tutorial: the investor telegrams for days 1 and 2, with Skip tutorial (after D1's telegram inbox) | new "tutorial" |
+| D | D2 | Tutorial: the investor telegrams for days 1 and 2, with Skip tutorial. Merged (schema 12; includes D1's telegram rules, schema 11), npm test passed (26 checks) | new "tutorial" |
 | D | D5 | Riding your own train as a passenger (D13) | trains, player |
 | D | D6 | Cordwood on the handcart, fares paid on arrival at unstaffed stations, 8 starting cords (D13) | carrying, passengers, new-game setup |
 | D | D3 | M1 acceptance check with a "reasonable player" bot playing a week; report gaps. Merged, npm test passed (25 checks) |

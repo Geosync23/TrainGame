@@ -47,12 +47,6 @@ const { openGame, stopServer } = require('./browser');
       S.pax.list.push(mk('queue', slot[0] + 600, slot[1], 0, 0, 0), mk('wait', Math.round(K.exits[0][0] * 100), Math.round(K.exits[0][1] * 100), 0, 0, 40));
       R.simRun(S, [], 20);
     }
-    // From schema 11 (telegrams, D1): two telegrams in the inbox, the first read, the second with a button.
-    if (S.tg && R.office) {
-      R.office.telegramSend(S, { from: 'Eastern investors', title: 'Welcome', body: 'The line is yours.' }, null);
-      R.office.telegramSend(S, { from: 'Hub General Store', title: 'Offer: 3 salt', body: 'Accept at the office.', buttons: [{ label: 'Noted', cmd: null }] }, null);
-      R.simRun(S, [{ tick: S.tick, cmd: { t: 'tgRead', id: 0 } }], 1);
-    }
     return { save: JSON.stringify({ state: S, ui: { yawIdx: 1, zoom: 1.5, speed: 1 } }), hash: R.stateHash(S), schemaVersion: S.schemaVersion };
   });
   const dir = path.join(__dirname, 'fixtures');

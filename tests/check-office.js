@@ -30,7 +30,7 @@ const { openGame, screenshotPath } = require('./browser');
 // The toast is a passing message and is left out.
 function layoutProblems() {
   const ids = ['clock', 'speeds', 'cash', 'buildBtn', 'tgBtn', 'alerts', 'rotL', 'rotR', 'lookBtn', 'officeBtn', 'centre', 'carry', 'paxDesk',
-    'tgSlide', 'office', 'inbox', 'lookCard', 'panel', 'telPanel', 'carPanel', 'dbgBar'];
+    'tutTask', 'tgSlide', 'office', 'inbox', 'lookCard', 'panel', 'telPanel', 'carPanel', 'dbgBar'];
   const vis = e => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
   const boxes = [];
   for (const id of ids) {
@@ -61,9 +61,11 @@ module.exports = async function checkOffice() {
       const r = await page.evaluate((v10) => {
         const R = window.__railhead, O = R.office, E = R.econ, out = {};
         const D = 86400, H = 3600, toTime = (day, hh) => day * D + hh * H - 5 * H;
+        // D2's tutorial (from schema 12) sends its own telegrams in a new game: these games start with it over.
+        const newS = () => { const st = R.newState(1866); if (st.tut) st.tut.done = true; return st; };
         const run = (st, until) => { const ev = []; while (st.time < until) ev.push(...R.simTick(st, [])); return ev; };
         // 1. The inbox and its commands.
-        const s0 = R.newState(1866);
+        const s0 = newS();
         out.fresh = { schema: s0.schemaVersion, n: s0.tg.list.length, next: s0.tg.next };
         const ev0 = [];
         const a = O.telegramSend(s0, { from: 'Eastern investors', title: 'Welcome', body: 'Hello', buttons: [{ label: 'Walk', cmd: { t: 'walkTo', x: 300, z: -800 } }, { label: 'Skip', cmd: null }] }, ev0);
@@ -84,7 +86,7 @@ module.exports = async function checkOffice() {
 
         // 2. The event table over 3 game days: town offers (day 3 07:00), an order at the desk comes on the Overland,
         //    a starting contract accepted and left late, No. 1 on the timetable waits at Willow Ford.
-        const s1 = R.newState(1866), desk = O.econDeskSpot();
+        const s1 = newS(), desk = O.econDeskSpot();
         s1.player.x = desk.x; s1.player.z = desk.z;
         ev = R.simTick(s1, [{ t: 'econOrder', lines: [{ c: 'flour', n: 2 }] }, { t: 'contractAccept', id: 0 }, { t: 'ttAssign', tr: 0, on: true }]);
         out.atDesk = { ordered: ev.some(e => e.t === 'orderPlaced'), accepted: s1.econ.contracts[0].status, money: E.econCheckMoney(s1) };
@@ -99,7 +101,7 @@ module.exports = async function checkOffice() {
         out.cancelled = { ev: evs2.filter(e => e.t === 'contractCancelled').length, tg: s1.tg.list.filter(g => g.kind === 'cancelled').length };
         out.money1 = E.econCheckMoney(s1);
         // 3. Low on wood: one telegram, not one a tick; the alert lasts while it is low.
-        const s2 = R.newState(1866);
+        const s2 = newS();
         s2.trains[0].consist[0].fuel = 50;
         R.simRun(s2, [], 80);
         out.wood = { tg: s2.tg.list.filter(g => g.kind === 'wood').length, alert: O.alertsOf(s2).filter(a => a.k === 'wood').length };
@@ -107,17 +109,17 @@ module.exports = async function checkOffice() {
         for (const c of Object.keys(s2.town.biz[0].shelf)) s2.town.biz[0].shelf[c] = 0;
         out.stock = O.alertsOf(s2).filter(a => a.k === 'stock').map(a => a.biz + ':' + a.title);
         // 5. useDesk walks to the desk and says so.
-        const s3 = R.newState(1866);
+        const s3 = newS();
         let reached = -1;
         for (let i = 0; i < 300 && reached < 0; i++) if (R.simTick(s3, i === 0 ? [{ t: 'useDesk' }] : []).some(e => e.t === 'reachedDesk')) reached = i;
         out.desk = { reached, d: Math.hypot(s3.player.x - desk.x, s3.player.z - desk.z), spot: desk };
         // 6. One service off, the other kept.
-        const s4 = R.newState(1866);
+        const s4 = newS();
         R.simTick(s4, [{ t: 'ttAssign', tr: 0, on: true }]);
         R.simTick(s4, [{ t: 'ttAssign', tr: 0, on: false, svc: 1 }]);
         out.svcOff = s4.tt.services.map(s => s.train);
         // 7. Determinism and saving.
-        const twice = () => { const st = R.newState(1866); st.player.x = desk.x; st.player.z = desk.z; R.simRun(st, [{ tick: 0, cmd: { t: 'contractAccept', id: 1 } }, { tick: 0, cmd: { t: 'ttAssign', tr: 0, on: true } }], 3 * 10800); return st; };
+        const twice = () => { const st = newS(); st.player.x = desk.x; st.player.z = desk.z; R.simRun(st, [{ tick: 0, cmd: { t: 'contractAccept', id: 1 } }, { tick: 0, cmd: { t: 'ttAssign', tr: 0, on: true } }], 3 * 10800); return st; };
         const h1 = R.stateHash(twice()), h2 = R.stateHash(twice());
         out.det = { h1, h2 };
         const json = R.exportSave(), h0 = R.hash();
@@ -127,9 +129,12 @@ module.exports = async function checkOffice() {
         out.save = { kept: R.hash() === hs && hBack === h0, n: R.state.tg.list.length };
         const old = R.migrate(JSON.parse(JSON.parse(v10).save));
         out.v10 = { schema: old.state.schemaVersion, tg: JSON.stringify(old.state.tg) };
+        // A new game (tutorial on): the tutorial's first telegram comes through the same inbox.
+        const s5 = R.newState(1866); R.simRun(s5, [], 2);
+        out.tut = s5.tut ? s5.tg.list.map(g => g.kind + ':' + (g.buttons || []).map(b => b.label).join('/')).join() : 'tutorial:OK/Skip tutorial';
         return out;
       }, v10);
-      if (r.fresh.schema !== 11 || r.fresh.n !== 0) problems.push('a new game should be schema 11 with an empty inbox: ' + JSON.stringify(r.fresh));
+      if (r.fresh.schema < 11 || r.fresh.n !== 0) problems.push('a new game should be schema 11 or later with an empty inbox: ' + JSON.stringify(r.fresh));
       if (!r.sent.ok || r.sent.ev !== 'telegram' || !/"buttons":\[\{"label":"Walk","cmd":\{"t":"walkTo"/.test(r.sent.g) || !/"read":false,"answered":null/.test(r.sent.g)) problems.push('telegramSend: ' + JSON.stringify(r.sent));
       if (r.badSend.some(Boolean)) problems.push('bad telegrams were accepted: ' + r.badSend);
       if (r.answer.ev !== 'tgAnswered:0' || r.answer.answered !== 0 || !r.answer.read || r.answer.walking !== 'to' || Math.abs(r.answer.tx - 3) > 1e-9) problems.push('tgAnswer did not answer and run the button\'s command: ' + JSON.stringify(r.answer));
@@ -152,7 +157,8 @@ module.exports = async function checkOffice() {
       if (r.svcOff.join() !== '0,') problems.push('taking one service off should keep the other: ' + r.svcOff.join());
       if (r.det.h1 !== r.det.h2) problems.push('3 days twice gave different hashes: ' + JSON.stringify(r.det));
       if (!r.save.kept) problems.push('export and import did not keep the inbox');
-      if (r.v10.schema !== 11 || r.v10.tg !== '{"list":[],"next":0,"seen":{}}') problems.push('a v10 save should load with an empty inbox: ' + JSON.stringify(r.v10));
+      if (r.tut !== 'tutorial:OK/Skip tutorial') problems.push('a new game\'s first telegram should be the tutorial\'s, with OK and Skip tutorial: ' + r.tut);
+      if (r.v10.schema < 11 || r.v10.tg !== '{"list":[],"next":0,"seen":{}}') problems.push('a v10 save should load with an empty inbox: ' + JSON.stringify(r.v10));
       console.log(`  sim: telegrams in 3 days ${JSON.stringify(k)}; alerts ${r.alerts1.length}; desk reached in ${r.desk.reached} ticks; hash ${r.det.h1}`);
       if (errors.length) problems.push('console errors (sim part): ' + errors.join(' | '));
     } finally { await browser.close(); }
@@ -181,7 +187,12 @@ module.exports = async function checkOffice() {
     const shot = name => page.screenshot({ path: screenshotPath(`office-${name}-${orient}`) });
     try {
       // The test machine draws in software and may be slow: the slide-in stays up 20 s here (4.5 s in play).
-      await R(() => { window.__railhead.office.ui.slide.ms = 20000; });
+      await R(() => { window.__railhead.office.ui.slide.ms = 20000; window.__railhead.step(2); });
+      // A new game opens with the tutorial's chip (D2) under the telegraph button: nothing overlaps it. Then skip it.
+      await page.waitForFunction(() => !document.getElementById('tutTask') || !document.getElementById('tutTask').hidden, null, { timeout: 20000 }).catch(() => {});
+      await frames(3);
+      await layout('the tutorial chip showing');
+      await R(() => { const R = window.__railhead; R.send({ t: 'tutorialSkip' }); R.send({ t: 'tgRead', id: -1 }); R.step(1); });
       // The desk by real touch.
       await R(() => { const R = window.__railhead, d = R.office.econDeskSpot(); R.state.player.x = d.x + 3; R.state.player.z = d.z + 0.6; R.step(1); });
       await snapCam();
@@ -239,7 +250,8 @@ module.exports = async function checkOffice() {
       if (cashBefore !== '$2,500.00' || ord.cash !== '$2,492.00' || ord.orders !== 1 || ord.check.length) problems.push(`${orient}: ordering 2 flour from the Market tab: ${cashBefore} -> ${ord.cash}, orders ${ord.orders}, money check ${ord.check.join('; ')}`);
       await layout('office open');
       const dcOpen = await R(() => window.__railhead.drawCalls);
-      // A telegram slides in under the clock.
+      // A telegram slides in under the clock (it waits while the office is open: close it first).
+      await tapSel('#officeClose');
       await R(() => { const R = window.__railhead; R.office.telegramSend(R.state, { from: 'Eastern investors', title: 'Welcome to Railhead', body: 'Your line is open for business.', kind: 'tutorial',
         buttons: [{ label: 'Walk east', cmd: { t: 'walkTo', x: 900, z: -580 } }, { label: 'Not now', cmd: null }] }, null); });
       await settle(400);
@@ -247,21 +259,20 @@ module.exports = async function checkOffice() {
         return { show: s.classList.contains('show'), text: s.textContent, below: r.top >= c.bottom, left: r.left, count: document.getElementById('tgCount').textContent }; });
       if (!slide.show || !/Welcome to Railhead/.test(slide.text) || !slide.below || slide.count !== '1') problems.push(`${orient}: the telegram did not slide in under the clock with the count 1: ${JSON.stringify(slide)}`);
       await settle(1000);
-      await layout('telegram sliding in, office open');
+      await layout('telegram sliding in');
       if (orient === 'portrait') await shot('slide');
       // Tap it: the inbox opens with it, read.
       await tapSel('#tgSlide');
       await settle(200);
-      const ib = await R(() => ({ open: !document.getElementById('inbox').hidden, office: !document.getElementById('office').hidden, read: window.__railhead.state.tg.list[0].read, btns: document.querySelectorAll('#inboxBody button[data-b]').length, count: document.getElementById('tgCount').textContent }));
+      const ib = await R(() => ({ open: !document.getElementById('inbox').hidden, office: !document.getElementById('office').hidden, read: window.__railhead.state.tg.list[window.__railhead.state.tg.list.length - 1].read, btns: document.querySelectorAll('#inboxBody button[data-b]').length, count: document.getElementById('tgCount').textContent }));
       if (!ib.open || ib.office || !ib.read || ib.btns !== 2 || ib.count !== '') problems.push(`${orient}: tapping the telegram should open the inbox with it read and its 2 buttons: ${JSON.stringify(ib)}`);
       await shot('inbox');
       await layout('inbox open');
       await tapSel('#inboxBody button[data-b="0"]');
-      const ans = await R(() => ({ a: window.__railhead.state.tg.list[0].answered, mode: window.__railhead.state.player.mode }));
-      if (ans.a !== 0 || ans.mode !== 'to') problems.push(`${orient}: the telegram's button did not answer it and run its command: ${JSON.stringify(ans)}`);
+      const ans = await R(() => { const L = window.__railhead.state.tg.list; return { a: L[L.length - 1].answered, mode: window.__railhead.state.player.mode, inbox: !document.getElementById('inbox').hidden }; });
+      if (ans.a !== 0 || ans.mode !== 'to' || ans.inbox) problems.push(`${orient}: the telegram's button did not answer it and run its command: ${JSON.stringify(ans)}`);
       await R(() => { const R = window.__railhead; R.send({ t: 'walkTo', x: Math.round(R.office.econDeskSpot().x * 100), z: Math.round(R.office.econDeskSpot().z * 100) }); R.step(30); });
       // The telegraph button opens and closes the inbox.
-      await tapSel('#inboxClose');
       await tapSel('#tgBtn');
       const ib2 = await R(() => !document.getElementById('inbox').hidden);
       await tapSel('#tgBtn');

@@ -8491,6 +8491,7 @@ function updateHud() {
   jobSignHud();
   townSignHud();
   paxHud();
+  tutHud();            // before the slide-in, which keeps clear of the tutorial chip
   officeUpdate();      // office, telegrams, alerts and Look (D1)
   officeBtnHud();
   inboxUpdate();
@@ -8498,7 +8499,6 @@ function updateHud() {
   tgSlideHud();
   alertsHud();
   lookUpdate();
-  tutHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });

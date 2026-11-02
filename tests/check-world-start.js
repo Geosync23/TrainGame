@@ -32,7 +32,10 @@ module.exports = async function checkWorldStart() {
           if (!ids.includes(id)) P(`no building ${id}`);
         if (fps.filter(f => f.kind === 'cabin').length < 3) P('fewer than 3 cabins at Willow Ford');
         const plat = fps.find(f => f.id === 'platform');
-        if (plat && (Math.abs(plat.w - 20 * SC) > 1e-6 || Math.abs(plat.d - 2.4 * SC) > 1e-6)) P(`hub platform is ${plat.w} x ${plat.d}, not ${20 * SC} x ${2.4 * SC} (D12, x SC since D15)`);
+        // D12's 20u x 2.4u, x SC since D15, then 2.5 times as deep (the wide platforms): 32u x 9.6u; Willow Ford as deep.
+        if (plat && (Math.abs(plat.w - 20 * SC) > 1e-6 || Math.abs(plat.d - 2.5 * 2.4 * SC) > 1e-6)) P(`hub platform is ${plat.w} x ${plat.d}, not ${20 * SC} x ${2.5 * 2.4 * SC} (D12, x SC since D15, 2.5 times as deep since the wide platforms)`);
+        const wfp = fps.find(f => f.id === 'wfplatform');
+        if (wfp && (Math.abs(wfp.w - 16 * SC) > 1e-6 || Math.abs(wfp.d - 2.5 * 2.4 * SC) > 1e-6)) P(`Willow Ford's platform is ${wfp.w} x ${wfp.d}, not ${16 * SC} x ${2.5 * 2.4 * SC}`);
         // The spur: the main-line edges between the hub's platform switch (x 40 x SC) and Willow Ford's west switch.
         const W1 = T.switches[2], wx = T.nodes[W1.node].x;
         out.spur = T.edges.filter(E => E.cls === 'main' && Math.min(T.nodes[E.a].x, T.nodes[E.b].x) >= 40 * SC - 1e-6 && Math.max(T.nodes[E.a].x, T.nodes[E.b].x) <= wx + 1e-6).reduce((n, E) => n + E.len, 0);

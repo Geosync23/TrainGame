@@ -1,7 +1,7 @@
 // Check: timetable and dispatch for two stations (M1 package 6, builder C3; design-doc 7 and 8).
 // - Coupling and uncoupling: a person at the joint uncouples (0.5 game minutes, the train standing); a move of
 //   No. 1 into a standing cut couples it (the joined train keeps id 0; the cut's entry stays, empty); train ids never
-//   change. A moving train stops 0.5u short of a standing engine.
+//   change. A moving train stops CFG.STOP_GAP (0.8u since D15) short of a standing engine.
 // - No. 1 fetches a car the Overland set out on the interchange (the real start, where the interchange is joined).
 // - A service runs to time when its station work is done, and waits when it is not (goods for the station aboard).
 // - Two timetable trains on the single-track spur never meet head-on: they meet at Willow Ford's loop; no block is
@@ -32,14 +32,14 @@ const HELPERS = `window.__c3 = (() => {
       if (held.length) cmds.push({ t: 'carryPut', x: Math.round(P.x * 100), z: Math.round((P.z - 1) * 100) });
       else if (ids.length) { const d = R.interchange.carryCarDoor(st, st.items.where[ids[0]].stockId, P.x, P.z); near(st, d.x + d.ox * 0.5, d.z + d.oz * 0.5); cmds.push({ t: 'carryPick', id: ids[0] }); }
     } else if (!busy && opts.uncouple !== false && /uncouple the engine/.test(tr.status)) {
-      const k = R.tt.ttEngineJoint(tr), j = R.tt.ttJointAt(st, tr, k); near(st, j.x + j.fz * 1.15, j.z - j.fx * 1.15); cmds.push({ t: 'uncouple', tr: trId, at: k });
+      const k = R.tt.ttEngineJoint(tr), j = R.tt.ttJointAt(st, tr, k); near(st, j.x + j.fz * R.tt.TT.BESIDE, j.z - j.fx * R.tt.TT.BESIDE); cmds.push({ t: 'uncouple', tr: trId, at: k });
     } else if (!busy && opts.water !== false && /take water/.test(tr.status)) {
       const t = R.tt.ttTenderAt(st, tr, tr.consist.find(c => c.k === 'loco').id);
       const ws = R.tt.ttStations(st).filter(s => s.water).sort((a, b) => Math.hypot(a.water.x - t.x, a.water.z - t.z) - Math.hypot(b.water.x - t.x, b.water.z - t.z))[0];
       near(st, ws.water.sx, ws.water.sz); cmds.push({ t: 'takeWater' });
     } else if (!busy && opts.wood !== false && /(load wood|low on wood)/.test(tr.status)) {
       const held = R.carry.carryHeld(st), cord = held.find(id => st.items.waybill[id].commodity === 'cordwood');
-      if (cord !== undefined) { const t = R.tt.ttTenderAt(st, tr, tr.consist.find(c => c.k === 'loco').id); near(st, t.x + t.fz * 1.15, t.z - t.fx * 1.15); cmds.push({ t: 'fuelTender', tr: trId }); }
+      if (cord !== undefined) { const t = R.tt.ttTenderAt(st, tr, tr.consist.find(c => c.k === 'loco').id); near(st, t.x + t.fz * R.tt.TT.BESIDE, t.z - t.fx * R.tt.TT.BESIDE); cmds.push({ t: 'fuelTender', tr: trId }); }
       else {
         let id = -1; for (let i = 0; i < st.items.next; i++) if (st.items.alive[i] && st.items.waybill[i].commodity === 'cordwood' && st.items.where[i].kind === 'GROUND') { id = i; break; }
         if (id < 0) { const ws = R.tt.ttStations(st).find(s => s.wood) ; id = R.cargo.itemCreate(st, { commodity: 'cordwood', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null }, { kind: 'GROUND', x: Math.round(ws.wood.x * 100), z: Math.round((ws.wood.z - 3.2) * 100) }, null) ? st.items.next - 1 : -1; }
@@ -67,7 +67,7 @@ const HELPERS = `window.__c3 = (() => {
   function addEngine(st, name, front) {
     const id = st.trains.length;
     st.trains.push({ id, name, front, v: 0, mode: 'idle', m: 1, route: null, status: 'Stopped',
-      consist: [{ id: 500 + id, k: 'loco', len: 5.2, mass: 3, power: 10, fuel: R.tt.FUEL_CAP, water: 320 }] });
+      consist: [{ id: 500 + id, k: 'loco', len: 5.2 * R.CFG.SCALE, mass: 3, power: 10, fuel: R.tt.FUEL_CAP, water: R.CFG.WATER_U }] });
     return id;
   }
   return { auto, blocksOf, hhmm, yardServices, addEngine, near };
@@ -81,7 +81,8 @@ module.exports = async function checkTimetable() {
     try {
       await page.evaluate(HELPERS);
       const r = await page.evaluate(() => {
-        const R = window.__railhead, C = window.__c3, out = {};
+        const R = window.__railhead, C = window.__c3, out = {}, SC = R.CFG.SCALE;
+        out.gapWant = R.CFG.STOP_GAP; out.scale = SC; out.tfWant = 2.4 * SC;
         // 1. Uncouple and couple in the test yard.
         {
           const st = R.newState(1866, 'yard'), log = [];
@@ -110,11 +111,11 @@ module.exports = async function checkTimetable() {
           out.cons1 = R.cargo.itemCheckConservation(st);
           // 2. A moving train stops 0.5u short of a standing engine.
           const s2 = R.newState(1866, 'yard'), tr = s2.trains[0];
-          const ahead = R.trackWalk(s2.track, tr.front, 20).pos;
+          const ahead = R.trackWalk(s2.track, tr.front, 20 * SC).pos;
           C.addEngine(s2, 'No. 2', ahead);
           R.simTick(s2, [{ t: 'trainRun', tr: 0, dir: 1 }]);
           for (let i = 0; i < 600; i++) R.simTick(s2, []);
-          const ob = R.tt.trainObstacle(s2, tr, tr.front, 30);
+          const ob = R.tt.trainObstacle(s2, tr, tr.front, 30 * SC);
           out.gap = { gap: ob && ob.gap, v: tr.v, status: tr.status, other: ob && ob.other.id };
         }
         // 3. No. 1 fetches a set-out car from the interchange (the real start).
@@ -125,12 +126,12 @@ module.exports = async function checkTimetable() {
           const cut = X.interchangeCut(st), cars = cut.consist.map(c => c.id), items = cars.map(id => R.cargo.itemsAt(st, { kind: 'CAR', stockId: id }).length);
           const run = (cmd, until, max) => { R.simTick(st, [cmd]); for (let i = 0; i < max; i++) { const ev = R.simTick(st, []); if (until(ev)) return i; } return -1; };
           // Out onto the spur past switch 1, then back west onto the interchange cars (Send to a car couples it), then onto the main.
-          const spur = R.trackNearest(st.track, 62, 0.3);
+          const spur = R.trackNearest(st.track, 62 * SC, 0.3 * SC);
           const a = run({ t: 'trainSendTo', tr: 0, e: spur.e, s: Math.round(spur.s * 1000) }, ev => ev.some(e => e.t === 'trainArrived'), 1500);
           const cf = cut.front, near = R.trackWalk(st.track, { ...cf, d: -cf.d }, 1).pos;
           const b = run({ t: 'trainSendTo', tr: 0, e: near.e, s: Math.round(near.s * 1000) }, ev => ev.some(e => e.t === 'coupled'), 3000);
           for (let i = 0; i < 12; i++) R.simTick(st, []);
-          const main = R.trackNearest(st.track, 20, 0);
+          const main = R.trackNearest(st.track, 20 * SC, 0);
           const c = run({ t: 'trainSendTo', tr: 0, e: main.e, s: Math.round(main.s * 1000) }, ev => ev.some(e => e.t === 'trainArrived'), 3000);
           const no1 = st.trains[0].consist.map(c => c.id);
           const fx = R.trainPoses(st.track, st.trains[0]).map(p => Math.round(p.x));
@@ -261,9 +262,9 @@ module.exports = async function checkTimetable() {
             if (!wood && run && run.svc === 0 && run.day === 1 && run.i === 0 && run.ph === 'at' && st.trains[0].mode === 'idle') {
               const L = tr.consist.find(c => c.k === 'loco'), f0 = L.fuel, stop = st.tt.services[0].stops[0];
               const need = R.tt.ttWoodNeedU(st, st.tt.services[0], 0, tr);
-              L.fuel = 100; const low = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
-              L.fuel = 365; const filled = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
-              L.fuel = 346; const after = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
+              L.fuel = 100 * SC; const low = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
+              L.fuel = 365 * SC; const filled = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
+              L.fuel = 346 * SC; const after = R.tt.ttStopNeeds(st, run, tr, hub, stop).includes('wood');
               L.fuel = f0; run.wood = false;
               wood = { need: Math.round(need), low, filled, after };
             }
@@ -323,7 +324,7 @@ module.exports = async function checkTimetable() {
       if (!r.couple.ev || r.couple.no1.join() !== '0,1,2' || r.couple.cutLeft !== 0 || r.couple.n !== u.cut.id + 1) problems.push('backing into the cut should couple it: ' + JSON.stringify(r.couple));
       if (r.couple.ev && r.couple.status !== 'Coupling up') problems.push('a coupled train should stand "Coupling up" for 1 game minute, status ' + r.couple.status);
       if (r.cons1.length) problems.push('item conservation after coupling: ' + r.cons1.join('; '));
-      if (!r.gap.gap || Math.abs(r.gap.gap - 0.5) > 0.02 || r.gap.v !== 0) problems.push('a train should stop 0.5u short of a standing engine: ' + JSON.stringify(r.gap));
+      if (!r.gap.gap || Math.abs(r.gap.gap - r.gapWant) > 0.02 || r.gap.v !== 0) problems.push(`a train should stop ${r.gapWant}u short of a standing engine: ` + JSON.stringify(r.gap));
       const f = r.fetch;
       if (f.left < 0 || !f.cars.length) problems.push('the Overland set out no cars in the real start: ' + JSON.stringify(f));
       else if (f.a < 0 || f.b < 0 || f.c < 0 || !f.carried || f.cutLeft !== 0 || f.itemsNow.join() !== f.items.join() || f.cons.length) problems.push('No. 1 should fetch the set-out cars from the interchange: ' + JSON.stringify(f));
@@ -339,7 +340,7 @@ module.exports = async function checkTimetable() {
       if (r.ra.waterTook === null || r.ra.waterTook < 120 || r.ra.waterTook > 128) problems.push('taking water should take 2 game minutes, took ' + r.ra.waterTook);
       if (!r.ra.raDone || r.ra.raDone.cons.join() !== 'combine,boxcar,loco' || r.ra.raDone.facing !== 1) problems.push('after the run-around the engine should be at the other end, facing the old way: ' + JSON.stringify(r.ra.raDone));
       if (!r.ra.dep || !r.ra.dep.tf) problems.push('after the run-around the train should leave tender first: ' + JSON.stringify(r.ra.dep));
-      if (!(r.ra.vMaxTF > 2.0 && r.ra.vMaxTF <= 2.4 + 1e-9)) problems.push(`tender first the train should run at up to 2.4 u/min (60%), got ${r.ra.vMaxTF}`);
+      if (!(r.ra.vMaxTF > 2.0 / 2.4 * r.tfWant && r.ra.vMaxTF <= r.tfWant + 1e-9)) problems.push(`tender first the train should run at up to ${r.tfWant} u/min (60%), got ${r.ra.vMaxTF}`);
       if (!r.saveMid.sameAtLoad || !r.saveMid.same) problems.push('a save mid-run-around should load and resume exactly: ' + JSON.stringify(r.saveMid));
       if (!r.det.same) problems.push('2 game days with the timetable gave different hashes');
       if (r.det.cons) problems.push('item conservation failed over 2 game days with the timetable');
@@ -348,7 +349,7 @@ module.exports = async function checkTimetable() {
         const L = r.inWater.log, w = r.inWater.wood;
         const inW = L.filter(x => x.t === 'water' && x.i === 2 && x.ph === 'go'), deps = L.filter(x => x.t === 'dep'), arrs = L.filter(x => x.t === 'arr');
         if (inW.length < 3) problems.push('the run back to the hub should take water on the way in (under the spout, before the platform): ' + JSON.stringify(L));
-        if (deps.length < 3 || deps.some(d => d.x > 19 || d.late > 0)) problems.push('after water on the way in the hub departures should leave from the platform, on time: ' + JSON.stringify(deps));
+        if (deps.length < 3 || deps.some(d => d.x > 19 * r.scale || d.late > 0)) problems.push('after water on the way in the hub departures should leave from the platform, on time: ' + JSON.stringify(deps));
         if (arrs.some(a => a.late > 10 * 60)) problems.push('water on the way in should not make the run back late: ' + JSON.stringify(arrs));
         if (!w || !w.low || w.filled || w.after) problems.push('the hub\'s wood need: wanted when low, met when filled, and still met after burning a little: ' + JSON.stringify(w));
         console.log(`  water on the way in: ${L.map(x => x.t + (x.i !== undefined && x.i !== null ? ' ' + x.i + x.ph : '') + (x.x !== undefined ? ' x ' + x.x : '') + (x.late ? ' late ' + Math.round(x.late / 60) : '') + ' ' + x.at).join(', ')}; wood need ${JSON.stringify(w)}`);
@@ -381,6 +382,7 @@ module.exports = async function checkTimetable() {
     const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1' });
     const R = (fn, arg) => page.evaluate(fn, arg);
     const settle = () => page.waitForTimeout(150);
+    const SC = await page.evaluate(() => window.__railhead.CFG.SCALE);
     const stepUntil = (cond, max) => R(([c, m]) => { const f = new Function('R', 'return ' + c); const R = window.__railhead; for (let i = 0; i < m; i++) { if (f(R)) return i; R.step(1); } return f(R) ? m : -1; }, [cond, max]);
     try {
       await R(() => { window.rh.scenario('timetable'); for (const o of ['blocks', 'locks', 'routes', 'path']) window.rh.overlay(o, false); window.__railhead.camera.zoom = 2; });
@@ -394,15 +396,15 @@ module.exports = async function checkTimetable() {
       // Tap the gap between the combine and the boxcar (the player stands beside it, so it is on screen).
       const tele = async (x, z) => { await R(([x, z]) => { const P = window.__railhead.state.player; P.x = x; P.z = z; P.mode = 'idle'; }, [x, z]); await page.waitForTimeout(900); };
       const j2 = await R(() => { const R = window.__railhead, j = R.tt.ttJointAt(R.state, R.state.trains[0], 2); return j; });
-      await tele(j2.x, j2.z + 1.6);
-      const jp = await R(() => { const R = window.__railhead, j = R.tt.ttJointAt(R.state, R.state.trains[0], 2); return R.toScreen(j.x, j.z, 0.7); });
+      await tele(j2.x, j2.z + 1.6 * SC);
+      const jp = await R(() => { const R = window.__railhead, j = R.tt.ttJointAt(R.state, R.state.trains[0], 2); return R.toScreen(j.x, j.z, 0.7 * R.CFG.SCALE); });
       await page.touchscreen.tap(jp.x, jp.y); await settle();
       const n1 = await stepUntil("R.state.trains[0].consist.length === 2", 300);
       if (n1 < 0) problems.push('a tap on the gap between two vehicles did not uncouple there');
       // Open the panel (tap the engine) and press Back: No. 1 backs into the boxcar and couples.
       const l0 = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return p; });
-      await tele(l0.x, l0.z + 1.8);
-      const lp = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return R.toScreen(p.x, p.z, 1.1); });
+      await tele(l0.x, l0.z + 1.8 * SC);
+      const lp = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return R.toScreen(p.x, p.z, 1.1 * R.CFG.SCALE); });
       await page.touchscreen.tap(lp.x, lp.y); await settle();
       await stepUntil("!document.getElementById('panel').hidden", 300);
       if (await page.isHidden('#panel')) problems.push('a tap on the engine did not open its panel');
@@ -417,19 +419,19 @@ module.exports = async function checkTimetable() {
       }
       // A cord of wood by tap, then a tap on the engine puts it on the tender.
       await R(() => { const R = window.__railhead; R.state.trains[0].consist[0].fuel = 200; });
-      await tele(9, -10.8);
+      await tele(9 * SC, -10.8 * SC);
       const wp = await R(() => { const R = window.__railhead, S = R.state; let id = -1; for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && S.items.waybill[i].commodity === 'cordwood') { id = i; break; } const p = R.cargo.view.poses && R.cargo.view.poses[id]; return { id, ...R.toScreen(p ? p.x : S.items.where[id].x / 100, p ? p.z : S.items.where[id].z / 100, 0.15) }; });
       await page.touchscreen.tap(wp.x, wp.y); await settle();
       const picked = await stepUntil(`R.carry.carryHeld(R.state).includes(${wp.id})`, 400);
       if (picked < 0) problems.push('a tap on a cord of wood did not pick it up');
-      await tele(12, -12.2);
-      const ep = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return R.toScreen(p.x, p.z, 1.1); });
+      await tele(12 * SC, -12.2 * SC);
+      const ep = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return R.toScreen(p.x, p.z, 1.1 * R.CFG.SCALE); });
       await page.touchscreen.tap(ep.x, ep.y); await settle();
       const fu = await stepUntil('R.state.trains[0].consist[0].fuel > 300', 400);
       if (fu < 0) problems.push('a tap on the engine while carrying wood did not put it on the tender: ' + JSON.stringify(await R(() => { const R = window.__railhead, S = R.state; return { toast: document.getElementById('toast').textContent, use: S.player.use, act: S.player.act, held: R.carry.carryHeld(S), tr: S.trains[0].status, mode: S.trains[0].mode, v: S.trains[0].v, fuel: S.trains[0].consist[0].fuel, cons: S.trains[0].consist.map(c => c.k) }; })));
       // The Timetable button in No. 1's panel.
       await stepUntil('R.state.player.mode === "idle" && !R.state.player.act', 100);
-      const ep2 = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return R.toScreen(p.x, p.z, 1.1); });
+      const ep2 = await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; return R.toScreen(p.x, p.z, 1.1 * R.CFG.SCALE); });
       await page.touchscreen.tap(ep2.x, ep2.y); await settle();
       await stepUntil("!document.getElementById('panel').hidden", 300);
       if (await page.isHidden('#panel')) problems.push('a tap on the engine did not open its panel (second time)');
@@ -443,9 +445,9 @@ module.exports = async function checkTimetable() {
       }
       // Run the service to the run-around at Willow Ford for a screenshot.
       await R(() => { const R = window.__railhead; R.state.time = 3 * 3600 - 1800 + 25 * 60; R.state.trains[0].consist[0].fuel = R.tt.FUEL_CAP; }); // a full tender: the hub stop's wood is done
-      const ra = await stepUntil("(() => { const r = R.tt.ttRunOf(R.state, 0); if (r && /uncouple/.test(R.state.trains[0].status)) { const j = R.tt.ttJointAt(R.state, R.state.trains[0], R.tt.ttEngineJoint(R.state.trains[0])); R.state.player.x = j.x + j.fz * 1.15; R.state.player.z = j.z - j.fx * 1.15; if (R.state.player.mode === 'idle' && !R.state.player.act) R.send({ t: 'uncouple', tr: 0, at: R.tt.ttEngineJoint(R.state.trains[0]) }); } return r && r.ra && r.ra.step >= 2 && R.state.trains[0].v > 0; })()", 3000);
+      const ra = await stepUntil("(() => { const r = R.tt.ttRunOf(R.state, 0); if (r && /uncouple/.test(R.state.trains[0].status)) { const j = R.tt.ttJointAt(R.state, R.state.trains[0], R.tt.ttEngineJoint(R.state.trains[0])); R.state.player.x = j.x + j.fz * R.tt.TT.BESIDE; R.state.player.z = j.z - j.fx * R.tt.TT.BESIDE; if (R.state.player.mode === 'idle' && !R.state.player.act) R.send({ t: 'uncouple', tr: 0, at: R.tt.ttEngineJoint(R.state.trains[0]) }); } return r && r.ra && r.ra.step >= 2 && R.state.trains[0].v > 0; })()", 3000);
       if (ra < 0) problems.push('the service did not reach the run-around in the page');
-      await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; R.state.player.x = p.x; R.state.player.z = p.z - 2.5; R.state.player.mode = 'idle'; });
+      await R(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; R.state.player.x = p.x; R.state.player.z = p.z - 2.5 * R.CFG.SCALE; R.state.player.mode = 'idle'; });
       await page.waitForTimeout(1200);
       await page.screenshot({ path: screenshotPath('timetable-runaround-portrait') });
       const dcRa = await R(() => window.__railhead.drawCalls);
@@ -467,7 +469,7 @@ module.exports = async function checkTimetable() {
       if (after.h !== before.h) problems.push(`a real reload mid-service gave a different state (${before.h} at tick ${before.tick}, ${after.h} at tick ${after.tick})`);
       const fut = await page.evaluate(() => { const R = window.__railhead, copy = JSON.parse(JSON.stringify(R.state)); R.step(300); R.simRun(copy, [], 300); return [R.hash(), R.hash(copy)]; });
       if (fut[0] !== fut[1]) problems.push('after the reload the service did not go on the same way');
-      await page.evaluate(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; if (p) { R.state.player.x = p.x - 2; R.state.player.z = p.z - 3; R.state.player.mode = 'idle'; } });
+      await page.evaluate(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.state.trains[0])[0]; if (p) { R.state.player.x = p.x - 2 * R.CFG.SCALE; R.state.player.z = p.z - 3 * R.CFG.SCALE; R.state.player.mode = 'idle'; } });
       await page.waitForTimeout(1200);
       await page.screenshot({ path: screenshotPath('timetable-landscape') });
       const dc = await page.evaluate(() => window.__railhead.drawCalls);

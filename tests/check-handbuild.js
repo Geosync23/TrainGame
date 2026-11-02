@@ -53,26 +53,26 @@ async function checkTouch(problems) {
       const T = window.__railhead.state.track;
       const N = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1).sort((a, b) => a.x - b.x)[0];
       const E = T.edges.find(E => E.a === N.id || E.b === N.id), O = T.nodes[E.a === N.id ? E.b : E.a], L = Math.hypot(N.x - O.x, N.z - O.z);
-      return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length };
+      return { n: N.id, x: N.x, z: N.z, hx: (N.x - O.x) / L, hz: (N.z - O.z) / L, edges: T.edges.length, k: window.__railhead.CFG.SCALE };
     });
     // This check is about jobs, not about telling a tap from press and hold (check-touch covers that). On a
     // heavily loaded test machine a touch can reach the page more than 220 ms after it starts, which the game
     // rightly reads as a hold; so this page allows a longer hold time.
     await R(() => { window.__railhead.CFG.HOLD_MS = 1500; });
     await page.tap('#buildBtn'); await settle();
-    await lookAt(spur.x - 4, spur.z, 0.7);
-    // An amber plan: 20u on from the spur end runs onto the hills.
+    await lookAt(spur.x - 4 * spur.k, spur.z, 0.7);
+    // An amber plan: 20u (x SC) on from the spur end runs onto the hills.
     let amber = null;
-    await drag(spur, { x: spur.x + spur.hx * 20, z: spur.z + spur.hz * 20 }, async () => { amber = await label(); });
+    await drag(spur, { x: spur.x + spur.hx * 20 * spur.k, z: spur.z + spur.hz * 20 * spur.k }, async () => { amber = await label(); });
     if (!amber || amber.k !== 'amber') problems.push(`amber: the 20u plan was not amber (${amber && amber.k}: ${amber && amber.text})`);
     if (!(await page.isDisabled('#buildLay'))) problems.push('amber: Stake it is not disabled for a plan that needs earthwork');
     const amberCmd = await R(() => window.__railhead.buildTool.cmd);
     const amberRes = await R((cmd) => { const R = window.__railhead, ev = R.simTick(JSON.parse(JSON.stringify(R.state)), [{ ...cmd, t: 'stakeJob' }]); return ev.find(e => /^job/.test(e.t)); }, amberCmd);
     if (!amberRes || amberRes.t !== 'jobRefused' || !/earthwork/.test(amberRes.why)) problems.push(`amber: stakeJob was not refused for earthwork (${JSON.stringify(amberRes)})`);
     await page.tap('#buildCancel'); await settle();
-    // A green 6u plan, staked by touch.
+    // A green 6u (x SC) plan, staked by touch.
     let seen = null;
-    await drag(spur, { x: spur.x + spur.hx * 6, z: spur.z + spur.hz * 6 }, async () => { seen = await label(); });
+    await drag(spur, { x: spur.x + spur.hx * 6 * spur.k, z: spur.z + spur.hz * 6 * spur.k }, async () => { seen = await label(); });
     if (!seen || seen.k !== 'ok') problems.push(`stake: the 6u plan was not green (${seen && seen.k}: ${seen && seen.text})`);
     const btn = await page.locator('#buildLay').boundingBox();
     if (!btn || btn.width < 48 || btn.height < 48) problems.push('stake: the Stake it button is smaller than 48 px');
@@ -82,22 +82,22 @@ async function checkTouch(problems) {
     if (st.jobs !== 1) problems.push(`stake: ${st.jobs} jobs after Stake it, expected 1`);
     if (st.edges !== spur.edges) problems.push(`stake: Stake it added ${st.edges - spur.edges} track edges (a job must not be track)`);
     if (st.job && (st.job.count.ties !== 12 || st.job.need.ties !== 2 || st.job.need.rails !== 1 || st.job.need.spikes !== 1 || st.job.need.hardware !== 0)) problems.push('stake: wrong counts for 6u: ' + JSON.stringify(st.job));
-    if (st.job && st.job.stakes !== 4) problems.push(`stake: ${st.job.stakes} stakes for 6u, expected 4 (0, 2.5, 5 and the end)`);
+    if (st.job && st.job.stakes !== 4) problems.push(`stake: ${st.job.stakes} stakes for 6u, expected 4 (0, 2.5, 5 x SC and the end)`);
     if (st.build) problems.push('stake: build mode stayed on after staking');
     if (!/staked/.test(st.toast)) problems.push(`stake: no message after staking ("${st.toast}")`);
     // The same track end again is refused.
-    const again = await R((spur) => { const R = window.__railhead, ev = R.simTick(JSON.parse(JSON.stringify(R.state)), [{ t: 'stakeJob', from: 'node', n: spur.n, tx: Math.round((spur.x - 4) * 100), tz: Math.round(spur.z * 100) }]); return ev.find(e => /^job/.test(e.t)); }, spur);
+    const again = await R((spur) => { const R = window.__railhead, ev = R.simTick(JSON.parse(JSON.stringify(R.state)), [{ t: 'stakeJob', from: 'node', n: spur.n, tx: Math.round((spur.x - 4 * spur.k) * 100), tz: Math.round(spur.z * 100) }]); return ev.find(e => /^job/.test(e.t)); }, spur);
     if (!again || again.t !== 'jobRefused') problems.push('stake: a second job on the same track end was not refused');
     // A buildTrack-style command with a fraction is refused.
     const frac = await R((spur) => { const R = window.__railhead, ev = R.simTick(JSON.parse(JSON.stringify(R.state)), [{ t: 'stakeJob', from: 'node', n: spur.n, tx: 0.5, tz: 0 }]); return ev.find(e => /^job/.test(e.t)); }, spur);
     if (!frac || frac.t !== 'jobRefused' || !/whole numbers/.test(frac.why)) problems.push('stake: a plan with a fraction was not refused');
     // A tap on the stakes starts work, which stops at once: nothing is on site.
-    await lookAt(spur.x - 3, spur.z, 1);
+    await lookAt(spur.x - 3 * spur.k, spur.z, 1);
     const ev0 = await R(() => window.__railhead.state.tick);
     // On a busy test machine a tap can arrive late enough to count as press and hold, so try up to 3 times.
     let work = null;
     for (let tries = 0; tries < 3; tries++) {
-      await tapAt(spur.x - 3, spur.z);
+      await tapAt(spur.x - 3 * spur.k, spur.z);
       work = await R(() => { const R = window.__railhead; R.step(1); return { toast: document.getElementById('toast').textContent, use: R.state.player.use, act: R.state.player.act }; });
       if (/Out of ties/.test(work.toast)) break;
       await R(() => window.__railhead.send({ t: 'walkDir', a: null })); // end any hold walk before the next try
@@ -115,7 +115,8 @@ async function checkRules(problems) {
   const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
   try {
     const r = await page.evaluate(() => {
-      const R = window.__railhead, J = R.jobs, out = {};
+      const R = window.__railhead, J = R.jobs, out = {}, SC = R.CFG.SCALE;
+      out.SC = SC;
       const fresh = () => J.jobDebugScenario(R.newState(1866));
       const copy = S => JSON.parse(JSON.stringify(S));
       // Runs until the job is done or stopped (or a limit); records the steps and the walking.
@@ -146,8 +147,8 @@ async function checkRules(problems) {
       { let t = 0, rl = 0, sp = 0, bad = null; const L = job0.len, n = job0.count.ties;
         for (const k of rec.order) {
           if (k === 't') t++;
-          if (k === 'r') { const need = rl + 1 >= job0.count.rails ? n : Math.ceil(5 * (rl + 1) * n / L - 0.5); if (t < need) bad = bad || `rail ${rl} before its ties`; rl++; }
-          if (k === 's') { const tie = Math.floor(sp / 4), at = (tie + 0.5) * L / n; if (at > 5 * rl + 1e-9 && rl < job0.count.rails) bad = bad || `spike ${sp} before its rail`; sp++; }
+          if (k === 'r') { const need = rl + 1 >= job0.count.rails ? n : Math.ceil(5 * SC * (rl + 1) * n / L - 0.5); if (t < need) bad = bad || `rail ${rl} before its ties`; rl++; }
+          if (k === 's') { const tie = Math.floor(sp / 4), at = (tie + 0.5) * L / n; if (at > 5 * SC * rl + 1e-9 && rl < job0.count.rails) bad = bad || `spike ${sp} before its rail`; sp++; }
         }
         out.orderBad = bad; out.firsts = [rec.order.indexOf('t'), rec.order.indexOf('r'), rec.order.indexOf('s')]; }
       // A train is routed onto the new siding and arrives.
@@ -167,11 +168,11 @@ async function checkRules(problems) {
       // 3. Carrying: a tie bundle put down beside the job is delivered (from the "ties missing" state).
       { const S3 = fresh(), id = R.cargo.itemsAt(S3, { kind: 'STOCKPILE', jobId: 0 }).find(i => S3.items.waybill[i].commodity === 'ties');
         R.cargo.itemMove(S3, id, { kind: 'GROUND', x: Math.round(S3.player.x * 100) + 300, z: Math.round(S3.player.z * 100) - 600 }, null);
-        const q = J.jobPoint(S3.jobs.list[0], 8), side = S3.jobs.list[0].side;
+        const q = J.jobPoint(S3.jobs.list[0], 8 * SC), side = S3.jobs.list[0].side;
         const evs = [];
         evs.push(...R.simTick(S3, [{ t: 'carryPick', id }]));
         for (let i = 0; i < 300 && !evs.some(e => e.t === 'carryPicked'); i++) evs.push(...R.simTick(S3, []));
-        evs.push(...R.simTick(S3, [{ t: 'carryPut', x: Math.round((q.x - q.tz * side * 1.5) * 100), z: Math.round((q.z + q.tx * side * 1.5) * 100) }]));
+        evs.push(...R.simTick(S3, [{ t: 'carryPut', x: Math.round((q.x - q.tz * side * 1.5 * SC) * 100), z: Math.round((q.z + q.tx * side * 1.5 * SC) * 100) }]));
         for (let i = 0; i < 300 && !evs.some(e => e.t === 'carryPut'); i++) evs.push(...R.simTick(S3, []));
         out.deliver = { picked: evs.some(e => e.t === 'carryPicked'), put: evs.some(e => e.t === 'carryPut'), delivered: evs.some(e => e.t === 'jobDelivered' && e.item === id),
           where: S3.items.where[id], site: S3.jobs.list[0].site[id] || null, needs: J.jobNeeds(S3, S3.jobs.list[0]) };
@@ -197,21 +198,21 @@ async function checkRules(problems) {
         const rc = j2 ? work(S5, 5000, j2.id) : { done: false };
         out.restake = { staked: !!j2, done: rc.done, stops: rc.stops, cons: R.cargo.itemCheckConservation(S5), t: J.jobPieceTotals(S5) };
       }
-      // 5b. A 6u job (not a whole number of bundles) hands back the pieces it did not use as part-used bundles.
+      // 5b. A 6u (x SC) job (not a whole number of bundles) hands back the pieces it did not use as part-used bundles.
       { const S7 = R.newState(1866), T = S7.track;
         S7.overland.phase = 'off'; // this part runs past 06:00: keep the Overland's delivery out of the item list (B4)
         const N = T.nodes.filter(N => T.edges.filter(E => E.a === N.id || E.b === N.id).length === 1).sort((a, b) => a.x - b.x)[0];
         const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null });
-        for (const c of ['ties', 'ties', 'rails', 'spikes']) R.cargo.itemCreate(S7, wb(c), { kind: 'GROUND', x: Math.round((N.x - 3) * 100), z: Math.round((N.z - 1.5) * 100) }, null);
-        R.simTick(S7, [{ t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6) * 100), tz: Math.round(N.z * 100) }]);
-        S7.player.x = N.x; S7.player.z = N.z - 2;
+        for (const c of ['ties', 'ties', 'rails', 'spikes']) R.cargo.itemCreate(S7, wb(c), { kind: 'GROUND', x: Math.round((N.x - 3 * SC) * 100), z: Math.round((N.z - 1.5 * SC) * 100) }, null);
+        R.simTick(S7, [{ t: 'stakeJob', from: 'node', n: N.id, tx: Math.round((N.x - 6 * SC) * 100), tz: Math.round(N.z * 100) }]);
+        S7.player.x = N.x; S7.player.z = N.z - 2 * SC;
         const rc = work(S7, 3000, 0), parts = [];
         for (let i = 0; i < S7.items.next; i++) if (S7.items.alive[i]) parts.push(S7.items.waybill[i].commodity + ':' + (S7.items.waybill[i].pieces === undefined ? 'full' : S7.items.waybill[i].pieces));
         out.leftover = { done: rc.done, parts: parts.sort(), cons: R.cargo.itemCheckConservation(S7), ground: R.cargo.itemsAt(S7, { kind: 'GROUND' }).length };
         // Part-used bundles open like full ones: stake 4u more and use the 8 loose ties first.
         const N2 = S7.track.nodes[S7.track.nodes.length - 1];
         for (let i = 0; i < S7.items.next; i++) if (S7.items.alive[i]) R.cargo.itemMove(S7, i, { kind: 'GROUND', x: Math.round((N2.x - 1 - i * 0.3) * 100), z: Math.round((N2.z - 1.5) * 100) }, null);
-        const ev7 = R.simTick(S7, [{ t: 'stakeJob', from: 'node', n: N2.id, tx: Math.round((N2.x - 3) * 100), tz: Math.round(N2.z * 100) }]);
+        const ev7 = R.simTick(S7, [{ t: 'stakeJob', from: 'node', n: N2.id, tx: Math.round((N2.x - 3 * SC) * 100), tz: Math.round(N2.z * 100) }]);
         const j = S7.jobs.list[0];
         out.leftover.restaked = j ? { site: Object.keys(j.site).length, needs: J.jobNeeds(S7, j) } : ev7.find(e => /^job/.test(e.t));
       }
@@ -221,9 +222,10 @@ async function checkRules(problems) {
       out.tot0 = tot0;
       return out;
     });
-    const D12 = r.job.count.ties * 30 + r.job.count.rails * 60 + r.job.count.spikes * 78; // game seconds
+    // D12's step times (30, 60 and 78 game s), quicker by SC since D15 so a job of the same shape takes the same real time.
+    const D12 = (r.job.count.ties * 30 + r.job.count.rails * 60 + r.job.count.spikes * 78) / r.SC; // game seconds
     const total = r.ticks * 8, walk = r.walk * 8, workS = total - walk;
-    if (Math.abs(r.job.len - 20) > 0.05) problems.push(`scenario: the siding is ${r.job.len.toFixed(3)}u, not 20u`);
+    if (Math.abs(r.job.len - 20 * r.SC) > 0.05) problems.push(`scenario: the siding is ${r.job.len.toFixed(3)}u, not ${20 * r.SC}u`);
     if (r.job.count.ties !== 40 || r.job.count.rails !== 4 || r.job.count.spikes !== 160) problems.push('scenario: wrong piece counts ' + JSON.stringify(r.job.count));
     if (JSON.stringify(r.job.need) !== JSON.stringify({ ties: 4, rails: 2, spikes: 2, hardware: 1 })) problems.push('scenario: wrong materials ' + JSON.stringify(r.job.need));
     if (r.job.site !== 9) problems.push(`scenario: ${r.job.site} items on site, expected 9`);
@@ -308,7 +310,7 @@ async function checkScreenshot(problems) {
       const R = window.__railhead, out = {};
       out.jobs = R.state.jobs.list.length;
       R.send({ t: 'jobWork', id: 0 }); R.step(700);
-      const P = R.state.player; R.camera.zoom = 1.3; R.camera.ox = 10 - P.x; R.camera.oz = -16.5 - P.z;
+      const P = R.state.player; R.camera.zoom = 1.3; R.camera.ox = 10 * R.CFG.SCALE - P.x; R.camera.oz = -16.5 * R.CFG.SCALE - P.z;
       await new Promise(r => setTimeout(r, 400));
       out.done = R.state.jobs.list[0].done; out.draw = R.drawCalls;
       return out;

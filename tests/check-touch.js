@@ -17,13 +17,15 @@ module.exports = async function checkTouch() {
   const settle = () => page.waitForTimeout(120);
   const camSettle = () => page.waitForTimeout(900); // the camera follows the character with a soft lag
   try {
-    // Tap the ground 2u east of the character.
+    // Tap the ground 2u east of the character. (Since D15 the character starts 0.8u north of the grown yard's
+    // platform, so the spot is 2u north, not 1u: 1u north is just behind the platform's edge as the camera sees it,
+    // and a tap there rightly lands on the deck.)
     const p0 = await R(() => ({ ...window.__railhead.state.player }));
-    let sp = await R(([x, z]) => window.__railhead.toScreen(x, z), [p0.x + 2, p0.z - 1]);
+    let sp = await R(([x, z]) => window.__railhead.toScreen(x, z, window.__railhead.feet.bldStandY(x, z)), [p0.x + 2, p0.z - 2]);
     await page.touchscreen.tap(sp.x, sp.y); await settle();
     await R(() => window.__railhead.step(60));
     const p1 = await R(() => ({ ...window.__railhead.state.player }));
-    const d1 = Math.hypot(p1.x - (p0.x + 2), p1.z - (p0.z - 1));
+    const d1 = Math.hypot(p1.x - (p0.x + 2), p1.z - (p0.z - 2));
     if (!(d1 < 0.15)) problems.push(`tap to walk: ended ${d1.toFixed(2)}u from the tapped spot`);
 
     await camSettle();
@@ -53,6 +55,13 @@ module.exports = async function checkTouch() {
     // Tap switch stand 1 (id 0).
     const st = await R(() => { const W = window.__railhead.state.track.switches[0]; return { ...W.stand, state: W.state }; });
     sp = await R(([x, z]) => window.__railhead.toScreen(x, z, 0.6), [st.x, st.z]);
+    // (The yard is 1.6 times bigger since D15: if the stand is near the screen's edge, under the buttons, or out
+    // of view, pan to it as a player would.)
+    if (!(sp.x > 60 && sp.x < 330 && sp.y > 220 && sp.y < 744)) {
+      await R(([x, z]) => { const R = window.__railhead, P = R.state.player; R.camera.ox = x - P.x; R.camera.oz = z - P.z; }, [st.x, st.z]);
+      await camSettle();
+      sp = await R(([x, z]) => window.__railhead.toScreen(x, z, 0.6), [st.x, st.z]);
+    }
     await page.touchscreen.tap(sp.x, sp.y); await settle();
     await R(() => window.__railhead.step(80));
     const swState = await R(() => window.__railhead.state.track.switches[0].state);
@@ -60,13 +69,19 @@ module.exports = async function checkTouch() {
 
     await camSettle();
     // Tap the train: walk there, panel opens.
-    // Pick the vehicle nearest the middle of the screen.
-    sp = await R(() => {
+    // Pick the vehicle nearest the middle of the screen. (Since D15 the yard is 1.6 times bigger, so the train
+    // may be out of view from the switch stand: the camera is first turned to the train, as a player would pan.)
+    const seen = () => R(() => {
       const R = window.__railhead, S = R.state;
-      return R.trainPoses(S.track, S.trains[0]).map(v => R.toScreen(v.x, v.z, 1.1))
+      return R.trainPoses(S.track, S.trains[0]).map(v => R.toScreen(v.x, v.z, 1.1 * R.CFG.SCALE))
         .filter(p => p.x > 20 && p.x < innerWidth - 20 && p.y > 220 && p.y < innerHeight - 100)
         .sort((a, b) => Math.hypot(a.x - innerWidth / 2, a.y - innerHeight / 2) - Math.hypot(b.x - innerWidth / 2, b.y - innerHeight / 2))[0];
     });
+    sp = await seen();
+    if (!sp) {
+      await R(() => { const R = window.__railhead, S = R.state, v = R.trainPoses(S.track, S.trains[0])[0]; R.camera.ox = v.x - S.player.x; R.camera.oz = v.z - S.player.z; });
+      await camSettle(); sp = await seen();
+    }
     if (!sp) throw new Error('no part of the train is on screen to tap');
     await page.touchscreen.tap(sp.x, sp.y); await settle();
     for (let i = 0; i < 40; i++) { await R(() => window.__railhead.step(10)); if (await page.isVisible('#panel')) break; }
@@ -75,8 +90,14 @@ module.exports = async function checkTouch() {
       await page.screenshot({ path: screenshotPath('touch-panel-portrait') });
       // Send to: tap the button, then tap a track point on the siding.
       await page.tap('#actSend'); await camSettle();
-      const tgt = await R(() => { const R = window.__railhead, T = R.state.track; const E = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17); const p = R.edgeAt(T, E, E.len / 2); return { x: p.x, z: p.z, e: E.id }; });
+      const tgt = await R(() => { const R = window.__railhead, T = R.state.track; const E = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 * R.CFG.SCALE); const p = R.edgeAt(T, E, E.len / 2); return { x: p.x, z: p.z, e: E.id }; });
       sp = await R(([x, z]) => window.__railhead.toScreen(x, z, 0.2), [tgt.x, tgt.z]);
+      // (The yard is 1.6 times bigger since D15: if the siding is out of view, pan to it as a player would.)
+      if (!(sp.x > 0 && sp.y > 0 && sp.x < 390 && sp.y < 844)) {
+        await R(([x, z]) => { const R = window.__railhead, P = R.state.player; R.camera.ox = x - P.x; R.camera.oz = z - P.z; }, [tgt.x, tgt.z]);
+        await camSettle();
+        sp = await R(([x, z]) => window.__railhead.toScreen(x, z, 0.2), [tgt.x, tgt.z]);
+      }
       const onScreen = sp.x > 0 && sp.y > 0 && sp.x < 390 && sp.y < 844;
       if (onScreen) {
         await page.touchscreen.tap(sp.x, sp.y); await settle();

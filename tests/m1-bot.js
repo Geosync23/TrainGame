@@ -45,6 +45,7 @@ function botFactory(R, mem0) {
     stats: { cmds: 0, picks: 0, puts: 0, doors: 0, fuel: 0, water: 0, uncouple: 0, tickets: 0, jobTicks: 0 },
   };
   const H = 3600, M = 60;
+  const SC = R.CFG.SCALE;   // D15: places and distances in the world are x SC; people and items keep their size
   const sodOf = S => (S.time + 18000) % 86400, dayOf = S => Math.floor((S.time + 18000) / 86400);
   const I = S => S.items;
   const cm = v => Math.round(v * 100);
@@ -54,7 +55,7 @@ function botFactory(R, mem0) {
   const no1 = S => S.trains[0];
   const runOf = S => R.tt.ttRunOf(S, 0);
   const svcStop = (S, run) => S.tt.services[run.svc].stops[run.i];
-  const atHub = S => S.player.x < 100, atWF = S => S.player.x > 150;
+  const atHub = S => S.player.x < 100 * SC, atWF = S => S.player.x > 150 * SC;
   const skipped = (S, k) => mem.skip[k] !== undefined && mem.skip[k] > S.tick;
   const skip = (S, k, ticks) => { mem.skip[k] = S.tick + (ticks || 150); };
   let G = null; // fixed places, worked out once from the world (what a player sees on the map)
@@ -67,16 +68,16 @@ function botFactory(R, mem0) {
     // water on the way in and leaves from the platform), and on open ground just west of the water tower, near the
     // spout (for wood wanted there: a run that still moves to the spout before it leaves).
     const piles = [[], []];
-    for (let i = 0; i < 5; i++) { const x = hub.track.x0 - 1.0 + i * 0.7, z = hub.track.z0 - 2.9; if (open(x, z)) piles[0].push([x, z]); }
-    for (const dz of [-2.8, -3.5]) for (let i = 0; i < 3; i++) { const x = hub.water.x - 4.3 + i * 0.7, z = hub.track.z0 + dz; if (open(x, z)) piles[1].push([x, z]); }
+    for (let i = 0; i < 5; i++) { const x = hub.track.x0 - 1.0 * SC + i * 0.7, z = hub.track.z0 - 2.9 * SC; if (open(x, z)) piles[0].push([x, z]); }
+    for (const dz of [-2.8 * SC, -2.8 * SC - 0.7]) for (let i = 0; i < 3; i++) { const x = hub.water.x - 4.3 * SC + i * 0.7, z = hub.track.z0 + dz; if (open(x, z)) piles[1].push([x, z]); }
     const pile = piles[0].concat(piles[1]);
     // Where to wait for a departure: open ground west of the water tower, a few steps from its spout.
-    const stand = [[hub.water.x - 2.2, hub.track.z0 - 4.0], [hub.water.x - 3.0, hub.track.z0 - 4.0], [hub.water.x - 2.2, hub.track.z0 - 4.8]].find(([x, z]) => open(x, z)) || [hub.water.sx, hub.water.sz];
+    const stand = [[hub.water.x - 2.2 * SC, hub.track.z0 - 4.0 * SC], [hub.water.x - 3.0 * SC, hub.track.z0 - 4.0 * SC], [hub.water.x - 2.2 * SC, hub.track.z0 - 4.8 * SC]].find(([x, z]) => open(x, z)) || [hub.water.sx, hub.water.sz];
     // The dead end of the platform track (where the siding is staked) and the job's spot for materials.
     const T = S.track, ix = R.tt.trackIndex(T);
-    const end = T.nodes.filter(N => ix.nodeEdges[N.id] && ix.nodeEdges[N.id].length === 1 && N.x > -50 && N.x < 0 && Math.abs(N.z - hub.track.z0) < 0.2)[0];
+    const end = T.nodes.filter(N => ix.nodeEdges[N.id] && ix.nodeEdges[N.id].length === 1 && N.x > -50 * SC && N.x < 0 && Math.abs(N.z - hub.track.z0) < 0.2)[0];
     G = { hub, wf, bays: B.bays, pile, piles, stand, end, open,
-      wfDrop: [wf.track.x0 + 2, wf.track.z0 - 4.2], wfWait: [R.pax.paxStation('willow', T).staff.x, R.pax.paxStation('willow', T).staff.z],
+      wfDrop: [wf.track.x0 + 2 * SC, wf.track.z0 - 4.2 * SC], wfWait: [R.pax.paxStation('willow', T).staff.x, R.pax.paxStation('willow', T).staff.z],
       hubWait: [R.pax.paxStation('hub', T).staff.x, R.pax.paxStation('hub', T).staff.z] };
     return G;
   }
@@ -90,13 +91,13 @@ function botFactory(R, mem0) {
     const tr = no1(S);
     if (tr.v > 0 || tr.mode === 'route' || tr.cw > 0) return false;
     const ps = R.trainPoses(S.track, tr);
-    return ps.length > 0 && ps.every(p => p.x > -12 && p.x < 34 && Math.abs(p.z - G.hub.track.z0) < 0.6);
+    return ps.length > 0 && ps.every(p => p.x > -12 * SC && p.x < 34 * SC && Math.abs(p.z - G.hub.track.z0) < 0.6 * SC);
   }
   function no1AtWF(S) {
     const tr = no1(S); if (tr.v > 0 || tr.mode === 'route') return false;
-    const ps = R.trainPoses(S.track, tr); return ps.length > 0 && ps[0].x > 180;
+    const ps = R.trainPoses(S.track, tr); return ps.length > 0 && ps[0].x > 180 * SC;
   }
-  const fuelRoom = S => { const L = no1(S).consist.find(c => c.k === 'loco'); return L ? L.fuel <= R.tt.FUEL_CAP - 120 : false; };
+  const fuelRoom = S => { const L = no1(S).consist.find(c => c.k === 'loco'); return L ? L.fuel <= R.tt.FUEL_CAP - R.CFG.CORD_U : false; };
   const tag = (S, id) => R.cargo.itemTag(I(S).waybill[id]);
   const bizOf = (S, id) => { const k = I(S).waybill[id].consignee; return k && k.kind === 'BUSINESS' ? k.id : null; };
   const bayCount = (S, bay) => R.cargo.itemsAt(S, { kind: 'BAY', buildingId: 'freightshed', bay }).length;
@@ -104,7 +105,7 @@ function botFactory(R, mem0) {
   const PILE_KEEP = [2, 3];   // cords kept on the platform pile and on the wood stage pile
   const onPileK = (w, k) => w.kind === 'GROUND' && G.piles[k].some(([x, z]) => d2(w.x / 100, w.z / 100, x, z) < 0.3);
   const pileCount = (S, k) => alive(S, (i, w, wb) => wb.commodity === 'cordwood' && (k === undefined ? onPile(S, w) : onPileK(w, k))).length;
-  const cordsAtHub = S => alive(S, (i, w, wb) => wb.commodity === 'cordwood' && (w.kind !== 'CAR' || !carOfOurs(S, w.stockId)) && (w.kind !== 'GROUND' || w.x < 10000));
+  const cordsAtHub = S => alive(S, (i, w, wb) => wb.commodity === 'cordwood' && (w.kind !== 'CAR' || !carOfOurs(S, w.stockId)) && (w.kind !== 'GROUND' || w.x < 10000 * SC));
   const job = S => S.jobs.list[0] || null;
   // The handcart (D13: cordwood may ride it, up to 6): its tool index, whether the player pushes it, and whether a
   // spot is one it cannot reach (the platform and the dock).
@@ -115,7 +116,7 @@ function botFactory(R, mem0) {
   // Room for cords right now: in the tender (No. 1 standing at the hub) and on the piles.
   function cordRoom(S) {
     const L = no1(S).consist.find(c => c.k === 'loco');
-    const tender = no1AtHub(S) && L ? Math.floor((R.tt.FUEL_CAP - L.fuel) / 120 + 1e-9) : 0;
+    const tender = no1AtHub(S) && L ? Math.floor((R.tt.FUEL_CAP - L.fuel) / R.CFG.CORD_U + 1e-9) : 0;
     return tender + Math.max(0, PILE_KEEP[0] - pileCount(S, 0)) + Math.max(0, PILE_KEEP[1] - pileCount(S, 1));
   }
   // Where an item is, for walking (null when not on the map or not reachable).
@@ -134,7 +135,7 @@ function botFactory(R, mem0) {
     if (!(need[mat] > 0)) return null;
     const k = Math.min(j.stakes.length - 1, 1 + (alive(S, (i, w) => w.kind === 'STOCKPILE').length % 3));
     const [x, z] = j.stakes[k];
-    return { x: Math.round(x), z: Math.round(z - 150) }; // 1.5u north of a stake (away from the tracks)
+    return { x: Math.round(x), z: Math.round(z - 150 * SC) }; // 1.5u (x SC) north of a stake (away from the tracks)
   }
   function freePile(S) {
     const used = alive(S, (i, w, wb) => w.kind === 'GROUND' && wb.commodity === 'cordwood');
@@ -164,9 +165,9 @@ function botFactory(R, mem0) {
     if (t === 'WILLOW') {
       // At Willow Ford: goods for the store go to its door, but while more goods for Willow Ford are still aboard
       // No. 1 (the train waits for them: station work) they are put down beside the car first, the door later.
-      const drop = () => { const n = alive(S, (i, w2) => w2.kind === 'GROUND' && w2.x > 15000).length, P = S.player; return { x: cm(P.x + 0.5 * (n % 4) - 0.75), z: cm(P.z) }; };
+      const drop = () => { const n = alive(S, (i, w2) => w2.kind === 'GROUND' && w2.x > 15000 * SC).length, P = S.player; return { x: cm(P.x + 0.5 * (n % 4) - 0.75), z: cm(P.z) }; };
       const aboard = () => alive(S, (i, w2) => w2.kind === 'CAR' && carOfOurs(S, w2.stockId) && tag(S, i) === 'WILLOW').length;
-      if (atWF(S) || (w.kind === 'GROUND' && w.x > 15000)) return biz === 1 ? (carried && !mem.fromGround && aboard() ? drop() : { biz: 1 }) : (w.kind === 'GROUND' ? null : drop());
+      if (atWF(S) || (w.kind === 'GROUND' && w.x > 15000 * SC)) return biz === 1 ? (carried && !mem.fromGround && aboard() ? drop() : { biz: 1 }) : (w.kind === 'GROUND' ? null : drop());
       if (w.kind === 'CAR' && w.stockId === 2) return null;      // aboard No. 1, on its way
       if (no1AtHub(S)) return { stock: 2 };
       if (w.kind === 'BAY') return null;
@@ -211,7 +212,7 @@ function botFactory(R, mem0) {
       if (!(w.kind === 'CAR' || w.kind === 'BAY' || w.kind === 'GROUND')) continue;
       if (w.kind === 'CAR' && R.interchange.carryCarWhy(S, w.stockId)) continue;   // a moving car, or the Overland's crew at work
       if (w.kind === 'CAR' && w.stockId === 2 && !(no1AtHub(S) || no1AtWF(S))) continue;
-      const sp = spotOf(S, id); if (!sp || sp[0] > 100) continue;
+      const sp = spotOf(S, id); if (!sp || sp[0] > 100 * SC) continue;
       if (skipped(S, 'pick:' + id)) continue;
       const d = destOf(S, id); if (!d) continue;
       out.push({ id, d, sp });
@@ -273,7 +274,7 @@ function botFactory(R, mem0) {
     const h = held(S);
     if (h.length) return deliverTop(S);
     if (S.player.tool !== null) return null;
-    const ids = alive(S, (i, w) => ((w.kind === 'CAR' && carOfOurs(S, w.stockId) && !R.interchange.carryCarWhy(S, w.stockId)) || (w.kind === 'GROUND' && w.x > 15000)) && !skipped(S, 'pick:' + i))
+    const ids = alive(S, (i, w) => ((w.kind === 'CAR' && carOfOurs(S, w.stockId) && !R.interchange.carryCarWhy(S, w.stockId)) || (w.kind === 'GROUND' && w.x > 15000 * SC)) && !skipped(S, 'pick:' + i))
       .filter(id => tag(S, id) === 'WILLOW' && destOf(S, id))
       .sort((a, b) => (I(S).where[a].kind === 'CAR' ? 0 : 1) - (I(S).where[b].kind === 'CAR' ? 0 : 1) || a - b);   // off the train first
     if (!ids.length) return null;
@@ -288,7 +289,7 @@ function botFactory(R, mem0) {
     const why = run.why || '';
     if (/uncouple the engine/.test(why) && tr.consist.length > 1 && !skipped(S, 'uncouple')) { mem.stats.uncouple++; mem.taskKey = 'uncouple'; return send(S, { t: 'uncouple', tr: 0, at: R.tt.ttEngineJoint(tr) }, 'uncouple for the run-around'); }
     const L = tr.consist.find(c => c.k === 'loco');
-    if (/take water/.test(why) && L && L.water < 319.9 && !skipped(S, 'water')) { if (S.player.tool !== null) return held(S).length ? deliverTop(S) : toolFor(S, false); mem.stats.water++; mem.taskKey = 'water'; return send(S, { t: 'takeWater' }, 'take water'); }
+    if (/take water/.test(why) && L && L.water < R.CFG.WATER_U - 0.1 && !skipped(S, 'water')) { if (S.player.tool !== null) return held(S).length ? deliverTop(S) : toolFor(S, false); mem.stats.water++; mem.taskKey = 'water'; return send(S, { t: 'takeWater' }, 'take water'); }
     return null;
   }
   // Does the hub still owe the departing train anything (water, wood, goods for Willow Ford)?
@@ -331,7 +332,7 @@ function botFactory(R, mem0) {
     if (mem.setup === 0) mem.setup = 1;   // (before D4: retag the Outside bay for Hub goods; there is a Hub bay now)
     if (mem.setup === 1) {
       mem.setup = 2; const N = G.end;
-      return send(S, { t: 'stakeJob', from: 'node', n: N.id, tx: cm(N.x - 20), tz: cm(N.z) }, 'stake a 20u siding');
+      return send(S, { t: 'stakeJob', from: 'node', n: N.id, tx: cm(N.x - 20 * SC), tz: cm(N.z) }, 'stake a 20u (x SC) siding');
     }
     if (mem.setup === 2) { mem.setup = 3; return send(S, { t: 'useTrain', tr: 0 }, 'walk to No. 1'); }
     if (mem.setup === 3) { mem.setup = 4; return send(S, { t: 'ttAssign', tr: 0, on: true }, 'put No. 1 on the timetable'); }

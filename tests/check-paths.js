@@ -3,7 +3,8 @@
 // - From beside the depot, a tap behind it: the player walks round it, never inside a building footprint.
 // - A tap on the far side of the stopped train: the player walks round its end, never into the train.
 // - A tap inside a building: the walk ends at the nearest spot that can be reached ("blocked" message).
-// - A train moving across the path: the path is worked out again round the train, and the walk arrives.
+// - A train moving across the path: the path is worked out again round the train, and the walk arrives; crossing at
+//   several places and times, the player never ends up inside the moving train.
 // - A switch stand behind a train: the player walks round the train and throws it from within reach.
 // - Press and hold into a wall slides along it instead of stopping dead.
 // - A player inside a building (an old save) walks out to open ground.
@@ -21,7 +22,7 @@ module.exports = async function checkPaths() {
     const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=yard' });
     try {
       const r = await page.evaluate(() => {
-        const R = window.__railhead, out = {};
+        const R = window.__railhead, out = {}, SC = R.CFG.SCALE;
         const solid = buildingFootprints().filter(f => !f.flush);
         const inBuilding = (x, z) => solid.some(f => walkRectHits(f, 0, x, z, 0));
         const poses = st => [].concat(...st.trains.map(tr => R.trainPoses(st.track, tr)));
@@ -78,9 +79,9 @@ module.exports = async function checkPaths() {
         {
           let found = null;
           for (let k = 0; k <= 40 && !found; k += 2) {
-            const st = R.newState(1); st.player.x = 10; st.player.z = 10;
+            const st = R.newState(1); st.player.x = 10 * SC; st.player.z = 10 * SC;
             let straightAtStart = null, detour = false;
-            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: k, cmd: walkTo(10, 18) }], 900, (s, e, i) => {
+            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: k, cmd: walkTo(10 * SC, 18 * SC) }], 900, (s, e, i) => {
               if (i < k) return false;
               if (s.player.mode === 'to') {
                 const wp = walkPoints(s, poses(s), Infinity);
@@ -89,15 +90,23 @@ module.exports = async function checkPaths() {
               }
               return i > k && s.player.mode === 'idle';
             });
-            if (straightAtStart && detour) found = { k, inT: w.inT, left: Math.hypot(st.player.x - 10, st.player.z - 18), len: w.len, blocked: w.evs.some(e => e.t === 'blocked'), ticks: w.ticks, hash: R.stateHash(st) };
+            if (straightAtStart && detour) found = { k, inT: w.inT, left: Math.hypot(st.player.x - 10 * SC, st.player.z - 18 * SC), len: w.len, blocked: w.evs.some(e => e.t === 'blocked'), ticks: w.ticks, hash: R.stateHash(st) };
           }
           out.moving = found;
+          // 4b. The same crossing from several places along the line and start times: the moving train never runs
+          //     into the player part-way across (D15: its footprint on the walk grid reaches ahead while it moves).
+          out.sweep = [];
+          for (const sx of [2, 6, 10, 14]) for (let k = 0; k <= 60; k += 4) {
+            const st = R.newState(1); st.player.x = sx * SC; st.player.z = 10 * SC;
+            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: k, cmd: walkTo(sx * SC, 18 * SC) }], 900, (s, e, i) => i > k && s.player.mode === 'idle');
+            if (w.inT) out.sweep.push(`x ${sx * SC} start ${k}: ${w.inT} ticks`);
+          }
         }
         // 5. A switch stand behind a train: walk round the train, throw from within reach.
         {
           const st = R.newState(1), W = st.track.switches[0];
-          st.trains[0].front = { e: 0, s: 7.8, d: 1 };
-          st.player.x = W.stand.ux; st.player.z = 14 + (14 - W.stand.uz);
+          st.trains[0].front = { e: 0, s: 7.8 * SC, d: 1 };
+          st.player.x = W.stand.ux; st.player.z = 14 * SC + (14 * SC - W.stand.uz);
           let at = null;
           const w = run(st, [{ tick: 0, cmd: { t: 'useSwitch', sw: 0 } }], 400, (s, e) => {
             if (s.player.act && !at) at = Math.hypot(s.player.x - W.stand.x, s.player.z - W.stand.z);
@@ -121,7 +130,7 @@ module.exports = async function checkPaths() {
         // 7b. Pushing the handcart: a walk whose shortest way runs along the platform (the cheapest cells)
         //     goes round the platform and the dock instead (they have steps), never entering them, and arrives.
         {
-          const ax = -11.2, az = 12.3, bx = 9.2, bz = 13.6;   // from just past the platform's west end (D12: 20u long)
+          const ax = -11.2 * SC, az = 12.3 * SC, bx = 9.2 * SC, bz = 13.6 * SC;   // from just past the platform's west end (D12: 20u long; D15: x SC)
           const plain = R.newState(1); plain.player.x = ax; plain.player.z = az;
           const wp = run(plain, [{ tick: 0, cmd: walkTo(bx, bz) }], 600, idle);
           const st = R.newState(1);
@@ -136,15 +145,15 @@ module.exports = async function checkPaths() {
         // 8. Same commands twice: same positions and hash.
         {
           const once = () => {
-            const st = R.newState(1); st.player.x = 10; st.player.z = 10;
-            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: 6, cmd: walkTo(10, 18) },
+            const st = R.newState(1); st.player.x = 10 * SC; st.player.z = 10 * SC;
+            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: 6, cmd: walkTo(10 * SC, 18 * SC) },
               { tick: 120, cmd: walkTo(depot.x, depot.z - 3) }, { tick: 260, cmd: { t: 'useTrain', tr: 0, view: 32 } }], 500);
             return JSON.stringify(w.trace) + '|' + R.stateHash(st);
           };
           out.same = once() === once();
           // A save made part-way through a walk round the train carries on exactly as the unsaved game.
-          const st = R.newState(1); st.player.x = 10; st.player.z = 10;
-          run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: 6, cmd: walkTo(10, 18) }], 20);
+          const st = R.newState(1); st.player.x = 10 * SC; st.player.z = 10 * SC;
+          run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: 6, cmd: walkTo(10 * SC, 18 * SC) }], 20);
           const copy = JSON.parse(JSON.stringify(st));
           run(st, [], 80); run(copy, [], 80);
           out.resume = R.stateHash(st) === R.stateHash(copy) && st.player.mode === 'idle';
@@ -200,6 +209,7 @@ module.exports = async function checkPaths() {
       if (i.mode !== 'idle' || !(i.gap < 0.9)) problems.push(`tap inside a building: the walk ended ${i.gap.toFixed(2)}u from the depot (mode ${i.mode}); expected the nearest spot`);
       if (!i.blocked) problems.push('tap inside a building: no "Something is in the way" message');
       const m = r.moving;
+      if (r.sweep.length) problems.push(`moving train: the train ran into the player crossing in front of it (${r.sweep.join('; ')})`);
       if (!m) problems.push('a train moving across the path: no start time gave a path that changed round the train');
       else {
         if (m.inT) problems.push(`moving train: the player was inside the train on ${m.inT} ticks`);

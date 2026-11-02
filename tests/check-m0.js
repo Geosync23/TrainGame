@@ -38,14 +38,14 @@ module.exports = async function checkM0() {
   try {
     // ---- 2 and 3 (second half): the sim on its own, from fresh states ----
     const sim = await page.evaluate(() => {
-      const R = window.__railhead, out = {};
+      const R = window.__railhead, out = {}, SC = R.CFG.SCALE;
       const run = (S, cmds, max, until) => { const evs = []; for (let i = 0; i < max; i++) { const e = R.simTick(S, i === 0 ? cmds : []); evs.push(...e); if (until && until(S, e)) break; } return evs; };
       const leadOf = (S, tr) => tr.m > 0 ? tr.front : R.trackWalk(S.track, { e: tr.front.e, s: tr.front.s, d: -tr.front.d }, R.trainLength(tr)).pos;
 
       // Yard move to the middle of the passing siding.
       let S = R.newState(1);
       const T = S.track;
-      const siding = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 && T.nodes[E.b].z > 17);
+      const siding = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 * SC && T.nodes[E.b].z > 17 * SC);
       const visited = [];
       const evs = run(S, [{ t: 'trainSendTo', tr: 0, e: siding.id, s: Math.round(siding.len / 2 * 1000) }], 20000, (st, e) => {
         const l = leadOf(st, st.trains[0]).e; if (visited[visited.length - 1] !== l) visited.push(l);
@@ -105,33 +105,34 @@ module.exports = async function checkM0() {
 
     // ---- 1: the loop with a passing siding and two switches, laid in the running game ----
     const built = await page.evaluate(() => {
-      const R = window.__railhead, S = R.state, T = () => R.state.track, out = { steps: [] };
-      const h = v => Math.round(v * 100);
-      const nodeAt = (x, z) => T().nodes.find(N => Math.hypot(N.x - x, N.z - z) < 1e-6).id;
+      const R = window.__railhead, S = R.state, T = () => R.state.track, out = { steps: [] }, SC = R.CFG.SCALE;
+      // The M0 loop's places, grown with the world (D15: curve radii and the yard are x SC).
+      const h = v => Math.round(v * SC * 100), at = v => Math.round(v * SC * 100) / 100, near = (a, v) => Math.abs(a - at(v)) < 1e-6;
+      const nodeAt = (x, z) => T().nodes.find(N => Math.hypot(N.x - at(x), N.z - at(z)) < 1e-6).id;
       const lay = (cmd) => { saveTimer = 0; R.send({ t: 'buildTrack', ...cmd }); R.step(1); out.steps.push(saveTimer !== 0); };
       const e0 = T().edges.length, sw0 = T().switches.length;
       lay({ from: 'free', x: h(-20), z: h(30), h: 0, tx: h(20), tz: h(30) });          // south straight, 40u
       lay({ from: 'node', n: nodeAt(20, 30), tx: h(20), tz: h(54) });                  // east half circle
       lay({ from: 'node', n: nodeAt(20, 54), tx: h(-20), tz: h(54) });                 // north straight
       lay({ from: 'node', n: nodeAt(-20, 54), tx: h(-20), tz: h(30) });                // west half circle, closes the loop
-      const bottom = T().edges.find(E => E.id >= e0 && E.k === 'S' && T().nodes[E.a].z === 30 && T().nodes[E.b].z === 30).id;
-      lay({ from: 'switch', e: bottom, s: 3000, fwd: 1, side: 1, tx: h(0), tz: h(26) }); // switch A, siding towards (0, 26)
-      const nr = R.trackNearest(T(), 17, 30), Eb = T().edges[nr.e], fwdB = T().nodes[Eb.b].x > T().nodes[Eb.a].x ? -1 : 1;
+      const bottom = T().edges.find(E => E.id >= e0 && E.k === 'S' && near(T().nodes[E.a].z, 30) && near(T().nodes[E.b].z, 30)).id;
+      lay({ from: 'switch', e: bottom, s: Math.round(3000 * SC), fwd: 1, side: 1, tx: h(0), tz: h(26) }); // switch A, siding towards (0, 26)
+      const nr = R.trackNearest(T(), at(17), at(30)), Eb = T().edges[nr.e], fwdB = T().nodes[Eb.b].x > T().nodes[Eb.a].x ? -1 : 1;
       lay({ from: 'switch', e: nr.e, s: Math.round(nr.s * 1000), fwd: fwdB, side: -1, tx: h(0.2), tz: h(26.1) }); // switch B joins the siding
       out.saveStarted = out.steps.every(Boolean);
       out.newSwitches = T().switches.length - sw0;
       out.errs = R.trackValidate(T());
-      const ends = T().nodes.filter(N => N.z > 20 && T().edges.filter(E => E.a === N.id || E.b === N.id).length === 1);
+      const ends = T().nodes.filter(N => N.z > 20 * SC && T().edges.filter(E => E.a === N.id || E.b === N.id).length === 1);
       out.looseEnds = ends.length;
       // The ground under every new edge was rebuilt flat.
       let bumps = 0;
       for (const E of T().edges.slice(e0)) for (let i = 0; i <= 20; i++) { const p = R.edgeAt(T(), E, E.len * i / 20); if (terrainHeight(p.x, p.z) !== 0) bumps++; }
       out.bumps = bumps;
       // A yard move over the new loop: No. 1 is put on the north straight (test only) and sent to the siding.
-      const sid = T().edges.find(E => E.id >= e0 && E.k === 'S' && E.cls === 'yard' && [E.a, E.b].some(n => Math.abs(T().nodes[n].x) < 1e-6 && Math.abs(T().nodes[n].z - 26) < 1e-6));
-      const top = T().edges.find(E => E.id >= e0 && E.k === 'S' && T().nodes[E.a].z === 54 && T().nodes[E.b].z === 54);
+      const sid = T().edges.find(E => E.id >= e0 && E.k === 'S' && E.cls === 'yard' && [E.a, E.b].some(n => Math.abs(T().nodes[n].x) < 1e-6 && near(T().nodes[n].z, 26)));
+      const top = T().edges.find(E => E.id >= e0 && E.k === 'S' && near(T().nodes[E.a].z, 54) && near(T().nodes[E.b].z, 54));
       const tr = S.trains[0];
-      tr.front = { e: top.id, s: 20, d: 1 }; tr.v = 0; tr.mode = 'idle'; tr.route = null;
+      tr.front = { e: top.id, s: 20 * SC, d: 1 }; tr.v = 0; tr.mode = 'idle'; tr.route = null;
       R.send({ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) });
       let arrived = false;
       for (let i = 0; i < 4000 && !arrived; i++) { R.step(1); arrived = tr.mode === 'idle' && tr.status === 'Arrived'; }
@@ -140,7 +141,7 @@ module.exports = async function checkM0() {
       out.turnedOff = T().switches.slice(sw0).some(W => W.state === 'R');
       // Track drawn from open ground (north, inside the oval) into the depot shows red.
       const dep = buildingFootprints().find(f => f.kind === 'depot');
-      const plan = buildPlan(S, { t: 'buildTrack', from: 'free', x: h(dep.x), z: h(dep.z - 8), h: 90000, tx: h(dep.x), tz: h(dep.z - 1) });
+      const plan = buildPlan(S, { t: 'buildTrack', from: 'free', x: Math.round(dep.x * 100), z: Math.round((dep.z - 8 * SC) * 100), h: 90000, tx: Math.round(dep.x * 100), tz: Math.round((dep.z - 1) * 100) });
       out.depotWhy = plan.ok ? null : plan.why;
       return out;
     });
@@ -180,7 +181,7 @@ module.exports = async function checkM0() {
       // The player walks towards the nearest hill and is stopped at its foot.
       const P = R.state.player;
       let best = null;
-      for (let x = -60; x <= 60; x += 1) for (let z = -60; z <= 60; z += 1) if (terrainHeight(x, z) > 1) { const d = Math.hypot(x - P.x, z - P.z); if (!best || d < best.d) best = { x, z, d }; }
+      const M = 60 * R.CFG.SCALE; for (let x = -M; x <= M; x += 1) for (let z = -M; z <= M; z += 1) if (terrainHeight(x, z) > 1) { const d = Math.hypot(x - P.x, z - P.z); if (!best || d < best.d) best = { x, z, d }; }
       out.hill = best;
       R.send({ t: 'walkTo', x: Math.round(best.x * 100), z: Math.round(best.z * 100) });
       let maxH = 0;
@@ -232,7 +233,7 @@ module.exports = async function checkM0() {
       for (const [name, t] of [['noon', 7 * 3600], ['night', 18 * 3600]]) {
         const dc = await g.page.evaluate((t) => new Promise(res => {
           const R = window.__railhead, P = R.state.player;
-          R.state.time = t; R.camera.zoom = 0.8; R.camera.ox = -2 - P.x; R.camera.oz = 8 - P.z;
+          const k = R.CFG.SCALE; R.state.time = t; R.camera.zoom = 0.8 / k; R.camera.ox = -2 * k - P.x; R.camera.oz = 8 * k - P.z; // the M0 framing, grown (D15)
           requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => res(R.drawCalls))));
         }), t);
         await g.page.waitForTimeout(200);

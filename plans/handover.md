@@ -1,4 +1,28 @@
-# Handover (updated 2026-11-01 by the second lead session)
+# Handover (updated 2026-11-02 by the third lead session)
+
+## Start here: the end-of-M1 review is answered (D14)
+The designer answered the review (https://claude.ai/artifact/CKNAh874bKoJ1EZWAX9zEB; raw answers in its database, collection `answers`, document `m1-review`, readable with the ArtifactData tool). Recorded as D14 in design-doc section 0. In short: M1 is "not yet" right; they retest after a fix round. Playtest gate: later, not now. Next after the fix round: plan M2.
+
+The designer's own words (notes on the page), kept here because they matter for the plan:
+- "the platform is way too small. the entire scale of the game is too small. The roof on the platform also prevents it from being easy to read."
+- Map size: "needs to be larger ... scale it all up."
+- "I want to be able to see into the train cars when we enter them. a cutaway view. the trains should also be larger the whole game needs to be scaled up"
+- Walking across track: change, "we need to get the core loop going and this is needed" (read as: build crossings and make track impassable elsewhere, design-doc 11).
+- Departure board: "make it both" (the card and a board in the world).
+- "please also remove platform clipping and scale as talked about above then i will retest" (read as the backlog item: feet sink into the platform and dock; confirm in the plan survey).
+Everything else on the page was Keep; hand-building stays at about 3 real minutes.
+
+## YOUR JOB: the fix-round plan (plan before building)
+Write a short plan for the M1 fix round and publish it with a survey (house rule: a choice per question, your suggestion marked, a note box, answers saved in the page's database; copy the pattern of plans/m1-review.html). Do not build until the designer agrees. Questions the plan must settle with the designer:
+1. How much bigger: one scale factor for people, trains, buildings and platform together, or separate ones; and how much larger the map (and so the 10-mile spur). Investigate first how sizes are set in index.html (units, walk grid cell size, camera zoom range D3 0.6x to 4x, track geometry, switch radius, 3.41u track spacing, speeds and timetable times, which all depend on distances). Scaling touches saves: old saves must still load (CLAUDE.md), so propose how (convert, or start fresh with a note).
+2. The platform roof: hide it when the player is under it or near it, make it see-through, or remove it.
+3. Cutaway into cars: when the player boards, hide the car's roof (and near wall?) and show the player and travellers inside.
+4. Crossings: where (platform ends, grade crossings at roads), and whether the player can still throw switches from beside the track.
+5. Confirm "platform clipping" means the feet sinking into the platform.
+6. The departure board in the world: where it stands.
+Then build in pieces (one piece at a time, review each, or as the designer chooses), with helpers inside this session (house rule). Mind draw calls (busy scene now 73 with the tutorial marker; budget 100).
+
+## Older notes (from the second lead session, still useful)
 
 Read this, then CLAUDE.md (house rules at the end of "My rules" and "Memory and handover": questions always as an interactive survey with answers saved on the page; workers stay inside the lead session; the lead hands over on its own by starting the new lead session), DEV_NOTES.md, design-doc.md section 0 (D1 to D12) and plans/m1-team-plan.md.
 

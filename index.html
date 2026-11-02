@@ -133,6 +133,21 @@
     #toast, #banner { top: calc(env(safe-area-inset-top) + 10px); }
     #toast.below { top: calc(env(safe-area-inset-top) + 82px); }
   }
+  /* The investor's tutorial (D2): the current task chip under the Build button, and its telegram card. */
+  #tutTask { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 108px); display: grid; justify-items: end; gap: 6px;
+    max-width: min(64vw, 300px); }
+  #tutChip { max-width: 100%; text-align: left; font-size: 14px; line-height: 1.2; padding: 4px 10px; border-left: 7px solid #c69a2c;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tutChip small { display: block; font-size: 12px; font-weight: 400; color: #5a4a3a; }
+  #tutChip.pulse { animation: tutPulse 1.2s ease-in-out 3; }
+  @keyframes tutPulse { 50% { background: #f6d98a; } }
+  #tutCard { box-sizing: border-box; width: min(64vw, 300px); background: var(--paper); border: 2px solid var(--edge); border-left: 7px solid #c69a2c;
+    border-radius: 8px; padding: 8px 10px; color: var(--ink); font-size: 14px; line-height: 1.3; max-height: 60vh; overflow-y: auto; }
+  #tutCard b { display: block; font-size: 15px; } #tutCard small { display: block; color: #5a4a3a; margin-bottom: 4px; }
+  #tutCard p { margin: 4px 0 8px; }
+  #tutBtns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  #tutBtns button { font-size: 14px; }
+  @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } #tutCard { width: 300px; max-height: calc(100vh - 140px); } }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -156,6 +171,10 @@
 <button id="buildBtn" class="hud" aria-pressed="false">Build</button>
 <div id="buildLabel" class="hud" role="status" aria-live="polite" hidden></div>
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
+<div id="tutTask" class="hud" hidden>
+  <button id="tutChip" aria-expanded="false"><small>Current task</small><span id="tutChipText"></span></button>
+  <div id="tutCard" role="dialog" aria-label="Telegram" hidden><small id="tutFrom"></small><b id="tutTitle"></b><p id="tutBody"></p><div id="tutBtns"></div></div>
+</div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
 <div id="paxDesk" class="hud" role="status" aria-live="polite" hidden><span id="paxDeskText"></span><button id="paxLeave">Leave</button></div>
@@ -188,7 +207,7 @@
 // ==== Section: config ====
 // Tunable numbers, named as in design-doc.md. Units: u (world units), game minutes, game seconds.
 const CFG = {
-  SCHEMA_VERSION: 11,
+  SCHEMA_VERSION: 12,
   SEED: 1866,
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 10,      // at 1x
@@ -676,6 +695,7 @@ function newState(seed, world) {
     town: townNewState(),            // the placeholder towns' businesses: stock and use (section "town")
     pax: paxNewStore(seed),          // travellers at the stations and aboard (section "passengers")
     tg: tgNewStore(),                // the telegram inbox (section "telegrams and alerts")
+    tut: tutNewState(world === 'yard'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard
   };
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
@@ -833,6 +853,7 @@ function applyCommand(S, c, ev) {
     case 'useDesk': { const k = econDeskSpot(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'desk' }; P.act = null; P.run = false; break; }
     case 'tgRead': tgReadCmd(S, c, ev); break;           // telegrams (section "telegrams and alerts")
     case 'tgAnswer': tgAnswerCmd(S, c, ev); break;
+    case 'tutorialSkip': tutSkipCmd(S, ev); break;      // the tutorial's Skip tutorial button (section "tutorial")
     case 'econOrder': econOrderCmd(S, c, ev); break;     // economy: orders, contracts and the credit line by telegraph
     case 'contractAccept': econContractCmd(S, c, ev, true); break;
     case 'contractDecline': econContractCmd(S, c, ev, false); break;
@@ -4578,6 +4599,150 @@ function tgCheckSaveShape(st) {
   for (const g of G.list) if (!g || !Number.isInteger(g.id) || g.id >= G.next || typeof g.title !== 'string' || typeof g.read !== 'boolean' || (g.buttons !== null && !Array.isArray(g.buttons))) bad();
 }
 
+// ==== Section: tutorial ====
+// Owner: M1 package 8 (builder D2, design-doc 16 "Onboarding", D13). The investor's tutorial for days 1 and 2:
+// telegrams from the Eastern investor, one step at a time, each with a goal read from the game's own events.
+// Pure simulation: no three.js, no page elements (the page draws the hint marker and the "Task" chip).
+//
+// S.tut:
+//   done     true once the tutorial is over (finished or skipped). Old saves and test-yard games load with done.
+//   skipped  true when the player tapped Skip tutorial
+//   step     the step whose telegram was sent last (index into TUT_STEPS), -1 before the first telegram
+//   tg       that telegram's id (-1 before)
+//   got      bit mask of the goals met so far (TUT_GOT), recorded from the events of every tick, in any order
+//            (the welcome's goal, 'read', is its OK button: reading it alone does not move on, so Skip stays in view)
+//   tickets  tickets sold at the hub's window since the game began (the tickets goal wants TUT.TICKETS)
+//   item     the first item taken off one of the Overland's set-out cars (-1 before), named by the later steps
+// The steps run in order. When the goal of the step in hand is met, the next step whose goal is not met yet sends
+// its telegram (a goal met early, such as a switch thrown before it was asked, skips its telegram).
+// Delivering an item at a door also counts as sorting, so a player who carried goods straight to the door is not stuck.
+// Command: { t: 'tutorialSkip' } (the first telegram's Skip tutorial button): the tutorial ends at once.
+// Events: tutStep { step, key }, tutDone { skipped }, tutRefused { why }.
+// tutTarget(S) -> { x, z, k } or null: where the hint marker stands for the step in hand (page side).
+const TUT = { FROM: 'E. Hartwell, Boston', TICKETS: 3 };
+const TUT_GOT = { read: 1, accept: 2, order: 4, sw: 8, tickets: 16, unload: 32, sort: 64, deliver: 128 };
+const tutHubBiz = id => { const b = TOWN_BUSINESSES.find(x => x.id === id); return !!b && b.townId === 0; };
+function tutNewState(done) { return { done: !!done, skipped: false, step: -1, tg: -1, got: 0, tickets: 0, item: -1 }; }
+// The soonest order for a hub contract still on its way, or null (for "your goods come on ...").
+function tutOrderDue(S) {
+  const E = S.econ, o = E.orders.filter(o => o.lines.some(l => l.contract !== null && E.contracts[l.contract] && tutHubBiz(E.contracts[l.contract].counterparty)));
+  return o.length ? Math.min(...o.map(o => o.due)) : null;
+}
+// The Overland's set-out cars standing on the interchange with goods in them: [{ stock, x, z }].
+function tutSetOutCars(S) {
+  const tr = S.trains.find(t => t.owner === 'interchange');
+  if (!tr || trainOff(tr)) return [];
+  const ps = trainPoses(S.track, tr);
+  return tr.consist.map((c, i) => ({ stock: c.id, x: ps[i] ? ps[i].x : 0, z: ps[i] ? ps[i].z : 0 })).filter(c => itemsAt(S, { kind: 'CAR', stockId: c.stock }).length > 0);
+}
+const tutItemTag = S => { const U = S.tut, I = S.items; return U.item >= 0 && I.waybill[U.item] ? itemTag(I.waybill[U.item]) : null; };
+// The business the goods are for: the first unloaded item's consignee, else the first open hub contract's.
+function tutBiz(S) {
+  const U = S.tut, wb = U.item >= 0 ? S.items.waybill[U.item] : null;
+  let id = wb && wb.consignee && wb.consignee.kind === 'BUSINESS' ? wb.consignee.id : null;
+  if (id === null) { const k = S.econ.contracts.find(k => (k.status === 'ACTIVE' || k.status === 'LATE') && tutHubBiz(k.counterparty)); if (k) id = k.counterparty; }
+  const b = id !== null ? TOWN_BUSINESSES.find(x => x.id === id) : null;
+  return b ? { id, name: b.name } : null;
+}
+// The steps, in order. got: the goal's bit (null for the last step, which only says well done). body(S): its text
+// when sent (period voice, short, plain; read on a phone).
+const TUT_STEPS = [
+  { key: 'welcome', got: TUT_GOT.read, title: 'Welcome to the Calder Valley',
+    body: S => `You have the line, engine No. 1 and ${econMoney(S.econ.cash)} of my money. For two days I will wire you what to do first, one thing at a time. Tap OK to begin. If you know railroading already, tap Skip tutorial. HARTWELL`,
+    buttons: [{ label: 'OK', cmd: null }, { label: 'Skip tutorial', cmd: { t: 'tutorialSkip' } }] },
+  { key: 'accept', got: TUT_GOT.accept, title: 'Take a contract',
+    body: () => 'Contracts pay. The Hub General Store wants flour. Walk to the depot, tap the telegraph key in its window (or the office desk), open Contracts and accept the store\'s offer. HARTWELL' },
+  { key: 'order', got: TUT_GOT.order, title: 'Order the goods',
+    body: S => `Now buy what the contract needs from the Overland market: on the contract, tap its order button, then Send order. Wired now, the goods come on the Overland of ${econWhen(econNextVisit(S.time))}. HARTWELL` },
+  { key: 'switch', got: TUT_GOT.sw, title: 'Throw a switch',
+    body: () => 'While you wait: a switch sends a train one way or the other. Walk to the marked switch stand and tap it. Its disc shows green for straight, red for the turn-off. Throw it back the same way. HARTWELL' },
+  { key: 'tickets', got: TUT_GOT.tickets, title: `Sell ${TUT.TICKETS} tickets`,
+    body: () => `Travellers come to the depot for the Willow Ford train. Stand at the ticket window and sell ${TUT.TICKETS} tickets. A traveller left an hour without one walks off. HARTWELL` },
+  { key: 'unload', got: TUT_GOT.unload, title: 'Unload your first car',
+    body: S => {
+      if (tutSetOutCars(S).length) return 'Your goods stand in a car on the interchange track. Walk to it, tap it and take one item out. HARTWELL';
+      const due = tutOrderDue(S);
+      return `Your goods come on the Overland${due !== null ? ' of ' + econWhen(due) : ''} and are left in a car on the interchange track. When it is in, tap the car and take one item out. HARTWELL`;
+    } },
+  { key: 'sort', got: TUT_GOT.sort, title: 'Sort it in the freight shed',
+    body: S => { const t = tutItemTag(S), T = t && CARGO_TAGS[t];
+      return `Good. Carry it to the freight shed and put it in the bay marked ${T ? T.letter + ' (' + T.name + ')' : 'with the same letter as its tag'}. Goods kept by their tags are quickly found. HARTWELL`; } },
+  { key: 'deliver', got: TUT_GOT.deliver, title: 'Deliver to the store',
+    body: S => { const b = tutBiz(S);
+      return `Now take it from the bay to the door of the ${b ? b.name : 'business on its waybill'}. The buyer pays the moment it is in their hands. HARTWELL`; } },
+  { key: 'done', got: null, title: 'You have the way of it',
+    body: () => 'Contracts, orders, switches, tickets and freight: well done. Put No. 1 on the timetable (tap her) and keep her tender in wood and water. I will wire when there is news. HARTWELL' },
+];
+function tutSend(S, i, ev) {
+  const U = S.tut, st = TUT_STEPS[i];
+  const r = telegramSend(S, { from: TUT.FROM, title: st.title, body: st.body(S), buttons: st.buttons || null, kind: 'tutorial', ref: { kind: 'tutorial', step: i } }, ev);
+  U.step = i; U.tg = r.ok ? r.id : -1;
+  ev.push({ t: 'tutStep', step: i, key: st.key });
+  if (st.got === null) { U.done = true; ev.push({ t: 'tutDone', skipped: false }); }
+}
+// Step 9b of the sim tick (after the telegrams): record the goals met this tick, then move on when the step's is met.
+function tutTick(S, ev) {
+  const U = S.tut;
+  if (!U || U.done || !S.tg) return;
+  for (const e of ev) {
+    if (e.t === 'contractAccepted') { const k = S.econ.contracts[e.id]; if (k && tutHubBiz(k.counterparty)) U.got |= TUT_GOT.accept; }
+    else if (e.t === 'orderPlaced') { const o = S.econ.orders.find(o => o.id === e.id); if (o && o.lines.some(l => l.contract !== null && tutHubBiz(S.econ.contracts[l.contract].counterparty))) U.got |= TUT_GOT.order; }
+    else if (e.t === 'switchThrown') U.got |= TUT_GOT.sw;
+    else if (e.t === 'ticketSold' && e.st === 'hub') { U.tickets++; if (U.tickets >= TUT.TICKETS) U.got |= TUT_GOT.tickets; }
+    else if (e.t === 'itemMoved' && e.from && e.from.kind === 'CAR' && e.from.stockId >= OVERLAND.FIRST_STOCK) { U.got |= TUT_GOT.unload; if (U.item < 0) U.item = e.id; }
+    else if (e.t === 'itemMoved' && e.to && e.to.kind === 'BAY' && !e.mismatch) U.got |= TUT_GOT.sort;
+    else if (e.t === 'bizDelivered') U.got |= TUT_GOT.deliver | TUT_GOT.sort;
+  }
+  if (U.step < 0) { tutSend(S, 0, ev); return; }
+  if (U.step === 0) { const g = tgGet(S, U.tg); if (!g || g.answered !== null) U.got |= TUT_GOT.read; }   // the welcome: OK tapped
+  if (!(U.got & TUT_STEPS[U.step].got)) return;
+  let i = U.step + 1;
+  while (TUT_STEPS[i].got !== null && (U.got & TUT_STEPS[i].got)) i++;
+  tutSend(S, i, ev);
+}
+function tutSkipCmd(S, ev) {
+  const U = S.tut;
+  if (!U || U.done) { ev.push({ t: 'tutRefused', why: 'The tutorial is already over' }); return; }
+  U.done = true; U.skipped = true;
+  ev.push({ t: 'tutDone', skipped: true });
+}
+// The step in hand (its index, key and title), or null when the tutorial is over or not begun. For the page's chip.
+function tutCurrent(S) {
+  const U = S.tut;
+  if (!U || U.done || U.step < 0) return null;
+  return { step: U.step, key: TUT_STEPS[U.step].key, title: TUT_STEPS[U.step].title, tg: U.tg };
+}
+// Where the hint marker stands for the step in hand: { x, z, k } or null (none for the welcome, or while a car is awaited).
+function tutTarget(S) {
+  const c = tutCurrent(S);
+  if (!c || c.step < 1) return null;
+  const P = S.player;
+  if (c.key === 'accept' || c.key === 'order') { const k = econTelegraphKey(); return { x: k.x, z: k.z, k: 'telegraph' }; }
+  if (c.key === 'switch') {
+    const occ = occupiedSwitches(S);
+    const sw = S.track.switches.map((W, id) => ({ id, W })).filter(o => !switchLockReason(S, o.id, occ) && Math.abs(o.W.stand.ux - P.x) < 80)
+      .sort((a, b) => Math.hypot(a.W.stand.ux - P.x, a.W.stand.uz - P.z) - Math.hypot(b.W.stand.ux - P.x, b.W.stand.uz - P.z) || a.id - b.id)[0];
+    return sw ? { x: sw.W.stand.ux, z: sw.W.stand.uz, k: 'switch', sw: sw.id } : null;
+  }
+  if (c.key === 'tickets') { const K = paxStation(S.track, 'hub'); return K ? { x: K.staff.x, z: K.staff.z, k: 'window' } : null; }
+  if (c.key === 'unload') { const car = tutSetOutCars(S)[0]; return car ? { x: car.x, z: car.z, k: 'car', stock: car.stock } : null; }
+  if (c.key === 'sort') {
+    const B = BLD_BAYS.freightshed, t = tutItemTag(S), tags = S.bayTags.freightshed;
+    if (!B || !tags) return null;
+    let b = t ? tags.indexOf(t) : -1;
+    if (b < 0) b = Math.max(0, tags.indexOf('ANY'));
+    return { x: B.bays[b].x, z: B.bays[b].z, k: 'bay', bay: b };
+  }
+  if (c.key === 'deliver') { const b = tutBiz(S), d = b && townDoor(b.id); return d ? { x: d.x, z: d.z, k: 'door', biz: b.id } : null; }
+  return null;
+}
+// Shape check for the saved tutorial (when a save is loaded). Throws on damage.
+function tutCheckSaveShape(st) {
+  const U = st.tut, int = Number.isInteger;
+  if (!U || typeof U !== 'object' || typeof U.done !== 'boolean' || typeof U.skipped !== 'boolean' || !int(U.step) || U.step < -1 || U.step >= TUT_STEPS.length
+    || !int(U.tg) || !int(U.got) || !int(U.tickets) || !int(U.item)) throw new Error('damaged save: the tutorial');
+}
+
 // ==== Section: sim tick ====
 // One fixed step of 8 game seconds, in the system order of section 19 (the parts built so far).
 function simTick(S, cmds) {
@@ -4597,6 +4762,7 @@ function simTick(S, cmds) {
   townTick(S, ev);                                      // 8b. towns: businesses use goods each hour, offer contracts at 07:00
   paxTick(S, ev, poseCache);                            // 8. travellers: arriving, the ticket queue, boarding and stepping off (section "passengers")
   tgTick(S, ev);                                        // 9. telegrams for this tick's events and new alerts (section "telegrams and alerts")
+  tutTick(S, ev);                                       // 9b. the investor's tutorial: goals met, the next telegram (section "tutorial")
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
 }
@@ -4687,6 +4853,11 @@ function migrate(save) {
     st.tg = tgNewStore();
     st.schemaVersion = 11;
   }
+  if (st.schemaVersion === 11) {
+    // 11 -> 12 (tutorial, D2): an old game is past its first days, so its tutorial counts as done (no telegrams).
+    st.tut = tutNewState(true);
+    st.schemaVersion = 12;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -4723,6 +4894,7 @@ function checkSaveShape(st) {
   townCheckSaveShape(st);
   paxCheckSaveShape(st);
   tgCheckSaveShape(st);
+  tutCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -8213,6 +8385,7 @@ function updateHud() {
   jobSignHud();
   townSignHud();
   paxHud();
+  tutHud();
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -8295,6 +8468,50 @@ function ttCardHud() {
     if (x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4) show = false;
   }
   card.style.visibility = show ? 'visible' : 'hidden';
+}
+
+// ---- The investor's tutorial (D2): the current task chip and its telegram card ----
+// The chip under the Build button names the step in hand ("Current task") and pulses when a new step's telegram
+// comes; a tap opens the card with that telegram (with its OK and Skip tutorial buttons while unanswered) and
+// marks it read. The brass marker in the world (tutDraw) stands over the place the step needs.
+const tutUi = { sig: '', open: false, step: -2 };
+function tutHud() {
+  const c = tutCurrent(S), box = $('tutTask');
+  if (!c) { if (!box.hidden) { box.hidden = true; tutUi.open = false; tutUi.sig = ''; tutUi.step = -2; } return; }
+  box.hidden = false;
+  if (c.step !== tutUi.step) {
+    tutUi.step = c.step; $('tutChipText').textContent = c.title;
+    const ch = $('tutChip'); ch.classList.remove('pulse'); void ch.offsetWidth; ch.classList.add('pulse');
+  }
+  const g = tgGet(S, c.tg), sig = c.step + ':' + tutUi.open + ':' + (g ? g.answered + ':' + g.body : '');
+  if (sig === tutUi.sig) return;
+  tutUi.sig = sig;
+  $('tutCard').hidden = !tutUi.open || !g; $('tutChip').setAttribute('aria-expanded', String(tutUi.open));
+  if (!tutUi.open || !g) return;
+  $('tutFrom').textContent = 'Telegram from ' + g.from; $('tutTitle').textContent = g.title; $('tutBody').textContent = g.body;
+  const bt = $('tutBtns'); bt.textContent = '';
+  const add = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); bt.appendChild(b); };
+  const shut = () => { tutUi.open = false; tutUi.sig = ''; };
+  if (g.buttons && g.answered === null) g.buttons.forEach((b, i) => add(b.label, () => { send({ t: 'tgAnswer', id: g.id, b: i }); shut(); }));
+  else add('Close', shut);
+}
+$('tutChip').addEventListener('click', () => {
+  tutUi.open = !tutUi.open; tutUi.sig = '';
+  const c = tutCurrent(S), g = c && tgGet(S, c.tg);
+  if (tutUi.open && g && !g.read) send({ t: 'tgRead', id: g.id });
+});
+// The hint marker: a brass diamond turning and bobbing over the place the step in hand needs (one draw call).
+let tutMark = null;
+function tutDraw() {
+  const t = tutTarget(S);
+  if (!t) { if (tutMark) tutMark.visible = false; return; }
+  if (!tutMark) {
+    tutMark = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), new THREE.MeshBasicMaterial({ color: PAL.brass }));
+    tutMark.scale.y = 1.6; tutMark.name = 'tutMark'; scene.add(tutMark);
+  }
+  tutMark.visible = true;
+  tutMark.position.set(t.x, terrainHeight(t.x, t.z) + 3.6 + Math.sin(animT * 3) * 0.15, t.z);
+  tutMark.rotation.y = animT * 1.5;
 }
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
@@ -8627,6 +8844,7 @@ function render(alpha, dt) {
   applyDaylight(S, dt);
   updateCrowd(dt);
   paxDraw(alpha, dt);     // travellers, in the crowd's meshes (section "people (crowd)")
+  tutDraw();              // the tutorial's hint marker (section "HUD and panels")
   debugUpdate(dt);
   renderer.info.reset(); // once per frame: drawCalls then counts the shadow pass and the main pass
   renderer.render(scene, camera);
@@ -8685,6 +8903,7 @@ window.__railhead = {
   // A new game in the page's world: ?world=yard (the M0 test yard, for the checks written for it) or the real start.
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
+  tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   econ: { ECON, ECON_CATEGORIES, ECON_BUSINESSES, ECON_ORDERABLE, econNewState, econPost, econCheckMoney, econTelegraphKey, econNextVisit, econPack,

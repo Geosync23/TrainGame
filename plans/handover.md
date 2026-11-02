@@ -20,5 +20,5 @@ Read this, then CLAUDE.md (house rules at the end of "My rules" and "Memory and 
 - The cloud test machine draws without a graphics chip; frame times there mean nothing for phones.
 - cdnjs is blocked on the test machine; tests serve three.js r128 from node_modules.
 - Draw calls: busy scenes 44 to 63 (budget under 100).
-- The playable link (https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc) still shows the end-of-M0 build; the designer has not asked for it to be updated.
+- Playable link of M1 so far (D13): https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s (published 2026-11-02 from the team branch after round D3/D4; title "Railhead Piece 1"). The old M0 link https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc still shows the end-of-M0 build. index.html is now about 537KB: a helper must read the whole page file before publishing, which fills most of one helper's memory, so republishing to the same URL needs one helper per publish with nothing else to read.
 - GitHub says the repository moved to https://github.com/Geosync23/TrainGame.git; pushes to the old address still work.

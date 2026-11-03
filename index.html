@@ -222,7 +222,7 @@
   #hintBtn { font-size: 14px; padding: 0 10px; }
   /* Landscape: the toggle beside the chip, not under it, so the alerts below keep their room. */
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { display: flex; justify-content: flex-end; align-items: stretch; max-width: min(64vw, 440px); }
-    #hintBtn { order: -1; flex: none; } #tutChip { min-width: 0; } }
+    #tutTask .tools { order: -1; flex: none; } #tutChip { min-width: 0; } }
   #hintBtn[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-left: 7px solid #ff7a1a; }
   #guideLabel { left: 0; top: 0; pointer-events: none; max-width: min(70vw, 280px); box-sizing: border-box; background: var(--paper); color: var(--ink);
     border: 2px solid #b04a08; border-left: 7px solid #ff7a1a; border-radius: 8px; padding: 5px 9px; font: 600 15px/1.2 Georgia, serif; z-index: 1;
@@ -233,10 +233,28 @@
   #guideEdgeArrow svg { width: 34px; height: 34px; fill: #fff; }
   #guideEdgeText { background: var(--paper); color: var(--ink); border: 2px solid #b04a08; border-radius: 6px; padding: 2px 6px; font: 600 13px/1.2 Georgia, serif;
     white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
-  #guideTrain { left: 0; top: 0; pointer-events: none; z-index: 1; transform: translate(-50%, calc(-100% - 10px)); background: #fff3c4; color: var(--ink);
-    border: 2px solid #b04a08; border-radius: 8px; padding: 3px 8px; font: 600 14px/1.2 Georgia, serif; white-space: nowrap; }
-  #guideTrain::after { content: ''; position: absolute; left: 50%; bottom: -11px; transform: translateX(-50%); border: 9px solid transparent; border-top-color: #b04a08; border-bottom: 0; }
   @keyframes guidePulse { 50% { box-shadow: 0 0 0 6px rgba(255,122,26,.35); } }
+  /* D21 (5): the Next job line at the top: under the clock and speeds in portrait (clear of the right-hand column),
+     between the cash and the telegraph button in landscape (placed by nextJobHud). The tutorial box moves below it. */
+  #nextJob { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 104px); width: min(calc(100vw - 86px), 420px);
+    height: 48px; box-sizing: border-box; text-align: left; padding: 3px 10px; border-left: 7px solid #ff7a1a; font: 600 14px/1.2 Georgia, serif;
+    display: flex; align-items: center; }
+  #nextJob span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  #nextJob[aria-pressed="true"] { background: #fff1dc; color: var(--ink); }
+  body.nextOn #tutTask { top: calc(env(safe-area-inset-top) + 160px); }
+  body.nextOn #toast { top: calc(env(safe-area-inset-top) + 160px); }
+  body.nextOn #alerts { top: calc(env(safe-area-inset-top) + 160px); }
+  #setBtn { padding: 0 10px; }
+  #setBtn svg { width: 24px; height: 24px; display: block; }
+  #settings .row { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); line-height: 1.3; }
+  #settings .row button[aria-pressed] { min-width: 64px; }
+  #tutTask .tools { display: flex; gap: 6px; justify-content: flex-end; }
+  @media (orientation: landscape) and (max-height: 500px) {
+    #nextJob { top: calc(env(safe-area-inset-top) + 10px); width: 360px; }
+    body.nextOn #tutTask { top: calc(env(safe-area-inset-top) + 66px); }
+    body.nextOn #toast { top: calc(env(safe-area-inset-top) + 66px); }
+    body.nextOn #alerts { top: calc(env(safe-area-inset-top) + 66px); }
+  }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -268,10 +286,16 @@
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="tutTask" class="hud" hidden>
   <button id="tutChip" aria-expanded="false"><small>Current task</small><span id="tutChipText"></span></button>
-  <button id="hintBtn" aria-pressed="false" aria-label="Helper arrows: show the way to the next job">Arrows off</button>
+  <div class="tools"><button id="hintBtn" aria-pressed="false" aria-label="Helper arrows: show the way to the next job">Arrows off</button>
+  <button id="setBtn" aria-pressed="false" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></button></div>
+</div>
+<button id="nextJob" class="hud" hidden aria-label="Next job: tap for an arrow to the place"><span id="nextJobText"></span></button>
+<div id="settings" class="hud bigPanel" hidden>
+  <div class="row"><h2 class="grow">Settings</h2><button id="settingsClose" aria-label="Close">X</button></div>
+  <div class="row"><span class="grow">The Next job line at the top of the screen: what to do next and where.</span><button id="setNext" aria-pressed="true">On</button></div>
+  <div class="row"><span class="grow">Helper arrows: the way to the next job.</span><button id="setArrows" aria-pressed="false">Off</button></div>
 </div>
 <div id="guideLabel" class="hud" aria-live="polite" hidden></div>
-<div id="guideTrain" class="hud" hidden><span></span></div>
 <div id="guideEdge" class="hud" hidden><div id="guideEdgeArrow"><svg viewBox="0 0 40 40"><path d="M6 13h16V5l14 15-14 15v-8H6z"/></svg></div><span id="guideEdgeText"></span></div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
@@ -881,6 +905,9 @@ function newState(seed, world) {
   // The real start begins with 8 cords of wood at the hub's wood stage (D13; section "timetable"). Only a new game:
   // loading a save never comes through here, so old saves get no free cords.
   if (world !== 'yard') ttStartingWood(st);
+  // D21 (1): No. 1 starts on both Willow Ford runs (morning and afternoon) in the real start. Only a new game: saves
+  // keep the services they have; the player can take her off or change runs at the office (ttAssign).
+  if (world !== 'yard') for (const svc of st.tt.services) svc.train = 0;
   return st;
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
@@ -1607,6 +1634,8 @@ function overlandCheckSaveShape(st) {
 // (put the train on the timetable or take it off), ttHighball { tr } (wave it off without its stop actions).
 // Events: ttStarted, ttArrived, ttDeparted, ttDone, ttCancelled, ttAssigned, ttHighball, ttRefused, uncoupled,
 // coupled, tenderFuelled, waterTaken.
+// D21 (4): what the boards, the station card and the work board say of a service with no engine on it.
+const TT_NO_ENGINE = 'Not running: needs an engine';
 const TT = { CXL_SHOW_S: 2 * 3600, START_EARLY_S: 3600, IN_WATER_S: 600, DWELL_S: 300, PLAT_MAX_S: 900, BACK_S: 900, CANCEL_S: 6 * 3600, TOUCH: 0.35 * SC, SPOUT_MOVE: 40 * SC, BESIDE: 0.55 * SC + 0.6, TENDER_AT: -1.87 * SC, SPOUT_REACH: 1.2 * SC };
 // D15: every number here is a place in the test yard, so the whole table is grown by SC (scaleDeep).
 const TT_TEST_STATIONS = scaleDeep([
@@ -2442,7 +2471,7 @@ function ttBoard(S, stId) {
     else if (run && run.i <= i) state = 'On its way here';
     else if (!run && svc.cxl && svc.cxl.day === day && i >= svc.cxl.i) { if (S.time > svc.cxl.at + TT.CXL_SHOW_S) return; state = 'Cancelled'; }
     else if (run || svc.last === day) return;            // already left today
-    else if (svc.train === null) state = 'No engine on the timetable';
+    else if (svc.train === null) state = TT_NO_ENGINE;
     else if (sod > p.dep + TT.CANCEL_S) return;
     else state = sod > p.dep ? 'Late' : 'On time';
     rows.push({ time: ttClock(p.dep), sod: p.dep, name: svc.name, to: to ? to.name : '?', state });
@@ -3839,10 +3868,17 @@ function econDeskSpot() {
   const stand = sp ? { x: sp.x, z: sp.z } : { x: at.x - 1.3 * SC * c + (ext[3] + 0.52) * s, z: at.z + 1.3 * SC * s + (ext[3] + 0.52) * c };
   return { x: stand.x, z: stand.z, wx: stand.x - 0.44 * s, wy: 1.05 * SC, wz: stand.z - 0.44 * c };
 }
-// Economy commands work from the telegraph key or from the office desk (D13): within r of either.
+// The hub's work board (D21 (2): contracts are taken there): where the player stands to read it, in the booth behind
+// the ticket counter (the hub depot's 'workboard' use spot), or null in a world without one.
+function econWorkBoardSpot() {
+  const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'workboard') : null;
+  return sp ? { x: sp.x, z: sp.z } : null;
+}
+// Economy commands work from the telegraph key or from the office desk (D13), and since D21 (2) from the hub's work
+// board: within r of any of them.
 function econAtKey(S, r) {
-  const k = econTelegraphKey(), d = econDeskSpot(), P = S.player, R = r || ECON.TEL_REACH;
-  return Math.hypot(P.x - k.x, P.z - k.z) <= R || Math.hypot(P.x - d.x, P.z - d.z) <= R;
+  const k = econTelegraphKey(), d = econDeskSpot(), w = econWorkBoardSpot(), P = S.player, R = r || ECON.TEL_REACH;
+  return Math.hypot(P.x - k.x, P.z - k.z) <= R || Math.hypot(P.x - d.x, P.z - d.z) <= R || (!!w && Math.hypot(P.x - w.x, P.z - w.z) <= R);
 }
 function econAtDesk(S, r) { const d = econDeskSpot(), P = S.player; return Math.hypot(P.x - d.x, P.z - d.z) <= (r || ECON.TEL_REACH); }
 function econRefuse(ev, why) { if (ev) ev.push({ t: 'econRefused', why }); return { ok: false, why }; }
@@ -3946,7 +3982,7 @@ function econLoadOverland(S, tr, ev) {
 // ---- Contracts ----
 function econRep(E, townId, d) { E.reputation[townId] = Math.max(0, Math.min(100, (E.reputation[townId] === undefined ? ECON.REP_START : E.reputation[townId]) + d)); }
 function econContractCmd(S, c, ev, accept) {
-  if (!econAtKey(S)) return econRefuse(ev, 'Contracts come by telegraph: walk to the telegraph key at the depot first');
+  if (!econAtKey(S)) return econRefuse(ev, 'Contracts are taken at the work board behind the ticket counter (or the telegraph key): walk there first');
   const k = Number.isInteger(c.id) ? S.econ.contracts[c.id] : null;
   if (!k || k.status !== 'OFFERED') return econRefuse(ev, 'That offer is no longer open');
   k.status = accept ? 'ACTIVE' : 'DECLINED';
@@ -5014,7 +5050,7 @@ function paxFare(a, b) { return Math.max(PAX.FARE_MIN, PAX.FARE_CENTS_PER_MILE *
 // The next 4 departures from a station, from the timetable's services (section "timetable", C3):
 // [{ time (game time, as S.time), train (the service's name), to (station id), platform, state }], soonest first,
 // over the next 24 game hours. A service that already left this station today shows tomorrow's run.
-// state: 'On time', 'Late' (its run is still at or before this stop after the time), or 'No engine' (no train on it).
+// state: 'On time', 'Late' (its run is still at or before this stop after the time), or TT_NO_ENGINE (no train on it).
 function stationDepartures(S, stationId) {
   const D = S.tt;
   if (!D || !Array.isArray(D.services)) return [];
@@ -5028,7 +5064,7 @@ function stationDepartures(S, stationId) {
       if (t < S.time && !(d === day && waiting)) continue;  // gone already (or not run): the next day's
       if (d === day && svc.last === day && !waiting) continue;
       out.push({ time: t, train: svc.name, to: svc.stops[i + 1].st, platform: 1,
-        state: svc.train === null ? 'No engine' : t < S.time ? 'Late' : 'On time' });
+        state: svc.train === null ? TT_NO_ENGINE : t < S.time ? 'Late' : 'On time' });
       break;
     }
   });
@@ -5666,9 +5702,9 @@ const TUT_STEPS = [
     body: S => `You have the line, engine No. 1 and ${econMoney(S.econ.cash)} of my money. For two days I will wire you what to do first, one thing at a time. Tap OK to begin. If you know railroading already, tap Skip tutorial. HARTWELL`,
     buttons: [{ label: 'OK', cmd: null }, { label: 'Skip tutorial', cmd: { t: 'tutorialSkip' } }] },
   { key: 'accept', got: TUT_GOT.accept, title: 'Take a contract',
-    body: () => 'Contracts pay. The Hub General Store wants flour. Follow the arrow to the telegraph key in the depot window (or the office desk inside), tap it, open Contracts and accept the store\'s offer. HARTWELL' },
+    body: () => 'Contracts pay. The Hub General Store wants flour. Follow the arrow to the work board: go in by the depot door, it hangs behind the ticket counter. New offers are pinned on it: tap the board and accept the store\'s offer. HARTWELL' },
   { key: 'order', got: TUT_GOT.order, title: 'Order the goods',
-    body: S => `Now buy what the contract needs from the Overland market: on the contract, tap its order button, then Send order. Wired now, the goods come on the Overland of ${econWhen(econNextVisit(S.time))}. HARTWELL` },
+    body: S => `Now buy what the contract needs from the Overland market: on the work board, tap the contract's order button. Wired now, the goods come on the Overland of ${econWhen(econNextVisit(S.time))}. HARTWELL` },
   { key: 'tickets', got: TUT_GOT.tickets, title: `Sell ${TUT.TICKETS} tickets`,
     body: () => `While you wait: travellers come to the depot for the Willow Ford train. Go in by the depot door, stand at the counter behind the ticket window and sell ${TUT.TICKETS} tickets. HARTWELL` },
   { key: 'switch', got: TUT_GOT.sw, title: 'Set a switch',
@@ -5686,7 +5722,11 @@ const TUT_STEPS = [
     body: S => { const b = tutBiz(S);
       return `Now take it from the bay to the door of the ${b ? b.name : 'business on its waybill'}. The buyer pays the moment it is in their hands. HARTWELL`; } },
   { key: 'done', got: null, title: 'You have the way of it',
-    body: () => 'Contracts, orders, tickets, switches and freight: well done. Put No. 1 on the timetable (tap her) and keep her tender in wood and water. Tap Arrows to be shown the next job. I will wire when there is news. HARTWELL' },
+    // D21 (1): No. 1 starts on both runs; only a player who took her off is asked to put her back.
+    body: S => (S.tt && S.tt.services.every(v => v.train !== null)
+      ? 'Contracts, orders, tickets, switches and freight: well done. No. 1 runs both Willow Ford trains, morning and afternoon: keep her tender in wood and water and set her switches (the work board lists them). '
+      : 'Contracts, orders, tickets, switches and freight: well done. Put No. 1 back on the timetable (tap her, then Timetable) and keep her tender in wood and water. ')
+      + 'The Next job line at the top says what wants doing. I will wire when there is news. HARTWELL' },
 ];
 function tutSend(S, i, ev) {
   const U = S.tut, st = TUT_STEPS[i];
@@ -5732,7 +5772,8 @@ function tutTarget(S) {
   const c = tutCurrent(S);
   if (!c || c.step < 1) return null;
   const P = S.player;
-  if (c.key === 'accept' || c.key === 'order') { const k = econDeskSpot(); return { x: k.x, z: k.z, k: 'desk' }; }
+  // D21 (2): contracts are taken (and their goods ordered) at the hub's work board; the office desk where there is none.
+  if (c.key === 'accept' || c.key === 'order') { const w = econWorkBoardSpot(); if (w) return { x: w.x, z: w.z, k: 'workboard' }; const k = econDeskSpot(); return { x: k.x, z: k.z, k: 'desk' }; }
   if (c.key === 'switch') {
     const occ = occupiedSwitches(S), sws = S.track.switches;
     // D20 (6): the first switch the next train needs that is not set yet (manual switches, ttSwitchNeeds, when
@@ -6113,10 +6154,17 @@ const WS = CFG.SCALE;
 const RAIL_TOP_M1 = 0.21, RAIL_TOP = RAIL_TOP_M1 * WS;
 function growMesh(m) { m.geometry.scale(WS, WS, WS); return m; }
 
-function modelLoco(look) {
+// D21 (3): the player's own engines and cars carry a stripe in this colour along both sides (the name plate's colour).
+const OUR_STRIPE = '#ffd21f';
+function modelLoco(look, ours) {
   // From the style page, shifted so the vehicle centre is at x = 0; smokebox end is +x.
   // look 'overland': the Overland's engine, with a blue-grey cab and wheels so it is told apart from No. 1.
+  // ours (D21 (3)): the yellow stripe along the cab and tender sides.
   const k = new Kit(), B = RAIL_TOP_M1, X = 0.48, H = Math.PI / 2;
+  if (ours) for (const s of [-1, 1]) {
+    k.add(box(1.42, 0.12, 0.02), OUR_STRIPE, X - 2.35, B + 1.0, s * 0.48);   // tender side
+    k.add(box(1.02, 0.1, 0.02), OUR_STRIPE, X - 0.95, B + 0.92, s * 0.51);   // cab side, under the window
+  }
   const RED = look === 'overland' ? '#4a5f78' : PAL.red;
   k.add(box(3.3, 0.2, 0.9), PAL.loco, X - 0.1, B + 0.5, 0);
   k.add(cyl(0.42, 0.42, 2.0), PAL.loco, X + 0.55, B + 1.0, 0, 0, 0, H);
@@ -6138,18 +6186,20 @@ function modelLoco(look) {
 // Flatcar (M1 package 2): a plank deck on a centre sill, with stake posts along the sides. The deck top is at
 // FLAT_DECK; the cargo drawing lays long bundles along it and stands crates at its ends.
 const FLAT_DECK = (RAIL_TOP_M1 + 0.58) * WS;
-function modelFlatcar() {
+function modelFlatcar(ours) {
   const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
   k.add(box(2.6, 0.16, 1.0), PAL.trim, 0, B + 0.5, 0);
+  if (ours) for (const s of [-1, 1]) k.add(box(2.5, 0.08, 0.02), OUR_STRIPE, 0, B + 0.5, s * 0.505);   // D21 (3)
   k.add(box(2.4, 0.14, 0.3), PAL.loco, 0, B + 0.35, 0);
   for (const x of [-1.25, -0.42, 0.42, 1.25]) for (const dz of [-0.47, 0.47]) k.add(box(0.06, 0.2, 0.06), PAL.trunk, x, B + 0.68, dz);
   for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
   return growMesh(k.mesh());
 }
-function modelBoxcar() {
+function modelBoxcar(ours) {
   const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
   k.add(box(2.6, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
   k.add(box(2.5, 1.0, 0.95), PAL.red, 0, B + 1.08, 0);
+  if (ours) for (const s of [-1, 1]) for (const x of [-0.8, 0.8]) k.add(box(0.8, 0.12, 0.02), OUR_STRIPE, x, B + 0.78, s * 0.485);   // D21 (3), either side of the door
   k.add(box(2.6, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
   k.add(box(0.7, 0.8, 0.97), PAL.trim, 0, B + 1.05, 0);
   for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
@@ -6167,7 +6217,7 @@ const COMBINE_IN = { // the inside, in M1 units (x along the car; grown by WS wh
   STAND: 0.72,                                   // where the rider stands in the baggage end (x)
   ITEM_X: 1.13, ITEM_Z: [-0.27, 0, 0.27], ITEM_LAYER: 0.26, // freight: a row of 3 against the end wall, stacked in layers
 };
-function modelCombine() {
+function modelCombine(ours) {
   // Passenger end (windows) and baggage end (door), in the style page's colours.
   const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2, I = COMBINE_IN, FT = I.FLOOR, parts = {};
   const LINE = '#7a4e30', FLOOR = '#6b4a2c', SEAT = '#8a5a34', mark = () => k.p.length / 3;
@@ -6177,6 +6227,7 @@ function modelCombine() {
     k.add(box(2.62, 0.96, 0.02), LINE, 0, B + 1.08, s * 0.435);
     for (const x of [-1.05, -0.6, -0.15]) k.add(box(0.3, 0.32, 0.07), PAL.glass, x, B + 1.2, s * 0.45);
     k.add(box(0.6, 0.8, 0.07), PAL.trim, 0.75, B + 1.05, s * 0.45);
+    if (ours) for (const [x, l] of [[-0.6, 1.4], [1.22, 0.24]]) k.add(box(l, 0.1, 0.02), OUR_STRIPE, x, B + 0.82, s * 0.485);   // D21 (3): the stripe, part of the side wall
   };
   const end = s => () => {    // one end wall (between the side skins) and its lining
     k.add(box(0.03, 1.0, 0.89), PAL.wall, s * 1.335, B + 1.08, 0);
@@ -6771,6 +6822,82 @@ function ttBuildBoards(G, S) {
   if (list.length) G.add(k.mesh());
 }
 function ttDrawBoards(S) { for (const l of ttView.lamps) { const m = ttView.mats[ttSignal(S, l.userData.st)]; if (l.material !== m) l.material = m; } }
+// D21 (3): is this vehicle the player's own? Our engines and cars (stock ids below the Overland's), in any train but
+// the Overland's; the Overland's set-out cars stay unmarked even when No. 1 hauls them.
+function trainStockOurs(tr, c) { return tr.owner !== 'overland' && c.id < OVERLAND.FIRST_STOCK; }
+// ---- Name plates over the engines (D21 (3)) ----
+// A floating plate over each engine on the map: "No. 1, yours" over ours (the stripe's yellow, PLATE.OURS) and a plain
+// grey "Overland" over the Overland's. Always on (not only with the arrows), about PLATE.PX tall on the screen at
+// any zoom, facing the camera. All plates are ONE mesh (a quad each, 1 draw call, no shadow) on ONE small canvas
+// atlas (one 256 x 64 slot per text, painted once). Drawn over everything (no depth test), like the arrow, so a
+// roof never hides them; the page's buttons are above the canvas, so a plate never covers one. Drawing only.
+const PLATE = { PX: 30, W: 256, H: 64, SLOTS: 8, OURS: '#ffd21f', OURS_EDGE: '#6b4a00', GREY: '#b4b4ae', GREY_EDGE: '#4a4a46', LIFT: 2.6 };
+const plates = { mesh: null, canvas: null, tex: null, slots: {}, n: 0, shown: [] };
+function plateSlot(text, ours) {
+  const key = (ours ? 'o|' : 'g|') + text;
+  if (plates.slots[key] !== undefined) return plates.slots[key];
+  const i = plates.n % PLATE.SLOTS; plates.n++;
+  for (const k of Object.keys(plates.slots)) if (plates.slots[k] === i) delete plates.slots[k];
+  const ctx = plates.canvas.getContext('2d'), x0 = (i % 2) * PLATE.W, y0 = Math.floor(i / 2) * PLATE.H, W = PLATE.W, H = PLATE.H;
+  ctx.clearRect(x0, y0, W, H);
+  ctx.font = 'bold 34px Georgia, "Times New Roman", serif';
+  const tw = Math.min(W - 28, ctx.measureText(text).width), w = tw + 26, l = x0 + (W - w) / 2;
+  ctx.fillStyle = ours ? PLATE.OURS_EDGE : PLATE.GREY_EDGE;
+  ctx.beginPath(); ctx.moveTo(l + 10, y0 + 6); ctx.arcTo(l + w, y0 + 6, l + w, y0 + H - 6, 10); ctx.arcTo(l + w, y0 + H - 6, l, y0 + H - 6, 10);
+  ctx.arcTo(l, y0 + H - 6, l, y0 + 6, 10); ctx.arcTo(l, y0 + 6, l + w, y0 + 6, 10); ctx.fill();
+  ctx.fillStyle = ours ? PLATE.OURS : PLATE.GREY; ctx.fillRect(l + 4, y0 + 10, w - 8, H - 20);
+  ctx.fillStyle = '#20180f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.save(); ctx.translate(x0 + W / 2, y0 + H / 2 + 2); ctx.scale(tw / Math.max(1, ctx.measureText(text).width), 1); ctx.fillText(text, 0, 0); ctx.restore();
+  plates.tex.needsUpdate = true;
+  plates.slots[key] = i;
+  plates.aspect = plates.aspect || {}; plates.aspect[i] = w / H;
+  return i;
+}
+function plateBuild() {
+  plates.canvas = document.createElement('canvas'); plates.canvas.width = 2 * PLATE.W; plates.canvas.height = PLATE.SLOTS / 2 * PLATE.H;
+  plates.tex = new THREE.CanvasTexture(plates.canvas); plates.tex.anisotropy = 2;
+  const g = new THREE.BufferGeometry(), N = PLATE.SLOTS, idx = [];
+  g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(N * 12), 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(N * 8), 2));
+  for (let k = 0; k < N; k++) idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k, 4 * k + 2, 4 * k + 3);
+  g.setIndex(idx); g.setDrawRange(0, 0);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: plates.tex, transparent: true, depthTest: false, depthWrite: false }));
+  m.name = 'trainPlates'; m.renderOrder = 998; m.frustumCulled = false; m.castShadow = m.receiveShadow = false;
+  plates.mesh = m; scene.add(m);
+}
+// The plates to show now: [{ text, ours, x, y, z }] over each engine on the map (its drawn mesh), and what each says.
+function plateList() {
+  const out = [];
+  S.trains.forEach((tr, ti) => {
+    if (trainOff(tr) || tr.owner === 'interchange' || tr.owner === 'cut') return;
+    const i = tr.consist.findIndex(c => c.k === 'loco'), m = i >= 0 && view.train[ti] ? view.train[ti][i] : null;
+    if (!m || !m.visible) return;
+    const ours = tr.owner !== 'overland';
+    out.push({ text: ours ? `${tr.name}, yours` : 'Overland', ours, tr: tr.id, x: m.position.x, y: PLATE.LIFT * WS, z: m.position.z });
+  });
+  return out;
+}
+// Each frame: the plates face the camera, PLATE.PX tall on the screen.
+function plateDraw() {
+  if (!plates.mesh) plateBuild();
+  const list = plateList().slice(0, PLATE.SLOTS), g = plates.mesh.geometry, P = g.attributes.position.array, U = g.attributes.uv.array;
+  camera.updateMatrixWorld();
+  const e = camera.matrixWorld.elements, rx = e[0], ry = e[1], rz = e[2], ux = e[4], uy = e[5], uz = e[6];
+  const upp = (camera.top - camera.bottom) / window.innerHeight, h = PLATE.PX * upp;
+  plates.shown = [];
+  list.forEach((p, k) => {
+    const i = plateSlot(p.text, p.ours), a = plates.aspect[i], w = h * a, cx = p.x, cy = p.y + h / 2, cz = p.z;
+    const hw = w / 2, hh = h / 2, c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+    c.forEach(([dx, dy], j) => { P[12 * k + 3 * j] = cx + rx * dx + ux * dy; P[12 * k + 3 * j + 1] = cy + ry * dx + uy * dy; P[12 * k + 3 * j + 2] = cz + rz * dx + uz * dy; });
+    const sw = PLATE.W * a * PLATE.H / PLATE.W, x0 = (i % 2) * PLATE.W + (PLATE.W - a * PLATE.H) / 2, y0 = Math.floor(i / 2) * PLATE.H, CW = 2 * PLATE.W, CH = plates.canvas.height;
+    const u0 = x0 / CW, u1 = (x0 + sw) / CW, v1 = 1 - y0 / CH, v0 = 1 - (y0 + PLATE.H) / CH;
+    U.set([u0, v0, u1, v0, u1, v1, u0, v1], 8 * k);
+    plates.shown.push({ text: p.text, ours: p.ours, tr: p.tr, x: cx, y: cy, z: cz, wPx: w / upp, hPx: PLATE.PX });
+  });
+  g.setDrawRange(0, 6 * list.length);
+  g.attributes.position.needsUpdate = true; g.attributes.uv.needsUpdate = true;
+  plates.mesh.visible = list.length > 0;
+}
 // Which vehicles each train has (and the state object): the drawn meshes are rebuilt when this changes.
 const trainViewIds = new WeakMap();
 let trainViewN = 0;
@@ -6786,7 +6913,8 @@ function buildActors(S) {
   view.trainGroup = new THREE.Group(); scene.add(view.trainGroup);
   view.byStock = {};
   view.train = S.trains.map(tr => tr.consist.map(c => {
-    const m = c.k === 'loco' ? modelLoco(c.look) : c.k === 'combine' ? modelCombine() : c.k === 'flatcar' ? modelFlatcar() : modelBoxcar();
+    const ours = trainStockOurs(tr, c);   // D21 (3): the player's own engines and cars carry the stripe
+    const m = c.k === 'loco' ? modelLoco(c.look, ours) : c.k === 'combine' ? modelCombine(ours) : c.k === 'flatcar' ? modelFlatcar(ours) : modelBoxcar(ours);
     m.userData.train = tr.id; m.userData.stock = c.id; m.visible = false; view.trainGroup.add(m); view.byStock[c.id] = m; return m;
   }));
   view.trainSig = trainViewSig(S);
@@ -8415,7 +8543,7 @@ function schedStopState(S, svc, i, day) {
 }
 // Every stop at station stId of every service still to come today (or cancelled today), soonest first:
 // [{ svc, i, sod (the time it is listed by), train (short name), from, to (station names, '' at the ends of a run),
-//    arr, dep ('hh:mm' or ''), plat, state ('On time', 'Late', 'Cancelled' or 'No engine'), at (standing there) }].
+//    arr, dep ('hh:mm' or ''), plat, state ('On time', 'Late', 'Cancelled' or TT_NO_ENGINE), at (standing there) }].
 function schedStops(S, stId) {
   const D = S.tt;
   if (!D || !ttStation(S, stId)) return [];
@@ -8428,7 +8556,7 @@ function schedStops(S, stId) {
     const next = p.arr !== null && p.arr !== undefined ? p.arr : p.dep;   // the time it is listed by: arrival, or departure where it starts
     let state;
     if (where === 'cancelled') state = 'Cancelled';
-    else if (svc.train === null) state = 'No engine';
+    else if (svc.train === null) state = TT_NO_ENGINE;
     else if (where === 'at') state = p.dep !== null && sod > p.dep + SCHED.LATE_S ? 'Late' : 'On time';
     else if (where === 'coming') state = sod > next + SCHED.LATE_S ? 'Late' : 'On time';
     else if (sod > (p.dep !== null ? p.dep : next) + TT.CANCEL_S) return;
@@ -8600,7 +8728,7 @@ function wbRows(S, stId) {
 // only when what it shows changes (boardUpdate compares a signature, at most once a sim tick).
 // - The PUBLIC SCHEDULE board (kind 'sched') on the depot's front wall beside the ticket window (BLD_BOOTH.board),
 //   facing the platform, for travellers: from schedRows, each train's short name, from, to, arrival, departure,
-//   platform and On time / Late / Cancelled (No engine while no train is on the service). Two layouts: below zoom
+//   platform and On time / Late / Cancelled (TT_NO_ENGINE, "Not running: needs an engine", while no train is on the service, D21). Two layouts: below zoom
 //   BOARD.FULL_ZOOM (the start zoom 1.5 among them) the BIG one, the next 3 trains in big letters (time, where to or
 //   from, and the state); from there on the FULL one, 4 trains in the columns train, from, to / arr, dep, pl, status.
 // - The WORK board (kind 'work') on the booth's inside wall behind the counter (BLD_BOOTH.work), for the player: the
@@ -8631,7 +8759,7 @@ function boardPlaces() {
 // What the old departure lines said, made short (kept for the station card's wording; see ttBoard).
 function boardState(l, sod) {
   if (l.state === 'Cancelled' || l.state === 'Late' || l.state === 'On time') return l.state;
-  if (/^No engine/.test(l.state)) return 'No engine';
+  if (l.state === TT_NO_ENGINE) return TT_NO_ENGINE;
   const late = sod > l.sod + 60;
   if (l.state === 'On its way here') return late ? 'Late' : 'On time';
   return late ? 'Late' : 'Boarding';   // the train stands at this stop (Departing, or Waiting: ...)
@@ -8649,7 +8777,7 @@ function workBoardLines(stId) {
     if (r.wood) m.push(['Wood ' + r.wood, false]);
     if (r.water) m.push(['Water', false]);
     if (r.switches && r.switches.length) m.push([`Sw ${r.switches.filter(w => w.done).length}/${r.switches.length}`, r.switches.every(w => w.done)]);
-    if (!m.length) m.push([r.state === 'No engine' ? 'No engine' : 'Nothing to do', false]);
+    if (!m.length) m.push([r.state === TT_NO_ENGINE ? TT_NO_ENGINE : 'Nothing to do', false]);
     return { time: r.dep && !r.at && !r.arr ? r.dep : r.arr || r.dep, train: r.short, cars: r.cars.n, state: r.state, marks: m };
   });
 }
@@ -8691,7 +8819,7 @@ function boardText(ctx, t, x, y, px, col, align, maxW, font) {
     ctx.fillText(t, 0, 0); ctx.restore();
   } else ctx.fillText(t, x, y);
 }
-const boardStateCol = st => st === 'Cancelled' ? BOARD.CXL : st === 'Late' ? BOARD.LATE : st === 'No engine' ? BOARD.DIM : BOARD.OK;
+const boardStateCol = st => st === 'Cancelled' ? BOARD.CXL : st === 'Late' ? BOARD.LATE : st === TT_NO_ENGINE ? BOARD.LATE : BOARD.OK;
 // Paints board b into its region of the canvas.
 function boardPaint(b) {
   const ctx = boards.canvas.getContext('2d'), [x0, y0, W, H] = b.region;
@@ -8711,8 +8839,13 @@ function boardPaintSched(ctx, b, W, H) {
     b.rows.slice(0, 3).forEach((r, i) => {
       const y = top + i * rowH, ends = !r.to, time = ends ? r.arr : r.dep || r.arr;
       T(time, 18, y + 60, 62, BOARD.INK, 'left', 190);
-      T(r.state, W - 18, y + 58, 52, boardStateCol(r.state), 'right', W - 220);
-      T(ends ? 'from ' + r.from : 'to ' + r.to, 18, y + 118, 50, BOARD.INK, 'left', W - 36);
+      if (r.state === TT_NO_ENGINE) {   // D21 (4): the long state on its own line, where to or from beside the time
+        T(ends ? 'from ' + r.from : 'to ' + r.to, W - 18, y + 58, 44, BOARD.INK, 'right', W - 220);
+        T(r.state, 18, y + 116, 44, boardStateCol(r.state), 'left', W - 36);
+      } else {
+        T(r.state, W - 18, y + 58, 52, boardStateCol(r.state), 'right', W - 220);
+        T(ends ? 'from ' + r.from : 'to ' + r.to, 18, y + 118, 50, BOARD.INK, 'left', W - 36);
+      }
       if (r.state === 'Cancelled') { ctx.fillStyle = BOARD.CXL; ctx.fillRect(18, y + 38, 180, 5); }
       if (i < 2) { ctx.fillStyle = 'rgba(200,185,143,0.45)'; ctx.fillRect(18, y + rowH - 4, W - 36, 2); }
     });
@@ -8733,8 +8866,11 @@ function boardPaintSched(ctx, b, W, H) {
     T(dash(r.to), C1[2], y + 34, 30, BOARD.INK, 'left', W - C1[2] - 14);
     T(dash(r.arr), C2[0], y + 68, 30, BOARD.INK, 'left', 98);
     T(dash(r.dep), C2[1], y + 68, 30, BOARD.INK, 'left', 98);
-    T(r.plat, C2[2], y + 68, 30, BOARD.INK, 'left', 44);
-    T(r.state, C2[3], y + 68, 30, boardStateCol(r.state), 'left', W - C2[3] - 14);
+    if (r.state === TT_NO_ENGINE) T(r.state, C2[2], y + 68, 26, boardStateCol(r.state), 'left', W - C2[2] - 14);   // over the platform column too
+    else {
+      T(r.plat, C2[2], y + 68, 30, BOARD.INK, 'left', 44);
+      T(r.state, C2[3], y + 68, 30, boardStateCol(r.state), 'left', W - C2[3] - 14);
+    }
     if (i < 3) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(18, y + rowH - 3, W - 36, 1); }
   });
 }
@@ -10540,7 +10676,7 @@ $('carryPut').addEventListener('click', () => {
 // It closes when the player walks more than 3u from the door, or the car is taken or moves off.
 const carUi = { stock: null, sig: '' };
 const CAR_NAMES = { boxcar: 'Boxcar', flatcar: 'Flatcar', combine: 'Combine' };
-function openCarPanel(stock) { closePanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
+function openCarPanel(stock) { closePanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeSettings(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
 function closeCarPanel() { carUi.stock = null; carUi.sig = ''; $('carPanel').hidden = true; }
 function carPanelUpdate() {
   if (carUi.stock === null) return;
@@ -10570,7 +10706,7 @@ $('carClose').addEventListener('click', closeCarPanel);
 // together is page-side only (telUi.draft) until Send order sends it as one command.
 const telUi = { open: false, tab: 'order', draft: {}, sig: '' };
 const TEL_CREDIT_STEP = 50000; // Borrow and Repay move $500 at a time
-function openTelPanel() { closePanel(); closeCarPanel(); closeOffice(); closeInbox(); closeLook(); telUi.open = true; telUi.sig = ''; $('telPanel').hidden = false; telPanelUpdate(); }
+function openTelPanel() { closePanel(); closeCarPanel(); closeOffice(); closeInbox(); closeLook(); closeSettings(); telUi.open = true; telUi.sig = ''; $('telPanel').hidden = false; telPanelUpdate(); }
 function closeTelPanel() { telUi.open = false; telUi.sig = ''; $('telPanel').hidden = true; }
 // Send a telegraph command; while paused, run one tick so it takes effect at once (as Lay track does).
 function telSend(cmd) { send(cmd); if (speed === 0) doTick(); }
@@ -10699,12 +10835,12 @@ function cashHud() {
   cashHudText = t; $('cash').textContent = t;
   if (c < 0) $('cash').dataset.neg = ''; else delete $('cash').dataset.neg;
 }
-function openPanel(trId) { closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; ttPanelSig = ''; updateHud(); }
+function openPanel(trId) { closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeSettings(); ui.panelTrain = trId; $('panel').hidden = false; $('panelTitle').textContent = S.trains[trId].name; ttPanelSig = ''; updateHud(); }
 // The job signs' labels (hand-building, builder B2): one small card per staked job, standing on its sign board,
 // saying what the job still needs ("Bring 2 tie bundles and 1 spike keg"), or that it is ready or being built.
 // Words from jobNeeds through jobNeedsText (build tool section). Below the buttons (z-index 1, no taps), and
 // hidden while it would overlap a button or panel, so it never covers them.
-const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel', 'telPanel', 'cash',
+const JOB_SIGN_AVOID = ['topleft', 'buildBtn', 'bottomleft', 'centre', 'carry', 'panel', 'banner', 'buildConfirm', 'buildLabel', 'dbgBar', 'carPanel', 'telPanel', 'cash', 'nextJob',
   'tgBtn', 'alerts', 'tgSlide', 'office', 'inbox', 'lookCard'];
 const jobSigns = {};
 function jobSignText(S, job) {
@@ -10974,6 +11110,7 @@ function updateHud() {
   townSignHud();
   paxHud();
   rideHud();
+  nextJobHud();        // the Next job line (D21), before the tutorial box, which moves below it
   tutHud();            // before the slide-in, which keeps clear of the tutorial chip
   officeUpdate();      // office, telegrams, alerts and Look (D1)
   officeBtnHud();
@@ -11105,9 +11242,9 @@ const inboxUi = { open: false, sig: '', expanded: null };
 const lookUi = { armed: false, open: false, pick: null, sig: '' };
 const OFFICE_TAB_NAMES = { contracts: 'Contracts', market: 'Market', ledger: 'Ledger', trains: 'Trains', timetable: 'Timetable' };
 const TG_SLIDE_MS = 4500;
-function bigPanelOpen() { return officeUi.open || inboxUi.open || (typeof wbUi !== 'undefined' && wbUi.open); }
+function bigPanelOpen() { return officeUi.open || inboxUi.open || (typeof wbUi !== 'undefined' && wbUi.open) || (typeof setUi !== 'undefined' && setUi.open); }
 function openOffice() {
-  closePanel(); closeCarPanel(); closeTelPanel(); closeInbox(); closeLook(); closeWorkCard();
+  closePanel(); closeCarPanel(); closeTelPanel(); closeInbox(); closeLook(); closeWorkCard(); closeSettings();
   officeUi.open = true; officeUi.sig = ''; $('office').hidden = false; officeUpdate();
 }
 function closeOffice() { officeUi.open = false; officeUi.sig = ''; $('office').hidden = true; }
@@ -11189,7 +11326,7 @@ function officeHtml() {
     const eng = S.trains.find(t => !t.owner && trainLocos(t).length);
     for (const svc of S.tt.services) {
       const run = S.tt.runs.find(r => r.svc === svc.id), tr = svc.train !== null ? S.trains[svc.train] : null;
-      h += `<div class="card" data-svc="${svc.id}"><span><b>${esc(svc.name)}</b><br><small>${tr ? 'Engine: ' + esc(tr.name) : 'No engine on it'}` +
+      h += `<div class="card" data-svc="${svc.id}"><span><b>${esc(svc.name)}</b><br><small>${tr ? 'Engine: ' + esc(tr.name) : esc(TT_NO_ENGINE)}` +
         (run ? ', running' + (run.why ? ': ' + esc(run.why) : '') : '') + '</small></span>';
       h += '<table><tr><th>Station</th><th class="n">Arrives</th><th class="n">Leaves</th><th>Work</th></tr>';
       svc.stops.forEach((p, i) => {
@@ -11243,7 +11380,7 @@ $('officeBtn').addEventListener('click', () => { if (officeUi.open) closeOffice(
 // scrolls when long; it closes with its X or the button, and when the player walks out of the booth it was opened in.
 const wbUi = { open: false, st: null, sig: '', booth: false };
 function openWorkCard(st, fromBooth) {
-  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook();
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeSettings();
   wbUi.open = true; wbUi.st = st; wbUi.sig = ''; wbUi.booth = !!fromBooth; $('workCard').hidden = false; $('workBody').scrollTop = 0; workCardUpdate();
 }
 function closeWorkCard() { wbUi.open = false; wbUi.sig = ''; $('workCard').hidden = true; }
@@ -11252,10 +11389,10 @@ const wbClockOf = t => ttClock(((t + CFG.DAY_START_S) % 86400 + 86400) % 86400);
 // One train's block of the card, as HTML.
 function workCardRowHtml(r) {
   const L = [], st = r.state;
-  const col = st === 'Cancelled' ? '#b8432c' : st === 'Late' ? '#b5651d' : st === 'No engine' ? '#6a5a48' : '#3d7a36';
+  const col = st === 'Cancelled' ? '#b8432c' : st === 'Late' ? '#b5651d' : st === TT_NO_ENGINE ? '#b5651d' : '#3d7a36';
   const time = r.arr && r.dep ? `${r.arr} to ${r.dep}` : r.arr ? `in ${r.arr}` : `out ${r.dep}`;
   L.push(`<div class="wbHead"><b>${esc(time)}</b><span class="wbState" style="color:${col}">${esc(st)}</span></div>`);
-  L.push(`<div><b>${esc(r.train)}</b>: ${esc(r.kind === '?' ? 'no engine on it' : r.kind)}${r.engine ? ', ' + esc(r.engine) : ''}</div>`);
+  L.push(`<div><b>${esc(r.train)}</b>: ${esc(r.kind === '?' ? 'no engine on it yet' : r.kind)}${r.engine ? ', ' + esc(r.engine) : ''}</div>`);
   const kinds = r.cars.kinds.map(([k, n]) => `${n} ${k}${n > 1 ? (k === 'boxcar' || k === 'flatcar' || k === 'combine' ? 's' : '') : ''}`).join(', ');
   L.push(`<div>Cars: ${r.cars.n}${kinds ? ' (' + esc(kinds) + ')' : ''}${r.overland && r.outCars ? `; takes away the ${r.outCars} on the interchange` : ''}</div>`);
   if (r.arr || r.dep) L.push(`<div>Arrives ${esc(r.arr || '-')}, departs ${esc(r.dep || '-')}</div>`);
@@ -11303,7 +11440,7 @@ function workBtnHud() {
 $('workBtn').addEventListener('click', () => { if (wbUi.open) closeWorkCard(); else if ($('workBtn').dataset.st) openWorkCard($('workBtn').dataset.st, true); });
 // ---- The inbox ----
 function openInbox(id) {
-  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook(); closeWorkCard();
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook(); closeWorkCard(); closeSettings();
   inboxUi.open = true; inboxUi.sig = ''; $('inbox').hidden = false; tgSlideHide();
   if (id !== undefined && id !== null) { inboxUi.expanded = id; const g = tgGet(S, id); if (g && !g.read) telSend({ t: 'tgRead', id }); }
   inboxUpdate();
@@ -11365,8 +11502,9 @@ function tgSlideHud() {
   const more = ids.length - 1;
   $('tgSlideTitle').textContent = g.title;
   $('tgSlideFrom').textContent = g.from + (more ? `, and ${more} more` : '') + '. Tap to read.';
-  // Under the clock, and below the right-hand buttons (the tutorial chip, alerts) where it would meet them.
+  // Under the clock (and the Next job line, D21), and below the right-hand buttons (the tutorial chip, alerts) where it would meet them.
   let top = $('topleft').getBoundingClientRect().bottom + 6;
+  if (!$('nextJob').hidden) top = Math.max(top, $('nextJob').getBoundingClientRect().bottom + 6);
   const w = el.offsetWidth, h = Math.max(el.offsetHeight, 48), x0 = el.getBoundingClientRect().left + w + 20; // its left edge once shown
   const right = ['tgBtn', 'tutTask'].map(id => $(id)).concat([...$('alerts').children]).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
   for (let k = 0; k < 4; k++) { const q = right.find(r => r.left < x0 + w && r.top < top + h && r.bottom > top); if (!q) break; top = q.bottom + 6; }
@@ -11593,8 +11731,8 @@ $('tutChip').addEventListener('click', () => { const c = tutCurrent(S); if (c) o
 // Arrows toggle (under the Current task chip) is on; then they point at the most pressing job (hintTarget). The
 // toggle is a viewer preference kept in localStorage (not in the save). Drawing and page only: the sim never reads
 // any of this. Draw calls: the arrow 1 and the dots 1 (one InstancedMesh), only while shown; no shadows.
-const GUIDE = { DOTS: 140, GAP: 0.75, NEAR: 1.6, REPATH_S: 0.5, OFF: 2.5, PREF: 'railhead-arrows', PX: 86 };
-const guideUi = { pref: null, t: null, nextT: 0, hud: [], boardStep: -2, boardSeen: false, path: [], pathKey: '', pathAt: -1e9, from: -1, arrow: null, dots: null };
+const GUIDE = { DOTS: 140, GAP: 0.75, NEAR: 1.6, REPATH_S: 0.5, OFF: 2.5, PREF: 'railhead-arrows', PX: 86, PEEK_S: 60, NEXT_PREF: 'railhead-nextjob' };
+const guideUi = { pref: null, t: null, nextT: 0, job: null, peek: null, hud: [], boardStep: -2, boardSeen: false, path: [], pathKey: '', pathAt: -1e9, from: -1, arrow: null, dots: null };
 try { const v = localStorage.getItem(GUIDE.PREF); if (v === 'on' || v === 'off') guideUi.pref = v; } catch (e) { /* no storage: the default */ }
 // The player's own engine (No. 1 in a new game): the first train of ours with a locomotive, or null.
 function guideOurTrain() { return S.trains.find(t => !t.owner && !trainOff(t) && trainLocos(t).length) || null; }
@@ -11640,46 +11778,84 @@ function guideNeedLabel(need) {
 function guideTutTarget(c) {
   const t = tutTarget(S);
   if (c.key === 'accept' || c.key === 'order') {
-    // The telegraph key in the depot's window (seen from the platform), or the office desk inside when the player is
-    // already by it (both open Contracts).
+    const what = c.key === 'accept' ? 'take a contract' : 'order the goods';
+    // D21 (2): the work board behind the ticket counter, where the offers are pinned (tutTarget's place).
+    if (t && t.k === 'workboard') return { x: t.x, z: t.z, k: 'workboard', label: 'Work board: ' + what, next: what + ' at the work board' };
+    // A world without a work board: the telegraph key in the depot's window (seen from the platform), or the office
+    // desk inside when the player is already by it (both open Contracts).
     const k = econTelegraphKey(), d = econDeskSpot(), P = S.player, key = Math.hypot(d.x - P.x, d.z - P.z) > 3 || Math.hypot(k.x - P.x, k.z - P.z) <= Math.hypot(d.x - P.x, d.z - P.z);
-    const at = key ? k : d, what = c.key === 'accept' ? 'take a contract' : 'order the goods';
-    return { x: at.x, z: at.z, k: key ? 'telegraph' : 'desk', label: (key ? 'Telegraph key: ' : 'Office desk: ') + what };
+    const at = key ? k : d;
+    return { x: at.x, z: at.z, k: key ? 'telegraph' : 'desk', label: (key ? 'Telegraph key: ' : 'Office desk: ') + what, next: what + (key ? ' at the telegraph key' : ' at the office desk') };
   }
-  if (c.key === 'tickets') return t && { x: t.x, z: t.z, k: 'window', label: `Ticket window: sell tickets (${S.tut.tickets} of ${TUT.TICKETS})` };
+  if (c.key === 'tickets') return t && { x: t.x, z: t.z, k: 'window', label: `Ticket window: sell tickets (${S.tut.tickets} of ${TUT.TICKETS})`, next: `sell ${TUT.TICKETS - S.tut.tickets} more ticket${TUT.TICKETS - S.tut.tickets === 1 ? '' : 's'} at the ticket window` };
   if (c.key === 'switch') {
     // First the work board (what the next train needs), then the switch. Seen once the player stands by it.
     if (guideUi.boardStep !== c.step) { guideUi.boardStep = c.step; guideUi.boardSeen = false; }
     const b = guideBoardSpot(), P = S.player;
     if (b && Math.hypot(P.x - b.x, P.z - b.z) < GUIDE.NEAR) guideUi.boardSeen = true;
-    if (b && !guideUi.boardSeen) return { x: b.x, z: b.z, k: 'board', label: 'Work board: see what the next train needs' };
-    return t && { x: t.x, z: t.z, k: 'switch', label: t.need ? guideNeedLabel(t.need) : `Switch ${t.sw}: set it for the platform` };
+    if (b && !guideUi.boardSeen) return { x: b.x, z: b.z, k: 'board', label: 'Work board: see what the next train needs', next: 'read the work board behind the ticket counter' };
+    return t && { x: t.x, z: t.z, k: 'switch', label: t.need ? guideNeedLabel(t.need) : `Switch ${t.sw}: set it for the platform`, next: t.need ? guideNeedNext(t.need) : `set switch ${t.sw} for the platform` };
   }
   if (c.key === 'unload') {
-    if (t) return { x: t.x, z: t.z, k: 'car', label: 'Overland car: take the goods out' };
-    const m = guideMeetSpot(), due = tutOrderDue(S);
-    return m && { x: m.x, z: m.z, k: 'meet', label: 'Interchange: meet the Overland' + (due !== null ? ' at ' + econWhen(due).slice(4) : '') };
+    if (t) return { x: t.x, z: t.z, k: 'car', label: 'Overland car: take the goods out', next: 'take the goods out of the Overland\'s car on the interchange' };
+    const m = guideMeetSpot(), due = tutOrderDue(S), at = due !== null ? econWhen(due).slice(4) : '';
+    return m && { x: m.x, z: m.z, k: 'meet', label: 'Interchange: meet the Overland' + (at ? ' at ' + at : ''), next: 'meet the Overland at the interchange' + (at ? ', ' + at : '') };
   }
-  if (c.key === 'sort') { const T = CARGO_TAGS[tutItemTag(S)]; return t && { x: t.x, z: t.z, k: 'bay', label: 'Freight shed: sort the crates' + (T ? ' into bay ' + T.letter : '') }; }
-  if (c.key === 'deliver') { const b = tutBiz(S); return t && { x: t.x, z: t.z, k: 'door', label: (b ? b.name : 'The business') + ': deliver at the door' }; }
+  if (c.key === 'sort') { const T = CARGO_TAGS[tutItemTag(S)]; return t && { x: t.x, z: t.z, k: 'bay', label: 'Freight shed: sort the crates' + (T ? ' into bay ' + T.letter : ''), next: 'sort it into ' + (T ? 'bay ' + T.letter : 'its bay') + ' in the freight shed' }; }
+  if (c.key === 'deliver') { const b = tutBiz(S); return t && { x: t.x, z: t.z, k: 'door', label: (b ? b.name : 'The business') + ': deliver at the door', next: 'deliver it at the door of the ' + (b ? b.name : 'business') }; }
   return null;
+}
+// The Next job line's words for a switch the timetable needs: "set switch 1 for the turn-off by 08:07".
+function guideNeedNext(need) {
+  const by = need.by || (typeof need.byTime === 'number' ? econWhen(need.byTime).slice(4) : '');
+  return `set switch ${need.sw} ${guideSwitchWord(need)}${by ? ' by ' + by : ''}`;
 }
 // After the tutorial, with the toggle on: the most pressing job. A switch the next train needs (manual switches),
 // travellers in line at the hub's ticket window with nobody selling, goods waiting in the Overland's set-out cars,
 // goods for a business left on the ground in the hub. Else null (nothing pressing: no arrow).
+// D21 (5): the same list gives the Next job line its words (next), so the line and the arrow always agree; after the
+// four above come: a timetable train of ours waiting on the player (water, wood, the run-around's uncoupling), the
+// Overland due within 3 game hours with goods we ordered, contract offers on the work board, and an open contract
+// whose goods are not ordered yet.
 function hintTarget() {
   const need = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.sw]) : null;
-  if (need) { const W = S.track.switches[need.sw]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: guideNeedLabel(need) }; }
+  if (need) { const W = S.track.switches[need.sw]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: guideNeedLabel(need), next: guideNeedNext(need) }; }
   const K = paxStation(S.track, 'hub'), D = S.pax && S.pax.desk;
   const queue = K && S.pax ? S.pax.list.filter(p => p.st === 'hub' && p.s === 'queue').length : 0;
-  if (queue && !(D && D.st === 'hub')) return { x: K.staff.x, z: K.staff.z, k: 'window', label: `Ticket window: ${queue} waiting for tickets` };
+  if (queue && !(D && D.st === 'hub')) return { x: K.staff.x, z: K.staff.z, k: 'window', label: `Ticket window: ${queue} waiting for tickets`, next: `sell tickets, ${queue} waiting at the hub` };
   const car = tutSetOutCars(S)[0];
-  if (car) return { x: car.x, z: car.z, k: 'car', label: 'Overland car: unload the goods' };
+  if (car) return { x: car.x, z: car.z, k: 'car', label: 'Overland car: unload the goods', next: 'unload the Overland\'s cars on the interchange' };
   const I = S.items, B = BLD_BAYS.freightshed;
   if (B) for (const id of itemsAt(S, { kind: 'GROUND' })) {
     const w = I.where[id], wb = I.waybill[id], x = w.x / 100, z = w.z / 100;
     if (wb && wb.consignee && wb.consignee.kind === 'BUSINESS' && x >= HUB.x0 && x <= HUB.x1 && z >= HUB.z0 && z <= HUB.z1 + 6 * SC)
-      return { x: B.bays[0].x, z: B.bays[0].z, k: 'bay', label: 'Freight shed: sort the goods on the ground' };
+      return { x: B.bays[0].x, z: B.bays[0].z, k: 'bay', label: 'Freight shed: sort the goods on the ground', next: 'sort the goods on the ground into the freight shed' };
+  }
+  const w = guideTrainWaits();
+  if (w) return w;
+  const E = S.econ;
+  if (E) {
+    const due = E.orders.length ? Math.min(...E.orders.map(o => o.due)) : null, m = due !== null && due - S.time <= 3 * 3600 ? guideMeetSpot() : null;
+    if (m) { const at = econWhen(due).slice(4); return { x: m.x, z: m.z, k: 'meet', label: 'Interchange: meet the Overland at ' + at, next: 'meet the Overland at the interchange, ' + at }; }
+    const wbs = econWorkBoardSpot();
+    if (wbs && E.contracts.some(k => k.status === 'OFFERED')) return { x: wbs.x, z: wbs.z, k: 'workboard', label: 'Work board: take a contract', next: 'take a contract at the work board' };
+    const open = E.contracts.find(k => (k.status === 'ACTIVE' || k.status === 'LATE') && telContractLeft(k) > 0);
+    if (wbs && open) return { x: wbs.x, z: wbs.z, k: 'workboard', label: 'Work board: order the goods', next: `order the ${COMMODITIES[open.commodity].name.toLowerCase()} for ${econBiz(open.counterparty).name} at the work board` };
+  }
+  return null;
+}
+// A timetable train of ours standing at a stop waiting on the player (water at the tower, wood on the tender, the
+// engine uncoupled for the run-around): the place and words, or null.
+function guideTrainWaits() {
+  if (!S.tt) return null;
+  for (const run of S.tt.runs) {
+    const svc = S.tt.services[run.svc], tr = svc && svc.train !== null ? S.trains[svc.train] : null;
+    if (!tr || trainOff(tr) || !run.why) continue;
+    const st = ttStation(S, svc.stops[Math.min(run.i, svc.stops.length - 1)].st), where = st ? ' at ' + st.name : '';
+    if (/take water|low on water/.test(run.why) && st && st.water) return { x: st.water.sx, z: st.water.sz, k: 'water', label: `Water tower: water ${tr.name}`, next: `${tr.name} waits${where}: take water at the tower` };
+    const L = trainLocos(tr)[0], tp = L ? ttTenderAt(S, tr, L.id) : null;
+    if (/wood/.test(run.why) && tp) return { x: tp.x, z: tp.z, k: 'tender', label: `${tr.name}: put wood on the tender`, next: `${tr.name} waits${where}: put wood on her tender` };
+    if (/uncouple the engine/.test(run.why)) { const j = ttJointAt(S, tr, ttEngineJoint(tr)); if (j) return { x: j.x, z: j.z, k: 'joint', label: `${tr.name}: uncouple the engine`, next: `${tr.name} waits${where}: uncouple her engine to run round` }; }
   }
   return null;
 }
@@ -11688,19 +11864,41 @@ function hintTarget() {
 function guideTtTarget() {
   const tr = guideOurTrain();
   if (!tr) return null;
-  if (ui.panelTrain === tr.id && !$('panelTt').hidden) return { k: 'button', el: 'ttToggle', label: `${tr.name}: tap Timetable to put her on a run`, x: 0, z: 0 };
+  if (ui.panelTrain === tr.id && !$('panelTt').hidden) return { k: 'button', el: 'ttToggle', label: `${tr.name}: tap Timetable to put her on a run`, x: 0, z: 0, next: `tap Timetable to put ${tr.name} on the Willow Ford runs` };
   const ps = trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.k === 'loco'), p = ps[Math.max(0, i)];
-  return p && { x: p.x, z: p.z, k: 'car', label: `${tr.name}: tap her to put her on the timetable` };
+  return p && { x: p.x, z: p.z, k: 'car', label: `${tr.name}: tap her to put her on the timetable`, next: `put ${tr.name} on the timetable: tap her, then Timetable` };
 }
 // The place the arrows point at now ({ x, z, k, label } or null), looked at four times a second.
+// D21 (5): the job in hand, the one source of truth for the arrows and the Next job line: { t (the place, or null),
+// text (the line's words), key (what it is, to know when it changes) }. The tutorial's step while it runs, then No. 1
+// onto the timetable while she is off it after the tutorial, then the most pressing job (hintTarget), else what comes
+// next on the timetable.
+function guideJob() {
+  const c = tutCurrent(S);
+  let t = null, text;
+  if (c && c.key === 'welcome') text = 'Tutorial: read the welcome telegram (tap here)';
+  else if (c) { t = guideTutTarget(c); text = 'Tutorial: ' + (t && t.next ? t.next : c.title.charAt(0).toLowerCase() + c.title.slice(1)); }
+  else if (guideStage() === 'tt') { t = guideTtTarget(); text = 'Next: ' + (t ? t.next : 'put No. 1 on the timetable'); }
+  else { t = hintTarget(); text = 'Next: ' + (t ? t.next : guideIdleText()); }
+  return { t, text, key: c ? 'tut' + c.step + (t ? t.k : '') : t ? t.k + '|' + t.label : 'idle' };
+}
+// Nothing pressing: the next departure of ours from the hub.
+function guideIdleText() {
+  const r = S.tt ? schedStops(S, 'hub').find(r => r.dep && r.state !== 'Cancelled') : null;
+  if (r && r.state === TT_NO_ENGINE) return `the ${r.dep} to ${r.to || 'Willow Ford'} needs an engine (tap it on the schedule board)`;
+  return r ? `nothing pressing; the next train leaves the hub at ${r.dep}` : 'nothing pressing just now';
+}
 function guideTarget() {
   if (animT < guideUi.nextT) return guideUi.t;
   guideUi.nextT = animT + 0.25;
   // The HUD's boxes the label keeps clear of (looked at with the place).
   guideUi.hud = [...document.querySelectorAll('.hud')].filter(e => e.id !== 'guideLabel' && e.id !== 'guideEdge' && e.id !== 'toast' && !e.hidden && e.getClientRects().length)
     .map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
-  const c = tutCurrent(S);
-  guideUi.t = !guideOn() || S.player.ride ? null : c ? guideTutTarget(c) : guideStage() === 'tt' ? guideTtTarget() : hintTarget();
+  const job = guideUi.job = guideJob();
+  // A tap on the Next job line shows the arrow to its place (guideUi.peek) until the job changes or GUIDE.PEEK_S pass.
+  const pk = guideUi.peek, peek = !!pk && pk.key === job.key && animT < pk.until;
+  if (pk && !peek) guideUi.peek = null;
+  guideUi.t = (!guideOn() && !peek) || S.player.ride ? null : job.t;
   return guideUi.t;
 }
 // The arrow: a low-poly downward arrow (head and shaft, one merged mesh), unlit orange with baked shading, drawn
@@ -11780,7 +11978,6 @@ function guideDraw() {
   const t = guideTarget();
   if (!guideUi.arrow) { guideUi.arrow = guideArrowMesh(); guideUi.dots = guideDotsMesh(); scene.add(guideUi.arrow, guideUi.dots); }
   const A = guideUi.arrow, lab = $('guideLabel'), edge = $('guideEdge');
-  guideTrainTag(t);
   edge.style.zIndex = t && t.k === 'button' ? '3' : '';   // over the panel that holds the button
   if (t && t.k === 'button') {   // a page button: the round arrow just right of it, pointing left at it
     A.visible = false; guideDrawDots(null); lab.hidden = true;
@@ -11829,29 +12026,74 @@ function guideDraw() {
     edge.dataset.ang = ang.toFixed(3);
   }
 }
-// "Your train": a tag with a pointer over the player's own engine while the arrows are on (page element, no draw
-// call), so it is clear which train is ours. Left out while the big arrow already stands over her.
-function guideTrainTag(t) {
-  const el = $('guideTrain'), tr = guideOn() && !S.player.ride ? guideOurTrain() : null;
-  const ps = tr ? trainPoses(S.track, tr) : [], i = tr ? tr.consist.findIndex(c => c.k === 'loco') : -1, p = ps[Math.max(0, i)];
-  const hide = !p || (t && t.k === 'car' && Math.hypot(t.x - p.x, t.z - p.z) < 1) || bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on);
-  if (hide) { el.hidden = true; return; }
-  // Over the engine's middle, or over the part of her still on the screen (a third of her length either way).
-  const W = window.innerWidth, H = window.innerHeight, dx = Math.cos(p.yaw), dz = -Math.sin(p.yaw);
-  const q = [0, -0.3, 0.3].map(f => { const x = p.x + dx * f * p.len, z = p.z + dz * f * p.len; return toScreen(x, terrainHeight(x, z) + 3.3 * WS, z); })
-    .find(q => q.x > 60 && q.x < W - 60 && q.y > 60 && q.y < H);
-  if (!q) { el.hidden = true; return; }
-  const txt = `Your train: ${tr.name}`;
-  if (el.firstChild.textContent !== txt) el.firstChild.textContent = txt;
-  el.hidden = false;
-  el.style.left = Math.round(q.x) + 'px'; el.style.top = Math.round(q.y) + 'px';
-}
 // The Arrows toggle (under the Current task chip): its words follow guideOn().
 function guideHud() {
   const b = $('hintBtn'), on = guideOn();
   if (b.getAttribute('aria-pressed') !== String(on)) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Arrows on' : 'Arrows off'; }
 }
 $('hintBtn').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); });
+// ---- The Next job line (D21 (5)) ----
+// Always at the top of the screen (unless hidden in Settings; the choice is kept in this browser, like the Arrows
+// toggle, not in the save): what to do next and where, in plain words with game times, from guideJob (the same job
+// the helper arrows point at). During the tutorial it names the tutorial's step. A tap shows the helper arrow to the
+// place (guideUi.peek) even with the arrows off; a second tap hides it again. Portrait: under the clock and speeds,
+// clear of the right-hand buttons (the tutorial box moves below it, body.nextOn); landscape: between the cash and
+// the telegraph button. Hidden while the Send to banner or the build tool use that part of the screen.
+const nextUi = { pref: null, text: '', shown: null, pos: '' };
+try { const v = localStorage.getItem(GUIDE.NEXT_PREF); if (v === 'on' || v === 'off') nextUi.pref = v; } catch (e) { /* no storage: the default */ }
+function nextJobOn() { return nextUi.pref !== 'off'; }
+function nextJobSetPref(on) {
+  nextUi.pref = on ? 'on' : 'off';
+  try { localStorage.setItem(GUIDE.NEXT_PREF, nextUi.pref); } catch (e) { /* no storage: this visit only */ }
+  nextJobHud(); settingsUpdate();
+}
+function nextJobHud() {
+  const el = $('nextJob'), show = nextJobOn() && !!S.tg && !ui.sendMode && !(typeof bt !== 'undefined' && bt.on);
+  if (show !== nextUi.shown) { nextUi.shown = show; el.hidden = !show; document.body.classList.toggle('nextOn', show); }
+  if (!show) return;
+  guideTarget();
+  const job = guideUi.job, text = job ? job.text : '';
+  if (text !== nextUi.text) { nextUi.text = text; $('nextJobText').textContent = text; }
+  const pk = !!guideUi.peek;
+  if (el.getAttribute('aria-pressed') !== String(pk)) el.setAttribute('aria-pressed', String(pk));
+  // Landscape: from the clock's and the cash's right edge to the telegraph button's left edge.
+  let pos = '';
+  if (landscapeUi()) {
+    const a = Math.max($('clock').getBoundingClientRect().right, $('cash').getBoundingClientRect().right) + 8, b = $('tgBtn').getBoundingClientRect().left - 8;
+    pos = Math.round(a) + ',' + Math.round(Math.max(120, Math.min(440, b - a)));
+  }
+  if (pos !== nextUi.pos) {
+    nextUi.pos = pos;
+    const [l, w] = pos ? pos.split(',') : ['', ''];
+    el.style.left = l ? l + 'px' : ''; el.style.width = w ? w + 'px' : '';
+  }
+}
+$('nextJob').addEventListener('click', () => {
+  guideUi.nextT = 0; guideTarget();
+  const job = guideUi.job, c = tutCurrent(S);
+  if (c && c.key === 'welcome') { openInbox(c.tg); return; }
+  if (!job || !job.t) { toast('Nothing needs you just now. The work board behind the ticket counter lists the next trains.'); return; }
+  guideUi.peek = guideUi.peek ? null : { key: job.key, until: animT + GUIDE.PEEK_S };
+  guideUi.nextT = 0;
+  nextJobHud();
+});
+// ---- Settings (D21 (5)): the Next job line and the helper arrows, each on or off (kept in this browser) ----
+const setUi = { open: false };
+function openSettings() {
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeWorkCard();
+  setUi.open = true; $('settings').hidden = false; settingsUpdate();
+}
+function closeSettings() { setUi.open = false; $('settings').hidden = true; $('setBtn').setAttribute('aria-pressed', 'false'); }
+function settingsUpdate() {
+  $('setBtn').setAttribute('aria-pressed', String(setUi.open));
+  const n = nextJobOn(), a = guideOn();
+  $('setNext').setAttribute('aria-pressed', String(n)); $('setNext').textContent = n ? 'On' : 'Off';
+  $('setArrows').setAttribute('aria-pressed', String(a)); $('setArrows').textContent = a ? 'On' : 'Off';
+}
+$('setBtn').addEventListener('click', () => { if (setUi.open) closeSettings(); else openSettings(); });
+$('settingsClose').addEventListener('click', closeSettings);
+$('setNext').addEventListener('click', () => nextJobSetPref(!nextJobOn()));
+$('setArrows').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); settingsUpdate(); });
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -12311,6 +12553,7 @@ function render(alpha, dt) {
   updateCrowd(dt);
   paxDraw(alpha, dt);     // travellers, in the crowd's meshes (section "people (crowd)")
   guideDraw();            // the helper arrows, D20 (6) (section "HUD and panels")
+  plateDraw();            // the name plates over the engines, D21 (3) (section "world rendering")
   debugUpdate(dt);
   renderer.info.reset(); // once per frame: drawCalls then counts the shadow pass and the main pass
   renderer.render(scene, camera);
@@ -12370,7 +12613,9 @@ window.__railhead = {
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
-  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi }, // helper arrows, D20 (6)
+  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
+    job: () => { guideUi.nextT = 0; guideTarget(); return guideUi.job; }, next: nextUi, nextSetPref: nextJobSetPref, nextOn: nextJobOn, openSettings, closeSettings, settings: setUi,
+    get plates() { return plates; }, econWorkBoardSpot, trainStockOurs }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,

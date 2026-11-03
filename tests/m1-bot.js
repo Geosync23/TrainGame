@@ -347,13 +347,21 @@ function botFactory(R, mem0) {
     // Since D13 it rides No. 1 instead: it boards the combine at the platform shortly before the departure (and keeps
     // selling tickets until then); the walk is only for a train it missed (the first rule above).
     if (atHub(S) && run && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '') && !hubOwes(S) && !held(S).length && P.tool === null && (mem.telDay === dayOf(S) || sodOf(S) >= 11 * H + 30 * M)
-      && sodOf(S) >= svcStop(S, run).dep - 12 * M && !skipped(S, 'board')) return board(S, 'hub');
+      && sodOf(S) >= svcStop(S, run).dep - boardLead(S) && !skipped(S, 'board')) return board(S, 'hub');
     // (Since D13 the bot rides No. 1 back: it boards once Willow Ford's work is done and the train waits for its time.)
     if (atWF(S) && run && run.i === 1 && run.ph === 'at' && /its time/.test(run.why || '') && !wfWork(S) && !held(S).length && P.tool === null
       && sodOf(S) >= svcStop(S, run).dep - 20 * M && !skipped(S, 'board')) return board(S, 'willow');
     // Back to the hub on foot once the train has left Willow Ford without the bot (or there is no train to meet) and the store has its goods.
     if (atWF(S) && (!run || run.i === 2 || (run.i === 0 && run.ph === 'go')) && !wfWork(S)) { if (held(S).length) return deliverTop(S); return send(S, { t: 'walkTo', x: cm(G.stand[0]), z: cm(G.stand[1]) }, 'walk back to the hub (to the water tower: the train takes water on the way in)'); }
     return null;
+  }
+  // How long before the departure to set off for the combine: 12 minutes, or more when it stands far off (at the water
+  // tower, about 30u from the booth since the ticket booth and the station props): the walk at 2.8u a minute with a
+  // quarter more for the way round things, and 3 minutes to spare.
+  function boardLead(S) {
+    const tr = no1(S), ps = R.trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.id === 1), p = ps[i];
+    const far = p ? Math.hypot(p.x - S.player.x, p.z - S.player.z) : 0;
+    return Math.max(12, Math.ceil(far / 2.8 * 1.25) + 3) * M;
   }
   // Board No. 1's combine (stock 1) at this station's platform, to ride to the other station (D13).
   function board(S, from) { mem.rideFrom = from; mem.taskKey = 'board'; return send(S, { t: 'boardCar', stock: 1 }, 'board No. 1 at ' + from); }

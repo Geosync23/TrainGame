@@ -182,7 +182,7 @@ module.exports = async function checkPassengers() {
       for (const p of S.pax.list) { p.x = dx; p.z = dz; p.tx = dx; p.tz = dz; p.path = []; }
       for (let i = 0; i < 5; i++) S.pax.list.push({ id: S.pax.next++, from: 'willow', st: 'willow', to: 'hub', s: 'aboard', x: 0, z: 0, tx: null, tz: null, path: [], t0: 0, f: 0, wait: 0, fare: 40, car: C.stock, door: 0 });
       const log = [], mid = { exp: null, hash: null };
-      for (let k = 1; k <= 60; k++) {
+      for (let k = 1; k <= 75; k++) {   // (D20: travellers walk 1.8, so the walk off takes a little longer)
         const ev = R.simTick(S, []);
         log.push({ k, on: ev.filter(e => e.t === 'paxBoarded').length, off: ev.filter(e => e.t === 'paxAlighted').length, gone: ev.filter(e => e.t === 'paxGone').length });
         if (k === 4) { mid.exp = JSON.stringify({ state: S }); mid.hash = R.stateHash(S); }
@@ -268,7 +268,7 @@ module.exports = async function checkPassengers() {
       // Four travellers arrive at Willow Ford and wait in line; nobody sells tickets there.
       const K = R.pax.paxStation('willow', T), slots = R.pax.paxQueueSlots(S, K), ev0 = [];
       for (let i = 0; i < 4; i++) R.pax.paxAdd(S, 'willow', 'willow', 'hub', slots[i][0] / 100, slots[i][1] / 100, ev0);
-      for (let k = 0; k < 60; k++) tick();
+      for (let k = 0; k < 80; k++) tick();   // (D20: travellers walk 1.8)
       out.wfAboard = S.pax.list.filter(p => p.from === 'willow' && p.s === 'aboard').length;
       out.wfNoTicket = [...boardedNoTicket].filter(k => /@willow$/.test(k)).length;
       if (out.wfNoTicket < 4) out.bad.push(`travellers in line at Willow Ford did not board without a ticket (${out.wfNoTicket} of 4): ` + JSON.stringify(S.pax.list.filter(p => p.st === 'willow').map(p => [p.id, p.s, p.fare])));
@@ -309,7 +309,7 @@ module.exports = async function checkPassengers() {
       const C = R.pax.paxCarsAt(S, K, pc)[0], d = C ? C.doors[0] : [K.staff.x, K.staff.z];
       S.player.x = d[0] - K.along[0] * 1.5 - K.out[0] * 0.6; S.player.z = d[1] - K.along[1] * 1.5 - K.out[1] * 0.6;
       R.importSave(JSON.stringify({ state: S })); // the camera starts on the player
-      R.camera.zoom = 2.2; R.camera.yawIdx = 1; R.step(12);
+      R.camera.zoom = 2.2; R.camera.yawIdx = 1; R.step(16);   // (D20: travellers walk 1.8)
     });
     await page.waitForTimeout(1200);
     await page.screenshot({ path: screenshotPath('passengers-boarding-portrait') });

@@ -193,7 +193,7 @@ module.exports = async function checkCarry() {
       out.start = cords.length;
       run(S, { t: 'carryTool', tool: 1 }, 150);
       if (S.player.tool !== 1) out.bad.push('could not take the handcart in the real start');
-      run(S, { t: 'carryPick', id: cords[0] }, 200);   // (D15: the wood stage is about 52u from the handcart's spot, some 140 ticks' walk)
+      run(S, { t: 'carryPick', id: cords[0] }, 300);   // (D15: the wood stage is about 52u from the handcart's spot; D20: some 220 ticks' walk at 1.8)
       if (held(S).length !== 1 || S.items.where[cords[0]].carrier !== 'HANDCART') out.bad.push('a cord did not go on the handcart: ' + JSON.stringify(S.items.where[cords[0]]));
       const P = S.player, wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'CONSTRUCTION', id: 0 }, contractId: null, due: null });
       out.others = {};

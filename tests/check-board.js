@@ -262,7 +262,7 @@ module.exports = async function checkBoard() {
         const R = window.__railhead, S = R.state, at = R.world.layout.find(a => a.id === 'depot'), K = R.pax.paxStation('hub');
         S.player.x = at.x - 1; S.player.z = at.z - 0.8; S.player.mode = 'idle';
         R.importSave(R.exportSave());
-        R.send({ t: 'walkTo', x: Math.round(K.line.x * 100), z: Math.round(K.line.z * 100) }); R.step(60);
+        R.send({ t: 'walkTo', x: Math.round(K.line.x * 100), z: Math.round(K.line.z * 100) }); R.step(90);   // (D20: the walk is 2.0)
         const P = R.state.player;
         return Math.hypot(P.x - K.line.x, P.z - K.line.z);
       });

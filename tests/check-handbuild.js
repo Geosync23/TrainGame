@@ -283,7 +283,8 @@ async function checkSaveReload(problems) {
     const a = await page.evaluate(async () => {
       const R = window.__railhead, S = R.jobs.jobDebugScenario(R.newState(1866));
       R.simTick(S, [{ t: 'jobWork', id: 0 }]);
-      for (let i = 0; i < 523; i++) R.simTick(S, []); // mid-step, part way along
+      // Mid-step, part way along (D20: the slower walk moves the steps, so go on to the next step in hand).
+      for (let i = 0; i < 523 || (i < 900 && !(S.player.act && S.player.act.k === 'job')); i++) R.simTick(S, []);
       const json = JSON.stringify({ state: S, ui: { yawIdx: 0, zoom: 1, speed: 1 } });
       const ref = JSON.parse(JSON.stringify(S));
       for (let i = 0; i < 400; i++) R.simTick(ref, []);

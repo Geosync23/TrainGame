@@ -319,7 +319,8 @@ const CFG = {
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
   TICKS_PER_REAL_S: 7.5,     // at 1x: one game minute is 1.0 real second, a day 24 real minutes (section 4; D17, was 10)
   DAY_START_S: 5 * 3600,     // the game starts at 05:00
-  WALK: 2.8, RUN: 4.4,       // player speeds, u per game minute (section 4; D15: a quarter faster than M1's 2.25 and 3.5; D17 slowed the clock instead of the walk)
+  WALK: 2.0,                 // player walk, u per game minute (section 4; D20: slower, and no running at all)
+  TOOL_WALK: 1.8,            // pushing the hand truck or handcart (D20: a little slower than walking)
   ACCEL_K: 2.0 * SC,         // a = 2.0 x power / mass, u/min^2 (section 7), times the scale so times stay the same
   BRAKE: 3.0 * SC,           // u/min^2
   TENDER_FIRST: 0.6,         // speed cap factor running tender-first
@@ -842,7 +843,7 @@ function newState(seed, world) {
     trains: [{ id: 0, name: 'No. 1', front: Wd.train(T), v: 0, mode: 'idle', m: 1,
       route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }].concat(overlandNewTrains(T)),
     overland: overlandNewState(),    // the Overland's visits to the interchange (section "trains")
-    player: { x: Wd.player.x, z: Wd.player.z, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, run: false, use: null, act: null, tool: null, ride: null },
+    player: { x: Wd.player.x, z: Wd.player.z, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, use: null, act: null, tool: null, ride: null },
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
     bayTags: cargoDefaultBayTags(),  // destination tag per freight shed bay
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
@@ -1020,25 +1021,25 @@ function applyCommand(S, c, ev) {
   switch (c.t) {
     case 'walkTo':
       // Targets beyond the map edge are pulled back onto the map, so the walk can end.
-      P.mode = 'to'; P.tx = clampX(c.x / 100); P.tz = clampZ(c.z / 100); P.use = null; P.act = null; P.run = !!c.run; break;
+      P.mode = 'to'; P.tx = clampX(c.x / 100); P.tz = clampZ(c.z / 100); P.use = null; P.act = null; break;   // D20: no running (a run flag sent is ignored)
     case 'walkDir':
       // Letting go (a = null) only ends a walk by direction; a switch throw in progress carries on.
       if (c.a === null) { if (P.mode === 'dir') { P.mode = 'idle'; P.use = null; P.act = null; } }
-      else { P.mode = 'dir'; P.a = c.a; P.run = !!c.run; P.use = null; P.act = null; }
+      else { P.mode = 'dir'; P.a = c.a; P.use = null; P.act = null; }
       break;
     case 'useSwitch': {
       const W = T.switches[c.sw];
       if (!W) return;
       // From the side of the track the player is on (D15): beside the stand, or across the trunk from it.
       const sp = switchSpots(T, W), to = walkPrefer(S, sp.near, sp.far);
-      P.mode = 'to'; P.tx = to.x; P.tz = to.z; P.use = { k: 'sw', id: c.sw }; P.act = null; P.run = false;
+      P.mode = 'to'; P.tx = to.x; P.tz = to.z; P.use = { k: 'sw', id: c.sw }; P.act = null;
       break;
     }
     case 'useTrain':
       // c.view (optional): direction from the scene towards the camera as a 0-255 angle code, so the
       // player prefers the side of the train the camera sees. The sim itself knows nothing of the camera.
       if (!tr) return;
-      P.mode = 'to'; P.use = { k: 'tr', id: c.tr }; P.act = null; P.run = false;
+      P.mode = 'to'; P.use = { k: 'tr', id: c.tr }; P.act = null;
       if (Number.isInteger(c.view)) P.use.view = ((c.view % 256) + 256) % 256;
       break;
     case 'throwSwitch': throwSwitch(S, c.sw, ev); break;
@@ -1057,8 +1058,8 @@ function applyCommand(S, c, ev) {
     case 'takeWater': ttWaterCmd(S, c, ev); break;
     case 'ttAssign': ttAssignCmd(S, c, ev); break;
     case 'ttHighball': ttHighballCmd(S, c, ev); break;
-    case 'useTelegraph': { const k = econTelegraphKey(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'tel' }; P.act = null; P.run = false; break; }
-    case 'useDesk': { const k = econDeskSpot(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'desk' }; P.act = null; P.run = false; break; }
+    case 'useTelegraph': { const k = econTelegraphKey(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'tel' }; P.act = null; break; }
+    case 'useDesk': { const k = econDeskSpot(); P.mode = 'to'; P.tx = k.x; P.tz = k.z; P.use = { k: 'desk' }; P.act = null; break; }
     case 'tgRead': tgReadCmd(S, c, ev); break;           // telegrams (section "telegrams and alerts")
     case 'tgAnswer': tgAnswerCmd(S, c, ev); break;
     case 'tutorialSkip': tutSkipCmd(S, ev); break;      // the tutorial's Skip tutorial button (section "tutorial")
@@ -2261,7 +2262,7 @@ function ttWalkBeside(S, at, use) {
   // Pushing the handcart (cords of wood, D13): the side away from the platform, where the handcart cannot go.
   if (carryCarrier(S) === 'HANDCART' && carryNoCartAt(spot(side).x, spot(side).z) && !carryNoCartAt(spot(-side).x, spot(-side).z) && G.cost[walkCell(spot(-side).x, spot(-side).z)]) side = -side;
   const sp = spot(side);
-  P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = use; P.act = null; P.run = false;
+  P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = use; P.act = null;
 }
 function ttRefuse(ev, why) { ev.push({ t: 'ttRefused', why }); }
 function ttUncoupleCmd(S, c, ev) {
@@ -2308,7 +2309,7 @@ function ttWaterCmd(S, c, ev) {
   if (sp.loco.water >= CFG.WATER_U - 1e-6) return ttRefuse(ev, 'The tank is already full');
   if (!ttStanding(sp.tr)) return ttRefuse(ev, 'Wait until the train has stopped');
   const P = S.player, ws = ttWaterSpots(S, sp.st), to = walkPrefer(S, ws[0], ws[1]);
-  P.mode = 'to'; P.tx = to.x; P.tz = to.z; P.use = { k: 'water', st: sp.st.id, tr: sp.tr.id, stock: sp.loco.id }; P.act = null; P.run = false;
+  P.mode = 'to'; P.tx = to.x; P.tz = to.z; P.use = { k: 'water', st: sp.st.id, tr: sp.tr.id, stock: sp.loco.id }; P.act = null;
   if (to === ws[1]) P.use.far = 1;
 }
 // Where the spout is worked from (D15: either side of the track): the tower's side (sx, sz), and the same spot
@@ -3148,7 +3149,7 @@ function jobContinue(S, job, ev, carry, walk) {
       const q = jobPoint(job, Math.min(job.len, st.s + JOB.AHEAD));
       P.mode = 'to'; P.tx = clampX(q.x - q.tz * job.side * JOB.STAND); P.tz = clampZ(q.z + q.tx * job.side * JOB.STAND);
     }
-    P.use = { k: 'job', id: job.id }; P.act = null; P.run = false;
+    P.use = { k: 'job', id: job.id }; P.act = null;
     return;
   }
   jobTake(S, job, st, ev);
@@ -4521,7 +4522,7 @@ function playerTick(S, ev, poseCache) {
   }
   if (P.mode !== 'to' && P.mode !== 'dir') return;
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id]));
-  const step = (P.run ? CFG.RUN : CFG.WALK) * DT_MIN, T = S.track;
+  const step = (P.tool !== null && P.tool !== undefined ? CFG.TOOL_WALK : CFG.WALK) * DT_MIN, T = S.track;
   // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building or onto
   // track away from a crossing (D15)? A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
   const into = (x0, z0, x1, z1, bld) => (insideTrain(poses, x1, z1) && !insideTrain(poses, x0, z0))
@@ -4649,7 +4650,7 @@ function carryRefuse(ev, why) { ev.push({ t: 'carryRefused', why }); }
 // Start walking towards (x, z), stopping CARRY_APPROACH short of it, to use it on arrival.
 function carryWalkTo(S, x, z, use) {
   const P = S.player, dx = x - P.x, dz = z - P.z, d = Math.hypot(dx, dz), k = d > CARRY_APPROACH ? (d - CARRY_APPROACH) / d : 0;
-  P.mode = 'to'; P.tx = clampX(P.x + dx * k); P.tz = clampZ(P.z + dz * k); P.use = use; P.act = null; P.run = false;
+  P.mode = 'to'; P.tx = clampX(P.x + dx * k); P.tz = clampZ(P.z + dz * k); P.use = use; P.act = null;
 }
 // Section 9 wording for the common refusals; the cargo section's reason otherwise.
 function carryWhy(why) {
@@ -4802,7 +4803,7 @@ function carryWalkToCar(S, stockId, use) {
   const P = S.player, d = carryCarDoor(S, stockId, P.x, P.z);
   if (!d) return carryRefuse([], 'There is no such car here');
   P.mode = 'to'; P.tx = clampX(d.x + d.ox * CARRY_DOOR.WALK); P.tz = clampZ(d.z + d.oz * CARRY_DOOR.WALK);
-  P.use = use; P.act = null; P.run = false;
+  P.use = use; P.act = null;
 }
 // Where a place is for walking to and reach, cars included.
 // Where an item lies, for walking to it and reaching it: a job's stockpile item where it was put down.
@@ -4881,7 +4882,7 @@ function carryCheckSaveShape(st) {
 // the ticket window. C2's layout may name them with a `station` field on the footprints; otherwise the first
 // platform is the hub. Departures come from stationDepartures, which returns nothing until train services exist (C3).
 const PAX = {
-  STEP: 27,                 // hundredths of a u per tick: 2.0 u per game minute, citizen walk (section 4)
+  STEP: 24,                 // hundredths of a u per tick: 1.8 u per game minute, citizen walk (section 4; D20, was 2.0)
   SELL_S: 30,               // a ticket takes 0.5 game minutes to sell (section 9)
   BOARD_S: 6,               // boarding or stepping off: 0.1 game minutes each, per door (section 9)
   GIVE_UP_S: 0,             // D20 (3): travellers in the ticket line wait as long as needed (0: never give up). Parked: 3600 gave up after 60 game minutes (D13)
@@ -5130,7 +5131,7 @@ function paxStaffCmd(S, c, ev) {
   const K = paxStation(S.track, c.st), P = S.player;
   if (!K) { ev.push({ t: 'deskLeft', why: 'There is no ticket window there' }); return; }
   const [sx, sz] = paxStaffAt(K);
-  P.mode = 'to'; P.tx = sx; P.tz = sz; P.use = null; P.act = null; P.run = false;
+  P.mode = 'to'; P.tx = sx; P.tz = sz; P.use = null; P.act = null;
   S.pax.desk = { st: K.id, on: 0 };
 }
 function paxLeaveCmd(S, ev) { if (S.pax.desk) { S.pax.desk = null; ev.push({ t: 'deskLeft' }); } }
@@ -5349,7 +5350,7 @@ function rideBoardCmd(S, c, ev) {
   const pc = ridePoses(S), why = rideBoardWhy(S, c.stock, pc);
   if (why) return rideRefuse(ev, why);
   const sp = rideDoorSpot(S, rideCarOf(S, c.stock), pc), P = S.player;
-  P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = { k: 'board', stock: c.stock }; P.act = null; P.run = false;
+  P.mode = 'to'; P.tx = sp.x; P.tz = sp.z; P.use = { k: 'board', stock: c.stock }; P.act = null;
 }
 function rideStepOffCmd(S, ev) {
   const P = S.player;
@@ -6187,124 +6188,220 @@ function combineCut(m, side, end) {
   }
   m.geometry = u.geos[key].g; u.hidden = u.geos[key].hide;
 }
-// The chunky kit (character pitch 1). Faces +z. Legs and arms are separate so they can swing.
+// The chunky kit (character pitch 1). Faces +z, feet at y = 0. D20: the same shapes and colours, now one skinned
+// mesh (one draw call, two with its shadow; was 5 meshes and 10 calls) on a skeleton of bones, each shape bound
+// whole to one bone (no blending, so it stays low-poly and flat-shaded). Bones (userData names):
+//   hips (at hip height, pelvis twist and roll) > legL, legR (thighs, hip joints) > shinL, shinR (knees);
+//   footL, footR (ankles, placed where the walk puts the feet; the boots); upper (torso, at hip height) > head
+//   (neck) and armL, armR (shoulders) > foreL, foreR (elbows) > handL, handR (markers at the fists).
+// Legs: thigh 0.16, shin 0.125 to the ankle, ankle 0.055 over the sole. Arms: upper arm 0.15, forearm to the fist 0.16.
+const PLAYER_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0, skinning: true });
+const PLAYER_RIG = { H: 0.34, hx: 0.08, kt: 0.16, ks: 0.125, ank: 0.055 };
 function modelChunky() {
-  const root = new THREE.Group(), body = new Kit();
-  body.add(cyl(0.2, 0.17, 0.36, 6), PAL.shirt, 0, 0.52, 0);
-  body.add(cyl(0.21, 0.18, 0.24, 6), PAL.vest, 0, 0.46, 0);
-  body.add(ico(0.17), PAL.skin, 0, 0.86, 0);
-  body.add(box(0.04, 0.06, 0.05), PAL.skin, 0, 0.85, 0.17);
-  body.add(box(0.15, 0.035, 0.04), PAL.hair, 0, 0.8, 0.155);
-  body.add(cyl(0.17, 0.18, 0.1, 8), PAL.navy, 0, 1.01, 0);
-  body.add(box(0.22, 0.02, 0.11), PAL.boot, 0, 0.965, 0.16);
-  body.add(box(0.06, 0.04, 0.015), PAL.brass, 0, 1.02, 0.175);
-  // The walk (GAIT) moves the upper body (torso, head and arms) about the hips, and the hips up and down:
-  // upper: a group at hip height holding the body and arms; hips: a group at the feet holding the legs.
-  const upper = new THREE.Group(), hips = new THREE.Group(), H = 0.34;
-  upper.position.y = H; upper.rotation.order = 'YXZ'; root.add(upper); root.add(hips);
-  const bodyMesh = body.mesh(); bodyMesh.position.y = -H; upper.add(bodyMesh);
+  const R = PLAYER_RIG, root = new THREE.Group(), bones = [], parts = [];
+  const bone = (name, parent, x, y, z, order) => {
+    const b = new THREE.Bone(); b.name = name; b.position.set(x, y, z); if (order) b.rotation.order = order;
+    if (parent) parent.add(b); bones.push(b); return b;
+  };
+  const base = bone('base', null, 0, 0, 0);
+  const hips = bone('hips', base, 0, R.H, 0, 'YZX');
+  const upper = bone('upper', base, 0, R.H, 0, 'YXZ');
+  const head = bone('head', upper, 0, 0.36, 0, 'YXZ');
   const limbs = {};
   for (const s of [-1, 1]) {
-    const leg = new THREE.Group(); leg.position.set(s * 0.08, 0.34, 0);
-    const lk = new Kit(); lk.add(box(0.13, 0.3, 0.15), PAL.trousers, 0, -0.15, 0); lk.add(box(0.14, 0.08, 0.2), PAL.boot, 0, -0.3, 0.02);
-    leg.add(lk.mesh()); hips.add(leg);
-    const arm = new THREE.Group(); arm.position.set(s * 0.24, 0.66 - H, 0); arm.rotation.z = s * 0.15;
-    const ak = new Kit(); ak.add(box(0.09, 0.3, 0.1), PAL.shirt, 0, -0.14, 0); ak.add(ico(0.06, 0), PAL.skin, 0, -0.31, 0);
+    const L = s < 0 ? 'L' : 'R';
+    const thigh = bone('leg' + L, hips, s * R.hx, 0, 0, 'ZXY'), shin = bone('shin' + L, thigh, 0, -R.kt, 0);
+    const foot = bone('foot' + L, base, s * R.hx, R.ank, 0);
+    const arm = bone('arm' + L, upper, s * 0.24, 0.66 - R.H, 0); arm.rotation.z = s * 0.15;
+    const fore = bone('fore' + L, arm, 0, -0.15, 0);
+    const hand = new THREE.Object3D(); hand.position.set(0, -0.16, 0); fore.add(hand);
+    const sole = new THREE.Object3D(); sole.position.set(0, -R.ank, 0); foot.add(sole);
+    // Shapes in each bone's own frame (the old one-piece leg and arm boxes, cut at the knee and elbow).
+    parts.push([thigh, new Kit().add(box(0.13, 0.18, 0.15), PAL.trousers, 0, -0.08, 0)]);
+    parts.push([shin, new Kit().add(box(0.12, 0.155, 0.14), PAL.trousers, 0, -0.07, 0)]);
+    parts.push([foot, new Kit().add(box(0.14, 0.08, 0.2), PAL.boot, 0, -R.ank + 0.04, 0.02)]);
+    const ak = new Kit().add(box(0.09, 0.17, 0.1), PAL.shirt, 0, -0.07, 0);
     if (s < 0) ak.add(box(0.1, 0.05, 0.11), PAL.red, 0, -0.08, 0);
-    arm.add(ak.mesh()); upper.add(arm);
-    limbs[s < 0 ? 'legL' : 'legR'] = leg; limbs[s < 0 ? 'armL' : 'armR'] = arm;
+    parts.push([arm, ak]);
+    parts.push([fore, new Kit().add(box(0.085, 0.15, 0.095), PAL.shirt, 0, -0.065, 0).add(ico(0.06, 0), PAL.skin, 0, -0.16, 0)]);
+    Object.assign(limbs, { ['leg' + L]: thigh, ['shin' + L]: shin, ['foot' + L]: foot, ['arm' + L]: arm, ['fore' + L]: fore, ['hand' + L]: hand, ['sole' + L]: sole });
   }
-  root.userData = { body: bodyMesh, upper, hips, hipH: H, ...limbs, gait: gaitNew(), pose: gaitPoseNew() };
+  const yb = R.H, yh = R.H + 0.36;   // the torso's and the head's bone heights
+  parts.push([upper, new Kit().add(cyl(0.2, 0.17, 0.36, 6), PAL.shirt, 0, 0.52 - yb, 0).add(cyl(0.21, 0.18, 0.24, 6), PAL.vest, 0, 0.46 - yb, 0)]);
+  parts.push([head, new Kit().add(ico(0.17), PAL.skin, 0, 0.86 - yh, 0).add(box(0.04, 0.06, 0.05), PAL.skin, 0, 0.85 - yh, 0.17)
+    .add(box(0.15, 0.035, 0.04), PAL.hair, 0, 0.8 - yh, 0.155).add(cyl(0.17, 0.18, 0.1, 8), PAL.navy, 0, 1.01 - yh, 0)
+    .add(box(0.22, 0.02, 0.11), PAL.boot, 0, 0.965 - yh, 0.16).add(box(0.06, 0.04, 0.015), PAL.brass, 0, 1.02 - yh, 0.175)]);
+  // Bind: every shape's vertices into the model's frame at the rest pose, each tied wholly to its bone.
+  base.updateMatrixWorld(true);
+  const pos = [], col = [], si = [], sw = [], v = new THREE.Vector3();
+  for (const [b, k] of parts) {
+    const bi = bones.indexOf(b);
+    for (let i = 0; i < k.p.length; i += 3) {
+      v.set(k.p[i], k.p[i + 1], k.p[i + 2]).applyMatrix4(b.matrixWorld);
+      pos.push(v.x, v.y, v.z); col.push(k.c[i], k.c[i + 1], k.c[i + 2]); si.push(bi, 0, 0, 0); sw.push(1, 0, 0, 0);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+  g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  g.computeVertexNormals();
+  g.computeBoundingSphere(); g.boundingSphere.radius += 0.6;   // room for the limbs' reach (the culling test uses the rest shape)
+  const mesh = new THREE.SkinnedMesh(g, PLAYER_MAT);
+  mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'player';
+  mesh.add(base); root.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones));
+  root.userData = { mesh, body: mesh, upper, hips, head, hipH: R.H, ...limbs, gait: gaitNew(), pose: gaitPoseNew() };
   return root;
 }
 
 // ---- The walk (GAIT), drawing only: shared by the player and the people (crowd and travellers) ----
-// A step cycle (g.ph, 0 to 1) with each leg on the ground for the first f of its half (the left leg from 0, the
-// right from 0.5). On the ground the foot stays put: the cycle moves on by the distance walked over the stride
-// length (twice the foot's sweep over f), so the stride follows the real ground speed and feet do not slide.
-// Off the ground the foot swings forward with an eased curve and lifts (the leg shortens a little: a cheap knee).
-// The hips drop a little at each heel strike (twice per cycle); the upper body sways over the standing foot,
-// twists against the hips, and leans forward more with speed (and pushing a cart). Starting and stopping blend the
-// whole walk in and out (g.sw), so the figure eases into its standing pose. Running (from about 1.15 x walk)
-// shortens the time on the ground, adds a small hop, swings the arms harder and holds them a little forward.
-// Nothing here touches the game state: it reads distances already drawn.
+// D20: a calmer walk with real knees. A step cycle (g.ph, 0 to 1); each foot is on the ground for the first F of
+// its cycle (the left from 0, the right from 0.5), standing still there while the body passes over it: the cycle
+// moves on by the distance walked over the stride, so the stride follows the real ground speed and planted feet do
+// not slide. In the swing the foot lifts early (the heel comes up behind, so the knee bends), swings through and
+// comes down toes up for the heel strike. The legs reach their feet by two-bone IK (gaitLegs: thigh pitch and
+// tilt, knee bend), stretching a little only at the ends of a long stride. The hips drop at each heel strike (body
+// bob twice per stride), twist with the forward leg and roll down on the swing side; the shoulders twist the other
+// way, the torso sways over the standing foot, the arms swing against the legs with the elbows bending more going
+// forward, and the head stays level and looks ahead. Standing: a slow weight shift from foot to foot (one knee
+// eases) and breathing. Starting and stopping blend all of it in and out (g.sw). Nothing here touches the game state.
 const GAIT = {
-  V_WALK: 2.8,         // u per game minute that counts as a normal walk (the player's CFG.WALK; a run, CFG.RUN 4.4, is 1.57 x)
-  AMP0: 0.38, AMP_K: 0.3, AMP_MAX: 0.8, // leg swing either side (radians): AMP0 + AMP_K x speed / V_WALK, at most AMP_MAX
-  AMP_MIN: 0.02,       // the smallest swing used for the stride length (only to keep it above 0)
-  RUN0: 1.15, RUN1: 1.5, // speed / V_WALK where the gait turns into a run (blend between)
-  F_WALK: 0.5, F_RUN: 0.36, // share of each leg's cycle on the ground
-  LIFT: 0.1, LIFT_RUN: 0.18, // the swinging leg shortens by this share at mid-swing
-  BOB: 0.4,            // share of the straight-leg hip drop kept at heel strike (the rest is a knee's give)
-  HOP: 0.035,          // extra rise in a run's flight (u, for a 0.34u leg)
-  SWAY: 0.014, ROLL: 0.035, TWIST: 0.14, HIP_TWIST: 0.04, // side sway (u), roll, shoulder twist, hip twist (radians)
-  ARM: 0.75, ARM_RUN: 1.05, ARM_FWD_RUN: 0.35, // arm swing as a share of the opposite leg's, and a run's forward hold
-  LEAN0: 0.02, LEAN_K: 0.05, LEAN_PUSH: 0.16, // forward lean (radians): LEAN0 + LEAN_K x speed / V_WALK, more pushing
-  EASE_IN: 10, EASE_OUT: 9, // blend rates (per real second at 1x) starting and stopping
-  V_RATE: 6,           // how fast the speed estimate follows (per real second at 1x)
+  V_WALK: 2.0,         // u per game minute that counts as a normal walk (the player's CFG.WALK)
+  STRIDE_K: 2.9,       // the stride (two steps) at walk speed in hip heights: 0.99u for the chunky kit, 4.1 steps a real second
+  PUSH_K: 0.78,        // pushing a hand truck or handcart: shorter steps
+  F: 0.5,              // share of each leg's cycle on the ground (half: the feet change over at each heel strike)
+  LIFT: 0.17,          // foot lift at mid-swing, in hip heights
+  BOB0: 0.04, BOB1: 0.1, // hip drop while walking, in hip heights: always, and more at each heel strike
+  HIP_TWIST: 0.28, HIP_ROLL: 0.07, TWIST: 0.12, SWAY: 0.035, ROLL: 0.03, // pelvis twist and roll, shoulder twist (radians); sway (hip heights); torso roll
+  ARM: 0.42, ELBOW0: 0.12, ELBOW: 0.18, ELBOW_K: 0.9, // arm swing (radians) and elbow bend: standing, walking, and more forward
+  LEAN0: 0.05, LEAN_PUSH: 0.3, // forward lean (radians) walking, and pushing a tool
+  FOOT_X: 0.9,         // the feet's tracks walking, as a share of the hip joints' spread
+  EASE_IN: 6, EASE_OUT: 5, // blend rates (per real second at 1x) starting and stopping
+  V_RATE: 5,           // how fast the speed estimate follows (per real second at 1x)
+  IDLE_HZ: 0.18,       // standing: weight shift from foot to foot
 };
-function gaitNew() { return { ph: 0, sw: 0, v: 0, amp: GAIT.AMP0 }; }
-function gaitPoseNew() { return { legL: 0, legR: 0, lenL: 1, lenR: 1, armL: 0, armR: 0, hipY: 0, swayX: 0, roll: 0, twist: 0, hipTwist: 0, lean: 0, run: 0 }; }
+function gaitNew(t0) { return { ph: 0, sw: 0, v: 0, t: t0 || 0, push: false }; }
+function gaitPoseNew() {
+  return { hipY: 0, hipTwist: 0, hipRoll: 0, swayX: 0, lean: 0, twist: 0, roll: 0, nod: 0,
+    fLx: -1, fLy: 0, fLz: 0, fLp: 0, fRx: 1, fRy: 0, fRz: 0, fRp: 0,
+    armL: 0, armR: 0, armLz: 0.15, armRz: 0.15, elbowL: 0, elbowR: 0,
+    legL: 0, legR: 0, latL: 0, latR: 0, kneeL: 0, kneeR: 0, strL: 1, strR: 1 };
+}
 // Moves the cycle on. dist: the distance walked this frame (u); gameMin: game minutes this frame (0 when
-// paused); t1x: real seconds at 1x this frame; L: leg length (u, hip to sole, times the person's scale).
+// paused); t1x: real seconds at 1x this frame; L: hip height (u, times the person's scale).
 function gaitStep(g, dist, gameMin, t1x, L) {
   if (gameMin <= 0) return g;
+  g.t += t1x;
   const moving = dist > 1e-5;
   const v = Math.min(dist / gameMin, 4 * GAIT.V_WALK);
   g.v += (v - g.v) * (1 - Math.exp(-t1x * GAIT.V_RATE));
   if (moving) g.v = Math.max(g.v, v * 0.5);       // no slow stride for the first frames of a fast start
   g.sw += ((moving ? 1 : 0) - g.sw) * (1 - Math.exp(-t1x * (moving ? GAIT.EASE_IN : GAIT.EASE_OUT)));
-  const r = g.v / GAIT.V_WALK;
-  g.amp = Math.min(GAIT.AMP_MAX, GAIT.AMP0 + GAIT.AMP_K * r);
-  g.run = Math.max(0, Math.min(1, (r - GAIT.RUN0) / (GAIT.RUN1 - GAIT.RUN0)));
-  if (moving) g.ph = (g.ph + Math.min(0.2, dist / gaitStride(g, L))) % 1; // tiny first steps while blending in
+  if (moving) g.ph = (g.ph + Math.min(0.2, dist / gaitStride(g, L))) % 1; // short first steps while blending in
   return g;
 }
-// Puts a walk pose on the player's model (modelChunky's groups).
-function gaitApplyPlayer(u, gp) {
-  const L = u.hipH;
-  u.hips.position.y = gp.hipY; u.hips.rotation.y = gp.hipTwist;
-  u.legL.rotation.x = -gp.legL; u.legL.scale.y = gp.lenL; u.legR.rotation.x = -gp.legR; u.legR.scale.y = gp.lenR;
-  u.upper.position.set(gp.swayX, L + gp.hipY, 0); u.upper.rotation.set(gp.lean, gp.twist, gp.roll);
-  u.armL.rotation.x = -gp.armL; u.armR.rotation.x = -gp.armR;
-}
-// The stride: the distance one whole cycle (two steps) covers.
+// The stride: the distance one whole cycle (two steps) covers. Longer with speed (slower people take shorter
+// steps), shorter pushing, and short while the walk blends in.
 function gaitStride(g, L) {
-  const f = GAIT.F_WALK + (GAIT.F_RUN - GAIT.F_WALK) * (g.run || 0);
-  return 2 * L * Math.sin(Math.max(GAIT.AMP_MIN, g.amp * g.sw)) / f;
+  const r = Math.max(0.3, Math.min(1.6, g.v / GAIT.V_WALK));
+  return GAIT.STRIDE_K * L * Math.sqrt(r) * (g.push ? GAIT.PUSH_K : 1) * (0.35 + 0.65 * g.sw);
 }
-// The pose for the current cycle point. Leg and arm angles: positive is forward. len: leg length as a share.
-// hipY, swayX in u; the rest radians. push: 1 while pushing a hand truck or handcart.
+// The pose for the current cycle point (see gaitPoseNew for the fields). Feet (f..) are targets in the person's
+// frame: x as a share of the hip joints' spread, y the sole's lift and z forward in u, p the foot's pitch (toes up
+// positive). Angles: arm and leg swings forward positive, elbows and knees bent positive. hipY, swayX in u.
+// push: pushing a hand truck or handcart (lean into the handles, shorter steps).
 function gaitPose(g, L, o, push) {
-  const sw = g.sw, run = g.run || 0, f = GAIT.F_WALK + (GAIT.F_RUN - GAIT.F_WALK) * run;
-  const s0 = Math.sin(g.amp * sw), lift = (GAIT.LIFT + (GAIT.LIFT_RUN - GAIT.LIFT) * run) * sw;
-  // A leg at cycle point p: the foot's place along (in leg lengths) and whether it is on the ground.
-  let ground = null;
-  const foot = p => {
-    if (p < f) { if (ground === null) ground = s0 * (1 - 2 * p / f); return [s0 * (1 - 2 * p / f), 0]; }
-    const u = (p - f) / (1 - f), e = u * u * (3 - 2 * u);
-    return [-s0 + 2 * s0 * e, lift * Math.sin(Math.PI * u)];
+  g.push = !!push;
+  const sw = g.sw, S = gaitStride(g, L), f = GAIT.F, A = S * f / 2, TAU = Math.PI * 2;
+  const amp = sw * Math.min(1.3, S / (GAIT.STRIDE_K * L));   // how much of a full walk's swing
+  const near = Math.min(1, sw / 0.2);   // the feet come together only at the very end of a stop (and part at a start)
+  const idle = 1 - sw, pl = g.ph, c1 = Math.cos(TAU * pl), s1 = Math.sin(TAU * pl);
+  const foot = (p, side) => {
+    let z, y = 0, pitch = 0;
+    if (p < f) z = (A - S * p) * near;
+    else {
+      const u = (p - f) / (1 - f), e = u * u * (3 - 2 * u);
+      z = (-A + 2 * A * e) * near;
+      y = GAIT.LIFT * L * sw * Math.sin(Math.PI * Math.pow(u, 0.75));
+      pitch = sw * (u < 0.4 ? -0.55 * Math.sin(Math.PI * u / 0.4) : u > 0.6 ? 0.3 * Math.sin(Math.PI * (u - 0.6) / 0.4) : 0);
+    }
+    const x = side * (GAIT.FOOT_X * sw + idle);
+    if (side < 0) { o.fLx = x; o.fLy = y; o.fLz = z; o.fLp = pitch; } else { o.fRx = x; o.fRy = y; o.fRz = z; o.fRp = pitch; }
   };
-  const pl = g.ph, pr = (g.ph + 0.5) % 1, fl = foot(pl), fr = foot(pr);
-  // The hips: straight-leg height over the foot on the ground (lowest at heel strike), kept in part; in a run's
-  // flight (no foot down) a small hop between toe-off and the next heel strike.
-  const drop = x => (Math.sqrt(1 - x * x) - 1) * GAIT.BOB;
-  let hip;
-  if (ground !== null) hip = drop(ground);
-  else { const q = (pl % 0.5 - f) / Math.max(1e-6, 0.5 - f); hip = drop(s0) + GAIT.HOP / 0.34 * run * sw * Math.sin(Math.PI * q); }
-  o.hipY = hip * L;
-  const leg = ft => { const h = 1 + hip, a = Math.atan2(ft[0], h); return [a, Math.hypot(ft[0], h) * (1 - ft[1])]; };
-  const a = leg(fl), b = leg(fr);
-  o.legL = a[0]; o.lenL = a[1]; o.legR = b[0]; o.lenR = b[1];
-  const ak = GAIT.ARM + (GAIT.ARM_RUN - GAIT.ARM) * run, fwd = GAIT.ARM_FWD_RUN * run * sw;
-  o.armL = o.legR * ak + fwd; o.armR = o.legL * ak + fwd;
-  const c = Math.cos(2 * Math.PI * (g.ph - f / 2)), k = 1 - 0.5 * run;
-  o.swayX = -GAIT.SWAY * (L / 0.34) * c * sw * k; o.roll = GAIT.ROLL * c * sw * k;
-  const tw = s0 > 1e-6 ? (o.legR - o.legL) / (2 * Math.asin(Math.min(1, s0))) : 0;
-  o.twist = GAIT.TWIST * tw * sw; o.hipTwist = -GAIT.HIP_TWIST * tw * sw;
-  o.lean = sw * (GAIT.LEAN0 + GAIT.LEAN_K * Math.min(2, g.v / GAIT.V_WALK) + (push ? GAIT.LEAN_PUSH : 0));
-  o.run = run;
+  foot(pl, -1); foot((pl + 0.5) % 1, 1);
+  // Standing: weight shifts slowly from foot to foot (the hips roll, the free knee eases) and the arms hang loose.
+  const ws = Math.sin(TAU * GAIT.IDLE_HZ * g.t), w2 = Math.sin(TAU * GAIT.IDLE_HZ * 1.7 * g.t + 1);
+  o.hipY = -L * amp * (GAIT.BOB0 + GAIT.BOB1 * (1 + Math.cos(2 * TAU * pl)) / 2) - L * idle * 0.012 * (1 + ws * ws);
+  o.hipTwist = GAIT.HIP_TWIST * amp * c1 + idle * 0.04 * w2;
+  o.hipRoll = -GAIT.HIP_ROLL * amp * s1 + idle * 0.045 * ws;
+  o.swayX = -GAIT.SWAY * L * amp * s1 - idle * 0.012 * (L / 0.34) * ws;
+  o.roll = GAIT.ROLL * amp * s1 - idle * 0.02 * ws;
+  o.twist = -GAIT.TWIST * amp * c1 - idle * 0.03 * w2;
+  o.lean = sw * GAIT.LEAN0 * Math.min(1.5, Math.max(0.5, g.v / GAIT.V_WALK)) + (push ? GAIT.LEAN_PUSH * (0.5 + 0.5 * sw) : 0);
+  o.nod = 0;
+  const arm = -GAIT.ARM * amp * c1;
+  o.armL = arm + idle * 0.03 * w2; o.armR = -arm - idle * 0.03 * w2;
+  o.armLz = o.armRz = 0.15 - 0.03 * sw;
+  o.elbowL = GAIT.ELBOW0 + sw * (GAIT.ELBOW - GAIT.ELBOW0) + GAIT.ELBOW_K * Math.max(0, o.armL);
+  o.elbowR = GAIT.ELBOW0 + sw * (GAIT.ELBOW - GAIT.ELBOW0) + GAIT.ELBOW_K * Math.max(0, o.armR);
   return o;
+}
+// Two-bone IK for both legs: from the hip joints (after the pelvis's drop, twist and roll) to the feet's targets,
+// in units of the rig R { H hip height, hx hip joint spread, kt thigh, ks shin (to the ankle, or the sole without a
+// foot), ank ankle height }, for a person of scale s (targets and hipY are in scaled units). Sets per leg the
+// thigh's pitch (leg), sideways tilt (lat), knee bend and stretch (str, over 1 only when the target is past reach).
+function gaitLegs(o, R, s) {
+  const t = o.hipTwist, r = o.hipRoll, ct = Math.cos(t), st = Math.sin(t), cr = Math.cos(r), sr = Math.sin(r);
+  for (const sd of [-1, 1]) {
+    const L = sd < 0, x = sd * R.hx;
+    const ax = (L ? o.fLx : o.fRx) * R.hx, ay = (L ? o.fLy : o.fRy) / s + R.ank, az = (L ? o.fLz : o.fRz) / s;
+    // Hip joint: T(0, H + hipY) Ry(t) Rz(r) (x, 0, 0).
+    const jx = x * cr * ct, jy = R.H + o.hipY / s + x * sr, jz = -x * cr * st;
+    let vx = ax - jx, vy = ay - jy, vz = az - jz;
+    const qx = vx * ct - vz * st; vz = vx * st + vz * ct; vx = qx;            // undo the twist
+    const px = vx * cr + vy * sr; vy = -vx * sr + vy * cr; vx = px;            // undo the roll
+    const lat = Math.atan2(vx, -vy), D = Math.hypot(vx, vy), d = Math.hypot(vz, D), base = Math.atan2(vz, D);
+    const a = R.kt, b = R.ks;
+    let leg, knee, str = 1;
+    if (d >= a + b - 1e-9) { leg = base; knee = 0; str = d / (a + b); }
+    else {
+      const dd = Math.max(d, Math.abs(a - b) + 1e-6);
+      knee = Math.PI - Math.acos(Math.max(-1, Math.min(1, (a * a + b * b - dd * dd) / (2 * a * b))));
+      leg = base + Math.acos(Math.max(-1, Math.min(1, (a * a + dd * dd - b * b) / (2 * a * dd))));
+    }
+    if (L) { o.legL = leg; o.latL = lat; o.kneeL = knee; o.strL = str; } else { o.legR = leg; o.latR = lat; o.kneeR = knee; o.strR = str; }
+  }
+  return o;
+}
+// Puts a pose on the player's model (modelChunky's bones): legs by IK, feet where the pose puts them, the head
+// held level (it takes back most of the torso's lean and twist).
+function gaitApplyPlayer(u, gp) {
+  const R = PLAYER_RIG;
+  gaitLegs(gp, R, 1);
+  u.hips.position.set(0, R.H + gp.hipY, 0); u.hips.rotation.set(0, gp.hipTwist, gp.hipRoll);
+  u.legL.rotation.set(-gp.legL, 0, gp.latL); u.legL.scale.y = gp.strL; u.shinL.rotation.x = gp.kneeL;
+  u.legR.rotation.set(-gp.legR, 0, gp.latR); u.legR.scale.y = gp.strR; u.shinR.rotation.x = gp.kneeR;
+  u.footL.position.set(gp.fLx * R.hx, gp.fLy + R.ank, gp.fLz); u.footL.rotation.x = -gp.fLp;
+  u.footR.position.set(gp.fRx * R.hx, gp.fRy + R.ank, gp.fRz); u.footR.rotation.x = -gp.fRp;
+  u.upper.position.set(gp.swayX, R.H + gp.hipY, 0); u.upper.rotation.set(gp.lean, gp.twist, gp.roll);
+  u.head.rotation.set(-0.7 * gp.lean + gp.nod, -0.85 * gp.twist, -0.6 * gp.roll);
+  u.armL.rotation.set(-gp.armL, 0, -gp.armLz); u.foreL.rotation.x = -gp.elbowL;
+  u.armR.rotation.set(-gp.armR, 0, gp.armRz); u.foreR.rotation.x = -gp.elbowR;
+}
+// Throwing a switch lever (f: 0 to 1 over the throw): reach down and take the lever in both hands, a
+// two-handed pull back, sitting into the legs, then let go and straighten. idle: 1 standing still.
+function throwPose(o, f, idle) {
+  const reach = jobEase(Math.min(1, f / 0.25)), pull = f < 0.25 ? 0 : jobEase(Math.min(1, (f - 0.25) / 0.55)), back = f < 0.8 ? 1 : 1 - jobEase((f - 0.8) / 0.2);
+  o.armL = o.armR = lerp(o.armL, lerp(0.95, 0.55, pull), reach * back);
+  o.elbowL = o.elbowR = lerp(o.elbowL, lerp(0.15, 0.95, pull), reach * back);
+  o.armLz = o.armRz = lerp(0.15, -0.5, reach * back);
+  o.lean = lerp(o.lean, lerp(0.38, -0.16, pull), reach * back);
+  o.hipY = lerp(o.hipY, lerp(-0.03, -0.06, pull), reach * back);
+  o.nod = 0.2 * reach * back;
+  o.fLz += 0.09 * idle; o.fRz -= 0.07 * idle; o.fLx *= 1 + 0.3 * idle; o.fRx *= 1 + 0.3 * idle;
 }
 // Hand truck (section 9, 3 items): an upright iron frame on two wheels with a nose plate at the foot.
 // Local frame: the wheels' axle at x = z = 0, the handles towards -z (the pusher), the load leans on the frame.
@@ -6418,8 +6515,8 @@ function jobPieceGeos() {
 // points forward and down, so an overhead swing lands its head in front of the feet).
 function modelMaul() {
   const k = new Kit(), a = 0.6, L = 0.58, cx = Math.sin(a), cy = -Math.cos(a);
-  k.add(box(0.035, L, 0.035), PAL.trunk, -0.04, -0.29 + cy * L / 2, cx * L / 2, a);
-  k.add(box(0.07, 0.07, 0.2), PAL.loco, -0.04, -0.29 + cy * L, cx * L, a);
+  k.add(box(0.035, L, 0.035), PAL.trunk, -0.04, -0.29 + cy * L / 2, cx * L / 2, -a);   // tilted forward along (0, cy, cx) (D20: was tilted the other way, off its head)
+  k.add(box(0.07, 0.07, 0.2), PAL.loco, -0.04, -0.29 + cy * L, cx * L, -a);
   const m = k.mesh(false); m.name = 'maul'; m.visible = false;
   return m;
 }
@@ -6663,7 +6760,9 @@ function buildActors(S) {
 // poses, and the progress ring over the player's head during an action. Draw calls: each tool is one mesh
 // (2 with its shadow), the spot marks are one merged mesh, the ring one more while an action runs.
 const carryView = { tools: [], marks: null, ring: null };
-const CARRY_PUSH = { truck: { d: 1.0, tilt: -0.6 }, cart: { d: 1.28, tilt: 0 } }; // tool origin ahead of the player
+// Tool origin ahead of the player and its tilt; D20: far enough that the arms reach the grips nearly straight
+// (arm: the shoulders' swing forward, elbow: their bend, as the push pose holds them).
+const CARRY_PUSH = { truck: { d: 1.25, tilt: -0.75, arm: 1.3, elbow: 0.22, z: 0.02 }, cart: { d: 1.4, tilt: 0, arm: 0.9, elbow: 0.15, z: 0.12 } };
 function carryBuildViews() {
   for (const v of carryView.tools) scene.remove(v.g);
   carryView.tools = S.tools.map(T => {
@@ -6709,20 +6808,19 @@ function carryDraw(alpha, dt) {
     }
     v.g.updateMatrixWorld(true);
   }
-  // Poses (design-doc 17): carry with arms forward at 70 degrees, push with arms forward at 45 degrees.
-  const act = P.act && (P.act.k === 'pick' || P.act.k === 'put') ? P.act : null;
-  let arm = null;
-  if (carrier !== 'HAND') arm = 45; else if (held.length) arm = 70;
+  // Poses (D20, on the walk pose u.pose; render puts it on the model after the work poses): carrying by hand,
+  // both hands hold the item at its sides in front of the chest, shoulders back a little; pushing, the arms reach
+  // straight to the handles (the walk leans into them); lifting or setting down bends at the hips and knees.
+  const o = u.pose, act = P.act && (P.act.k === 'pick' || P.act.k === 'put') ? P.act : null;
+  const grip = (ax, el, z) => { o.armL = o.armR = ax; o.elbowL = o.elbowR = el; o.armLz = o.armRz = z; };
+  if (carrier !== 'HAND') { const k = CARRY_PUSH[S.tools[P.tool].k]; grip(k.arm, k.elbow, k.z); }
+  else if (held.length) { grip(0.95, 0.9, -0.02); o.lean -= 0.07; o.roll *= 0.5; o.twist *= 0.4; }
   if (act) {
-    // Bending to lift or set down: the arms reach low and come back up as the action runs.
-    const t = Math.min(1, (CFG.CARRY_S - act.left + alpha * CFG.TICK_GAME_S) / CFG.CARRY_S);
-    arm = 30 + 40 * Math.abs(Math.cos(t * Math.PI));
+    const t = Math.min(1, (CFG.CARRY_S - act.left + alpha * CFG.TICK_GAME_S) / CFG.CARRY_S), k = Math.sin(t * Math.PI);
+    const low = act.k === 'pick' ? 1 - t : t;   // the hands are low while the item is on the ground
+    grip(lerp(0.95, 0.75, k), lerp(0.9, 0.35, k * low), -0.02);
+    o.lean += 0.5 * k; o.hipY -= 0.1 * k; o.nod += 0.2 * k;
   }
-  if (arm !== null) {
-    const r = -arm * Math.PI / 180;
-    u.armL.rotation.x = r; u.armR.rotation.x = r;
-    u.armL.rotation.z = -0.05; u.armR.rotation.z = 0.05;
-  } else { u.armL.rotation.z = -0.15; u.armR.rotation.z = 0.15; }
   // Progress ring over the head for any timed action (switch throw, pick up, put down).
   const ring = carryView.ring;
   if (P.act) {
@@ -6861,7 +6959,13 @@ function cargoCarriedPose(S, w, actor, id) {
   // Replaced by the carrying code (W3): items on the hand truck or handcart stack on it (carryItemPose);
   // by hand the item is held in front of the chest. The character model faces local +z (its cap visor and nose).
   if (actor === view.player) { const p = carryItemPose(S, w, id); if (p) return p; }
-  const f = actor.rotation.y, fx = Math.sin(f), fz = Math.cos(f);
+  const f = actor.rotation.y, fx = Math.sin(f), fz = Math.cos(f), u = actor.userData;
+  if (u.handL && id !== undefined) {
+    // D20: between the player's hands as drawn (render updates the bones first), held a little below its middle.
+    const P = ITEM_PROP_OF[itemType(S, id)], h = cargoView.shapes ? cargoView.shapes[P[0]].h * P[2] : 0.3;
+    u.handL.getWorldPosition(cargoV); const x = cargoV.x, y = cargoV.y, z = cargoV.z; u.handR.getWorldPosition(cargoV);
+    return { x: (x + cargoV.x) / 2 + fx * 0.04, y: (y + cargoV.y) / 2 - h * 0.45, z: (z + cargoV.z) / 2 + fz * 0.04, yaw: f };
+  }
   return { x: actor.position.x + fx * 0.34, y: actor.position.y + 0.36 + (actor.userData.pose ? actor.userData.pose.hipY : 0), z: actor.position.z + fz * 0.34, yaw: f };
 }
 const cargoM = new THREE.Matrix4(), cargoQ = new THREE.Quaternion(), cargoQ2 = new THREE.Quaternion(), cargoV = new THREE.Vector3(),
@@ -7162,32 +7266,51 @@ function jobAnimate(work, pl) {
     jobPut('spike', p.x, p.y + 0.06 * WS * (1 - struck / 3), p.z, p.yaw);
   }
 }
-// The player's work poses (design-doc 17 "Work"), on top of the walk and carry poses: right arm up holding the tie
-// on the shoulder, then both arms setting it down; both arms holding the rail pair up, then letting it drop; and
-// for a spike 3 overhead maul blows (raise over 60% of each blow, strike fast, small lean into it).
+// The player's work poses (design-doc 17 "Work"; D20: whole-body, on the pose u.pose that render puts on the model):
+// the tie rides on the right shoulder, steadied by the right hand, then is set down bending at the hips and knees;
+// the rail pair is held low with bent knees, then let drop; a spike takes 3 two-handed maul blows, each a wind-up
+// (arms overhead, back arched, legs straightening), a fast strike (the body folds and the knees bend into it) and a
+// follow-through, feet set apart.
+const WORK_POSE = {
+  // c: the point in one blow; impact at 0.72 (when jobAnimate drives the spike down).
+  blow(o, c) {
+    const e = jobEase, k = [
+      // [c, arms, elbows, lean, hipY, nod]
+      [0, 0.45, 0.25, 0.22, -0.02, 0.25], [0.6, 2.45, 0.25, -0.14, 0, -0.05], [0.72, 0.62, 0.05, 0.42, -0.035, 0.3], [1, 0.45, 0.25, 0.22, -0.02, 0.25]];
+    let i = 0; while (i < k.length - 2 && c >= k[i + 1][0]) i++;
+    const a = k[i], b = k[i + 1], q = (c - a[0]) / (b[0] - a[0]), t = i === 1 ? q * q : e(q);   // the strike speeds up
+    o.armL = o.armR = lerp(a[1], b[1], t); o.elbowL = o.elbowR = lerp(a[2], b[2], t);
+    o.lean = lerp(a[3], b[3], t); o.hipY = lerp(a[4], b[4], t); o.nod = lerp(a[5], b[5], t);
+    o.armLz = o.armRz = -0.45;
+  },
+};
 function jobPose(work, pl) {
-  const u = pl.userData;
-  if (!jobView.maul) { jobView.maul = modelMaul(); u.armR.add(jobView.maul); pl.rotation.order = 'YXZ'; }
+  const u = pl.userData, o = u.pose;
+  if (!jobView.maul) { jobView.maul = modelMaul(); jobView.maul.position.y = 0.29; u.handR.add(jobView.maul); }   // the maul's grip is 0.29 down its frame
   jobView.maul.visible = !!work && work.step === 'spike';
-  let lean = 0;
-  if (work) {
-    const t = work.t, arms = (l, r) => { u.armL.rotation.x = l; u.armR.rotation.x = r; u.armL.rotation.z = -0.05; u.armR.rotation.z = 0.05; };
-    if (work.step === 'tie') {
-      if (!work.acting || t < 0.55) { u.armR.rotation.x = -2.75; u.armR.rotation.z = 0.2; }
-      else { const k = jobEase((t - 0.55) / 0.45); arms(lerp(-0.3, -0.9, k), lerp(-2.75, -0.9, k)); lean = 0.3 * Math.sin(k * Math.PI); }
-    } else if (work.step === 'rail' && work.acting) {
-      const k = t < 0.55 ? 0 : Math.min(1, (t - 0.55) / 0.2);
-      arms(lerp(-1.1, -0.4, k), lerp(-1.1, -0.4, k)); lean = 0.25 * (1 - k);
-    } else if (work.step === 'spike') {
-      if (!work.acting) u.armR.rotation.x = -0.35;
-      else {
-        const c = t * 3 - Math.floor(t * 3);
-        const a = c < 0.6 ? lerp(-0.6, -2.7, jobEase(c / 0.6)) : c < 0.72 ? lerp(-2.7, -0.55, (c - 0.6) / 0.12) : lerp(-0.55, -0.6, (c - 0.72) / 0.28);
-        arms(a, a); lean = c < 0.6 ? -0.06 * jobEase(c / 0.6) : c < 0.72 ? lerp(-0.06, 0.18, (c - 0.6) / 0.12) : lerp(0.18, 0, (c - 0.72) / 0.28);
-      }
+  pl.rotation.x = 0;
+  if (!work) return;
+  const t = work.t, idle = 1 - u.gait.sw;
+  const stance = (zl, zr, w) => { if (idle < 0.5) return; o.fLz += zl * idle; o.fRz += zr * idle; o.fLx *= w; o.fRx *= w; };
+  const shoulder = () => { o.armR = 2.3; o.elbowR = 2.4; o.armRz = 0.3; };   // the tie on the right shoulder
+  if (work.step === 'tie') {
+    if (!work.acting || t < 0.55) shoulder();
+    else {
+      const k = jobEase((t - 0.55) / 0.45), d = Math.sin(k * Math.PI);
+      o.armR = lerp(2.3, 0.75, k); o.elbowR = lerp(2.4, 0.3, k); o.armRz = lerp(0.3, 0.05, k);
+      o.armL = lerp(0, 0.75, Math.min(1, 2 * k)); o.elbowL = lerp(0.12, 0.3, k); o.armLz = 0.05;
+      o.lean = 0.62 * d; o.hipY = -0.11 * d; o.nod = 0.25 * d;
+      stance(0.06, -0.04, 1.2);
     }
+  } else if (work.step === 'rail' && work.acting) {
+    const up = t < 0.55 ? 1 : t < 0.75 ? 1 - (t - 0.55) / 0.2 : 0, d = t < 0.75 ? 1 : 1 - jobEase((t - 0.75) / 0.25);
+    o.armL = o.armR = lerp(0.35, 0.85, up); o.elbowL = o.elbowR = lerp(0.2, 0.55, up); o.armLz = o.armRz = 0.25;
+    o.lean = (0.18 + 0.2 * up) * d; o.hipY = -(0.04 + 0.05 * up) * d; o.nod = 0.25 * d;
+    stance(0.05, -0.05, 1.3);
+  } else if (work.step === 'spike') {
+    if (!work.acting) { o.armR = 0.12; o.elbowR = 0.35; }   // the maul hangs from the right hand
+    else { WORK_POSE.blow(o, t * 3 - Math.floor(t * 3)); stance(0.07, -0.08, 1.35); }
   }
-  pl.rotation.x = lean;
 }
 // Called each frame from render(), after the walk and carry poses and before cargoDraw (which draws the extras).
 function jobDraw(S, alpha) {
@@ -8786,7 +8909,7 @@ function townBuildingsDraw(G) {
 // Limb poses are worked out on the CPU (the walk, GAIT in the models section) and written straight into the
 // instance matrices.
 const CROWD = {
-  WALK: 2.5,            // citizen walk, u per game minute (section 4; D15: a quarter faster than M1's 2.0, like the player)
+  WALK: 1.8,            // citizen walk, u per game minute (section 4; D20, was 2.5)
   BREATH: 0.015, BREATH_HZ: 0.35, DRIFT: 8 * Math.PI / 180,
   AREA: { x0: -64, x1: 64, z0: -48, z1: 51.2 }, // where walkers roam on the test map (M1's x 1.6; each world sets its own)
   BALLAST: 0.95 * CFG.SCALE, // paths keep this far from a track centre line (just past the ballast) except at plank crossings (D15)
@@ -8806,7 +8929,10 @@ const crowd = { built: 0, n: 0, walkers: [], kits: null, group: null, grid: null
 
 // A part builder like Kit, but each shape also records its colour slot and shape group.
 class CrowdPart {
-  constructor() { this.p = []; this.c = []; this.r = []; }
+  constructor() { this.p = []; this.c = []; this.r = []; this.k = []; this.joint = null; }
+  // D20: shapes added after bend(y) turn about the joint at height y (a knee or an elbow) by the angle the pose
+  // writes into the instance matrix's spare slot (see CROWD_BEGIN).
+  bend(y) { this.joint = y; return this; }
   add(geo, slot, grp, hex, x, y, z, rx, ry, rz, post) {
     const g = geo.index ? geo.toNonIndexed() : geo;
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z),
@@ -8816,6 +8942,7 @@ class CrowdPart {
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i).applyMatrix4(m);
       this.p.push(v.x, v.y, v.z); this.c.push(col.r, col.g, col.b); this.r.push(slot, grp);
+      this.k.push(this.joint === null ? 0 : 1, this.joint || 0);
     }
     if (g !== geo) g.dispose();
     geo.dispose();
@@ -8826,6 +8953,7 @@ class CrowdPart {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
     g.setAttribute('rh', new THREE.Float32BufferAttribute(this.r, 2));
+    g.setAttribute('rk', new THREE.Float32BufferAttribute(this.k, 2));
     g.computeVertexNormals();
     return g;
   }
@@ -8839,11 +8967,26 @@ function crowdCap(r, thetaLen, openFront) {
 // Shader changes shared by the colour pass and the shadow pass.
 const CROWD_VERT_HEAD = `
 attribute vec2 rh;
+attribute vec2 rk;
+mat4 rhIM;
 attribute vec4 iA;
 attribute vec3 iB;
 vec3 rhRGB(float v) { float r = floor(v / 65536.0); float g = floor((v - r * 65536.0) / 256.0); return vec3(r, g, v - r * 65536.0 - g * 256.0) / 255.0; }
 float rhOn() { return rh.y < 0.5 ? 1.0 : mod(floor((iB.z + 0.5) / exp2(rh.y - 1.0)), 2.0); }`;
-const CROWD_BEGIN = 'vec3 transformed = vec3( position ) * rhOn();';
+// D20: a limb's knee or elbow angle rides in its instance matrix's spare slot (column 0, w): the shapes below the
+// joint (rk.x 1, joint height rk.y) turn about it, and the slot is cleared before the matrix places the vertex.
+const CROWD_BEGIN = `vec3 transformed = vec3( position ) * rhOn();
+#ifdef USE_INSTANCING
+rhIM = instanceMatrix;
+float rhK = rhIM[0].w;
+rhIM[0].w = 0.0;
+if (rk.x > 0.5) {
+  float rc = cos(rhK), rs = sin(rhK);
+  vec2 rq = vec2(transformed.y - rk.y, transformed.z);
+  transformed.yz = vec2(rk.y + rq.x * rc - rq.y * rs, rq.x * rs + rq.y * rc);
+}
+#define instanceMatrix rhIM
+#endif`;
 const CROWD_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
 CROWD_MAT.onBeforeCompile = (sh) => {
   sh.vertexShader = sh.vertexShader
@@ -8866,7 +9009,7 @@ CROWD_DEPTH.customProgramCacheKey = () => 'railhead-crowd-depth';
 function crowdKitParts(kit) {
   const S = CSLOT, G = CG, H = Math.PI;
   const body = new CrowdPart(), legs = [], arms = [];
-  let legPiv, armPiv;
+  let legPiv, armPiv, knee;   // knee: [thigh, shin to the sole] (D20)
   if (kit === 'chunky') {
     body.add(cyl(0.2, 0.17, 0.36, 6), S.TOP, 0, 0, 0, 0.52, 0);
     body.add(cyl(0.21, 0.18, 0.24, 6), S.ACC, G.MALE, 0, 0, 0.46, 0);
@@ -8882,13 +9025,14 @@ function crowdKitParts(kit) {
     body.add(ico(0.075, 0), S.HAIR, G.BUN, 0, 0, 0.93, -0.165);
     body.add(crowdCap(0.2, H * 0.62, true), S.HAT, G.BONNET, 0, 0, 0.87, -0.02, -0.25);
     body.add(cyl(0.18, 0.27, 0.4, 8), S.LOW, G.SKIRT, 0, 0, 0.2, 0);
-    legPiv = [0.08, 0.34, 0]; armPiv = [0.24, 0.66, 0];
+    legPiv = [0.08, 0.34, 0]; armPiv = [0.24, 0.66, 0]; knee = [0.16, 0.18];
     for (const s of [-1, 1]) {
-      legs.push(new CrowdPart().add(box(0.13, 0.3, 0.15), S.LOW, G.LEGS, 0, 0, -0.15, 0)
-        .add(box(0.14, 0.08, 0.2), S.FIX, G.LEGS, PAL.boot, 0, -0.3, 0.02));
+      legs.push(new CrowdPart().add(box(0.13, 0.18, 0.15), S.LOW, G.LEGS, 0, 0, -0.08, 0).bend(-0.16)
+        .add(box(0.12, 0.155, 0.14), S.LOW, G.LEGS, 0, 0, -0.23, 0).add(box(0.14, 0.08, 0.2), S.FIX, G.LEGS, PAL.boot, 0, -0.3, 0.02));
       const rot = new THREE.Matrix4().makeRotationZ(s * 0.15), a = new CrowdPart();
-      a.add(box(0.09, 0.3, 0.1), S.TOP, 0, 0, 0, -0.14, 0, 0, 0, 0, rot).add(ico(0.06, 0), S.SKIN, 0, 0, 0, -0.31, 0, 0, 0, 0, rot);
+      a.add(box(0.09, 0.17, 0.1), S.TOP, 0, 0, 0, -0.07, 0, 0, 0, 0, rot);
       if (s < 0) a.add(box(0.1, 0.05, 0.11), S.FIX, G.ARMBAND, PAL.red, 0, -0.08, 0, 0, 0, 0, rot);
+      a.bend(-0.15 * Math.cos(0.15)).add(box(0.085, 0.15, 0.095), S.TOP, 0, 0, 0, -0.215, 0, 0, 0, 0, rot).add(ico(0.06, 0), S.SKIN, 0, 0, 0, -0.31, 0, 0, 0, 0, rot);
       arms.push(a);
     }
   } else if (kit === 'lanky') {
@@ -8909,13 +9053,13 @@ function crowdKitParts(kit) {
     body.add(ico(0.05, 0), S.HAIR, G.BUN, 0, 0, 1.26, -0.1);
     body.add(crowdCap(0.125, H * 0.62, true), S.HAT, G.BONNET, 0, 0, 1.23, -0.015, -0.25);
     body.add(cyl(0.16, 0.25, 0.5, 8), S.LOW, G.SKIRT, 0, 0, 0.25, 0);
-    legPiv = [0.06, 0.42, 0]; armPiv = [0.19, 1.03, 0];
+    legPiv = [0.06, 0.42, 0]; armPiv = [0.19, 1.03, 0]; knee = [0.2, 0.22];
     for (const s of [-1, 1]) {
-      legs.push(new CrowdPart().add(box(0.08, 0.42, 0.09), S.LOW, G.LEGS, 0, 0, -0.21, 0)
-        .add(box(0.09, 0.05, 0.15), S.FIX, G.LEGS, PAL.boot, 0, -0.395, 0.02));
+      legs.push(new CrowdPart().add(box(0.08, 0.22, 0.09), S.LOW, G.LEGS, 0, 0, -0.1, 0).bend(-0.2)
+        .add(box(0.075, 0.21, 0.085), S.LOW, G.LEGS, 0, 0, -0.3, 0).add(box(0.09, 0.05, 0.15), S.FIX, G.LEGS, PAL.boot, 0, -0.395, 0.02));
       const rot = new THREE.Matrix4().makeRotationZ(s * 0.06);
-      arms.push(new CrowdPart().add(box(0.07, 0.46, 0.08), S.TOP, 0, 0, 0, -0.23, 0, 0, 0, 0, rot)
-        .add(ico(0.045, 0), S.SKIN, 0, 0, s * 0.01, -0.48, 0, 0, 0, 0, rot));
+      arms.push(new CrowdPart().add(box(0.07, 0.25, 0.08), S.TOP, 0, 0, 0, -0.115, 0, 0, 0, 0, rot).bend(-0.23 * Math.cos(0.06))
+        .add(box(0.065, 0.23, 0.075), S.TOP, 0, 0, 0, -0.34, 0, 0, 0, 0, rot).add(ico(0.045, 0), S.SKIN, 0, 0, s * 0.01, -0.48, 0, 0, 0, 0, rot));
     }
   } else { // stocky
     body.add(cyl(0.29, 0.19, 0.44, 4), S.TOP, 0, 0, 0, 0.58, 0, 0, H / 4);
@@ -8927,11 +9071,11 @@ function crowdKitParts(kit) {
     body.add(cyl(0.27, 0.27, 0.025, 9), S.HAT, G.CAP, 0, 0, 1.04, 0);
     body.add(cyl(0.12, 0.15, 0.13, 9), S.HAT, G.CAP, 0, 0, 1.11, 0);
     body.add(crowdCap(0.148, H * 0.42), S.HAIR, G.HAIRC, 0, 0, 0.93, -0.01, -0.4);
-    legPiv = [0.09, 0.36, 0]; armPiv = [0.27, 0.78, 0];
+    legPiv = [0.09, 0.36, 0]; armPiv = [0.27, 0.78, 0]; knee = [0.17, 0.19];
     for (const s of [-1, 1]) {
-      legs.push(new CrowdPart().add(box(0.14, 0.32, 0.15), S.LOW, G.LEGS, 0, 0, -0.16, 0)
-        .add(box(0.15, 0.08, 0.2), S.FIX, G.LEGS, PAL.boot, 0, -0.32, 0.02));
-      const a = new CrowdPart().add(box(0.13, 0.24, 0.13), S.TOP, 0, 0, 0, -0.12, 0, 0, 0, s * 0.1)
+      legs.push(new CrowdPart().add(box(0.14, 0.19, 0.15), S.LOW, G.LEGS, 0, 0, -0.085, 0).bend(-0.17)
+        .add(box(0.13, 0.15, 0.14), S.LOW, G.LEGS, 0, 0, -0.24, 0).add(box(0.15, 0.08, 0.2), S.FIX, G.LEGS, PAL.boot, 0, -0.32, 0.02));
+      const a = new CrowdPart().add(box(0.13, 0.24, 0.13), S.TOP, 0, 0, 0, -0.12, 0, 0, 0, s * 0.1).bend(-0.22)
         .add(box(0.1, 0.2, 0.1), S.SKIN, 0, 0, s * 0.02, -0.32, 0).add(ico(0.065, 0), S.SKIN, 0, 0, s * 0.02, -0.44, 0);
       if (s > 0) { // sledge in the right fist, head forward and low
         const d = [0, -0.4, 0.917], f = [0.02, -0.44, 0], rx = -Math.acos(0.4);
@@ -8941,7 +9085,7 @@ function crowdKitParts(kit) {
       arms.push(a);
     }
   }
-  return { body, legs, arms, legPiv, armPiv };
+  return { body, legs, arms, legPiv, armPiv, knee };
 }
 
 // ---- Seeded descriptions ----
@@ -9101,7 +9245,7 @@ function crowdSpawn(i) {
     if (!crowdOnBallast(g, x, z) && !insideTrain(poses, x, z)) break;
   }
   const w = { d, rng, x, z, yaw: rngNext(rng) * Math.PI * 2, tx: x, tz: z, mode: 0, wait: rngNext(rng) * 2,
-    g: Object.assign(gaitNew(), { ph: rngNext(rng) }), t: rngNext(rng) * 10, ki: 0 };
+    g: Object.assign(gaitNew(i * 2.3), { ph: rngNext(rng) }), t: rngNext(rng) * 10, ki: 0 };
   if (rngNext(rng) < 0.7) crowdTarget(w);
   return w;
 }
@@ -9133,7 +9277,7 @@ function crowdBuildMeshes(n) {
       m.castShadow = true; m.receiveShadow = true;
       m.count = 0; G.add(m); return m;
     });
-    crowd.kits[kit] = { meshes, legPiv: P.legPiv, armPiv: P.armPiv, n: 0, cap, iA, iB };
+    crowd.kits[kit] = { meshes, legPiv: P.legPiv, armPiv: P.armPiv, knee: P.knee, rig: { H: P.legPiv[1], hx: P.legPiv[0], kt: P.knee[0], ks: P.knee[1], ank: 0 }, n: 0, cap, iA, iB };
   }
   crowd.built = n;
   paxView.sig = ''; // the travellers' colours go in again
@@ -9141,8 +9285,9 @@ function crowdBuildMeshes(n) {
 function crowdColour(iA, iB, j, d) { iA.setXYZW(j, d.skin, d.hair, d.top, d.low); iB.setXYZ(j, d.hat, d.acc, d.mask); }
 // Per-part matrices from the walk pose (GAIT): a 3x4 affine matrix as [3x3 column-major, then translation].
 // Base B = T(x, y, z) Ry(yaw) S(s); the upper body (body and arms) is B T(swayX, hipY + H, 0) Ry(twist) Rx(lean)
-// Rz(roll) T(0, -H, 0), with H the hip height; each arm then T(pivot) Rx(swing); each leg B T(0, hipY, 0)
-// Ry(hipTwist) T(pivot) Rx(swing) S(1, len, 1). The body's breath (standing) scales its height.
+// Rz(roll) T(0, -H, 0), with H the hip height; each arm then T(pivot) Rx(swing); each leg B T(0, hipY + H, 0)
+// Ry(hipTwist) Rz(hipRoll) T(pivot) Rz(tilt) Rx(swing) S(1, stretch, 1) from the legs' IK (gaitLegs), with the knee
+// angle in the matrix's spare slot (and each arm's elbow in its own). The body's breath (standing) scales its height.
 const crowdMB = new Float64Array(12), crowdMU = new Float64Array(12), crowdMP = new Float64Array(12), crowdGP = gaitPoseNew();
 function cmT(m, x, y, z) { m[9] += m[0] * x + m[3] * y + m[6] * z; m[10] += m[1] * x + m[4] * y + m[7] * z; m[11] += m[2] * x + m[5] * y + m[8] * z; }
 function cmR(m, i, j, a) { // right-multiply by a rotation mixing columns i and j: col_i' = c col_i + s col_j, col_j' = -s col_i + c col_j
@@ -9150,21 +9295,23 @@ function cmR(m, i, j, a) { // right-multiply by a rotation mixing columns i and 
   for (let k = 0; k < 3; k++) { const p = m[i * 3 + k], q = m[j * 3 + k]; m[i * 3 + k] = c * p + s * q; m[j * 3 + k] = -s * p + c * q; }
 }
 const cmRx = (m, a) => cmR(m, 1, 2, a), cmRy = (m, a) => cmR(m, 2, 0, a), cmRz = (m, a) => cmR(m, 0, 1, a);
-function cmOut(arr, i, m, sy) {
+function cmOut(arr, i, m, sy, bend) {   // bend: the knee or elbow angle, in the spare slot (CROWD_BEGIN)
   const o = i * 16;
-  arr[o] = m[0]; arr[o + 1] = m[1]; arr[o + 2] = m[2]; arr[o + 3] = 0;
+  arr[o] = m[0]; arr[o + 1] = m[1]; arr[o + 2] = m[2]; arr[o + 3] = bend || 0;
   arr[o + 4] = m[3] * sy; arr[o + 5] = m[4] * sy; arr[o + 6] = m[5] * sy; arr[o + 7] = 0;
   arr[o + 8] = m[6]; arr[o + 9] = m[7]; arr[o + 10] = m[8]; arr[o + 11] = 0;
   arr[o + 12] = m[9]; arr[o + 13] = m[10]; arr[o + 14] = m[11]; arr[o + 15] = 1;
 }
 function crowdPose(w) {
   const K = crowd.kits[w.d.kit], M = K.meshes, i = w.ki, s = w.d.scale, Lp = K.legPiv, A = K.armPiv, H = Lp[1];
-  if (!w.g) w.g = gaitNew();
+  if (!w.g) w.g = gaitNew((w.ki || 0) * 1.37);   // each person shifts their weight at their own time
   const g = w.g, o = gaitPose(g, H * s, crowdGP, false);
-  if (w.sit) {   // seated (a traveller in the open combine, D15): thighs forward down to the floor, hips on the seat
-    o.legL = o.legR = Math.acos(Math.min(1, w.sit / (H * s))) + 0.15; o.lenL = o.lenR = 1;
-    o.hipY = 0; o.swayX = 0; o.roll = 0; o.twist = 0; o.hipTwist = 0; o.lean = -0.05; o.armL = o.armR = 0.5;
+  if (w.sit) {   // seated (a traveller in the open combine, D15): hips on the seat, knees bent, feet on the floor
+    o.hipY = 0; o.swayX = 0; o.roll = 0; o.twist = 0; o.hipTwist = 0; o.hipRoll = 0; o.lean = -0.05;
+    o.armL = o.armR = 0.5; o.elbowL = o.elbowR = 0.35;   // hands on the lap; a laborer's sledge stays low
+    o.fLx = -1; o.fRx = 1; o.fLy = o.fRy = (H - w.sit / s) * s; o.fLz = o.fRz = (K.knee[0] * 0.85) * s;
   }
+  gaitLegs(o, K.rig, s);
   const yaw = w.yaw + (w.sit ? 0 : Math.sin(w.t * 0.3) * CROWD.DRIFT * (1 - g.sw)); // slow idle look-around
   const sy = Math.sin(yaw), cy = Math.cos(yaw);
   const y = w.y !== undefined ? w.y : terrainHeight(w.x, w.z);
@@ -9176,9 +9323,9 @@ function crowdPose(w) {
   for (let k = 0; k < 2; k++) {
     const sd = k ? 1 : -1;
     P.set(U); cmT(P, sd * A[0], A[1], A[2]); cmRx(P, -(k ? o.armR : o.armL));
-    cmOut(M[3 + k].instanceMatrix.array, i, P, 1);
-    P.set(B); cmT(P, 0, hy, 0); cmRy(P, o.hipTwist); cmT(P, sd * Lp[0], Lp[1], Lp[2]); cmRx(P, -(k ? o.legR : o.legL));
-    cmOut(M[1 + k].instanceMatrix.array, i, P, k ? o.lenR : o.lenL);
+    cmOut(M[3 + k].instanceMatrix.array, i, P, 1, -(k ? o.elbowR : o.elbowL));
+    P.set(B); cmT(P, 0, hy + H, 0); cmRy(P, o.hipTwist); cmRz(P, o.hipRoll); cmT(P, sd * Lp[0], 0, Lp[2]); cmRz(P, k ? o.latR : o.latL); cmRx(P, -(k ? o.legR : o.legL));
+    cmOut(M[1 + k].instanceMatrix.array, i, P, k ? o.strR : o.strL, k ? o.kneeR : o.kneeL);
   }
 }
 
@@ -9248,7 +9395,7 @@ function updateCrowd(dt) {
       w.wait -= gameMin;
       if (w.wait <= 0) crowdTarget(w);
     }
-    if (!w.g) w.g = gaitNew();
+    if (!w.g) w.g = gaitNew((w.ki || 0) * 1.37);
     gaitStep(w.g, walked, gameMin, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
     crowdPose(w);
   }
@@ -9281,7 +9428,7 @@ function paxDraw(alpha, dt) {
   const t1x = dt * speed, turn = 1 - Math.exp(-dt * 12), byKit = { chunky: [], lanky: [], stocky: [] }, live = new Set();
   for (const p of list) {
     let w = paxView.w.get(p.id);
-    if (!w) { w = { d: paxLook(p.id), x: p.x / 100, z: p.z / 100, yaw: p.f / 128 * Math.PI, g: gaitNew(), t: p.id * 1.7, ki: 0 }; paxView.w.set(p.id, w); }
+    if (!w) { w = { d: paxLook(p.id), x: p.x / 100, z: p.z / 100, yaw: p.f / 128 * Math.PI, g: gaitNew(p.id * 1.7), t: p.id * 1.7, ki: 0 }; paxView.w.set(p.id, w); }
     if (byKit[w.d.kit].length >= CROWD.PAX) continue;
     byKit[w.d.kit].push([p, w]); live.add(p.id);
   }
@@ -9298,7 +9445,7 @@ function paxDraw(alpha, dt) {
       if (recolour) crowdColour(K.iA, K.iB, w.ki, w.d);
       const seat = p.s === 'aboard' ? cutawaySeat(seatOf.get(p.id)) : null;
       if (seat) {   // seated in the open combine: no walk, hips on the seat, facing the baggage end
-        if (!w.g) w.g = gaitNew();
+        if (!w.g) w.g = gaitNew((w.ki || 0) * 1.37);
         gaitStep(w.g, 0, t1x * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
         w.t += t1x; w.x = seat.x; w.z = seat.z; w.yaw = seat.yaw; w.sit = seat.sit;
         w.y = seat.y - crowd.kits[w.d.kit].legPiv[1] * w.d.scale;
@@ -9312,7 +9459,7 @@ function paxDraw(alpha, dt) {
       const K2 = (p.s === 'queue' || p.s === 'wait') && !p.path.length ? paxStation(S.track, p.st) : null;
       const want = K2 ? (p.s === 'queue' ? Math.atan2(-K2.along[0], -K2.along[1]) : Math.atan2(K2.out[0], K2.out[1])) : p.f / 128 * Math.PI;
       w.yaw = lerpAngle(w.yaw, want, moved > 0.5 ? 1 : turn);
-      if (!w.g) w.g = gaitNew();       // a jump (a step off a car) is not a stride
+      if (!w.g) w.g = gaitNew((w.ki || 0) * 1.37);   // a jump (a step off a car) is not a stride
       gaitStep(w.g, moved < 0.5 ? moved : 0, t1x * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
       w.t += t1x; w.x = x; w.z = z; w.y = paxStandY(x, z);
       crowdPose(w);
@@ -11701,11 +11848,11 @@ function panBy(dx, dy) {
   cam.oz += -rz * dx * wpp + fz * dy * wpp / s;
 }
 function angleCode(dx, dz) { return ((Math.round(Math.atan2(dz, dx) / (Math.PI * 2) * 256) % 256) + 256) % 256; }
-function sendDir(a, run) {
+function sendDir(a) {
   if (a !== null && S.player.ride) return;   // riding: no walking (Step off first)
-  const key = a === null ? 'stop' : a + (run ? 'r' : '');
+  const key = a === null ? 'stop' : String(a);
   if (key === sentDir) return;
-  sentDir = key; send({ t: 'walkDir', a, run: !!run });
+  sentDir = key; send({ t: 'walkDir', a });
 }
 function stopHoldWalk() { sendDir(null); sentDir = null; }
 // Press and hold towards a spot across the track: a tap-style walk there (sent again when the finger moves 1u).
@@ -11725,19 +11872,19 @@ function updateHoldWalk() {
       const dx = g.x - S.player.x, dz = g.z - S.player.z;
       // Across track (D15): walk there by the path, round by a crossing, instead of steering into the rails.
       if (Math.hypot(dx, dz) > 0.3 && walkAcrossTrack(walkGrid(S.track), S.player.x, S.player.z, g.x, g.z)) holdRouteTo(g);
-      else if (Math.hypot(dx, dz) > 0.3) sendDir(angleCode(dx, dz), false);
+      else if (Math.hypot(dx, dz) > 0.3) sendDir(angleCode(dx, dz));
       else sendDir(null);
     }
     return;
   }
-  // Keyboard: W A S D relative to the view, Shift to run.
+  // Keyboard: W A S D relative to the view (no running since D20).
   let kx = 0, kz = 0;
   const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw), rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw);
   if (keys.has('KeyW')) { kx += fx; kz += fz; }
   if (keys.has('KeyS')) { kx -= fx; kz -= fz; }
   if (keys.has('KeyD')) { kx += rx; kz += rz; }
   if (keys.has('KeyA')) { kx -= rx; kz -= rz; }
-  if (kx || kz) { keyDir = true; view.ring.visible = false; sendDir(angleCode(kx, kz), keys.has('ShiftLeft') || keys.has('ShiftRight')); }
+  if (kx || kz) { keyDir = true; view.ring.visible = false; sendDir(angleCode(kx, kz)); }
   else if (keyDir) { keyDir = null; stopHoldWalk(); }
 }
 const keys = new Set();
@@ -11834,11 +11981,16 @@ function render(alpha, dt) {
   // The walk (GAIT, models section): stride from the distance drawn, so the feet do not slide. A jump (riding,
   // a load or a teleport in a check) is not a stride.
   const g = u.gait, gp = u.pose, L = u.hipH, gameMin = dt * speed * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60;
+  const push = P.tool !== null && P.tool !== undefined;
+  g.push = push;
   gaitStep(g, moved < 2 ? moved : 0, gameMin, dt * speed, L);
-  gaitApplyPlayer(u, gaitPose(g, L, gp, P.tool !== null && P.tool !== undefined));
-  if (P.act && P.act.k === 'throw') { u.armR.rotation.x = -1.2 + Math.sin(animT * 4) * 0.25; u.armL.rotation.x = -1.0; }
-  carryDraw(alpha, dt);
+  gaitPose(g, L, gp, push);
+  carryDraw(alpha, dt);   // the carry and push poses (on gp)
   jobDraw(S, alpha);      // construction jobs and the work poses (hand-building, after the carry poses)
+  if (P.act && P.act.k === 'throw') throwPose(gp, Math.max(0, Math.min(1, (CFG.THROW_S - P.act.left + (speed > 0 ? alpha : 0) * CFG.TICK_GAME_S) / CFG.THROW_S)), 1 - g.sw);
+  if (view.posePreview) view.posePreview(gp, u);   // checks and screenshots only: hold a chosen pose
+  gaitApplyPlayer(u, gp);
+  pl.updateMatrixWorld(true);
   pl.scale.y = 1 + Math.sin(animT * 0.35 * Math.PI * 2) * 0.015 * (1 - g.sw);
   // The tap marker shows until the walk it started ends.
   if (view.ringArmed && P.mode === 'to') view.ringArmed = false;
@@ -11941,7 +12093,7 @@ window.__railhead = {
     ttSwitchNeeds, ttSwitchPlan, swStation, switchApproach, routeThrows, springTick, swName, ttSwitchman },   // D20: manual switches
   feet: { bldStandY, bldDeckInside, deckGroundAt, BLD_STEP_R, get playerY() { return view.player.position.y; }, get ringY() { return view.ring.position.y; },
     get actionRingY() { return carryView.ring.position.y; }, get toolYs() { return carryView.tools.map(v => v.g.position.y); } },
-  gait: { GAIT, gaitNew, gaitStep, gaitPose, gaitStride, gaitApplyPlayer, get player() { return view.player; } },   // the walk (drawing only)
+  gait: { GAIT, PLAYER_RIG, CROWD_WALK: CROWD.WALK, gaitNew, gaitPoseNew, gaitStep, gaitPose, gaitStride, gaitLegs, gaitApplyPlayer, throwPose, WORK_POSE, set posePreview(f) { view.posePreview = f; }, get maul() { return jobView.maul; }, get player() { return view.player; } },   // the walk (drawing only)
   ride: { RIDE, rideCarOf: (stock, st) => rideCarOf(st || S, stock), rideAtPlatform, ridePoses, rideDoors, get playerVisible() { return view.player.visible; } },
   // The cutaway (D15): each combine's open side and draw range; the open car, and the player, seated travellers
   // and freight drawn in it, in the car's own frame (x along it, the baggage end +x; z across; y up from the rail line).

@@ -30,7 +30,7 @@ const { openGame, screenshotPath } = require('./browser');
 // The toast is a passing message and is left out.
 function layoutProblems() {
   const ids = ['clock', 'speeds', 'cash', 'buildBtn', 'tgBtn', 'alerts', 'rotL', 'rotR', 'lookBtn', 'officeBtn', 'centre', 'carry', 'paxDesk', 'ride', 'rideBoard',
-    'tutTask', 'tgSlide', 'office', 'inbox', 'lookCard', 'panel', 'telPanel', 'carPanel', 'dbgBar'];
+    'tutTask', 'tgSlide', 'office', 'inbox', 'lookCard', 'panel', 'telPanel', 'carPanel', 'dbgBar', 'nextJob', 'settings', 'workCard'];
   const vis = e => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
   const boxes = [];
   for (const id of ids) {

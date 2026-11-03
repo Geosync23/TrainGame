@@ -244,7 +244,7 @@
   @keyframes guidePulse { 50% { box-shadow: 0 0 0 6px rgba(255,122,26,.35); } }
   /* D21 (5): the Next job line at the top: under the clock and speeds in portrait (clear of the right-hand column),
      between the cash and the telegraph button in landscape (placed by nextJobHud). The tutorial box moves below it. */
-  #nextJob { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 104px); width: min(calc(100vw - 86px), 420px);
+  #nextJob { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 104px); width: min(calc(100vw - 100px), 420px);
     height: 48px; box-sizing: border-box; text-align: left; padding: 3px 10px; border-left: 7px solid #ff7a1a; font: 600 14px/1.2 Georgia, serif;
     display: flex; align-items: center; }
   #nextJob span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -11165,7 +11165,6 @@ function updateHud() {
   townSignHud();
   paxHud();
   rideHud();
-  nextJobHud();        // the Next job line (D21), before the tutorial box, which moves below it
   tutHud();            // before the slide-in, which keeps clear of the tutorial chip
   officeUpdate();      // office, telegrams, alerts and Look (D1)
   officeBtnHud();
@@ -11173,6 +11172,7 @@ function updateHud() {
   workBtnHud();
   inboxUpdate();
   tgBtnHud();
+  nextJobHud();        // the Next job line (D21): after the telegraph button (it ends at its left edge), before the slide-in (which goes below it)
   tgSlideHud();
   alertsHud();
   lookUpdate();
@@ -11275,13 +11275,14 @@ function ttCardHud() {
   // At the depot (the ticket window or a pinned board) it stands above the roof, clear of the schedule board (D20).
   const p = toScreen(near.at.x, (near.high ? 3.1 : 1.9) * WS, near.at.z), W = window.innerWidth;
   const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2));
-  let y = Math.max(64, p.y - ttCardUi.h - 6);
+  const yMin = nextUi.shown ? Math.round($('nextJob').getBoundingClientRect().bottom + 6) : 64;   // below the Next job line (D21)
+  let y = Math.max(yMin, p.y - ttCardUi.h - 6);
   // D21 (2): above the depot's WORK BOARD roof sign too, never over it.
   const sg = near.high && boards.list.find(b => b.kind === 'sign' && b.st === near.st.id);
   if (sg) {
     const c = Math.cos(sg.yaw) * sg.w / 2, s = -Math.sin(sg.yaw) * sg.w / 2, q = [toScreen(sg.x - c, sg.y + sg.h / 2, sg.z - s), toScreen(sg.x + c, sg.y + sg.h / 2, sg.z + s)];
     const top = Math.min(q[0].y, q[1].y), l = Math.min(q[0].x, q[1].x), r = Math.max(q[0].x, q[1].x);
-    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = Math.max(64, top - ttCardUi.h - 6);
+    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = Math.max(yMin, top - ttCardUi.h - 6);
     // No room above it (landscape): below the depot's front instead, on the platform.
     if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = toScreen(near.at.x, 0, near.at.z).y + 10;
   }
@@ -11508,11 +11509,16 @@ function workCardContractsHtml() {
 }
 function workCardUpdate() {
   // A walk started by a tap on the roof sign (or the card's button) opens the card on arrival at the board.
+  // (The walk starts on the next tick: until then, up to 3 real seconds, the walk is not under way yet.)
   const pend = wbUi.pending;
   if (pend && !wbUi.open) {
-    const P = S.player, sp = wbBoardSpot(pend);
-    if (!sp || P.mode !== 'to' && Math.hypot(sp.x - P.x, sp.z - P.z) > 1.2) wbUi.pending = null;
-    else if (P.mode !== 'to' && wbBoothStation(P.x, P.z) === pend) { wbUi.pending = null; openWorkCard(pend, true); }
+    const P = S.player, sp = wbBoardSpot(pend.st);
+    if (P.mode === 'to') pend.walking = true;
+    if (!sp || (!pend.walking && performance.now() - pend.at > 3000)) wbUi.pending = null;
+    else if (P.mode !== 'to' && (pend.walking || Math.hypot(sp.x - P.x, sp.z - P.z) < 1.2)) {
+      wbUi.pending = null;
+      if (wbBoothStation(P.x, P.z) === pend.st && Math.hypot(sp.x - P.x, sp.z - P.z) < 1.2) openWorkCard(pend.st, true);
+    }
   }
   if (!wbUi.open) return;
   if (wbUi.booth && wbBoothStation(S.player.x, S.player.z) !== wbUi.st) { closeWorkCard(); return; }
@@ -11538,7 +11544,7 @@ function workBoardGo(stId) {
   closeWorkCard();
   if (wbBoothStation(S.player.x, S.player.z) === stId && Math.hypot(sp.x - S.player.x, sp.z - S.player.z) < 1.2) { openWorkCard(stId, true); return true; }
   send({ t: 'walkTo', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) });
-  wbUi.pending = stId;
+  wbUi.pending = { st: stId, at: performance.now(), walking: false };
   toast('To the work board, behind the ticket counter.');
   return true;
 }
@@ -12156,7 +12162,6 @@ function guideDraw() {
   guideUi.flip = flip;
   const top = flip ? toScreen(t.x, y0 - liftF - 1.95 * sc, t.z) : upTop;   // the arrow's far end (its tail)
   const on = foot.x > 12 && foot.x < W - 12 && foot.y > 12 && foot.y < H - 12;
-  if (!on && flip) A.visible = false;   // off the top of the screen: the edge arrow alone, no stub of the arrow under the buttons
   if (bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on)) { lab.hidden = edge.hidden = true; return; }
   if (on) {
     if (lab.textContent !== t.label) lab.textContent = t.label;
@@ -12168,6 +12173,9 @@ function guideDraw() {
     const spots = (flip ? [[top.x - w / 2, top.y + 6], [top.x + aw + 8, my - h / 2], [top.x - aw - w - 8, my - h / 2]]
       : [[top.x - w / 2, top.y - h - 6], [foot.x - w / 2, foot.y + 12], [top.x + aw + 8, my - h / 2], [top.x - aw - w - 8, my - h / 2]])
       .filter(([, y], i) => i || flip || y >= 8).map(fit);   // above only when the arrow's top is in view
+    // D21: none of those clear (the top of the screen is busy): further down beside the way, centred or to either side.
+    const by = (flip ? top.y : foot.y) + 12;
+    for (const dy of [0, 36, 72, 108, 144]) for (const x of [foot.x - w / 2, foot.x - w + 24, foot.x - 24]) spots.push(fit([x, by + dy]));
     const clear = ([x, y]) => !guideUi.hud.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
     const [lx, ly] = spots.find(clear) || spots[0];
     lab.style.left = Math.round(lx) + 'px'; lab.style.top = Math.round(ly) + 'px';
@@ -12177,7 +12185,7 @@ function guideDraw() {
     if ($('guideEdgeText').textContent !== name) $('guideEdgeText').textContent = name;
     // Where the line from the middle of the screen to the place meets an inset frame (clear of the HUD's edges).
     const cx = W / 2, cy = H / 2, dx = foot.x - cx, dy = foot.y - cy, land = W > H;
-    const L = 46, R = W - 46, T = land ? 100 : nextUi.shown ? 205 : 150, B = H - (land ? 76 : 100);   // D21: below the Next job line
+    const L = 46, R = W - 46, T = land ? (nextUi.shown ? 104 : 100) : nextUi.shown ? 205 : 150, B = H - (land ? 76 : 100);   // D21: below the Next job line
     let k = Infinity;
     if (dx) k = Math.min(k, ((dx > 0 ? R : L) - cx) / dx);
     if (dy) k = Math.min(k, ((dy > 0 ? B : T) - cy) / dy);
@@ -12779,7 +12787,7 @@ window.__railhead = {
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
   guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
     job: () => { guideUi.nextT = 0; guideTarget(); return guideUi.job; }, next: nextUi, nextSetPref: nextJobSetPref, nextOn: nextJobOn, openSettings, closeSettings, settings: setUi,
-    get plates() { return plates; }, econWorkBoardSpot, trainStockOurs }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
+    get plates() { return plates; }, econWorkBoardSpot, trainStockOurs, OUR_STRIPE, PLATE, TT_NO_ENGINE, workBoardOffers, workBoardGo, ttNeedEngineGo, get ttCardUi() { return ttCardUi; }, ttCardPin }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,
@@ -12832,6 +12840,7 @@ window.__railhead = {
       player: { visible: pl.visible, local: toLocal(c.m, pl.position.x, pl.position.y, pl.position.z) }, seated, items, half: [1.35 * WS, 0.475 * WS] } };
   },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
+  three: { get camera() { return camera; }, get scene() { return scene; } },   // D21 checks: what the camera sees first along a ray
   // The painted departure boards (D15) and the ticket booths (2026-11-03).
   board: { BOARD, BLD_BOOTH, boardRows, boardState, boardHitAt, ttCardPin, schedRows, schedStops, wbRows: (st, S2) => wbRows(S2 || S, st), workBoardLines, workBoardHitAt, wbBoothStation,
     openWorkCard, closeWorkCard, get workUi() { return wbUi; }, get list() { return boards.list; }, get mesh() { return boards.mesh; },

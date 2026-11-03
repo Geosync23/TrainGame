@@ -240,7 +240,7 @@ module.exports = async function checkWorkboard() {
 
       // ---- 7. The public schedule board's columns at both stations ----
       const sched = await R(() => { const R = window.__railhead; R.send({ t: 'ttAssign', tr: 0, on: true }); R.step(1); return ['hub', 'willow'].map(st => R.board.schedRows(R.state, st)); });
-      for (const rs of sched) for (const r of rs) if (['train', 'from', 'to', 'arr', 'dep', 'plat', 'state'].some(k => typeof r[k] !== 'string') || !/^(On time|Late|Cancelled|No engine)$/.test(r.state)) P(`a schedule row lacks a column: ${JSON.stringify(r)}`);
+      for (const rs of sched) for (const r of rs) if (['train', 'from', 'to', 'arr', 'dep', 'plat', 'state'].some(k => typeof r[k] !== 'string') || !/^(On time|Late|Cancelled|Not running: needs an engine)$/.test(r.state)) P(`a schedule row lacks a column: ${JSON.stringify(r)}`);
       if (!sched[0].some(r => r.arr && r.from === 'Willow Ford') || !sched[1].some(r => r.arr && r.dep && r.from === 'Hub' && r.to === 'Hub')) P(`the schedule boards should list arrivals and departures with from and to: ${JSON.stringify(sched)}`);
 
       // ---- 8. Screenshots of the public board at the start zoom 1.5 and at 3, day and night ----

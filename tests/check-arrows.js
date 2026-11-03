@@ -1,12 +1,14 @@
 // Check: the helper arrows (D20 (6), "tutorial arrows that show you the flow").
 //
-// 1. A new game, portrait and landscape: after the welcome's OK the big arrow stands over the office desk with its
-//    label "Office desk: take a contract", the dotted path is drawn, and no edge arrow shows (screenshot
+// 1. A new game, portrait and landscape: after the welcome's OK the big arrow stands over the work board behind the
+//    ticket counter (D21 (2): contracts are taken there) with its label "Work board: take a contract" (it points up
+//    from under the place when the top of the screen would cut it off), the dotted path is drawn, and no edge arrow
+//    shows (screenshot
 //    arrows-first-*.png). The camera panned away: the arrow at the screen's edge shows, inside the screen, pointing
 //    towards the desk (its angle matches the direction from the middle of the screen to the desk) with its name
 //    (arrows-edge-*.png).
 // 2. Each tutorial step (the tutorial bot of check-tutorial.js plays a game; the page loads its state at each new
-//    step): the arrow stands over the right place: the desk (contract, order), the ticket counter inside the booth
+//    step): the arrow stands over the right place: the work board (contract, order; D21), the ticket counter inside the booth
 //    (tickets), the work board (or, without one, the ticket counter) and then the switch (switch: the first switch
 //    the next train needs when the timetable says so, else the platform switch), the Overland's car or the
 //    interchange (unload), the bay with the item's tag (sort), the business's door (deliver). A later step's
@@ -53,10 +55,16 @@ module.exports = async function checkArrows() {
         const d = R.econ.econTelegraphKey(), P = R.state.player; R.camera.ox = (d.x - P.x) / 2; R.camera.oz = (d.z - P.z) / 2; });
       await frames();
       const a = await page.evaluate(READ);
-      const desk = await page.evaluate(() => { const R = window.__railhead, P = R.state.player, k = R.econ.econTelegraphKey(), d = R.office.econDeskSpot();
-        return Math.hypot(d.x - P.x, d.z - P.z) > 3 || Math.hypot(k.x - P.x, k.z - P.z) <= Math.hypot(d.x - P.x, d.z - P.z) ? { x: k.x, z: k.z, k: 'telegraph', name: 'Telegraph key' } : { x: d.x, z: d.z, k: 'desk', name: 'Office desk' }; });
+      const desk = await page.evaluate(() => { const w = window.__railhead.guide.econWorkBoardSpot(); return { x: w.x, z: w.z, k: 'workboard', name: 'Work board' }; });
       await page.screenshot({ path: screenshotPath(`arrows-first-${orient}`) });
-      if (!a.t || a.t.k !== desk.k || !near(a.t, desk) || !near(a.arrow, desk)) problems.push(`${orient}: the first step's arrow should stand over the telegraph key (or the desk when the player is by it): ${JSON.stringify({ t: a.t, arrow: a.arrow, desk })}`);
+      if (!a.t || a.t.k !== desk.k || !near(a.t, desk) || !near(a.arrow, desk)) problems.push(`${orient}: the first step's arrow should stand over the work board: ${JSON.stringify({ t: a.t, arrow: a.arrow, desk })}`);
+      // The integrator's note (landscape): the arrow is never cut off at the top of the screen, nor under the top buttons.
+      const cut = await page.evaluate(() => { const R = window.__railhead, A = R.guide.ui.arrow; if (!A || !A.visible) return null;
+        A.geometry.computeBoundingBox(); A.updateMatrixWorld();
+        const bb = A.geometry.boundingBox.clone().applyMatrix4(A.matrixWorld), ys = [];
+        for (const x of [bb.min.x, bb.max.x]) for (const y of [bb.min.y, bb.max.y]) for (const z of [bb.min.z, bb.max.z]) ys.push(R.toScreen(x, z, y).y);
+        return { top: Math.min(...ys), flip: R.guide.ui.flip, next: document.getElementById('nextJob').getBoundingClientRect().bottom }; });
+      if (cut && cut.top < 0) problems.push(`${orient}: the first step's arrow runs off the top of the screen: ${JSON.stringify(cut)}`);
       if (a.label !== desk.name + ': take a contract') problems.push(`${orient}: the first step's label: ${a.label}`);
 
       if (a.edge) problems.push(`${orient}: no edge arrow while the desk is on screen`);
@@ -64,12 +72,13 @@ module.exports = async function checkArrows() {
       if (!a.toggle || a.toggle.h < 48 || a.toggle.w < 48 || !a.toggle.on) problems.push(`${orient}: the Arrows toggle should show, on, at least 48 px: ${JSON.stringify(a.toggle)}`);
       if (a.labelBox && (a.labelBox.x < 0 || a.labelBox.r > a.vw || a.labelBox.y < 0)) problems.push(`${orient}: the label runs off the screen`);
       const dcOn = a.dc;
-      // "Your train": the tag over No. 1 from the start (the camera on her).
+      // D21 (3): the name plate "No. 1, yours" over No. 1 from the start (the camera on her); it replaces TA's tag.
       await page.evaluate(() => { const R = window.__railhead, tr = R.guide.ourTrain(), P = R.state.player, p = R.trainPoses(R.state.track, tr)[0]; R.camera.ox = p.x - P.x; R.camera.oz = p.z - P.z; });
       await frames();
-      const yt = await page.evaluate(READ);
-      const ytAt = await page.evaluate(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.guide.ourTrain())[0]; return R.toScreen(p.x, p.z, 0); });
-      if (!yt.train || yt.train.text !== 'Your train: No. 1' || Math.abs(yt.train.x + yt.train.w / 2 - ytAt.x) > 140 || yt.train.b > ytAt.y) problems.push(`${orient}: the "Your train" tag should stand over No. 1 from the start: ${JSON.stringify({ tag: yt.train, at: ytAt })}`);
+      const yt = await page.evaluate(() => { const R = window.__railhead, pl = R.guide.plates.shown.find(p => p.tr === 0), p = R.trainPoses(R.state.track, R.guide.ourTrain())[0];
+        return { pl, at: R.toScreen(p.x, p.z, 0), plAt: pl ? R.toScreen(pl.x, pl.z, pl.y) : null, tag: !!document.getElementById('guideTrain') }; });
+      if (!yt.pl || yt.pl.text !== 'No. 1, yours' || Math.abs(yt.plAt.x - yt.at.x) > 140 || yt.plAt.y > yt.at.y) problems.push(`${orient}: the plate "No. 1, yours" should stand over No. 1 from the start: ${JSON.stringify(yt)}`);
+      if (yt.tag) problems.push(`${orient}: TA's "Your train" tag should be gone (the plate replaces it)`);
       await page.screenshot({ path: screenshotPath(`arrows-yourtrain-${orient}`) });
       await page.evaluate(() => { const R = window.__railhead, d = R.econ.econTelegraphKey(), P = R.state.player; R.camera.ox = (d.x - P.x) / 2; R.camera.oz = (d.z - P.z) / 2; });
       await frames();
@@ -131,8 +140,9 @@ module.exports = async function checkArrows() {
         if (!r.t || !r.arrow) { problems.push(`${orient}: no arrow at the ${k} step`); continue; }
         if (!near(r.arrow, r.t)) problems.push(`${orient}: the arrow is not over its place at the ${k} step`);
         if (base === 'accept' || base === 'order') {
-          const ok = await page.evaluate(t => { const R = window.__railhead, k = R.econ.econTelegraphKey(), d = R.office.econDeskSpot(); return Math.hypot(t.x - k.x, t.z - k.z) < 0.05 || Math.hypot(t.x - d.x, t.z - d.z) < 0.05; }, r.t);
-          if (!ok || !/^(Telegraph key|Office desk): /.test(r.t.label)) problems.push(`${orient}: ${k}: the arrow should be over the telegraph key or the office desk: ${JSON.stringify(r.t)}`);
+          // D21 (2): the work board behind the counter (its use spot in the hub's booth), not the telegraph key.
+          const ok = await page.evaluate(t => { const R = window.__railhead, w = R.guide.econWorkBoardSpot(); return !!w && Math.hypot(t.x - w.x, t.z - w.z) < 0.05 && R.board.wbBoothStation(w.x, w.z) === 'hub'; }, r.t);
+          if (!ok || r.t.k !== 'workboard' || !/^Work board: /.test(r.t.label)) problems.push(`${orient}: ${k}: the arrow should be over the work board: ${JSON.stringify(r.t)}`);
         }
         else if (base === 'tickets') { if (r.t.k !== 'window' || !near(r.t, exp.t) || !/^Ticket window: sell tickets/.test(r.t.label)) problems.push(`${orient}: tickets: the arrow should be over the ticket counter: ${JSON.stringify(r.t)}`); }
         else if (base === 'switch') {
@@ -168,16 +178,21 @@ module.exports = async function checkArrows() {
         }
       }
       for (const k of keys) if (!got[k]) problems.push(`${orient}: the ${k} step was never looked at`);
-      // After the last step: put No. 1 on the timetable. The arrow over No. 1, then (her panel open) at the button.
-      // The Arrows toggle back to its default (the draw call test above set it on).
+      // After the last step (D21 (1)): No. 1 is on both runs from the start, so nothing asks to put her on the
+      // timetable (the arrows go). Taken off it, the old path comes back: the arrow over No. 1, then (her panel
+      // open) at the button. The Arrows toggle back to its default (the draw call test above set it on).
       const tt = await page.evaluate(() => {
         const R = window.__railhead, W = window.__arw;
         try { localStorage.removeItem('railhead-arrows'); } catch (e) { /* none */ } R.guide.ui.pref = null;
         for (let i = 0; i < 21600 && !W.X.S.tut.done; i++) window.__tut.step(W.X, 1);
         R.importSave(JSON.stringify({ state: W.X.S }));
+        const before = { stage: R.guide.stage(), t: R.guide.now(), on: R.state.tt.services.map(v => v.train), last: R.state.tg.list.filter(g => g.kind === 'tutorial').pop().body };
+        R.send({ t: 'ttAssign', tr: 0, on: false }); R.step(1);
         const tr = R.guide.ourTrain(), t = R.guide.now();
-        return { stage: R.guide.stage(), t, tr: tr && { id: tr.id, name: tr.name } };
+        return { before, stage: R.guide.stage(), t, tr: tr && { id: tr.id, name: tr.name } };
       });
+      if (tt.before.stage || tt.before.t || tt.before.on.some(v => v !== 0)) problems.push(`${orient}: after the tutorial, with No. 1 on both runs, nothing should ask to put her on the timetable: ${JSON.stringify(tt.before)}`);
+      if (/Put No\. 1 (back )?on the timetable/.test(tt.before.last) || !/runs both Willow Ford trains/.test(tt.before.last)) problems.push(`${orient}: the tutorial's last telegram should not ask for No. 1 on the timetable when she is on it: ${tt.before.last}`);
       await frames();
       const t1 = await page.evaluate(READ);
       if (tt.stage !== 'tt' || !t1.t || t1.t.k !== 'car' || !/^No\. 1: tap her to put her on the timetable$/.test(t1.t.label) || !t1.arrow) problems.push(`${orient}: after the tutorial the arrow should point at No. 1 to put her on the timetable: ${JSON.stringify({ tt, t: t1.t })}`);

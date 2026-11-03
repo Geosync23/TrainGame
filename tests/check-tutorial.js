@@ -3,8 +3,8 @@
 //
 // 1. A bot plays a new game (the real start) through the game's own commands only (the same commands the taps and
 //    buttons send; no debug tools, no state edits) and does what each telegram asks: OK on the welcome, accept the
-//    general store's flour offer and order the flour at the telegraph key, throw a switch (and back), sell tickets
-//    at the window, unload an item from the Overland's set-out car, sort it into its bay, deliver it at the store's
+//    general store's flour offer and order the flour at the telegraph key, sell tickets at the window, set a switch,
+//    unload an item from the Overland's set-out car, sort it into its bay, deliver it at the store's
 //    door. Every step's telegram arrives in order and the tutorial ends within days 1 and 2; the money rule and item
 //    conservation hold; the hint marker's place is on the map for every step that has one.
 // 2. Skip tutorial (the welcome's second button) ends it at once; a day of play after it (the M1 bot) brings no
@@ -42,8 +42,6 @@ function tutBotFactory(R, mem0) {
       return one({ t: 'econOrder', lines: [{ c: 'flour', n: flour.quantity, contract: flour.id }] });
     }
     if (c.key === 'switch') { const t = R.tut.tutTarget(S); if (!t) return []; mem.sw = t.sw; return one({ t: 'useSwitch', sw: t.sw }); }
-    // After the switch step: throw it back first, as the telegram says.
-    if (mem.sw !== null && !mem.back) { mem.back = 1; return one({ t: 'useSwitch', sw: mem.sw }); }
     if (c.key === 'tickets' || (c.key === 'unload' && !R.tut.tutTarget(S))) return S.pax.desk ? [] : one({ t: 'staffWindow', st: 'hub' });
     if (c.key === 'unload') {
       const t = R.tut.tutTarget(S), ids = R.cargo.itemsAt(S, { kind: 'CAR', stockId: t.stock });
@@ -99,7 +97,7 @@ module.exports = async function checkTutorial() {
       let mid = null;
       for (let i = 0; i < 2 * DAY; i++) {
         window.__tut.step(X, 1);
-        if (!mid && X.S.tut.step === 4) mid = { json: JSON.stringify({ state: X.S }), mem: JSON.stringify(X.bot.mem), hash: R.stateHash(X.S), tick: X.S.tick, step: X.S.tut.step };
+        if (!mid && X.S.tut.step === 3) mid = { json: JSON.stringify({ state: X.S }), mem: JSON.stringify(X.bot.mem), hash: R.stateHash(X.S), tick: X.S.tick, step: X.S.tut.step };
       }
       const S = X.S, tut = S.tg.list.filter(g => g.kind === 'tutorial');
       window.__A = { mid };
@@ -142,7 +140,7 @@ module.exports = async function checkTutorial() {
     if (!C) problems.push('the bot never reached the tickets step, so no mid-tutorial save was made');
     else {
       if (C.loaded !== A.mid.hash) problems.push(`the mid-tutorial save loaded with a different hash (${A.mid.hash}, ${C.loaded})`);
-      if (C.step0 !== 4 || C.steps[0] !== 5) problems.push(`the reloaded game should resume at the tickets step and send the unload telegram next: ${C.step0}, ${JSON.stringify(C.steps)}`);
+      if (C.step0 !== 3 || C.steps[0] !== 4) problems.push(`the reloaded game should resume at the tickets step and send the switch telegram next: ${C.step0}, ${JSON.stringify(C.steps)}`);
       if (C.end !== A.hash) problems.push(`the reloaded game ended with a different hash (${A.hash}, ${C.end})`);
       if (C.again !== A.hash) problems.push(`the tutorial played twice gave different hashes (${A.hash}, ${C.again})`);
       console.log(`  save at ${A.mid.tick} (step ${A.mid.step}) loads ${C.loaded}; ends ${C.end}; again ${C.again}; straight ${A.hash}`);
@@ -249,3 +247,6 @@ module.exports = async function checkTutorial() {
   } finally { await browser.close(); }
   return problems;
 };
+// Shared with check-arrows.js (the helper arrows over each step).
+module.exports.tutBotFactory = tutBotFactory;
+module.exports.RUNNER = RUNNER;

@@ -207,6 +207,19 @@
   #tutChip.pulse { animation: tutPulse 1.2s ease-in-out 3; }
   @keyframes tutPulse { 50% { background: #f6d98a; } }
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } }
+  /* Helper arrows (D20 (6)): the Arrows toggle under the chip, the label over the world arrow, the arrow at the edge. */
+  #hintBtn { font-size: 14px; padding: 0 10px; }
+  #hintBtn[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-left: 7px solid #ff7a1a; }
+  #guideLabel { left: 0; top: 0; pointer-events: none; max-width: min(70vw, 280px); box-sizing: border-box; background: var(--paper); color: var(--ink);
+    border: 2px solid #b04a08; border-left: 7px solid #ff7a1a; border-radius: 8px; padding: 5px 9px; font: 600 15px/1.2 Georgia, serif; z-index: 1;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  #guideEdge { left: 0; top: 0; pointer-events: none; z-index: 1; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 2px; }
+  #guideEdgeArrow { width: 56px; height: 56px; border-radius: 50%; background: #ff7a1a; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    display: grid; place-items: center; animation: guidePulse 1.1s ease-in-out infinite; }
+  #guideEdgeArrow svg { width: 34px; height: 34px; fill: #fff; }
+  #guideEdgeText { background: var(--paper); color: var(--ink); border: 2px solid #b04a08; border-radius: 6px; padding: 2px 6px; font: 600 13px/1.2 Georgia, serif;
+    white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  @keyframes guidePulse { 50% { box-shadow: 0 0 0 6px rgba(255,122,26,.35); } }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -237,7 +250,10 @@
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="tutTask" class="hud" hidden>
   <button id="tutChip" aria-expanded="false"><small>Current task</small><span id="tutChipText"></span></button>
+  <button id="hintBtn" aria-pressed="false" aria-label="Helper arrows: show the way to the next job">Arrows off</button>
 </div>
+<div id="guideLabel" class="hud" aria-live="polite" hidden></div>
+<div id="guideEdge" class="hud" hidden><div id="guideEdgeArrow"><svg viewBox="0 0 40 40"><path d="M6 13h16V5l14 15-14 15v-8H6z"/></svg></div><span id="guideEdgeText"></span></div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
 <div id="paxDesk" class="hud" role="status" aria-live="polite" hidden><span id="paxDeskText"></span><button id="paxLeave">Leave</button></div>
@@ -5379,13 +5395,13 @@ const TUT_STEPS = [
     body: S => `You have the line, engine No. 1 and ${econMoney(S.econ.cash)} of my money. For two days I will wire you what to do first, one thing at a time. Tap OK to begin. If you know railroading already, tap Skip tutorial. HARTWELL`,
     buttons: [{ label: 'OK', cmd: null }, { label: 'Skip tutorial', cmd: { t: 'tutorialSkip' } }] },
   { key: 'accept', got: TUT_GOT.accept, title: 'Take a contract',
-    body: () => 'Contracts pay. The Hub General Store wants flour. Walk to the depot, tap the telegraph key in its window (or the office desk), open Contracts and accept the store\'s offer. HARTWELL' },
+    body: () => 'Contracts pay. The Hub General Store wants flour. Follow the arrow to the office desk in the depot, tap it, open Contracts and accept the store\'s offer. HARTWELL' },
   { key: 'order', got: TUT_GOT.order, title: 'Order the goods',
     body: S => `Now buy what the contract needs from the Overland market: on the contract, tap its order button, then Send order. Wired now, the goods come on the Overland of ${econWhen(econNextVisit(S.time))}. HARTWELL` },
-  { key: 'switch', got: TUT_GOT.sw, title: 'Throw a switch',
-    body: () => 'While you wait: a switch sends a train one way or the other. Walk to the marked switch stand and tap it. Its disc shows green for straight, red for the turn-off. Throw it back the same way. HARTWELL' },
   { key: 'tickets', got: TUT_GOT.tickets, title: `Sell ${TUT.TICKETS} tickets`,
-    body: () => `Travellers come to the depot for the Willow Ford train. Stand at the ticket window and sell ${TUT.TICKETS} tickets. A traveller left an hour without one walks off. HARTWELL` },
+    body: () => `While you wait: travellers come to the depot for the Willow Ford train. Go in by the depot door, stand at the counter behind the ticket window and sell ${TUT.TICKETS} tickets. HARTWELL` },
+  { key: 'switch', got: TUT_GOT.sw, title: 'Set a switch',
+    body: () => 'A train needs its switches set before it comes. The work board behind the ticket counter lists them. Then walk to the marked switch stand and tap it: its disc shows green for straight, red for the turn-off. HARTWELL' },
   { key: 'unload', got: TUT_GOT.unload, title: 'Unload your first car',
     body: S => {
       if (tutSetOutCars(S).length) return 'Your goods stand in a car on the interchange track. Walk to it, tap it and take one item out. HARTWELL';
@@ -5399,7 +5415,7 @@ const TUT_STEPS = [
     body: S => { const b = tutBiz(S);
       return `Now take it from the bay to the door of the ${b ? b.name : 'business on its waybill'}. The buyer pays the moment it is in their hands. HARTWELL`; } },
   { key: 'done', got: null, title: 'You have the way of it',
-    body: () => 'Contracts, orders, switches, tickets and freight: well done. Put No. 1 on the timetable (tap her) and keep her tender in wood and water. I will wire when there is news. HARTWELL' },
+    body: () => 'Contracts, orders, tickets, switches and freight: well done. Put No. 1 on the timetable (tap her) and keep her tender in wood and water. Tap Arrows to be shown the next job. I will wire when there is news. HARTWELL' },
 ];
 function tutSend(S, i, ev) {
   const U = S.tut, st = TUT_STEPS[i];
@@ -5445,9 +5461,14 @@ function tutTarget(S) {
   const c = tutCurrent(S);
   if (!c || c.step < 1) return null;
   const P = S.player;
-  if (c.key === 'accept' || c.key === 'order') { const k = econTelegraphKey(); return { x: k.x, z: k.z, k: 'telegraph' }; }
+  if (c.key === 'accept' || c.key === 'order') { const k = econDeskSpot(); return { x: k.x, z: k.z, k: 'desk' }; }
   if (c.key === 'switch') {
-    const occ = occupiedSwitches(S);
+    const occ = occupiedSwitches(S), sws = S.track.switches;
+    // D20 (6): the first switch the next train needs that is not set yet (manual switches, ttSwitchNeeds, when
+    // present); else the real start's platform switch (id 1) when free; else the nearest free switch stand.
+    const need = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && sws[n.switch]) : null;
+    if (need) { const W = sws[need.switch]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', sw: need.switch, need }; }
+    if (S.track.world === 'start' && sws[1] && !switchLockReason(S, 1, occ)) return { x: sws[1].stand.ux, z: sws[1].stand.uz, k: 'switch', sw: 1 };
     const sw = S.track.switches.map((W, id) => ({ id, W })).filter(o => !switchLockReason(S, o.id, occ) && Math.abs(o.W.stand.ux - P.x) < 80 * SC)
       .sort((a, b) => Math.hypot(a.W.stand.ux - P.x, a.W.stand.uz - P.z) - Math.hypot(b.W.stand.ux - P.x, b.W.stand.uz - P.z) || a.id - b.id)[0];
     return sw ? { x: sw.W.stand.ux, z: sw.W.stand.uz, k: 'switch', sw: sw.id } : null;
@@ -5463,6 +5484,15 @@ function tutTarget(S) {
   }
   if (c.key === 'deliver') { const b = tutBiz(S), d = b && townDoor(b.id); return d ? { x: d.x, z: d.z, k: 'door', biz: b.id } : null; }
   return null;
+}
+// D20 (6): the steps' order changed (tickets now come before the switch). A save made mid-tutorial before that names
+// its step by the old index; the step's telegram still has its title, so the step is found again by that title.
+// Run on every load (after the shape check); a save already in today's order is left as it is.
+function tutRealign(st) {
+  const U = st.tut;
+  if (!U || U.done || U.step < 1 || !st.tg || !Array.isArray(st.tg.list)) return;
+  const g = st.tg.list.find(g => g && g.id === U.tg), i = g ? TUT_STEPS.findIndex(s => s.title === g.title) : -1;
+  if (i >= 1 && i !== U.step) U.step = i;
 }
 // Shape check for the saved tutorial (when a save is loaded). Throws on damage.
 function tutCheckSaveShape(st) {
@@ -5610,6 +5640,7 @@ function migrate(save) {
   }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
+  tutRealign(st);   // D20 (6): a mid-tutorial save from before the steps' new order
   return save;
 }
 // 13 -> 14 (D15): multiply every stored position, length and speed in a schema 13 state by k. Positions kept in
@@ -10724,11 +10755,14 @@ function lookUpdate() {
 // The chip under the telegraph button names the step in hand ("Current task") and pulses when a new step's telegram
 // comes; a tap opens the inbox (D1) at that telegram, with its OK and Skip tutorial buttons while unanswered, and
 // marks it read. The chip hides while the office, the inbox or a Look card is open (they use that part of the
-// screen in landscape). The brass marker in the world (tutDraw) stands over the place the step needs.
-const tutUi = { step: -2, hide: null };
+// screen in landscape). The helper arrows (guideDraw, below) point at the place the step needs. D20 (6): the box
+// also holds the Arrows toggle, which stays after the tutorial, so the box shows without a chip then.
+const tutUi = { step: -2, hide: null, chip: null };
 function tutHud() {
-  const c = tutCurrent(S), box = $('tutTask'), hide = !c || bigPanelOpen() || lookUi.open;
+  const c = tutCurrent(S), box = $('tutTask'), hide = bigPanelOpen() || lookUi.open;
   if (hide !== tutUi.hide) { tutUi.hide = hide; box.hidden = hide; }
+  if (!c !== tutUi.chip) { tutUi.chip = !c; $('tutChip').hidden = !c; }
+  guideHud();
   if (!c) { tutUi.step = -2; return; }
   if (c.step !== tutUi.step) {
     tutUi.step = c.step; $('tutChipText').textContent = c.title;
@@ -10736,19 +10770,217 @@ function tutHud() {
   }
 }
 $('tutChip').addEventListener('click', () => { const c = tutCurrent(S); if (c) openInbox(c.tg); });
-// The hint marker: a brass diamond turning and bobbing over the place the step in hand needs (one draw call).
-let tutMark = null;
-function tutDraw() {
-  const t = tutTarget(S);
-  if (!t) { if (tutMark) tutMark.visible = false; return; }
-  if (!tutMark) {
-    tutMark = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), new THREE.MeshBasicMaterial({ color: PAL.brass }));
-    tutMark.scale.y = 1.6; tutMark.name = 'tutMark'; scene.add(tutMark);
-  }
-  tutMark.visible = true;
-  tutMark.position.set(t.x, terrainHeight(t.x, t.z) + 3.6 * WS + Math.sin(animT * 3) * 0.15, t.z); // D15: over the 1.6x trains
-  tutMark.rotation.y = animT * 1.5;
+// ---- Helper arrows (D20 (6)): where to go next and what to do there ----
+// From the start of a new game a big arrow bobs over the next place the work needs, with a short label ("Office desk:
+// take a contract"), a dotted path on the ground from the player to it, and, when the place is off screen, an arrow at
+// the screen's edge pointing towards it with the place's name. During the tutorial the places follow its steps in
+// the flow of work (office desk, ticket window, work board, the switches the next train needs, the Overland's car,
+// the freight shed bay, the business's door). After the tutorial (or once skipped) the arrows are off unless the
+// Arrows toggle (under the Current task chip) is on; then they point at the most pressing job (hintTarget). The
+// toggle is a viewer preference kept in localStorage (not in the save). Drawing and page only: the sim never reads
+// any of this. Draw calls: the arrow 1 and the dots 1 (one InstancedMesh), only while shown; no shadows.
+const GUIDE = { DOTS: 140, GAP: 0.75, NEAR: 1.6, REPATH_S: 0.5, OFF: 2.5, PREF: 'railhead-arrows', PX: 86 };
+const guideUi = { pref: null, t: null, nextT: 0, hud: [], boardStep: -2, boardSeen: false, path: [], pathKey: '', pathAt: -1e9, from: -1, arrow: null, dots: null };
+try { const v = localStorage.getItem(GUIDE.PREF); if (v === 'on' || v === 'off') guideUi.pref = v; } catch (e) { /* no storage: the default */ }
+// Are the arrows on? The toggle when the player set it; else on during the tutorial and off after it.
+function guideOn() { return guideUi.pref ? guideUi.pref === 'on' : !!tutCurrent(S); }
+function guideSetPref(on) {
+  guideUi.pref = on ? 'on' : 'off'; guideUi.nextT = 0;
+  try { localStorage.setItem(GUIDE.PREF, guideUi.pref); } catch (e) { /* no storage: this visit only */ }
 }
+// The work board in the hub's depot (the board builder's use spot, named like 'workboard'), else the ticket counter.
+function guideBoardSpot() {
+  const sp = typeof buildingSpots === 'function' ? buildingSpots().filter(p => /work.?board/i.test(p.kind)) : [];
+  const b = sp.find(p => p.building === 'depot') || sp[0];
+  if (b) return { x: b.x, z: b.z };
+  const K = paxStation(S.track, 'hub');
+  return K ? { x: K.staff.x, z: K.staff.z } : null;
+}
+// Where the Overland is met: the Overland itself while it is on the map, else the interchange track near the hub.
+function guideMeetSpot() {
+  const tr = overlandTrain(S), ps = tr ? trainPoses(S.track, tr) : [];
+  if (ps.length) { const p = ps[ps.length - 1]; return { x: p.x, z: p.z }; }
+  const E = S.track.edges.find(E => E.fixed);
+  if (!E) return null;
+  const p = edgeAt(S.track, E, Math.min(E.len / 2, 12 * SC));
+  return { x: p.x, z: p.z };
+}
+const guideSwitchWord = need => need.want === 'R' || need.want === 'reverse' ? 'for the turn-off' : need.want === 'N' || need.want === 'normal' ? 'straight' : 'as the train needs';
+const guideTrainName = n => typeof n === 'number' && S.trains[n] ? S.trains[n].name || 'the train' : n ? String(n) : 'the train';
+function guideNeedLabel(need) {
+  return `Switch ${need.switch}: set it ${guideSwitchWord(need)} for ${guideTrainName(need.train)}${typeof need.byTime === 'number' ? ' by ' + econWhen(need.byTime).slice(4) : ''}`;
+}
+// The tutorial step's place and label: { x, z, label, k } or null.
+function guideTutTarget(c) {
+  const t = tutTarget(S);
+  if (c.key === 'accept' || c.key === 'order') return t && { x: t.x, z: t.z, k: 'desk', label: c.key === 'accept' ? 'Office desk: take a contract' : 'Office desk: order the goods' };
+  if (c.key === 'tickets') return t && { x: t.x, z: t.z, k: 'window', label: `Ticket window: sell tickets (${S.tut.tickets} of ${TUT.TICKETS})` };
+  if (c.key === 'switch') {
+    // First the work board (what the next train needs), then the switch. Seen once the player stands by it.
+    if (guideUi.boardStep !== c.step) { guideUi.boardStep = c.step; guideUi.boardSeen = false; }
+    const b = guideBoardSpot(), P = S.player;
+    if (b && Math.hypot(P.x - b.x, P.z - b.z) < GUIDE.NEAR) guideUi.boardSeen = true;
+    if (b && !guideUi.boardSeen) return { x: b.x, z: b.z, k: 'board', label: 'Work board: see what the next train needs' };
+    return t && { x: t.x, z: t.z, k: 'switch', label: t.need ? guideNeedLabel(t.need) : `Switch ${t.sw}: set it for the platform` };
+  }
+  if (c.key === 'unload') {
+    if (t) return { x: t.x, z: t.z, k: 'car', label: 'Overland car: take the goods out' };
+    const m = guideMeetSpot(), due = tutOrderDue(S);
+    return m && { x: m.x, z: m.z, k: 'meet', label: 'Interchange: meet the Overland' + (due !== null ? ' at ' + econWhen(due).slice(4) : '') };
+  }
+  if (c.key === 'sort') { const T = CARGO_TAGS[tutItemTag(S)]; return t && { x: t.x, z: t.z, k: 'bay', label: 'Freight shed: sort the crates' + (T ? ' into bay ' + T.letter : '') }; }
+  if (c.key === 'deliver') { const b = tutBiz(S); return t && { x: t.x, z: t.z, k: 'door', label: (b ? b.name : 'The business') + ': deliver at the door' }; }
+  return null;
+}
+// After the tutorial, with the toggle on: the most pressing job. A switch the next train needs (manual switches),
+// travellers in line at the hub's ticket window with nobody selling, goods waiting in the Overland's set-out cars,
+// goods for a business left on the ground in the hub. Else null (nothing pressing: no arrow).
+function hintTarget() {
+  const need = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.switch]) : null;
+  if (need) { const W = S.track.switches[need.switch]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: guideNeedLabel(need) }; }
+  const K = paxStation(S.track, 'hub'), D = S.pax && S.pax.desk;
+  const queue = K && S.pax ? S.pax.list.filter(p => p.st === 'hub' && p.s === 'queue').length : 0;
+  if (queue && !(D && D.st === 'hub')) return { x: K.staff.x, z: K.staff.z, k: 'window', label: `Ticket window: ${queue} waiting for tickets` };
+  const car = tutSetOutCars(S)[0];
+  if (car) return { x: car.x, z: car.z, k: 'car', label: 'Overland car: unload the goods' };
+  const I = S.items, B = BLD_BAYS.freightshed;
+  if (B) for (const id of itemsAt(S, { kind: 'GROUND' })) {
+    const w = I.where[id], wb = I.waybill[id], x = w.x / 100, z = w.z / 100;
+    if (wb && wb.consignee && wb.consignee.kind === 'BUSINESS' && x >= HUB.x0 && x <= HUB.x1 && z >= HUB.z0 && z <= HUB.z1 + 6 * SC)
+      return { x: B.bays[0].x, z: B.bays[0].z, k: 'bay', label: 'Freight shed: sort the goods on the ground' };
+  }
+  return null;
+}
+// The place the arrows point at now ({ x, z, k, label } or null), looked at four times a second.
+function guideTarget() {
+  if (animT < guideUi.nextT) return guideUi.t;
+  guideUi.nextT = animT + 0.25;
+  // The HUD's boxes the label keeps clear of (looked at with the place).
+  guideUi.hud = [...document.querySelectorAll('.hud')].filter(e => e.id !== 'guideLabel' && e.id !== 'guideEdge' && e.id !== 'toast' && !e.hidden && e.getClientRects().length)
+    .map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+  const c = tutCurrent(S);
+  guideUi.t = !guideOn() || S.player.ride ? null : c ? guideTutTarget(c) : hintTarget();
+  return guideUi.t;
+}
+// The arrow: a low-poly downward arrow (head and shaft, one merged mesh), unlit orange with baked shading, drawn
+// over everything (no depth test) so a roof or a train never hides it.
+function guideArrowMesh() {
+  const k = new Kit(), head = new THREE.ConeGeometry(0.62, 0.95, 6), shaft = cyl(0.24, 0.24, 1.0, 6);
+  k.add(head, '#ff7a1a', 0, 0.475, 0, Math.PI, 0, 0);          // tip at y = 0, pointing down
+  k.add(shaft, '#ffb21f', 0, 0.95 + 0.5, 0);
+  const g = k.mesh(false).geometry, n = g.attributes.normal, col = g.attributes.color;
+  for (let i = 0; i < col.count; i++) { const f = 0.62 + 0.38 * Math.max(0, 0.5 * n.getX(i) + 0.8 * n.getY(i) + 0.33 * n.getZ(i)); col.setXYZ(i, col.getX(i) * f, col.getY(i) * f, col.getZ(i) * f); }
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false, transparent: true }));
+  m.renderOrder = 1000; m.name = 'guideArrow'; m.castShadow = m.receiveShadow = false;
+  return m;
+}
+function guideDotsMesh() {
+  const g = new THREE.CircleGeometry(0.17, 8); g.rotateX(-Math.PI / 2);
+  const m = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: '#ff8a2a', depthWrite: false, transparent: true, opacity: 0.9 }), GUIDE.DOTS);
+  m.count = 0; m.frustumCulled = false; m.renderOrder = 999; m.name = 'guideDots'; m.castShadow = m.receiveShadow = false;
+  return m;
+}
+// The way from the player to the place, as dots every GUIDE.GAP u: the walk grid's own A* (the same grid and
+// trains the player's walk uses), smoothed by string-pulling. Worked out again only when the place changes or the
+// player leaves the way. The page's own copy of the cells; the sim's walk plan (G.memo) is not touched, and the sim
+// stamps the trains afresh before each plan of its own, so this changes nothing the game does.
+function guidePath(t) {
+  const G = walkGrid(S.track), P = S.player;
+  walkTrainStamp(G, [].concat(...S.trains.map(tr => trainPoses(S.track, tr))));   // the trains shut their cells (as the walk's own plan does)
+  let s = walkCell(P.x, P.z), g = walkCell(t.x, t.z);
+  if (!walkOpen(G, s)) s = walkNearest(G, s, -1);
+  if (s < 0) return [];
+  if (!walkOpen(G, g) || G.comp[g] !== G.comp[s]) g = walkNearest(G, g, G.comp[s]);
+  if (g < 0) return [];
+  const cells = walkAStar(G, s, g).cells.map(walkCentre), pts = [[P.x, P.z]];
+  for (let i = 1; i < cells.length;) {
+    let k = i;
+    const [cx, cz] = pts[pts.length - 1];
+    for (let m = i + 1; m < Math.min(cells.length, i + WALK.LOOK); m++) { if (walkClear(G, cx, cz, cells[m][0], cells[m][1])) k = m; else break; }
+    pts.push(cells[k]); i = k + 1;
+  }
+  pts.push([t.x, t.z]);
+  const dots = [];
+  let carry = GUIDE.GAP * 0.8;
+  for (let i = 1; i < pts.length && dots.length < GUIDE.DOTS; i++) {
+    const [ax, az] = pts[i - 1], [bx, bz] = pts[i], L = Math.hypot(bx - ax, bz - az);
+    let d = carry;
+    for (; d < L && dots.length < GUIDE.DOTS; d += GUIDE.GAP) dots.push([ax + (bx - ax) * d / L, az + (bz - az) * d / L]);
+    carry = d - L;
+  }
+  const last = dots.findIndex(p => Math.hypot(p[0] - t.x, p[1] - t.z) < 1.0);   // stop short of the arrow's foot
+  return last >= 0 ? dots.slice(0, last) : dots;
+}
+function guideDrawDots(t) {
+  const D = guideUi.dots, P = S.player;
+  if (!t) { D.visible = false; guideUi.path = []; guideUi.pathKey = ''; guideUi.from = -1; return; }
+  const key = t.k + '|' + Math.round(t.x / 2) + ',' + Math.round(t.z / 2);
+  // Off the way: the player is more than GUIDE.OFF from every dot near the start.
+  const near = guideUi.path.slice(0, 12).reduce((m, p) => Math.min(m, Math.hypot(p[0] - P.x, p[1] - P.z)), Infinity);
+  const stale = key !== guideUi.pathKey || (guideUi.path.length && near > GUIDE.OFF) || (!guideUi.path.length && Math.hypot(t.x - P.x, t.z - P.z) > 3);
+  if (stale && animT - guideUi.pathAt > GUIDE.REPATH_S) {
+    guideUi.path = guidePath(t); guideUi.pathKey = key; guideUi.pathAt = animT; guideUi.from = -1;
+  }
+  // Show the dots ahead of the player only: from the dot nearest the player on.
+  let from = 0, bd = Infinity;
+  for (let i = 0; i < Math.min(guideUi.path.length, 40); i++) { const d = Math.hypot(guideUi.path[i][0] - P.x, guideUi.path[i][1] - P.z); if (d < bd) { bd = d; from = i; } }
+  if (bd < GUIDE.GAP) from++;
+  if (from !== guideUi.from) {
+    guideUi.from = from;
+    const m4 = new THREE.Matrix4();
+    let n = 0;
+    for (let i = from; i < guideUi.path.length; i++) { const [x, z] = guideUi.path[i]; m4.makeTranslation(x, bldStandY(x, z) + 0.05, z); D.setMatrixAt(n++, m4); }
+    D.count = n; D.instanceMatrix.needsUpdate = true;
+  }
+  D.visible = D.count > 0;
+}
+// Each frame (from render): the arrow over the place, the dots, the label above the arrow or the arrow at the edge.
+function guideDraw() {
+  const t = guideTarget();
+  if (!guideUi.arrow) { guideUi.arrow = guideArrowMesh(); guideUi.dots = guideDotsMesh(); scene.add(guideUi.arrow, guideUi.dots); }
+  const A = guideUi.arrow, lab = $('guideLabel'), edge = $('guideEdge');
+  guideDrawDots(t);
+  if (!t) { A.visible = false; lab.hidden = edge.hidden = true; return; }
+  // A steady size on screen (about GUIDE.PX tall) whatever the zoom.
+  const upp = (camera.top - camera.bottom) / window.innerHeight, sc = Math.min(4, Math.max(0.6, GUIDE.PX * upp / 1.95));
+  const y0 = bldStandY(t.x, t.z), lift = (t.k === 'car' ? 3.0 * WS : 1.9) + Math.abs(Math.sin(animT * 3)) * 0.35 * sc;
+  A.visible = true; A.scale.setScalar(sc); A.position.set(t.x, y0 + lift, t.z); A.rotation.y = animT * 0.8;
+  const W = window.innerWidth, H = window.innerHeight, foot = toScreen(t.x, y0, t.z), top = toScreen(t.x, y0 + lift + 1.95 * sc, t.z);
+  const on = foot.x > 12 && foot.x < W - 12 && foot.y > 12 && foot.y < H - 12;
+  if (bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on)) { lab.hidden = edge.hidden = true; return; }
+  if (on) {
+    if (lab.textContent !== t.label) lab.textContent = t.label;
+    lab.hidden = false; edge.hidden = true;
+    // Above the arrow; else below its foot, to its right or to its left: the first place clear of the HUD's buttons.
+    const w = lab.offsetWidth, h = lab.offsetHeight, aw = 0.62 * sc / upp, my = (top.y + foot.y) / 2;
+    const fit = ([x, y]) => [Math.max(8, Math.min(W - w - 8, x)), Math.max(8, Math.min(H - h - 8, y))];
+    const spots = [[top.x - w / 2, top.y - h - 6], [foot.x - w / 2, foot.y + 12], [top.x + aw + 8, my - h / 2], [top.x - aw - w - 8, my - h / 2]]
+      .filter(([, y], i) => i || y >= 8).map(fit);   // above only when the arrow's top is in view
+    const clear = ([x, y]) => !guideUi.hud.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
+    const [lx, ly] = spots.find(clear) || spots[0];
+    lab.style.left = Math.round(lx) + 'px'; lab.style.top = Math.round(ly) + 'px';
+  } else {
+    lab.hidden = true; edge.hidden = false;
+    const name = t.label.split(':')[0];
+    if ($('guideEdgeText').textContent !== name) $('guideEdgeText').textContent = name;
+    // Where the line from the middle of the screen to the place meets an inset frame (clear of the HUD's edges).
+    const cx = W / 2, cy = H / 2, dx = foot.x - cx, dy = foot.y - cy, land = W > H;
+    const L = 46, R = W - 46, T = land ? 100 : 150, B = H - (land ? 76 : 100);
+    let k = Infinity;
+    if (dx) k = Math.min(k, ((dx > 0 ? R : L) - cx) / dx);
+    if (dy) k = Math.min(k, ((dy > 0 ? B : T) - cy) / dy);
+    const ex = cx + dx * k, ey = cy + dy * k, ang = Math.atan2(dy, dx);
+    edge.style.left = Math.round(ex) + 'px'; edge.style.top = Math.round(ey) + 'px';
+    $('guideEdgeArrow').style.transform = `rotate(${(ang * 180 / Math.PI).toFixed(1)}deg)`;
+    edge.dataset.ang = ang.toFixed(3);
+  }
+}
+// The Arrows toggle (under the Current task chip): its words follow guideOn().
+function guideHud() {
+  const b = $('hintBtn'), on = guideOn();
+  if (b.getAttribute('aria-pressed') !== String(on)) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Arrows on' : 'Arrows off'; }
+}
+$('hintBtn').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); });
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -11200,7 +11432,7 @@ function render(alpha, dt) {
   applyDaylight(S, dt);
   updateCrowd(dt);
   paxDraw(alpha, dt);     // travellers, in the crowd's meshes (section "people (crowd)")
-  tutDraw();              // the tutorial's hint marker (section "HUD and panels")
+  guideDraw();            // the helper arrows, D20 (6) (section "HUD and panels")
   debugUpdate(dt);
   renderer.info.reset(); // once per frame: drawCalls then counts the shadow pass and the main pass
   renderer.render(scene, camera);
@@ -11260,6 +11492,7 @@ window.__railhead = {
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
+  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi }, // helper arrows, D20 (6)
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,

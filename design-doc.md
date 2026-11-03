@@ -204,16 +204,16 @@ All speeds are in units per game minute, so they scale with game speed.
 
 | Mover | Speed (u per game minute) |
 | --- | --- |
-| Player walk | 2.25 |
-| Player run (hold Shift) | 3.5 |
-| Player with hand truck or handcart | 1.8 |
-| Citizen walk | 2.0 |
+| Player walk | 2.0 (D20; 2.0u a real second at 1x) |
+| Player run | none: there is no running (D20) |
+| Player with hand truck or handcart | 1.8 (D20: a little slower than walking) |
+| Citizen walk (crowd and travellers) | 1.8 (D20) |
 | Train, mainline maximum | 4.0 (about 4u per real second at 1x since D17) |
 | Train, running tender-first | 2.4 (60%) |
 | Train, yard and station limit | 1.0 |
 | Train, through a diverging switch | 1.5 |
 
-At these speeds a 240u trip takes about an hour of game time (60 real seconds since D17), and walking the length of a 40u platform takes about 18 game minutes.
+At these speeds a 240u trip takes about an hour of game time (60 real seconds since D17), and walking the length of a 40u platform takes about 20 game minutes (D20).
 
 ## 5. Player character and controls
 
@@ -1128,12 +1128,12 @@ Procedural, no skeletal rigs. Each limb is a group with its pivot at the joint.
 
 | State | Motion |
 | --- | --- |
-| Idle | Body scale-y breathing 1.5% at 0.35 Hz; slow yaw drift of plus or minus 8 degrees |
-| Walk | Legs swing plus or minus 25 degrees, arms plus or minus 20 degrees in opposite phase, 1.8 steps per second at walk speed; body bob 0.02u |
-| Carry | Arms forward at 70 degrees holding the item in front; legs walk |
-| Push cart | Arms forward at 45 degrees; walk |
-| Work (hammer, shovel) | Arm swing loop at 1 Hz with the tool prop |
-| Throw switch | Lean and pull lever over 0.5 game minutes |
+| Idle | Body scale-y breathing 1.5% at 0.35 Hz; slow weight shift from foot to foot (one knee eases); people also drift their yaw plus or minus 8 degrees |
+| Walk | D20: knees and elbows (thigh and shin, upper arm and forearm), feet placed by the walk so they never slide; about 4 steps a real second at walk speed (stride about 1u); heel strike with the toes up, knee bend in the swing, hips dropping at each heel strike (body bob twice a stride), twisting and rolling; arms swinging against the legs with elbows bending forward; head held level |
+| Carry | Both hands hold the item at its sides in front of the chest, shoulders back a little; legs walk |
+| Push cart | Leaning into the handles, arms straight to the grips, shorter steps |
+| Work (hammer, shovel) | Two-handed maul blows: wind-up overhead, a fast strike folding at the hips and knees, follow-through; setting a tie or dropping a rail bends at the hips and knees |
+| Throw switch | Reach down, a two-handed pull back sitting into the legs, let go and straighten, over the throw |
 | Sit (bench, saloon) | Legs forward 90 degrees |
 
 ### Buildings

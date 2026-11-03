@@ -10608,9 +10608,7 @@ function ttCardHud() {
     if (st && bp) near = { st, d: 0, at: { x: bp.x, z: bp.z }, high: true };
   }
   const card = $('ttCard');
-  // In a booth the work board is read instead (D20), so the card stays away unless a board was tapped.
-  const inBooth = !pin && wbBoothStation(P.x, P.z) !== null;
-  const hide = !near || inBooth || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
+  const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
   const b = ttBoard(S, near.st.id);
   const sig = near.st.id + b.signal + b.lines.map(l => l.time + l.name + l.state).join('|');

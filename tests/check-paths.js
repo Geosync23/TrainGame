@@ -1,11 +1,12 @@
 // Check: the player's path-finding (walk grid and path-finding section, design-doc 11).
 // Run in the game's own simulation (no drawing), then one screenshot with the debug Path overlay.
 // - From beside the depot, a tap behind it: the player walks round it, never inside a building footprint.
-// - A tap on the far side of the stopped train: the player walks round its end, never into the train.
+// - A tap on the far side of the stopped train: the player goes over a plank crossing clear of the train (D15: track
+//   is walked across only at crossings), never into the train and never onto the track elsewhere.
 // - A tap inside a building: the walk ends at the nearest spot that can be reached ("blocked" message).
-// - A train moving across the path: the path is worked out again round the train, and the walk arrives; crossing at
-//   several places and times, the player never ends up inside the moving train.
-// - A switch stand behind a train: the player walks round the train and throws it from within reach.
+// - A train running over the crossing the walk uses: the path is worked out again (round it, or waiting for it), and
+//   the walk arrives; crossing at several places and times, the player never ends up inside the moving train.
+// - A switch stand behind a train: the player throws it from the near side of the track (D15: from either side).
 // - Press and hold into a wall slides along it instead of stopping dead.
 // - A player inside a building (an old save) walks out to open ground.
 // - Pushing the handcart, a walk whose shortest way runs along the platform goes round it instead.
@@ -55,16 +56,20 @@ module.exports = async function checkPaths() {
           out.depot = { inB: w.inB, left: Math.hypot(st.player.x - tx, st.player.z - tz), len: w.len, straight: Math.hypot(tx - depot.x, tz - (depot.z + depot.d / 2 + 0.6)), ticks: w.ticks, blocked: w.evs.some(e => e.t === 'blocked') };
           out.depotTrace = w.trace;
         }
-        // 2. Round the end of the stopped train, to its far side.
+        // 2. To the far side of the stopped train (D15): over a plank crossing clear of the train, never onto the track elsewhere.
         {
-          const st = R.newState(1), ps = R.trainPoses(st.track, st.trains[0]);
+          const st = R.newState(1);
+          st.trains[0].front = { e: 2, s: 1.5 * SC, d: 1 };      // stands at the west end of the station
+          const ps = R.trainPoses(st.track, st.trains[0]);
           const x0 = Math.min(...ps.map(p => p.x - p.len / 2)), x1 = Math.max(...ps.map(p => p.x + p.len / 2));
-          const cx = (x0 + x1) / 2, cz = ps[0].z, half = (x1 - x0) / 2;
+          const cx = 0, cz = ps[0].z, half = (x1 - x0) / 2;
           st.player.x = cx; st.player.z = cz - 1.6;
           const tz = cz + 2;
-          const w = run(st, [{ tick: 0, cmd: walkTo(cx, tz) }], 900, idle);
-          const maxOff = Math.max(...w.trace.map(([x]) => Math.abs(x / 1000 - cx)));
-          out.train = { inT: w.inT, inB: w.inB, left: Math.hypot(st.player.x - cx, st.player.z - tz), maxOff, half, len: w.len, ticks: w.ticks };
+          const g = walkGrid(st.track);
+          let onTrack = 0;
+          const w = run(st, [{ tick: 0, cmd: walkTo(cx, tz) }], 900, (s2, e, i) => { if (walkOnTrack(g, s2.player.x, s2.player.z)) onTrack++; return idle(s2, e, i); });
+          const pads = xingList(st.track).filter(p => w.trace.some(([x, z]) => Math.hypot(x / 1000 - p.x, z / 1000 - p.z) < XING.W / 2 + 0.3)).length;
+          out.train = { inT: w.inT, inB: w.inB, left: Math.hypot(st.player.x - cx, st.player.z - tz), pads, onTrack, half, len: w.len, ticks: w.ticks, x1 };
           out.trainTrace = w.trace;
         }
         // 3. A tap inside a building ends at the nearest spot that can be reached.
@@ -78,19 +83,23 @@ module.exports = async function checkPaths() {
         //    the way part-way (the first path is a straight line, a later one goes round the train).
         {
           let found = null;
+          // D15: the walk goes straight over the station's east crossing (x 6.25 x SC) while No. 1, standing west of the
+          // crossings, runs east over it: the path is worked out again (round by the other crossing, or waiting).
           for (let k = 0; k <= 40 && !found; k += 2) {
-            const st = R.newState(1); st.player.x = 10 * SC; st.player.z = 10 * SC;
-            let straightAtStart = null, detour = false;
-            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: k, cmd: walkTo(10 * SC, 18 * SC) }], 900, (s, e, i) => {
+            const st = R.newState(1); st.player.x = 6.25 * SC; st.player.z = 12.2 * SC;
+            st.trains[0].front = { e: 2, s: 1.5 * SC, d: 1 };
+            let straightAtStart = null, detour = false, px = null, pz = null;
+            const w = run(st, [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }, { tick: k, cmd: walkTo(6.25 * SC, 17.6 * SC) }], 900, (s, e, i) => {
               if (i < k) return false;
               if (s.player.mode === 'to') {
                 const wp = walkPoints(s, poses(s), Infinity);
                 if (straightAtStart === null) straightAtStart = wp.pts.length === 1;
-                else if (wp.pts.length >= 2) detour = true;
+                else if (wp.pts.length >= 2 || (s.player.x === px && s.player.z === pz)) detour = true;
               }
+              px = s.player.x; pz = s.player.z;
               return i > k && s.player.mode === 'idle';
             });
-            if (straightAtStart && detour) found = { k, inT: w.inT, left: Math.hypot(st.player.x - 10 * SC, st.player.z - 18 * SC), len: w.len, blocked: w.evs.some(e => e.t === 'blocked'), ticks: w.ticks, hash: R.stateHash(st) };
+            if (straightAtStart && detour) found = { k, inT: w.inT, left: Math.hypot(st.player.x - 6.25 * SC, st.player.z - 17.6 * SC), len: w.len, blocked: w.evs.some(e => e.t === 'blocked'), ticks: w.ticks, hash: R.stateHash(st) };
           }
           out.moving = found;
           // 4b. The same crossing from several places along the line and start times: the moving train never runs
@@ -107,12 +116,14 @@ module.exports = async function checkPaths() {
           const st = R.newState(1), W = st.track.switches[0];
           st.trains[0].front = { e: 0, s: 7.8 * SC, d: 1 };
           st.player.x = W.stand.ux; st.player.z = 14 * SC + (14 * SC - W.stand.uz);
-          let at = null;
+          let at = null, onTrack = 0;
+          const far = switchSpots(st.track, W).far, g = walkGrid(st.track);
           const w = run(st, [{ tick: 0, cmd: { t: 'useSwitch', sw: 0 } }], 400, (s, e) => {
-            if (s.player.act && !at) at = Math.hypot(s.player.x - W.stand.x, s.player.z - W.stand.z);
+            if (walkOnTrack(g, s.player.x, s.player.z)) onTrack++;
+            if (s.player.act && !at) at = Math.min(Math.hypot(s.player.x - W.stand.x, s.player.z - W.stand.z), Math.hypot(s.player.x - far.x, s.player.z - far.z));
             return e.some(x => x.t === 'switchThrown');
           });
-          out.stand = { thrown: w.evs.some(e => e.t === 'switchThrown'), reach: at, inT: w.inT };
+          out.stand = { thrown: w.evs.some(e => e.t === 'switchThrown'), reach: at, inT: w.inT, onTrack, side: Math.sign(st.player.z - 14 * SC) };
         }
         // 6. Press and hold diagonally into the depot's back wall: slides along it.
         {
@@ -130,7 +141,7 @@ module.exports = async function checkPaths() {
         // 7b. Pushing the handcart: a walk whose shortest way runs along the platform (the cheapest cells)
         //     goes round the platform and the dock instead (they have steps), never entering them, and arrives.
         {
-          const ax = -11.2 * SC, az = 12.3 * SC, bx = 9.2 * SC, bz = 13.6 * SC;   // from just past the platform's west end (D12: 20u long; D15: x SC)
+          const ax = -11.2 * SC, az = 12.3 * SC, bx = 11 * SC, bz = 13 * SC;   // from just past the platform's west end to just past its east end (D15: off the track)
           const plain = R.newState(1); plain.player.x = ax; plain.player.z = az;
           const wp = run(plain, [{ tick: 0, cmd: walkTo(bx, bz) }], 600, idle);
           const st = R.newState(1);
@@ -202,7 +213,8 @@ module.exports = async function checkPaths() {
       const t = r.train;
       if (t.inT || t.inB) problems.push(`round the train: inside the train on ${t.inT} ticks, inside a building on ${t.inB}`);
       if (!(t.left < 0.01)) problems.push(`round the train: the walk ended ${t.left.toFixed(2)}u from the far side`);
-      if (!(t.maxOff > t.half)) problems.push(`round the train: never went past its end (${t.maxOff.toFixed(2)}u from the middle, half length ${t.half.toFixed(2)}u)`);
+      if (!t.pads) problems.push('to the far side of the train: never went over a plank crossing');
+      if (t.onTrack) problems.push(`to the far side of the train: on the track away from a crossing on ${t.onTrack} ticks`);
       if (tTurns > 8) problems.push(`round the train: the heading changed ${tTurns} times (zig-zag)`);
       const i = r.inside;
       if (i.inB) problems.push(`tap inside a building: the player went inside on ${i.inB} ticks`);
@@ -216,7 +228,7 @@ module.exports = async function checkPaths() {
         if (!(m.left < 0.01)) problems.push(`moving train: the walk ended ${m.left.toFixed(2)}u from the target`);
       }
       const s = r.stand;
-      if (!s.thrown || !(s.reach <= 1.5) || s.inT) problems.push(`switch stand behind a train: thrown ${s.thrown}, from ${s.reach}u, inside the train ${s.inT} ticks`);
+      if (!s.thrown || !(s.reach <= 1.5) || s.inT || s.onTrack || s.side !== 1) problems.push(`switch stand behind a train: thrown ${s.thrown}, from ${s.reach}u of its stand or far-side spot, inside the train ${s.inT} ticks, on track ${s.onTrack}, ended on side ${s.side}`);
       if (r.slide.inB || !(r.slide.dx > 1)) problems.push(`hold into a wall: moved ${r.slide.dx.toFixed(2)}u along it (expected > 1u), inside ${r.slide.inB} ticks`);
       if (r.escape.stillIn || !(r.escape.left < 0.01)) problems.push(`walking out of a building: ended ${r.escape.left.toFixed(2)}u from the target, still inside ${r.escape.stillIn}`);
       const c = r.cart;
@@ -229,7 +241,7 @@ module.exports = async function checkPaths() {
       if (!r.resume) problems.push('a copy of the state saved part-way through a walk did not carry on the same (or the walk did not end)');
       if (r.typical.ms > 5 || r.worst.ms > 50) problems.push(`path search too slow: typical ${r.typical.ms.toFixed(2)} ms, worst ${r.worst.ms.toFixed(1)} ms`);
       if (errors.length) problems.push('console errors: ' + errors.join(' | '));
-      notes.push(`round the depot ${d.len.toFixed(1)}u in ${d.ticks} ticks (${dTurns} turns); round the train ${t.len.toFixed(1)}u (${tTurns} turns); tap in the depot ends ${i.gap.toFixed(2)}u from its wall`);
+      notes.push(`round the depot ${d.len.toFixed(1)}u in ${d.ticks} ticks (${dTurns} turns); to the train's far side over a crossing ${t.len.toFixed(1)}u (${tTurns} turns); tap in the depot ends ${i.gap.toFixed(2)}u from its wall`);
       if (m) notes.push(`moving train: walk started at tick ${m.k}, went round it, ${m.len.toFixed(1)}u walked`);
       notes.push(`switch behind a train thrown from ${s.reach && s.reach.toFixed(2)}u; hold into a wall slid ${r.slide.dx.toFixed(2)}u`);
       notes.push(`speed: grid build ${r.buildMs.toFixed(1)} ms (${r.open} of 57600 cells open); path search typical ${r.typical.ms.toFixed(2)} ms (${r.typical.exp} cells), long ${r.long.ms.toFixed(2)} ms (${r.long.exp} cells), worst ${r.worst.ms.toFixed(1)} ms (${r.worst.exp} cells); sim tick walking ${r.tickWalkMs.toFixed(3)} ms, standing ${r.tickIdleMs.toFixed(3)} ms`);

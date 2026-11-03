@@ -297,7 +297,7 @@ function scaleDeep(o) {
   return o;
 }
 const CFG = {
-  SCHEMA_VERSION: 14,
+  SCHEMA_VERSION: 15,
   SEED: 1866,
   SCALE: SC,                 // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
@@ -597,6 +597,7 @@ function buildTestYard() {
   trackSwitch(T, s2, eE, e2t, d2.e);
   trackSwitch(T, s3, eN, e3t, d3.e);
   interchangeAdd(T);
+  T.crossings = xingFixed(T); // the plank crossings (D15)
   return T;
 }
 // The interchange track (design-doc 9 and 15): the Overland's own siding, inbound and outbound on one track
@@ -692,6 +693,7 @@ function buildStartWorld() {
   trackSwitch(T, s1, eSpur, e1n, c1.e);
   trackSwitch(T, w1, eToW1, eW1n, l1.e);
   trackSwitch(T, w2, eHead, eW2n, l2.e);
+  T.crossings = xingFixed(T); // the plank crossings (D15)
   return T;
 }
 
@@ -764,6 +766,25 @@ const STATIONS = {
   ],
 };
 const stationsOf = T => STATIONS[worldId(T)];
+// The fixed plank crossings (D15), as segments [x0, z0, x1, z1] drawn across the tracks: a pad is laid where a segment
+// meets each track (xingPadsAcross, "walk grid and path-finding"). The hub: both ends of the platform (across the
+// platform track and the main), and one just west of the freight shed across every hub track (platform track, main and
+// the interchange), from the shed's end of the station to the Overland's set-out cars and the land south of them.
+// Willow Ford: both ends of the platform, across the main and the run-around loop. The test yard (M0, old saves): two
+// across the bottom main line and the passing siding beside the station (x -10 and 10, either side of where No. 1
+// stands), the east one also over the interchange.
+// Each keeps clear of switches, of the stopping places (No. 1 stands at the hub platform from x 10.4 to 27.6) and of
+// the buildings' use spots.
+const XING_FIXED = {
+  yard: [[-6.25 * SC, 13 * SC, -6.25 * SC, 17 * SC], [6.25 * SC, 13 * SC, 6.25 * SC, 21.3 * SC]], // just clear of No. 1's place
+  start: [
+    [-5.8, -TURN_OFF - 2 * SC, -5.8, 1.6 * SC],                          // the platform's west end, between it and the freight shed
+    [31, -TURN_OFF - 2 * SC, 31, 1.6 * SC],                              // the platform's east end, short of the water tower
+    [-19.2, -TURN_OFF - 2 * SC, -19.2, TURN_OFF + 1.6 * SC],             // west of the freight shed, over all three hub tracks
+    [WFORD.x + 9.5 * SC, WFORD.z - 2 * SC, WFORD.x + 9.5 * SC, WFORD.z + TURN_OFF + 1.6 * SC],  // Willow Ford, west end (main and loop)
+    [WFORD.x + 30.4 * SC, WFORD.z - 2 * SC, WFORD.x + 30.4 * SC, WFORD.z + TURN_OFF + 1.6 * SC], // and east end
+  ],
+};
 
 // ==== Section: game state ====
 const CONSIST_NO1 = [
@@ -928,7 +949,9 @@ function applyCommand(S, c, ev) {
     case 'useSwitch': {
       const W = T.switches[c.sw];
       if (!W) return;
-      P.mode = 'to'; P.tx = W.stand.ux; P.tz = W.stand.uz; P.use = { k: 'sw', id: c.sw }; P.act = null; P.run = false;
+      // From the side of the track the player is on (D15): beside the stand, or across the trunk from it.
+      const sp = switchSpots(T, W), to = walkPrefer(S, sp.near, sp.far);
+      P.mode = 'to'; P.tx = to.x; P.tz = to.z; P.use = { k: 'sw', id: c.sw }; P.act = null; P.run = false;
       break;
     }
     case 'useTrain':
@@ -945,6 +968,7 @@ function applyCommand(S, c, ev) {
     case 'useCar': carryUseCarCmd(S, c, ev); break;
     case 'buildTrack': buildTrackCmd(S, c, ev); break;
     case 'stakeJob': jobStakeCmd(S, c, ev); break;   // construction jobs: Stake it, work, cancel
+    case 'stakeCrossing': jobStakeCrossingCmd(S, c, ev); break; // a plank crossing (D15), a small construction job
     case 'jobWork': jobWorkCmd(S, c, ev); break;
     case 'jobCancel': jobCancelCmd(S, c, ev); break;
     case 'setBayTag': setBayTag(S, c.b, c.bay, c.tag, ev); break;
@@ -1973,7 +1997,9 @@ function ttWalkBeside(S, at, use) {
   const P = S.player, G = walkGrid(S.track), nx = at.fz, nz = -at.fx;
   let side = ((P.x - at.x) * nx + (P.z - at.z) * nz) >= 0 ? 1 : -1;
   const spot = sd => ({ x: clampX(at.x + nx * TT.BESIDE * sd), z: clampZ(at.z + nz * TT.BESIDE * sd) }); // map bounds of the world in use
-  if (!G.cost[walkCell(spot(side).x, spot(side).z)] && G.cost[walkCell(spot(-side).x, spot(-side).z)]) side = -side;
+  // The other side when this one is shut, or in an area the player cannot walk to (D15: the far side of a track).
+  const here = spot(side), there = spot(-side);
+  if (walkPreferG(walkGridFor(S), P.x, P.z, here, there) === there) side = -side;
   // Pushing the handcart (cords of wood, D13): the side away from the platform, where the handcart cannot go.
   if (carryCarrier(S) === 'HANDCART' && carryNoCartAt(spot(side).x, spot(side).z) && !carryNoCartAt(spot(-side).x, spot(-side).z) && G.cost[walkCell(spot(-side).x, spot(-side).z)]) side = -side;
   const sp = spot(side);
@@ -2023,8 +2049,18 @@ function ttWaterCmd(S, c, ev) {
   if (!sp.tr) return ttRefuse(ev, 'Bring an engine\'s tender under the spout first');
   if (sp.loco.water >= CFG.WATER_U - 1e-6) return ttRefuse(ev, 'The tank is already full');
   if (!ttStanding(sp.tr)) return ttRefuse(ev, 'Wait until the train has stopped');
-  const P = S.player, w = sp.st.water;
-  P.mode = 'to'; P.tx = w.sx; P.tz = w.sz; P.use = { k: 'water', st: sp.st.id, tr: sp.tr.id, stock: sp.loco.id }; P.act = null; P.run = false;
+  const P = S.player, ws = ttWaterSpots(S, sp.st), to = walkPrefer(S, ws[0], ws[1]);
+  P.mode = 'to'; P.tx = to.x; P.tz = to.z; P.use = { k: 'water', st: sp.st.id, tr: sp.tr.id, stock: sp.loco.id }; P.act = null; P.run = false;
+  if (to === ws[1]) P.use.far = 1;
+}
+// Where the spout is worked from (D15: either side of the track): the tower's side (sx, sz), and the same spot
+// mirrored across the track's centre line, or null when that one is shut (a building, a hill, other track).
+function ttWaterSpots(S, st) {
+  const w = st.water, a = { x: w.sx, z: w.sz }, n = trackNearest(S.track, w.x, w.z);
+  if (!n) return [a, null];
+  const p = edgeAt(S.track, S.track.edges[n.e], n.s), nx = -p.tz, nz = p.tx, vx = w.sx - w.x, vz = w.sz - w.z, vn = vx * nx + vz * nz;
+  const b = { x: clampX(w.x + vx - 2 * vn * nx), z: clampZ(w.z + vz - 2 * vn * nz) };
+  return [a, walkGrid(S.track).cost[walkCell(b.x, b.z)] > 0 ? b : null];
 }
 function ttAssignCmd(S, c, ev) {
   const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null;
@@ -2059,6 +2095,7 @@ function ttTaskSpot(S, a) {
   if (a.k === 'fuel') return ttTenderAt(S, tr, a.stock);
   const st = ttStation(S, a.st), t = ttTenderAt(S, tr, a.stock);
   if (!st || !st.water || !t || Math.hypot(t.x - st.water.x, t.z - st.water.z) > TT.SPOUT_REACH) return null;
+  if (a.far) { const b = ttWaterSpots(S, st)[1]; if (b) return b; }
   return { x: st.water.sx, z: st.water.sz };
 }
 function ttTaskDone(S, a, ev) {
@@ -2605,6 +2642,7 @@ function jobTiesUpTo(job, m) {
 // The next piece of work, in the real order, or null when every spike is driven.
 function jobStepAt(job) {
   const c = job.count, d = job.done;
+  if (job.pad) return d.ties < c.ties ? { k: 'tie', i: d.ties, s: jobTieAt(job, d.ties) } : null; // a crossing: planks only
   const spikeable = JOB.SPIKES_PER_TIE * jobTiesUpTo(job, d.rails);
   if (d.spikes < spikeable) return { k: 'spike', i: d.spikes, s: jobTieAt(job, Math.floor(d.spikes / JOB.SPIKES_PER_TIE)) };
   if (d.rails < c.rails) {
@@ -2760,6 +2798,64 @@ function jobStakeCmd(S, c, ev) {
   for (const id of itemsAt(S, { kind: 'GROUND' })) jobDeliver(S, id, ev);
   return job;
 }
+// How far from a piece of work (step st) the player may stand to do it: within reach, or a little further where the
+// spot to stand on is shut track (D15): a crossing's planks are set from beside the track, and the first pieces of a
+// switch's diverging leg lie on the existing track's ballast.
+function jobReach(S, job, st) {
+  if (job.pad) return CFG.REACH + 0.35;
+  const q = st && jobPoint(job, Math.min(job.len, st.s + JOB.AHEAD));
+  return q && !(walkGrid(S.track).cost[walkCell(q.x - q.tz * job.side * JOB.STAND, q.z + q.tx * job.side * JOB.STAND)] > 0) ? CFG.REACH + 0.35 : CFG.REACH;
+}
+// Where a plank crossing can go on edge e at s (u along it): { ok, why, s, pad, spots }. The pad lies wholly on the
+// edge, clear of every other track (switch legs, neighbouring tracks), of other crossings and of staked jobs, with
+// room beside it to work from. Pure: the build tool's preview and the stakeCrossing command both use it.
+function xingPlan(S, e, s) {
+  const T = S.track, E = Number.isInteger(e) ? T.edges[e] : null, no = why => ({ ok: false, why });
+  if (!E || !Number.isFinite(s)) return no('Tap a track to put a plank crossing on it');
+  if (E.len < XING.W + 0.2) return no('That piece of track is too short for a crossing');
+  const sc = Math.max(XING.W / 2, Math.min(E.len - XING.W / 2, s)), p = edgeAt(T, E, sc), r3 = v => Math.round(v * 1000) / 1000;
+  const pad = { x: r3(p.x), z: r3(p.z), hx: r3(p.tx), hz: r3(p.tz) };
+  for (const O of T.edges) {
+    if (O === E) continue;
+    const n = Math.max(1, Math.ceil(O.len / 0.25));
+    for (let i = 0; i <= n; i++) {
+      const q = edgeAt(T, O, O.len * i / n), dx = q.x - pad.x, dz = q.z - pad.z, al = dx * pad.hx + dz * pad.hz, ac = dx * pad.hz - dz * pad.hx;
+      if (Math.abs(al) > XING.W / 2 + 0.4 || Math.abs(ac) >= XING.CLEAR) continue;
+      if (Math.abs(ac) < 0.05 && Math.abs(q.tx * pad.hx + q.tz * pad.hz) > 0.999) continue; // the same line going on
+      return no('Too close to other track: a crossing needs a single track, clear of switches');
+    }
+  }
+  for (const q of xingList(T)) if (Math.hypot(q.x - pad.x, q.z - pad.z) < XING.W + 0.3) return no('There is a crossing here already');
+  for (const j of S.jobs.list) {
+    if (j.pad && Math.hypot(j.pad.x - pad.x, j.pad.z - pad.z) < XING.W + 0.3) return no(`Crossing job ${j.id + 1} is staked here already`);
+    if (!j.pad) for (const J of j.geo.edges) for (const a of [-XING.W / 2, 0, XING.W / 2])
+      if (bEdgeDist(j.geo, J, pad.x + pad.hx * a, pad.z + pad.hz * a) < BUILD.CLEAR - 0.01) return no(`Too close to job ${j.id + 1}, which is staked already`);
+  }
+  const G = walkGrid(T), spots = [1, -1].map(sd => ({ x: pad.x - pad.hz * sd * XING.STAND, z: pad.z + pad.hx * sd * XING.STAND }));
+  if (!spots.some(q => G.cost[walkCell(q.x, q.z)] > 0)) return no('There is no room beside the track to work from');
+  return { ok: true, e, s: sc, pad, spots };
+}
+// Stake a plank crossing (D15): { t: 'stakeCrossing', e, s (thousandths of a u along edge e) }. A small construction
+// job: one tie bundle put down beside it, then 10 planks set one by one (the tie step) from beside the track; when
+// the last is in, its pad joins S.track.crossings (jobComplete) and it works like the fixed ones.
+function jobStakeCrossingCmd(S, c, ev) {
+  if (!Number.isInteger(c.e) || !Number.isInteger(c.s)) return jobRefuse(ev, 'A plan is made of whole numbers only');
+  const x = xingPlan(S, c.e, c.s / 1000);
+  if (!x.ok) return jobRefuse(ev, x.why);
+  const p = x.pad, h = XING.W / 2, P = S.player;
+  const geo = { nodes: [{ x: p.x - p.hx * h, z: p.z - p.hz * h }, { x: p.x + p.hx * h, z: p.z + p.hz * h }], edges: [{ k: 'S', a: 0, b: 1, len: XING.W }] };
+  // Worked from the side the player can walk to (the other side if that one is shut).
+  const [a, b] = x.spots, d = q => Math.hypot(q.x - P.x, q.z - P.z), near = d(b) < d(a) ? [b, a] : [a, b];
+  const side = walkPreferG(walkGrid(S.track), P.x, P.z, near[0], near[1]) === a ? 1 : -1;
+  const job = { id: S.jobs.next, tick: S.tick, cmd: { from: 'xing', e: c.e, s: Math.round(x.s * 1000) }, cls: 'yard', sw: false, len: XING.W, geo, ends: [], side,
+    stakes: geo.nodes.map(q => [Math.round(q.x * 100), Math.round(q.z * 100)]), pad: { ...p },
+    count: { ties: XING.PLANKS, rails: 0, spikes: 0 }, need: { ties: Math.ceil(XING.PLANKS / JOB_MAT.ties.per), rails: 0, spikes: 0, hardware: 0 },
+    done: { ties: 0, rails: 0, spikes: 0, hardware: 0 }, loose: { ties: 0, rails: 0, spikes: 0 }, site: {} };
+  S.jobs.next += 1; S.jobs.list.push(job);
+  ev.push({ t: 'jobStaked', id: job.id, len: Math.round(job.len * 100), need: { ...job.need }, xing: true });
+  for (const id of itemsAt(S, { kind: 'GROUND' })) jobDeliver(S, id, ev);
+  return job;
+}
 function jobStop(S, job, ev, why, missing) {
   const P = S.player;
   if ((P.use && P.use.k === 'job') || (P.act && P.act.k === 'job')) { P.use = null; P.act = null; P.mode = 'idle'; }
@@ -2781,10 +2877,17 @@ function jobContinue(S, job, ev, carry, walk) {
   const miss = jobMissing(S, job, st);
   if (miss) { jobStop(S, job, ev, JOB_MAT[miss].out, miss); return; }
   const p = jobPoint(job, st.s);
-  if (Math.hypot(p.x - P.x, p.z - P.z) > CFG.REACH) {
+  if (Math.hypot(p.x - P.x, p.z - P.z) > jobReach(S, job, st)) {
     if (!walk) { jobStop(S, job, ev, 'Something is in the way of the work'); return; }
-    const q = jobPoint(job, Math.min(job.len, st.s + JOB.AHEAD));
-    P.mode = 'to'; P.tx = clampX(q.x - q.tz * job.side * JOB.STAND); P.tz = clampZ(q.z + q.tx * job.side * JOB.STAND);
+    if (job.pad) {
+      // A crossing lies on track: the player sets each plank from beside it, on the side they can walk to (D15).
+      const sp = sd => ({ x: clampX(p.x - p.tz * sd * XING.STAND), z: clampZ(p.z + p.tx * sd * XING.STAND) }), a = sp(job.side), b = sp(-job.side);
+      const to = walkPreferG(walkGrid(S.track), P.x, P.z, a, b);
+      P.mode = 'to'; P.tx = to.x; P.tz = to.z;
+    } else {
+      const q = jobPoint(job, Math.min(job.len, st.s + JOB.AHEAD));
+      P.mode = 'to'; P.tx = clampX(q.x - q.tz * job.side * JOB.STAND); P.tz = clampZ(q.z + q.tx * job.side * JOB.STAND);
+    }
     P.use = { k: 'job', id: job.id }; P.act = null; P.run = false;
     return;
   }
@@ -2818,7 +2921,7 @@ function jobActorTick(S, ev, poseCache) {
   if (!job) return;
   // Arrived (or stopped short): in reach of the work after all, the walk's "blocked" does not count.
   const st = jobStepAt(job), p = st && jobPoint(job, st.s);
-  if (p && Math.hypot(p.x - P.x, p.z - P.z) <= CFG.REACH) for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1);
+  if (p && Math.hypot(p.x - P.x, p.z - P.z) <= jobReach(S, job, st)) for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1);
   jobContinue(S, job, ev, 0, false);
 }
 // Items back on the ground beside a job: what is at its stockpile (where it was put down), and pieces as whole bundles
@@ -2852,6 +2955,17 @@ function jobRemove(S, job) { S.jobs.list = S.jobs.list.filter(j => j !== job); }
 function jobComplete(S, job, ev) {
   const P = S.player;
   if ((P.use && P.use.k === 'job') || (P.act && P.act.k === 'job')) { P.use = null; P.act = null; P.mode = 'idle'; }
+  if (job.pad) {
+    // A crossing: its pad joins the track's crossings, and the walk grid opens it (D15).
+    if (!Array.isArray(S.track.crossings)) S.track.crossings = [];
+    S.track.crossings.push({ ...job.pad });
+    walkGridCache.delete(S.track);
+    ev.push({ t: 'crossingBuilt', id: job.id, x: Math.round(job.pad.x * 100), z: Math.round(job.pad.z * 100) });
+    jobReturn(S, job, ev, false);
+    jobRemove(S, job);
+    ev.push({ t: 'jobDone', id: job.id, len: Math.round(job.len * 100), xing: true });
+    return;
+  }
   const p = buildPlan(S, { t: 'buildTrack', ...job.cmd });
   if (!p.ok) { jobStop(S, job, ev, 'The track cannot join yet: ' + (p.why || 'the plan no longer fits')); return; }
   const g = jobGeoFromPlan(p);
@@ -3665,8 +3779,9 @@ function econCheckSaveShape(st) {
 // build command clears it): a cost per cell, 0 = blocked. Blocked: building footprints grown by the
 // player's radius (WALK.R), and every cell that is not flat ground (terrainFlatAt) at its corners, edge
 // midpoints and centre. Platforms and the freight dock cost 1.0, everything else is grass, 1.4. Track is
-// walkable at the grass cost for now (provisional: section 11 says impassable except at crossings; see
-// DEV_NOTES). Trains are dynamic: their cells are stamped at query time, so the grid itself stays static.
+// blocked (D15, section 11): every cell whose centre is within XING.BAND of a track centre line, except at the
+// plank crossings (T.crossings, see "Plank crossings" below). Trains are dynamic: their cells are stamped at
+// query time, so the grid itself stays static (a train standing on a crossing shuts it for as long as it stands).
 // A* uses whole-number costs (100 per straight step on cost 1.0, 140 per diagonal), a fixed neighbour
 // order, and ties broken by cell index, so the same state always gives the same path. Nothing about the
 // path is saved: each tick it is worked out again from the saved state (G.memo only skips repeat work).
@@ -3680,7 +3795,7 @@ function walkUseDims(T) {
 }
 const WALK_NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]; // fixed order
 const walkGridCache = new WeakMap();
-function walkGridSig(T) { return T.edges.length + '/' + T.nodes.length + '/' + T.switches.length; }
+function walkGridSig(T) { return T.edges.length + '/' + T.nodes.length + '/' + T.switches.length + '/' + xingList(T).length; }
 // cart: the grid for pushing the handcart, where the platform and the freight shed with its dock
 // (carryNoCartRects, they have steps) are blocked too. Made from the plain grid on first use, cached with it.
 function walkGrid(T, cart) {
@@ -3692,6 +3807,7 @@ function walkGrid(T, cart) {
     const cost = G.cost.slice();
     for (const [x0, x1, z0, z1] of carryNoCartRects()) walkStampRect({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, yaw: 0 }, 0, i => { cost[i] = 0; });
     G.cart = walkGridLayer(G.sig, cost, G.solid, G.sc); // shares the search scratch with the plain grid (memory, D15)
+    G.cart.trk = G.trk;
   }
   return G.cart;
 }
@@ -3761,7 +3877,12 @@ function walkGridBuild(T) {
   const fps = buildingFootprints(), solid = fps.filter(f => !f.flush);
   for (const f of fps) if (f.flush) walkStampRect(f, 0, i => { if (cost[i]) cost[i] = WALK.PLATFORM; });
   for (const f of solid) walkStampRect(f, WALK.R, i => { cost[i] = 0; });
-  return walkGridLayer(walkGridSig(T), cost, solid);
+  // Track (D15): shut except at the plank crossings.
+  const trk = xingTrackMask(T);
+  for (let i = 0; i < cost.length; i++) if (trk[i]) cost[i] = 0;
+  const G = walkGridLayer(walkGridSig(T), cost, solid);
+  G.trk = trk;
+  return G;
 }
 // A grid from its costs: connected areas, and the scratch arrays for the searches (sc; shared by the plain and the
 // handcart grid, as every search and train stamp starts afresh by bumping a counter in sc).
@@ -3952,6 +4073,107 @@ function walkPoints(S, poses, upTo) {
 // Is (x, z) inside a building, grown by the player's radius? (For walking by direction.)
 function walkInBuilding(T, x, z) { return walkGrid(T).solid.some(f => walkRectHits(f, WALK.R, x, z, 0)); }
 
+// ---- Plank crossings (D15, design-doc 11 "Pathfinding") ----
+// Track cannot be walked across except at plank crossings. A crossing is stored as pads, one per track it crosses:
+// { x, z, hx, hz }, the middle of the pad on the track's centre line and the track's heading there. A pad is XING.W
+// long along the track (10 planks: one tie bundle) and opens the walk grid's track cells inside it. The fixed crossings
+// (XING_FIXED, "starting world layout") are laid when a world's track is built and added to older saves (schema 15);
+// the player stakes more with the Build tool (a construction job of one pad, "construction jobs"). T.crossings is saved
+// with the track; a track built without it (some checks make their own) simply has none.
+// Switches, couplings, the tender and the water spout are worked from either side of their track (walkPrefer picks the
+// side the player can walk to), so nobody has to cross to work them.
+const XING = {
+  PLANKS: 10,        // planks in a crossing: one tie bundle (JOB_MAT.ties.per)
+  W: 3.7,            // a pad's length along the track: 10 planks (0.22 x WS = 0.352u wide) every 0.37u
+  BAND: 1.15,        // a cell whose centre is closer than this to a track centre line is track (the ties end at 0.96u);
+                     // the spots beside a train (1.48u out) stay open
+  OPEN: 1.45,        // a pad opens the cells this far either side of the centre line
+  LIFT: 0.124,       // planks are drawn this much above the ties (their tops 3.6 cm under the rail tops)
+  CLEAR: 2.6,        // a staked crossing keeps this far from any other track (switch legs, a neighbouring track)
+  STAND: 1.4,        // the player sets the planks from this far beside the centre line (within reach)
+  FAR: 1.6,          // a switch's far-side spot: this far from the trunk's centre line, opposite its stand
+  COL: '#7a6247',    // plank colour (the hand-built ones are drawn as ties, in the tie colour, until they join)
+};
+const xingList = T => (T && Array.isArray(T.crossings) ? T.crossings : []);
+// A pad as a rectangle for walkStampRect (w along the track).
+function xingRect(p) { return { x: p.x, z: p.z, w: XING.W, d: 2 * XING.OPEN, yaw: Math.atan2(-p.hz, p.hx) }; }
+// Pads where the segment (x0, z0) to (x1, z1) meets the track's centre lines, in edge order.
+function xingPadsAcross(T, x0, z0, x1, z1) {
+  const ux = x1 - x0, uz = z1 - z0, L = Math.hypot(ux, uz), out = [];
+  const side = (x, z) => ((x - x0) * uz - (z - z0) * ux) / L, along = (x, z) => ((x - x0) * ux + (z - z0) * uz) / L;
+  const r3 = v => Math.round(v * 1000) / 1000;
+  for (const E of T.edges) {
+    const n = Math.max(2, Math.ceil(E.len / 0.05));
+    let s0 = 0, p = edgeAt(T, E, 0), a = side(p.x, p.z);
+    for (let i = 1; i <= n; i++) {
+      const s = E.len * i / n, q = edgeAt(T, E, s), b = side(q.x, q.z);
+      if ((a < 0) !== (b < 0)) {
+        const c = edgeAt(T, E, s0 + (s - s0) * a / (a - b)), t = along(c.x, c.z);
+        if (t >= 0 && t <= L) out.push({ x: r3(c.x), z: r3(c.z), hx: r3(c.tx), hz: r3(c.tz) });
+      }
+      s0 = s; a = b;
+    }
+  }
+  return out;
+}
+// The fixed crossings of a world's track, as pads.
+function xingFixed(T) { return [].concat(...(XING_FIXED[worldId(T)] || []).map(g => xingPadsAcross(T, ...g))); }
+// Track cells of the walk grid in use (1 = track, shut), with the crossings' pads opened.
+function xingTrackMask(T) {
+  const N = WALK.N, C = WALK.CELL, B = XING.BAND, m = new Uint8Array(N * WALK.NZ);
+  for (const E of T.edges) {
+    const n = Math.max(1, Math.ceil(E.len / 0.2)), half = E.len / n / 2 + 0.03;
+    for (let k = 0; k <= n; k++) {
+      const p = edgeAt(T, E, E.len * k / n);
+      const i0 = walkCellOf(p.x - B), i1 = walkCellOf(p.x + B), j0 = walkRowOf(p.z - B), j1 = walkRowOf(p.z + B);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const c = j * N + i;
+        if (m[c]) continue;
+        const dx = WALK.X0 + (i + 0.5) * C - p.x, dz = WALK.Z0 + (j + 0.5) * C - p.z;
+        if (Math.abs(dx * p.tz - dz * p.tx) < B && Math.abs(dx * p.tx + dz * p.tz) <= half) m[c] = 1;
+      }
+    }
+  }
+  // The cells a pad opens: those overlapping it shrunk by half a cell, so a walker keeps to the planks.
+  for (const p of xingList(T)) walkStampRect(xingRect(p), -WALK.CELL / 2, i => { m[i] = 0; });
+  return m;
+}
+// Is (x, z) on shut track (not at a crossing)?
+function walkOnTrack(G, x, z) { return !!G.trk[walkCell(x, z)]; }
+// Does the straight line from (x0, z0) to (x1, z1) run over shut track?
+function walkAcrossTrack(G, x0, z0, x1, z1) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.25));
+  for (let i = 0; i <= n; i++) if (G.trk[walkCell(x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n)]) return true;
+  return false;
+}
+// The connected walk area of (x, z) on grid G: its cell's, or the nearest open cell's when it is shut (-1: none).
+function walkAreaAt(G, x, z) {
+  const c = walkCell(x, z);
+  if (G.cost[c] > 0) return G.comp[c];
+  const n = walkNearest(G, c, -1);
+  return n >= 0 ? G.comp[n] : -1;
+}
+// Of two spots [x, z] or {x, z} to walk to for the same job, a (the one preferred) unless a is shut or in an area
+// the walker at (px, pz) cannot reach while b is open and reachable (D15: the other side of a track).
+function walkPreferG(G, px, pz, a, b) {
+  if (!b) return a;
+  const xy = q => (Array.isArray(q) ? q : [q.x, q.z]), me = walkAreaAt(G, px, pz);
+  const ok = q => { const [x, z] = xy(q), c = walkCell(x, z); return G.cost[c] > 0 && G.comp[c] === me; };
+  return !ok(a) && ok(b) ? b : a;
+}
+// The same for the player (on the grid they walk now: the handcart's while pushing it), a and b sorted nearer first.
+function walkPrefer(S, a, b) {
+  const P = S.player, xy = q => (Array.isArray(q) ? q : [q.x, q.z]);
+  if (b) { const [ax, az] = xy(a), [bx, bz] = xy(b); if (Math.hypot(bx - P.x, bz - P.z) < Math.hypot(ax - P.x, az - P.z) - 1e-9) [a, b] = [b, a]; }
+  return walkPreferG(walkGridFor(S), P.x, P.z, a, b);
+}
+// A switch's two use spots: where the player stands beside its stand (ux, uz), and the far side of the trunk.
+function switchSpots(T, W) {
+  const N = T.nodes[W.node], st = W.stand, px = -st.hz, pz = st.hx;
+  const sd = ((st.x - N.x) * px + (st.z - N.z) * pz) >= 0 ? 1 : -1, bx = N.x - st.hx * 0.4 * SC, bz = N.z - st.hz * 0.4 * SC;
+  return { near: { x: st.ux, z: st.uz }, far: { x: clampX(bx - px * sd * XING.FAR), z: clampZ(bz - pz * sd * XING.FAR) } };
+}
+
 // ==== Section: player ====
 // Rough footprint test: is (x, z) inside a vehicle (plus the player's own radius)?
 // TRAIN_HALF_W: half a vehicle's width (0.55u x SC since D15) plus the player's radius (0.2u, human-sized).
@@ -4003,12 +4225,16 @@ function trainApproach(poses, x, z, view, allPoses, T) {
     if (want !== best.side) {
       const ox = clampX(best.cx + best.fz * BESIDE_TRAIN * want), oz = clampZ(best.cz - best.fx * BESIDE_TRAIN * want);
       const all = allPoses || poses;
-      if (pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; best.side = want; }
+      // D15: not across track (the train's own included) away from a crossing: then the near side stays.
+      const across = T && walkAcrossTrack(walkGrid(T), x, z, ox, oz);
+      if (!across && pathClear(all, x, z, ox, oz) && pathClear(all, x, z, best.x, best.z)) { best.x = ox; best.z = oz; best.side = want; }
     }
   }
   if (best && T) {
+    // The other side when this one is shut, or (D15) in an area the player cannot walk to.
     const G = walkGrid(T), sd = -best.side, ox = clampX(best.cx + best.fz * BESIDE_TRAIN * sd), oz = clampZ(best.cz - best.fx * BESIDE_TRAIN * sd);
-    if (!G.cost[walkCell(best.x, best.z)] && G.cost[walkCell(ox, oz)]) { best.x = ox; best.z = oz; best.side = sd; }
+    const there = [ox, oz];
+    if (walkPreferG(G, x, z, [best.x, best.z], there) === there) { best.x = ox; best.z = oz; best.side = sd; }
   }
   return best;
 }
@@ -4022,11 +4248,12 @@ function playerTick(S, ev, poseCache) {
   if (P.mode !== 'to' && P.mode !== 'dir') return;
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id]));
   const step = (P.run ? CFG.RUN : CFG.WALK) * DT_MIN, T = S.track;
-  // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building?
-  // A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
+  // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building or onto
+  // track away from a crossing (D15)? A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
   const into = (x0, z0, x1, z1, bld) => (insideTrain(poses, x1, z1) && !insideTrain(poses, x0, z0))
     || (!terrainFlatAt(T, x1, z1) && terrainFlatAt(T, x0, z0))
-    || (bld && walkInBuilding(T, x1, z1) && !walkInBuilding(T, x0, z0));
+    || (bld && walkInBuilding(T, x1, z1) && !walkInBuilding(T, x0, z0))
+    || (bld && walkOnTrack(walkGrid(T), x1, z1) && !walkOnTrack(walkGrid(T), x0, z0));
   if (P.mode === 'dir') {
     // Press and hold: direct steering. A blocked move slides along the wall (its x-only or z-only part).
     const ang = P.a / 256 * Math.PI * 2, dx = Math.cos(ang), dz = Math.sin(ang);
@@ -4063,8 +4290,9 @@ function playerTick(S, ev, poseCache) {
     // what they were going to use.
     let reached = w.exact && !blocked;
     if (P.use && P.use.k === 'sw') {
-      const W = S.track.switches[P.use.id];
-      if (!reached) reached = Math.hypot(W.stand.x - P.x, W.stand.z - P.z) <= CFG.REACH;
+      const W = S.track.switches[P.use.id], far = switchSpots(S.track, W).far;
+      // Within reach of the stand, or at its far-side spot across the trunk (D15: worked from either side).
+      if (!reached) reached = Math.hypot(W.stand.x - P.x, W.stand.z - P.z) <= CFG.REACH || Math.hypot(far.x - P.x, far.z - P.z) <= CFG.REACH;
       if (reached) {
         P.f = Math.atan2(W.stand.x - P.x, W.stand.z - P.z);
         P.act = { k: 'throw', sw: P.use.id, left: CFG.THROW_S };
@@ -4285,10 +4513,14 @@ function carryCarDoor(S, stockId, px, pz) {
   const f = carryCarOf(S, stockId);
   if (!f || trainOff(f.tr)) return null;
   const p = trainPoses(S.track, f.tr)[f.i], fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
-  const dx = px - p.x, dz = pz - p.z, side = (dx * fz - dz * fx) >= 0 ? 1 : -1;
-  let t = 0;
+  const dx = px - p.x, dz = pz - p.z;
+  let side = (dx * fz - dz * fx) >= 0 ? 1 : -1, t = 0;
   if (f.car.k === 'combine') t = CARRY_DOOR.COMBINE_DOOR;
   else if (f.car.k === 'flatcar') { const m = p.len / 2 - CARRY_DOOR.FLAT_END; t = Math.max(-m, Math.min(m, dx * fx + dz * fz)); }
+  // D15: the other door when the walker cannot get to this side (the far side of a track).
+  const at = sd => [p.x + fx * t + fz * sd * (CARRY_DOOR.OUT + CARRY_DOOR.WALK), p.z + fz * t - fx * sd * (CARRY_DOOR.OUT + CARRY_DOOR.WALK)];
+  const here = at(side), there = at(-side);
+  if (walkPreferG(walkGridFor(S), px, pz, here, there) === there) side = -side;
   const ox = fz * side, oz = -fx * side;
   return { x: p.x + fx * t + ox * CARRY_DOOR.OUT, z: p.z + fz * t + oz * CARRY_DOOR.OUT, ox, oz };
 }
@@ -5344,6 +5576,12 @@ function migrate(save) {
     saveScale14(st, SC);
     st.schemaVersion = 14;
   }
+  if (st.schemaVersion === 14) {
+    // 14 -> 15 (plank crossings, D15): track is walked across only at crossings. The world's fixed crossings are laid
+    // on the saved track (its own track, as the old layout is the new one), and none built by the player yet.
+    if (st.track && typeof st.track === 'object' && Array.isArray(st.track.edges) && Array.isArray(st.track.nodes) && !Array.isArray(st.track.crossings)) st.track.crossings = xingFixed(st.track);
+    st.schemaVersion = 15;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -5422,6 +5660,7 @@ function checkSaveShape(st) {
   const edgeOk = i => Number.isInteger(i) && i >= 0 && i < T.edges.length;
   for (const E of T.edges) if (!E || !nodeOk(E.a) || !nodeOk(E.b) || !num(E.len) || !(E.len > 0) || (E.k !== 'S' && E.k !== 'A') || !num(E.lim)) bad('track edge');
   for (const W of T.switches) if (!W || !nodeOk(W.node) || !edgeOk(W.trunk) || !edgeOk(W.normal) || !edgeOk(W.reverse) || (W.state !== 'N' && W.state !== 'R') || !W.stand) bad('switch');
+  if (!arr(T.crossings) || T.crossings.some(p => !p || !num(p.x) || !num(p.z) || !num(p.hx) || !num(p.hz))) bad('track crossings');
   if (!arr(st.trains)) bad('trains');
   for (const tr of st.trains) {
     if (!tr || !tr.front || !edgeOk(tr.front.e) || !num(tr.front.s) || Math.abs(tr.front.d) !== 1) bad('train position');
@@ -5987,6 +6226,15 @@ function buildWorld(S) {
     posts.add(box(0.25 * WS, 0.5 * WS, 1.1 * WS), PAL.trim, bx, 0.25 * WS, bz, 0, yaw, 0);
     posts.add(box(0.12 * WS, 0.2 * WS, 1.3 * WS), PAL.red, bx + t.x * 0.1 * WS, 0.5 * WS, bz + t.z * 0.1 * WS, 0, yaw, 0);
   }
+  // Plank crossings (D15): 10 planks per pad, the tie's shape, laid close across the track and lifted XING.LIFT above
+  // the ties so the rail heads just show through. In the merged posts mesh, so they cost no draw call.
+  for (const p of xingList(T)) {
+    const yaw = Math.atan2(-p.hz, p.hx);
+    for (let i = 0; i < XING.PLANKS; i++) {
+      const a = (i + 0.5) * XING.W / XING.PLANKS - XING.W / 2;
+      posts.add(box(0.22 * WS, 0.08 * WS, 1.2 * WS), XING.COL, p.x + p.hx * a, 0.07 * WS + XING.LIFT, p.z + p.hz * a, 0, yaw, 0);
+    }
+  }
   G.add(posts.mesh());
   buildBuildings(G);
   // Target discs: green for normal, red for reverse.
@@ -6389,7 +6637,8 @@ function jobSiteAt(S, jobId, itemId) { const j = jobGet(S, jobId); return (j && 
 function jobGeom(job) {
   const key = job.id + ':' + job.len;
   if (jobView.cache[key]) return jobView.cache[key];
-  const lift = s => (job.sw && s < job.geo.edges[0].len - 1e-9 ? 0.004 : 0), G = CFG.GAUGE_HALF;
+  // A crossing's planks (D15) lie XING.LIFT above the ties of the track under them, as the finished crossing's do.
+  const lift = s => (job.pad ? XING.LIFT : job.sw && s < job.geo.edges[0].len - 1e-9 ? 0.004 : 0), G = CFG.GAUGE_HALF;
   const ties = [], spikes = [], rails = [];
   for (let i = 0; i < job.count.ties; i++) {
     const s = jobTieAt(job, i), p = jobPoint(job, s), y = jobH(p.x, p.z) + lift(s);
@@ -7374,7 +7623,7 @@ const CROWD = {
   WALK: 2.5,            // citizen walk, u per game minute (section 4; D15: a quarter faster than M1's 2.0, like the player)
   BREATH: 0.015, BREATH_HZ: 0.35, DRIFT: 8 * Math.PI / 180,
   AREA: { x0: -64, x1: 64, z0: -48, z1: 51.2 }, // where walkers roam on the test map (M1's x 1.6; each world sets its own)
-  BALLAST: 0.95 * CFG.SCALE, // paths keep this far from a track centre line where they can (just past the ballast)
+  BALLAST: 0.95 * CFG.SCALE, // paths keep this far from a track centre line (just past the ballast) except at plank crossings (D15)
   MAX: 1000,
   SEED: 0x5eed4,
   PAX: 96,              // room per kit for travellers (section "passengers"), drawn after the walkers in the same meshes
@@ -7608,7 +7857,8 @@ function crowdDescribe(i) {
 // ---- Where walkers go: a coarse grid marking the track ballast, rebuilt when the track changes ----
 function crowdGrid() {
   const T = S.track;
-  if (crowd.grid && crowd.grid.track === T && crowd.grid.n === T.edges.length) return crowd.grid;
+  const nx = xingList(T).length;
+  if (crowd.grid && crowd.grid.track === T && crowd.grid.n === T.edges.length && crowd.grid.nx === nx) return crowd.grid;
   const A = CROWD.AREA, cell = 0.5, w = Math.ceil((A.x1 - A.x0) / cell) + 1, h = Math.ceil((A.z1 - A.z0) / cell) + 1;
   const bad = new Uint8Array(w * h), R = Math.ceil(CROWD.BALLAST / cell);
   for (const E of T.edges) {
@@ -7618,8 +7868,18 @@ function crowdGrid() {
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         const gx = cx + dx, gz = cz + dz;
         if (gx < 0 || gz < 0 || gx >= w || gz >= h) continue;
-        if (Math.hypot(gx * cell + A.x0 - p.x, gz * cell + A.z0 - p.z) <= CROWD.BALLAST) bad[gz * w + gx] = 1;
+        if (Math.hypot(gx * cell + A.x0 - p.x, gz * cell + A.z0 - p.z) <= CROWD.BALLAST) bad[gz * w + gx] = 2;
       }
+    }
+  }
+  // D15: the track is never walked across except at the plank crossings, which are open ground.
+  for (const q of xingList(T)) {
+    const f = xingRect(q), c = Math.cos(f.yaw), sn = Math.sin(f.yaw), r = Math.ceil(Math.hypot(f.w, f.d) / 2 / cell) + 1;
+    const cx = Math.round((q.x - A.x0) / cell), cz = Math.round((q.z - A.z0) / cell);
+    for (let gz = cz - r; gz <= cz + r; gz++) for (let gx = cx - r; gx <= cx + r; gx++) {
+      if (gx < 0 || gz < 0 || gx >= w || gz >= h) continue;
+      const dx = gx * cell + A.x0 - q.x, dz = gz * cell + A.z0 - q.z;
+      if (Math.abs(dx * c - dz * sn) <= f.w / 2 - 0.2 && Math.abs(dx * sn + dz * c) <= CROWD.BALLAST + 0.3) bad[gz * w + gx] = 0;
     }
   }
   // Code 2: never walk here. Station buildings (with a 0.3u margin) and hills (walkers stay at height 0).
@@ -7634,10 +7894,11 @@ function crowdGrid() {
     }
     if (no) bad[gz * w + gx] = 2;
   }
-  crowd.grid = { track: T, n: T.edges.length, w, h, cell, bad };
+  crowd.grid = { track: T, n: T.edges.length, nx, w, h, cell, bad };
   return crowd.grid;
 }
-// 0 free, 1 track ballast (avoided where possible), 2 building or hill (never entered).
+// 0 free, 2 track (away from a crossing, D15), building or hill (never entered). (Code 1, ballast walked only when
+// nothing else would do, was the M1 rule.)
 function crowdCell(g, x, z) {
   const A = CROWD.AREA, gx = Math.round((x - A.x0) / g.cell), gz = Math.round((z - A.z0) / g.cell);
   return gx >= 0 && gz >= 0 && gx < g.w && gz < g.h ? g.bad[gz * g.w + gx] : 0;
@@ -7651,8 +7912,8 @@ function crowdPathCost(g, x0, z0, x1, z1) {
   return worst;
 }
 function crowdClear(g, x0, z0, x1, z1) { return crowdPathCost(g, x0, z0, x1, z1) === 0; }
-// A new target 3 to 15u away whose straight path keeps off the ballast; after 10 tries the walker crosses
-// the track anyway, but never a building or a hill: then it stays put and tries again next time.
+// A new target 3 to 15u away whose straight path keeps off the track (it may run over a plank crossing), buildings
+// and hills; after 10 tries the walker stays put and tries again next time.
 function crowdTarget(w) {
   const g = crowdGrid(), A = CROWD.AREA;
   let tx = w.x, tz = w.z, cost = 2;
@@ -8261,7 +8522,7 @@ function buildPlan(S, c) {
     }
     all = all.concat(div.pts);
   }
-  if (minD < 0.05 * SC) return fail('Crosses other track: crossings are not built yet');
+  if (minD < 0.05 * SC) return fail('Crosses other track: track crossings (diamonds) are not built yet');
   if (minD < BUILD.CLEAR - 0.01) return fail(`Too close to other track: ${bFmt(minD)}u, minimum ${BUILD.CLEAR}u`);
   const Wd = worldOf(T), MB = Wd.bounds, H = Wd.hub;
   for (const p of all) if (p.x < MB.x0 + 0.5 * SC || p.x > MB.x1 - 0.5 * SC || p.z < MB.z0 + 0.5 * SC || p.z > MB.z1 - 0.5 * SC) return fail('Off the edge of the map');
@@ -8280,6 +8541,8 @@ function buildPlan(S, c) {
       }
     }
   }
+  // Plank crossings (D15): new track keeps clear of them, as they would be cut in two.
+  for (const q of xingList(T)) for (const p of all) if (Math.hypot(p.x - q.x, p.z - q.z) < XING.W / 2 + XING.CLEAR) return fail('Too close to a plank crossing');
   // Everything the validator checks (radius by class, smooth joints, reverse curves), new problems only.
   const key = T.nodes.length + ':' + T.edges.length + ':' + T.switches.length;
   let base = bBaseErrs.get(T);
@@ -8335,7 +8598,7 @@ function setBuildMode(on) {
   if (on) { closePanel(); view.ring.visible = false; buildEndMarkers(); buildHint(); }
   else { buildLabel(null); if (bt.ends) bt.ends.visible = false; }
 }
-function buildHint() { if (bt.on) buildLabel('hint', 'Drag from a track end, along a straight for a switch, or on open ground'); }
+function buildHint() { if (bt.on) buildLabel('hint', 'Drag from a track end, along a straight for a switch, or on open ground. Tap a track for a plank crossing'); }
 function buildLabel(kind, text) {
   const el = $('buildLabel');
   if (!kind) { el.hidden = true; return; }
@@ -8344,6 +8607,7 @@ function buildLabel(kind, text) {
 function buildClear() {
   bt.drag = null; bt.plan = null; bt.cmd = null; bt.confirm = false;
   $('buildConfirm').hidden = true;
+  $('buildLay').textContent = BUILD_INSTANT ? 'Lay track' : 'Stake it';
   buildGhost(null);
 }
 // Small rings on every track end, so it is clear where a drag can start.
@@ -8435,15 +8699,39 @@ function buildMove(px, py) {
 function buildUp() {
   const d = bt.drag;
   bt.drag = null;
+  if (d && !d.moved && buildCrossingTap(d)) return;
   if (!d || !d.moved || !bt.plan || (bt.plan.short && !bt.plan.T2)) { buildClear(); buildHint(); return; }
   bt.confirm = true;
   $('buildConfirm').hidden = false;
   $('buildLay').disabled = !bt.plan.ok || (!BUILD_INSTANT && bt.plan.amber); // amber plans cannot be staked in M1
 }
+// A tap (no drag) on a track in build mode plans a plank crossing there (D15): its ghost, what it needs, and Stake it.
+function buildCrossingTap(d) {
+  const nr = trackNearest(S.track, d.gx, d.gz);
+  if (!nr || nr.dist > 0.75 * SC) return false;
+  const x = xingPlan(S, nr.e, nr.s);
+  bt.cmd = { t: 'stakeCrossing', e: nr.e, s: Math.round((x.ok ? x.s : nr.s) * 1000) };
+  bt.plan = { ok: x.ok, xing: x };
+  buildGhost(null);
+  if (x.ok) {
+    const p = x.pad, k = new Kit(), yaw = Math.atan2(-p.hz, p.hx);
+    k.add(box(XING.W, 0.02, 2 * XING.OPEN - 0.3), B_COL.ok, p.x, RAIL_TOP + 0.025, p.z, 0, yaw, 0);
+    bt.ghost = k.mesh(false);
+    bt.ghost.material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
+    bt.ghost.renderOrder = 5; scene.add(bt.ghost);
+    buildLabel('ok', 'Plank crossing: needs 1 tie bundle');
+  } else buildLabel('bad', x.why);
+  bt.confirm = true;
+  $('buildConfirm').hidden = false;
+  $('buildLay').textContent = 'Stake it';
+  $('buildLay').disabled = !x.ok;
+  return true;
+}
 function buildAbortDrag() { if (bt.drag) { buildClear(); buildHint(); } }
 function buildLay() {
   if (!bt.plan || !bt.plan.ok || !bt.cmd) return;
-  send(BUILD_INSTANT ? bt.cmd : { ...bt.cmd, t: 'stakeJob' }); // Stake it sends the same plan as a construction job
+  if (bt.cmd.t === 'stakeCrossing') send(bt.cmd);          // a plank crossing is always a construction job
+  else send(BUILD_INSTANT ? bt.cmd : { ...bt.cmd, t: 'stakeJob' }); // Stake it sends the same plan as a construction job
   buildClear();
   if (speed === 0) doTick(); // paused: run one tick so the track appears at once
 }
@@ -8462,11 +8750,11 @@ function jobOnEvent(e) {
   const job = e.id !== undefined ? jobGet(S, e.id) : null, needs = job ? jobNeedsText(jobNeeds(S, job)) : '';
   if (e.t === 'jobStaked') {
     if (bt.on) setBuildMode(false);
-    toast(`Job ${e.id + 1} staked: ${bFmt(e.len / 100)}u of track.` + (needs ? ` Bring ${needs} beside it.` : ' Everything is on site: tap the stakes to work.'));
+    toast(`Job ${e.id + 1} staked: ` + (e.xing ? 'a plank crossing.' : `${bFmt(e.len / 100)}u of track.`) + (needs ? ` Bring ${needs} beside it.` : ' Everything is on site: tap the stakes to work.'));
   } else if (e.t === 'jobRefused') toast(`Cannot do that: ${e.why}.`);
   else if (e.t === 'jobDelivered') toast(needs ? `On site for job ${e.id + 1}. Still to bring: ${needs}.` : `Job ${e.id + 1} has everything it needs.`);
   else if (e.t === 'jobStopped') toast(e.why + '.');
-  else if (e.t === 'jobDone') toast(`Job ${e.id + 1} finished: ${bFmt(e.len / 100)}u of track joins the line.`);
+  else if (e.t === 'jobDone') toast(e.xing ? `Job ${e.id + 1} finished: the plank crossing is open.` : `Job ${e.id + 1} finished: ${bFmt(e.len / 100)}u of track joins the line.`);
   else if (e.t === 'jobCancelled') toast(`Job ${e.id + 1} cancelled: its materials are on the ground beside it.`);
 }
 // A tap on a staked job (within 1u of its centre line) starts work on it. Returns true when the tap was used.
@@ -8841,6 +9129,7 @@ function handleEvent(e) {
   else if (e.t === 'overlandLeft') toast('The Overland has left.');
   else if (e.t === 'blocked') toast('Something is in the way.');
   else if (e.t === 'trackBuilt') buildOnBuilt(e);
+  else if (e.t === 'crossingBuilt') { buildWorld(S); if (bt.on) buildEndMarkers(); } // the planks join the track's mesh (D15)
   else if (e.t === 'buildRefused') toast(`Cannot lay that track: ${e.why}.`);
   else if (e.t === 'carryRefused') toast(e.why + '.');
   else if (e.t === 'toolTaken') toast(`You take the ${TOOL_KINDS[S.tools[e.tool].k].name.toLowerCase()}.`);
@@ -10127,6 +10416,13 @@ function sendDir(a, run) {
   sentDir = key; send({ t: 'walkDir', a, run: !!run });
 }
 function stopHoldWalk() { sendDir(null); sentDir = null; }
+// Press and hold towards a spot across the track: a tap-style walk there (sent again when the finger moves 1u).
+function holdRouteTo(g) {
+  if (S.player.ride) return;
+  const key = 'to' + Math.round(g.x) + ',' + Math.round(g.z);
+  if (key === sentDir) return;
+  sentDir = key; send({ t: 'walkTo', x: Math.round(g.x * 100), z: Math.round(g.z * 100) });
+}
 // Called every frame: while a finger is held down, walk towards it.
 function updateHoldWalk() {
   if (hold && !hold.on && performance.now() - hold.t0 > CFG.HOLD_MS) hold.on = true;
@@ -10135,7 +10431,9 @@ function updateHoldWalk() {
     const g = deckGroundAt(hold.x, hold.y);
     if (g) {
       const dx = g.x - S.player.x, dz = g.z - S.player.z;
-      if (Math.hypot(dx, dz) > 0.3) sendDir(angleCode(dx, dz), false);
+      // Across track (D15): walk there by the path, round by a crossing, instead of steering into the rails.
+      if (Math.hypot(dx, dz) > 0.3 && walkAcrossTrack(walkGrid(S.track), S.player.x, S.player.z, g.x, g.z)) holdRouteTo(g);
+      else if (Math.hypot(dx, dz) > 0.3) sendDir(angleCode(dx, dz), false);
       else sendDir(null);
     }
     return;

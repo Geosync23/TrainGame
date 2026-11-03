@@ -199,6 +199,14 @@
   .wbSwRow[data-done] .wbBox { background: #3d7a36; border-color: #2c5a27; color: #fff; }
   .wbSwRow[data-done] { color: #5a4a3a; }
   .wbLate { color: #b8432c; }
+  /* D21: the contracts pinned on the hub's work board (the telegraph's contract page), and a run with no engine. */
+  .wbContracts { border: 1px solid var(--paper-2); border-left: 6px solid #c0392b; border-radius: 6px; padding: 6px 8px; display: grid; gap: 6px; }
+  .wbContracts .card { border-top: 1px solid var(--paper-2); padding-top: 6px; display: grid; gap: 6px; }
+  .wbContracts .row, .wbTrain .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .wbContracts button, .wbTrain button { font-size: 14px; padding: 0 10px; }
+  .wbContracts small { color: #5a4a3a; font-size: 13px; }
+  #ttCard .ttNeed { display: block; pointer-events: auto; margin: 3px 0; min-height: 48px; width: 100%; text-align: left; font: 600 13px/1.25 Georgia, serif;
+    background: #fff1dc; color: var(--ink); border: 2px solid #b5651d; border-radius: 6px; padding: 2px 8px; }
   #lookBtn[aria-pressed="true"] { background: #5b6fa8; border-color: #3c4d7d; color: #fff; }
   @media (orientation: landscape) and (max-height: 500px) {
     #tgBtn { top: calc(env(safe-area-inset-top) + 10px); right: calc(env(safe-area-inset-right) + 96px); }
@@ -2474,10 +2482,10 @@ function ttBoard(S, stId) {
     else if (svc.train === null) state = TT_NO_ENGINE;
     else if (sod > p.dep + TT.CANCEL_S) return;
     else state = sod > p.dep ? 'Late' : 'On time';
-    rows.push({ time: ttClock(p.dep), sod: p.dep, name: svc.name, to: to ? to.name : '?', state });
+    rows.push({ time: ttClock(p.dep), sod: p.dep, name: svc.name, to: to ? to.name : '?', state, svc: svc.id });
   });
   rows.sort((a, b) => a.sod - b.sod || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  out.lines = rows.slice(0, 4).map(({ time, sod, name, to, state }) => ({ time, sod, name, to, state }));
+  out.lines = rows.slice(0, 4).map(({ time, sod, name, to, state, svc }) => ({ time, sod, name, to, state, svc }));
   return out;
 }
 
@@ -7910,8 +7918,10 @@ const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) =
 // top stays at 1.42, as the eave hides the wall above that from the default camera, and its west edge clears the
 // bay's roof); the work board [x0, x1] x [y0, y1] hangs on the booth's inside wall (the closed block's front face,
 // z0) behind the ticket counter, facing the window.
+// D21 (2): a painted "WORK BOARD" sign standing on the front of the depot's roof over the door (sign [x0, x1] x
+// [y0, y1] at z signZ, upright, facing the platform), so the board inside is found from the platform.
 const BLD_BOOTH = { door: [1.32, 1.97], doorH: 1.25, win: [0.62, 1.17], winY: [0.75, 1.35], z0: 0.3, wall: 1.0, t: 0.06,
-  bay: -1.45, board: [-0.72, 0.5], boardY: [0.3, 1.42], work: [-1.0, 0.45], workY: [0.55, 1.42] };
+  bay: -1.45, board: [-0.72, 0.5], boardY: [0.3, 1.42], work: [-1.0, 0.45], workY: [0.55, 1.42], sign: [0.62, 2.18], signY: [1.98, 2.5], signZ: 0.95 };
 const BLD_SPOTS = {
   depot: { ticket: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, (BLD_BOOTH.z0 + BLD_BOOTH.wall - BLD_BOOTH.t) / 2 * WS],
     line: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, 1.48 * WS + 0.85],
@@ -7997,6 +8007,11 @@ const BLD_RECIPES = {
     // stays solid while the front wall fades, so it is seen from the booth.
     const [kx0, kx1] = B.work, [ky0, ky1] = B.workY;
     b.add(box(kx1 - kx0 + 0.08, ky1 - ky0 + 0.08, 0.03), PAL.trim, (kx0 + kx1) / 2, (ky0 + ky1) / 2, z0 + 0.015);
+    // D21 (2): the WORK BOARD sign on the roof over the door: a frame on two legs (its letters are the boards' mesh,
+    // just in front). Part of the shell, so it fades with the roof while the player is in the booth.
+    const [sx0, sx1] = B.sign, [sy0, sy1] = B.signY, sz = B.signZ;
+    b.shell(box(sx1 - sx0 + 0.08, sy1 - sy0 + 0.08, 0.04), PAL.trim, (sx0 + sx1) / 2, (sy0 + sy1) / 2, sz - 0.025);
+    for (const x of [sx0 + 0.15, sx1 - 0.15]) b.shell(box(0.06, 0.4, 0.06), PAL.trim, x, sy0 - 0.12, sz - 0.07);
     // The agent's office bay, windows on three sides so the agent can see up and down the line.
     const bay = B.bay;
     b.add(box(1.2, 1.25, 0.42), PAL.wall, bay, 0.875, 1.2);
@@ -8744,12 +8759,12 @@ const boards = { list: [], mesh: null, canvas: null, tex: null, redraws: 0 };
 // The stations' boards: [{ kind, st, depot, name, x, y, z, yaw, w, h }] (the board's centre and size, u).
 function boardPlaces() {
   const out = [], B = BLD_BOOTH;
-  for (const kind of ['sched', 'work']) for (const K of paxStations(S.track)) {
+  for (const kind of ['sched', 'work', 'sign']) for (const K of paxStations(S.track)) {
     const at = K.depot && BLD_LAYOUT.find(a => a.id === K.depot.id);
     if (!at || bldKindOf(at) !== 'depot') continue;
     const yaw = at.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
-    const [x0, x1] = kind === 'sched' ? B.board : B.work, [y0, y1] = kind === 'sched' ? B.boardY : B.workY;
-    const lx = (x0 + x1) / 2 * WS, lz = ((kind === 'sched' ? B.wall : B.z0) + 0.03) * WS + BOARD.LIFT;
+    const [x0, x1] = kind === 'sched' ? B.board : kind === 'sign' ? B.sign : B.work, [y0, y1] = kind === 'sched' ? B.boardY : kind === 'sign' ? B.signY : B.workY;
+    const lx = (x0 + x1) / 2 * WS, lz = (kind === 'sign' ? B.signZ : (kind === 'sched' ? B.wall : B.z0) + 0.03) * WS + BOARD.LIFT;
     const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null;
     out.push({ kind, st: K.id, depot: at.id, name: tt ? tt.name : paxName(K.id), x: at.x + lx * c + lz * s, y: (y0 + y1) / 2 * WS, z: at.z - lx * s + lz * c,
       yaw, w: (x1 - x0) * WS, h: (y1 - y0) * WS });
@@ -8766,6 +8781,12 @@ function boardState(l, sod) {
 }
 // The rows the public schedule board shows now (schedRows): [{ train, from, to, arr, dep, plat, state }].
 function boardRows(stId) { return S.tt ? schedRows(S, stId) : []; }
+// D21 (2): the contract offers pinned on a station's work board: the hub's (where contracts are taken), soonest due
+// first: [{ id, what ('5 flour'), who (the business), due }]. Willow Ford's board has none.
+function workBoardOffers(stId) {
+  if (stId !== 'hub' || !S.econ) return [];
+  return S.econ.contracts.filter(k => k.status === 'OFFERED').map(k => ({ id: k.id, what: `${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}`, who: econBiz(k.counterparty).name, due: k.due }));
+}
 // The work board's short lines in the world: the next 3 trains, [{ time, train, cars, marks: [[text, done]] }].
 function workBoardLines(stId) {
   if (!S.tt) return [];
@@ -8784,8 +8805,10 @@ function workBoardLines(stId) {
 function boardBuild(G) {
   boards.mesh = null; boards.list = boardPlaces().map(p => ({ ...p, sig: null, rows: [], tick: -1 }));
   if (!boards.list.length) return;
-  // The regions: schedule boards stacked at the left (480 px wide), work boards at the right (512 px wide).
+  // The regions: schedule boards stacked at the left (480 px wide), work boards and then the roof signs at the right
+  // (512 px wide).
   const col = { sched: { x: 0, y: 0, W: 480 }, work: { x: BOARD.CW / 2, y: 0, W: BOARD.CW / 2 } };
+  col.sign = col.work;
   for (const b of boards.list) { const c = col[b.kind], H = Math.round(c.W * b.h / b.w); b.region = [c.x, c.y, c.W, H]; c.y += H; }
   const CW = BOARD.CW, CH = 1 << Math.ceil(Math.log2(Math.max(col.sched.y, col.work.y, 1)));
   if (!boards.canvas) boards.canvas = document.createElement('canvas');
@@ -8796,7 +8819,8 @@ function boardBuild(G) {
   const pos = [], uv = [], idx = [];
   boards.list.forEach((b, k) => {
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw), rx = c * b.w / 2, rz = -s * b.w / 2, hy = b.h / 2, [x0, y0, W, H] = b.region;
-    pos.push(b.x - rx, b.y - hy, b.z - rz, b.x + rx, b.y - hy, b.z + rz, b.x + rx, b.y + hy, b.z + rz, b.x - rx, b.y + hy, b.z - rz);
+    b.quad = [b.x - rx, b.y - hy, b.z - rz, b.x + rx, b.y - hy, b.z + rz, b.x + rx, b.y + hy, b.z + rz, b.x - rx, b.y + hy, b.z - rz]; b.vi = k; b.shown = true;
+    pos.push(...b.quad);
     const u0 = x0 / CW, u1 = (x0 + W) / CW, v1 = 1 - y0 / CH, v0 = 1 - (y0 + H) / CH;
     uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
     idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k, 4 * k + 2, 4 * k + 3);
@@ -8825,8 +8849,16 @@ function boardPaint(b) {
   const ctx = boards.canvas.getContext('2d'), [x0, y0, W, H] = b.region;
   ctx.save(); ctx.translate(x0, y0);
   ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
-  if (b.kind === 'work') boardPaintWork(ctx, b, W, H); else boardPaintSched(ctx, b, W, H);
+  if (b.kind === 'work') boardPaintWork(ctx, b, W, H); else if (b.kind === 'sign') boardPaintSign(ctx, b, W, H); else boardPaintSched(ctx, b, W, H);
   ctx.restore();
+}
+// The roof sign (D21 (2)): cream boards, dark red letters, "WORK BOARD" and where it is.
+function boardPaintSign(ctx, b, W, H) {
+  const T = (t, x, y, px, col, align, maxW, font) => boardText(ctx, t, x, y, px, col, align, maxW, font);
+  ctx.fillStyle = '#efe3c2'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#7a2a1c'; ctx.lineWidth = 8; ctx.strokeRect(6, 6, W - 12, H - 12);
+  T('WORK BOARD', W / 2, H * 0.6, Math.round(H * 0.5), '#7a2a1c', 'center', W - 40);
+  T('contracts and trains, inside', W / 2, H * 0.86, Math.round(H * 0.17), '#3b2a1a', 'center', W - 60, 'italic bold');
 }
 function boardPaintSched(ctx, b, W, H) {
   const T = (t, x, y, px, col, align, maxW, font) => boardText(ctx, t, x, y, px, col, align, maxW, font);
@@ -8876,27 +8908,40 @@ function boardPaintSched(ctx, b, W, H) {
 }
 function boardPaintWork(ctx, b, W, H) {
   const T = (t, x, y, px, col, align, maxW, font) => boardText(ctx, t, x, y, px, col, align, maxW, font);
+  const trains = b.rows || [], offers = b.offers || [];
   ctx.fillStyle = BOARD.WORK_BG; ctx.fillRect(0, 0, W, H);
   ctx.strokeStyle = BOARD.DIM; ctx.lineWidth = 3; ctx.strokeRect(8, 8, W - 16, H - 16);
-  T('WORK BOARD', 20, 40, 28, BOARD.CHALK, 'left', 230);
-  T(b.name, W - 20, 40, 24, BOARD.DIM, 'right', 230, 'italic');
-  ctx.fillStyle = BOARD.DIM; ctx.fillRect(18, 50, W - 36, 2);
-  const top = 54, rowH = (H - top - 6) / 3;
-  if (!b.rows.length) T('No trains in the next hours', W / 2, top + rowH, 28, BOARD.DIM, 'center', W - 40, 'italic');
-  b.rows.forEach((r, i) => {
+  // D21 (2): a painted header, cream with dark letters, read from across the booth.
+  ctx.fillStyle = '#efe3c2'; ctx.fillRect(12, 12, W - 24, 52);
+  T('WORK BOARD', 24, 54, 44, '#7a2a1c', 'left', 300);
+  T(b.name, W - 24, 52, 24, '#3b2a1a', 'right', W - 340, 'italic bold');
+  // Contract offers pinned at the right (paper notes with a red pin); the trains to their left.
+  const NW = offers.length ? 158 : 0, TW = W - NW - (NW ? 12 : 0);
+  const top = 68, rowH = (H - top - 6) / 3;
+  if (!trains.length) T('No trains in the next hours', TW / 2, top + rowH, 26, BOARD.DIM, 'center', TW - 40, 'italic');
+  trains.forEach((r, i) => {
     const y = top + i * rowH;
-    T(`${r.time}  ${r.train}`, 20, y + 36, 32, BOARD.CHALK, 'left', W - 150);
-    T(r.cars + (r.cars === 1 ? ' car' : ' cars'), W - 20, y + 36, 26, BOARD.DIM, 'right', 120);
+    T(`${r.time}  ${r.train}`, 20, y + 34, 30, BOARD.CHALK, 'left', TW - 120);
+    T(r.cars + (r.cars === 1 ? ' car' : ' cars'), TW - 16, y + 34, 24, BOARD.DIM, 'right', 100);
     let x = 20;
     for (const [t, ok] of r.marks) {
-      ctx.font = `bold 26px Georgia, "Times New Roman", serif`;
-      const w = Math.min(ctx.measureText(t).width, W - 20 - x);
+      ctx.font = `bold 24px Georgia, "Times New Roman", serif`;
+      const w = Math.min(ctx.measureText(t).width, TW - 16 - x);
       if (w <= 0) break;
-      T(t, x, y + 70, 26, ok ? BOARD.TICK : BOARD.LATE, 'left', w);
-      x += w + 18;
+      T(t, x, y + 64, 24, ok ? BOARD.TICK : BOARD.LATE, 'left', w);
+      x += w + 16;
     }
-    if (i < 2) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(18, y + rowH - 3, W - 36, 1); }
+    if (i < 2) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(18, y + rowH - 3, TW - 30, 1); }
   });
+  offers.slice(0, 2).forEach((o, i) => {
+    const x = W - NW - 12, y = top + 2 + i * 118, h = 108;
+    ctx.fillStyle = '#f4ecd6'; ctx.save(); ctx.translate(x + NW / 2, y + h / 2); ctx.rotate(i ? 0.03 : -0.03); ctx.fillRect(-NW / 2, -h / 2, NW, h); ctx.restore();
+    ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(x + NW / 2, y + 9, 7, 0, Math.PI * 2); ctx.fill();
+    T('OFFER', x + NW / 2, y + 38, 22, '#7a2a1c', 'center', NW - 16);
+    T(o.what, x + NW / 2, y + 68, 24, '#20180f', 'center', NW - 14);
+    T(o.who, x + NW / 2, y + 96, 18, '#3b2a1a', 'center', NW - 14, 'italic bold');
+  });
+  if (offers.length > 2) T(`+${offers.length - 2} more`, W - NW / 2 - 12, H - 14, 20, BOARD.CHALK, 'center', NW);
 }
 // Every frame (the work at most once a sim tick): each board's rows; repainted (and the texture sent again) only when
 // what it shows changes. The schedule board's layout follows the zoom (big below BOARD.FULL_ZOOM). The night glow.
@@ -8907,11 +8952,21 @@ function boardUpdate() {
   for (const b of boards.list) {
     if (b.tick === S.tick && (b.kind === 'work' || b.mode === mode) && b.S === S) continue;
     b.tick = S.tick; b.S = S;
-    const rows = b.kind === 'work' ? workBoardLines(b.st) : boardRows(b.st), sig = (b.kind === 'work' ? '' : mode) + JSON.stringify(rows);
+    if (b.kind === 'sign') { if (b.sig !== 'sign') { b.sig = 'sign'; boardPaint(b); boards.redraws++; dirty = true; } continue; }   // painted once
+    const rows = b.kind === 'work' ? workBoardLines(b.st) : boardRows(b.st), offers = b.kind === 'work' ? workBoardOffers(b.st) : null;
+    const sig = (b.kind === 'work' ? '' : mode) + JSON.stringify(rows) + (offers ? JSON.stringify(offers) : '');
     if (sig === b.sig) continue;
-    b.sig = sig; b.rows = rows; b.mode = mode; boardPaint(b); boards.redraws++; dirty = true;
+    b.sig = sig; b.rows = rows; b.offers = offers; b.mode = mode; boardPaint(b); boards.redraws++; dirty = true;
   }
   if (dirty) boards.tex.needsUpdate = true;
+  // D21 (2): a roof sign is put away (its quad folded to a point) while the player is in that depot's booth, where the
+  // roof fades: it would hang in the air in front of the work board.
+  const inBooth = wbBoothStation(S.player.x, S.player.z), pa = boards.mesh.geometry.attributes.position;
+  for (const b of boards.list) if (b.kind === 'sign' && b.shown !== (b.st !== inBooth)) {
+    b.shown = !b.shown;
+    for (let j = 0; j < 12; j++) pa.array[12 * b.vi + j] = b.shown ? b.quad[j] : b.quad[j % 3];
+    pa.needsUpdate = true;
+  }
   boards.mesh.material.emissiveIntensity = BOARD.NIGHT * (GLOW_MAT.emissiveIntensity / DAY.GLOW_MAX);
 }
 // The nearest board at screen point (px, py) of one kind ('sched' or 'work'): its entry, or null.
@@ -11208,12 +11263,28 @@ function ttCardHud() {
     $('ttCardTitle').appendChild(document.createTextNode(`${near.st.name}: train orders`));
     const box = $('ttCardLines'); box.textContent = '';
     if (!b.lines.length) { const d = document.createElement('div'); d.textContent = 'No more departures today'; box.appendChild(d); }
-    for (const l of b.lines) { const d = document.createElement('div'); d.textContent = `${l.time} to ${l.to}: ${l.state}`; box.appendChild(d); }
+    for (const l of b.lines) {
+      const d = document.createElement(l.state === TT_NO_ENGINE ? 'button' : 'div');
+      d.textContent = `${l.time} to ${l.to}: ${l.state}`;
+      // D21 (4): a run with no engine is a button: straight to putting an engine on it.
+      if (l.state === TT_NO_ENGINE) { d.className = 'ttNeed'; d.dataset.svc = l.svc; d.type = 'button'; }
+      box.appendChild(d);
+    }
     card.hidden = false; ttCardUi.w = card.offsetWidth; ttCardUi.h = card.offsetHeight;
   }
   // At the depot (the ticket window or a pinned board) it stands above the roof, clear of the schedule board (D20).
   const p = toScreen(near.at.x, (near.high ? 3.1 : 1.9) * WS, near.at.z), W = window.innerWidth;
-  const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2)), y = Math.max(64, p.y - ttCardUi.h - 6);
+  const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2));
+  let y = Math.max(64, p.y - ttCardUi.h - 6);
+  // D21 (2): above the depot's WORK BOARD roof sign too, never over it.
+  const sg = near.high && boards.list.find(b => b.kind === 'sign' && b.st === near.st.id);
+  if (sg) {
+    const c = Math.cos(sg.yaw) * sg.w / 2, s = -Math.sin(sg.yaw) * sg.w / 2, q = [toScreen(sg.x - c, sg.y + sg.h / 2, sg.z - s), toScreen(sg.x + c, sg.y + sg.h / 2, sg.z + s)];
+    const top = Math.min(q[0].y, q[1].y), l = Math.min(q[0].x, q[1].x), r = Math.max(q[0].x, q[1].x);
+    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = Math.max(64, top - ttCardUi.h - 6);
+    // No room above it (landscape): below the depot's front instead, on the platform.
+    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = toScreen(near.at.x, 0, near.at.z).y + 10;
+  }
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
   let show = p.x > 0 && p.x < W && p.y > 0 && p.y < window.innerHeight;
@@ -11378,7 +11449,7 @@ $('officeBtn').addEventListener('click', () => { if (officeUi.open) closeOffice(
 // that station), soonest first, in full: kind, train, cars, times, goods off and on per tag, travellers, wood and
 // water, and the switches to set (from ttSwitchNeeds when the switches are manual; "(coming)" until then). It
 // scrolls when long; it closes with its X or the button, and when the player walks out of the booth it was opened in.
-const wbUi = { open: false, st: null, sig: '', booth: false };
+const wbUi = { open: false, st: null, sig: '', booth: false, pending: null };
 function openWorkCard(st, fromBooth) {
   closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeSettings();
   wbUi.open = true; wbUi.st = st; wbUi.sig = ''; wbUi.booth = !!fromBooth; $('workCard').hidden = false; $('workBody').scrollTop = 0; workCardUpdate();
@@ -11392,7 +11463,9 @@ function workCardRowHtml(r) {
   const col = st === 'Cancelled' ? '#b8432c' : st === 'Late' ? '#b5651d' : st === TT_NO_ENGINE ? '#b5651d' : '#3d7a36';
   const time = r.arr && r.dep ? `${r.arr} to ${r.dep}` : r.arr ? `in ${r.arr}` : `out ${r.dep}`;
   L.push(`<div class="wbHead"><b>${esc(time)}</b><span class="wbState" style="color:${col}">${esc(st)}</span></div>`);
-  L.push(`<div><b>${esc(r.train)}</b>: ${esc(r.kind === '?' ? 'no engine on it yet' : r.kind)}${r.engine ? ', ' + esc(r.engine) : ''}</div>`);
+  L.push(`<div><b>${esc(r.train)}</b>: ${esc(r.kind === '?' ? 'needs an engine' : r.kind)}${r.engine ? ', ' + esc(r.engine) : ''}</div>`);
+  // D21 (4): a run with no engine: straight to putting one on it.
+  if (st === TT_NO_ENGINE && typeof r.svc === 'number') L.push(`<div class="row"><button data-act="engine" data-svc="${r.svc}">Put an engine on it</button></div>`);
   const kinds = r.cars.kinds.map(([k, n]) => `${n} ${k}${n > 1 ? (k === 'boxcar' || k === 'flatcar' || k === 'combine' ? 's' : '') : ''}`).join(', ');
   L.push(`<div>Cars: ${r.cars.n}${kinds ? ' (' + esc(kinds) + ')' : ''}${r.overland && r.outCars ? `; takes away the ${r.outCars} on the interchange` : ''}</div>`);
   if (r.arr || r.dep) L.push(`<div>Arrives ${esc(r.arr || '-')}, departs ${esc(r.dep || '-')}</div>`);
@@ -11417,19 +11490,88 @@ function workCardRowHtml(r) {
   }
   return `<div class="wbTrain" data-key="${esc(r.key)}">${L.join('')}</div>`;
 }
+// D21 (2): the contracts part of the hub's card, first: the offers pinned on the board (Accept, Decline) and the open
+// contracts with the button that orders their goods: the telegraph's own contract page (econContractsHtml, its
+// buttons through econActClick, the same commands). From afar (Look) a button walks the player to the board instead.
+function workCardContractsHtml() {
+  const E = S.econ;
+  if (wbUi.st !== 'hub' || !E) return '';
+  const here = econAtKey(S);
+  let h = '<div class="wbContracts"><div class="wbHead"><b>Contracts</b><small>offers pinned here</small></div>';
+  if (here) h += econContractsHtml(E, 0);
+  else {
+    const n = E.contracts.filter(k => k.status === 'OFFERED').length;
+    h += `<div>${n ? `${n} offer${n > 1 ? 's' : ''} pinned on the board.` : 'No offers pinned just now.'} Take them standing at the board, behind the ticket counter.</div>` +
+      '<div class="row"><button data-act="wbGo">Walk to the work board</button></div>';
+  }
+  return h + '</div>';
+}
 function workCardUpdate() {
+  // A walk started by a tap on the roof sign (or the card's button) opens the card on arrival at the board.
+  const pend = wbUi.pending;
+  if (pend && !wbUi.open) {
+    const P = S.player, sp = wbBoardSpot(pend);
+    if (!sp || P.mode !== 'to' && Math.hypot(sp.x - P.x, sp.z - P.z) > 1.2) wbUi.pending = null;
+    else if (P.mode !== 'to' && wbBoothStation(P.x, P.z) === pend) { wbUi.pending = null; openWorkCard(pend, true); }
+  }
   if (!wbUi.open) return;
   if (wbUi.booth && wbBoothStation(S.player.x, S.player.z) !== wbUi.st) { closeWorkCard(); return; }
-  const rows = S.tt ? wbRows(S, wbUi.st) : [], sig = wbUi.st + JSON.stringify(rows);
+  const E = S.econ, rows = S.tt ? wbRows(S, wbUi.st) : [];
+  const sig = wbUi.st + JSON.stringify(rows) + (wbUi.st === 'hub' && E ? JSON.stringify([econAtKey(S), E.cash, E.orders.map(o => o.id), E.contracts.map(k => k.status + k.delivered + ':' + k.period)]) : '');
   if (sig === wbUi.sig) return;
   wbUi.sig = sig;
   const st = ttStation(S, wbUi.st);
   $('workTitle').textContent = `Work board: ${st ? st.name : paxPlaceName(wbUi.st)}`;
   const body = $('workBody'), top = body.scrollTop;
-  body.innerHTML = rows.length ? rows.map(workCardRowHtml).join('') : '<div>No trains in the next hours.</div>';
+  body.innerHTML = workCardContractsHtml() + (rows.length ? rows.map(workCardRowHtml).join('') : '<div>No trains in the next hours.</div>');
   body.scrollTop = top;
 }
+// Where the player stands to read station stId's work board (its depot's 'workboard' use spot), or null.
+function wbBoardSpot(stId) {
+  const K = paxStations(S.track).find(K => K.id === stId), sp = K && K.depot ? buildingSpots().find(p => p.building === K.depot.id && p.kind === 'workboard') : null;
+  return sp ? { x: sp.x, z: sp.z } : null;
+}
+// Walk to station stId's work board and open its card there (the roof sign's tap, D21 (2)).
+function workBoardGo(stId) {
+  const sp = wbBoardSpot(stId);
+  if (!sp) return false;
+  closeWorkCard();
+  if (wbBoothStation(S.player.x, S.player.z) === stId && Math.hypot(sp.x - S.player.x, sp.z - S.player.z) < 1.2) { openWorkCard(stId, true); return true; }
+  send({ t: 'walkTo', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) });
+  wbUi.pending = stId;
+  toast('To the work board, behind the ticket counter.');
+  return true;
+}
+// D21 (4): a run with no engine on it, tapped on a card: straight to putting an engine on it. With our engine on no
+// run, her panel opens and the arrow points at its Timetable button (it puts her on every run without an engine);
+// with her on another run already (that button would take her off), the player walks to the office desk and the
+// office opens at its Timetable tab, whose Start button puts her on that one run.
+function ttNeedEngineGo(svcId) {
+  const tr = S.trains.find(t => !t.owner && !trainOff(t) && trainLocos(t).length);
+  closeWorkCard(); ttCardUi.pin = null; ttCardUi.sig = '';
+  if (!tr) { toast('There is no engine of ours to put on it.'); return; }
+  if (!S.tt.services.some(v => v.train === tr.id)) {
+    openPanel(tr.id);
+    guideUi.engineFor = { tr: tr.id, until: animT + GUIDE.PEEK_S }; guideUi.nextT = 0;
+    toast(`Tap Timetable to put ${tr.name} on it.`);
+    return;
+  }
+  officeUi.tab = 'timetable';
+  if (econAtDesk(S, CFG.REACH)) { openOffice(); return; }
+  officeUi.pendingTab = 'timetable';
+  send({ t: 'useDesk' });
+  toast(`To the office desk: its Timetable tab puts ${tr.name} on a run.`);
+}
+$('workBody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.dataset.act === 'engine') { ttNeedEngineGo(Number(b.dataset.svc)); return; }
+  if (b.dataset.act === 'wbGo') { workBoardGo(wbUi.st); return; }
+  econActClick(b);
+  wbUi.sig = ''; workCardUpdate();
+});
 $('workClose').addEventListener('click', closeWorkCard);
+$('ttCardLines').addEventListener('click', e => { const b = e.target.closest('.ttNeed'); if (b) ttNeedEngineGo(Number(b.dataset.svc)); });
 // The Work board button: shown while the player stands in a station's booth.
 let workBtnSig = '';
 function workBtnHud() {
@@ -11517,6 +11659,7 @@ function tgSlideHud() {
 $('tgSlide').addEventListener('click', () => { const id = tgSlide.id; tgSlideHide(); openInbox(id); });
 function officeOnEvent(e) {
   if (e.t === 'tgRefused') toast(e.why + '.');
+  else if (e.t === 'reachedDesk' && officeUi.pendingTab) { officeUi.tab = officeUi.pendingTab; officeUi.pendingTab = null; openOffice(); }
   else if (e.t === 'reachedDesk') toast('The office desk: tap Office to open the books.');
 }
 // ---- Alerts: one icon per kind of problem at the right edge ----
@@ -11595,7 +11738,7 @@ function lookPickAt(px, py) {
   }
   const board = boardHitAt(px, py);
   if (board) return { k: 'board', id: board };
-  const work = workBoardHitAt(px, py, true);
+  const work = workBoardHitAt(px, py, true) || (boardHitOf(px, py, 'sign') || {}).st;
   if (work) return { k: 'work', id: work };
   const biz = townHitAt(px, py);
   if (biz !== null) return { k: 'biz', id: biz };
@@ -11780,7 +11923,11 @@ function guideTutTarget(c) {
   if (c.key === 'accept' || c.key === 'order') {
     const what = c.key === 'accept' ? 'take a contract' : 'order the goods';
     // D21 (2): the work board behind the ticket counter, where the offers are pinned (tutTarget's place).
-    if (t && t.k === 'workboard') return { x: t.x, z: t.z, k: 'workboard', label: 'Work board: ' + what, next: what + ' at the work board' };
+    if (t && t.k === 'workboard') {
+      const by = Math.hypot(S.player.x - t.x, S.player.z - t.z) < GUIDE.NEAR;   // standing at it: say how
+      return { x: t.x, z: t.z, k: 'workboard', label: 'Work board: ' + (by ? (c.key === 'accept' ? 'tap it, then Accept' : 'tap it, then Order') : what),
+        next: what + ' at the work board' + (by ? ' (tap the board or the Work board button)' : '') };
+    }
     // A world without a work board: the telegraph key in the depot's window (seen from the platform), or the office
     // desk inside when the player is already by it (both open Contracts).
     const k = econTelegraphKey(), d = econDeskSpot(), P = S.player, key = Math.hypot(d.x - P.x, d.z - P.z) > 3 || Math.hypot(k.x - P.x, k.z - P.z) <= Math.hypot(d.x - P.x, d.z - P.z);
@@ -11899,6 +12046,11 @@ function guideTarget() {
   const pk = guideUi.peek, peek = !!pk && pk.key === job.key && animT < pk.until;
   if (pk && !peek) guideUi.peek = null;
   guideUi.t = (!guideOn() && !peek) || S.player.ride ? null : job.t;
+  // D21 (4): a run with no engine was tapped: the arrow at the open panel's Timetable button, while a run lacks one.
+  const ef = guideUi.engineFor;
+  if (ef && animT < ef.until && ui.panelTrain === ef.tr && !$('panelTt').hidden && S.tt && S.tt.services.some(v => v.train === null))
+    guideUi.t = { k: 'button', el: 'ttToggle', label: 'Tap Timetable', x: 0, z: 0 };
+  else if (ef && (animT >= ef.until || ui.panelTrain !== ef.tr || !S.tt.services.some(v => v.train === null))) guideUi.engineFor = null;
   return guideUi.t;
 }
 // The arrow: a low-poly downward arrow (head and shaft, one merged mesh), unlit orange with baked shading, drawn
@@ -11994,19 +12146,28 @@ function guideDraw() {
   if (!t) { A.visible = false; lab.hidden = edge.hidden = true; return; }
   // A steady size on screen (about GUIDE.PX tall) whatever the zoom.
   const upp = (camera.top - camera.bottom) / window.innerHeight, sc = Math.min(4, Math.max(0.6, GUIDE.PX * upp / 1.95));
-  const y0 = bldStandY(t.x, t.z), lift = (t.k === 'car' ? 3.0 * WS : 1.9) + Math.abs(Math.sin(animT * 3)) * 0.35 * sc;
-  A.visible = true; A.scale.setScalar(sc); A.position.set(t.x, y0 + lift, t.z); A.rotation.y = animT * 0.8;
-  const W = window.innerWidth, H = window.innerHeight, foot = toScreen(t.x, y0, t.z), top = toScreen(t.x, y0 + lift + 1.95 * sc, t.z);
+  const bob = Math.abs(Math.sin(animT * 3)) * 0.35 * sc, y0 = bldStandY(t.x, t.z), lift = (t.k === 'car' ? 3.0 * WS : 1.9) + bob;
+  const W = window.innerWidth, H = window.innerHeight, foot = toScreen(t.x, y0, t.z);
+  // D21: near the top of the screen (under the clock, the Next job line and the buttons there; landscape especially)
+  // the arrow would be cut off: it then stands under the place pointing up, with its label below it.
+  const topBand = H > W ? 160 : 66, upTop = toScreen(t.x, y0 + lift + 1.95 * sc, t.z), flip = upTop.y < topBand && foot.y < H / 2;
+  const liftF = 0.25 * sc + bob, ya = flip ? y0 - liftF : y0 + lift;
+  A.visible = true; A.scale.setScalar(sc); A.position.set(t.x, ya, t.z); A.rotation.set(flip ? Math.PI : 0, animT * 0.8, 0);
+  guideUi.flip = flip;
+  const top = flip ? toScreen(t.x, y0 - liftF - 1.95 * sc, t.z) : upTop;   // the arrow's far end (its tail)
   const on = foot.x > 12 && foot.x < W - 12 && foot.y > 12 && foot.y < H - 12;
+  if (!on && flip) A.visible = false;   // off the top of the screen: the edge arrow alone, no stub of the arrow under the buttons
   if (bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on)) { lab.hidden = edge.hidden = true; return; }
   if (on) {
     if (lab.textContent !== t.label) lab.textContent = t.label;
     lab.hidden = false; edge.hidden = true;
-    // Above the arrow; else below its foot, to its right or to its left: the first place clear of the HUD's buttons.
+    // Above the arrow (below it when it points up); else beside its foot, to its right or to its left: the first
+    // place clear of the HUD's buttons.
     const w = lab.offsetWidth, h = lab.offsetHeight, aw = 0.62 * sc / upp, my = (top.y + foot.y) / 2;
     const fit = ([x, y]) => [Math.max(8, Math.min(W - w - 8, x)), Math.max(8, Math.min(H - h - 8, y))];
-    const spots = [[top.x - w / 2, top.y - h - 6], [foot.x - w / 2, foot.y + 12], [top.x + aw + 8, my - h / 2], [top.x - aw - w - 8, my - h / 2]]
-      .filter(([, y], i) => i || y >= 8).map(fit);   // above only when the arrow's top is in view
+    const spots = (flip ? [[top.x - w / 2, top.y + 6], [top.x + aw + 8, my - h / 2], [top.x - aw - w - 8, my - h / 2]]
+      : [[top.x - w / 2, top.y - h - 6], [foot.x - w / 2, foot.y + 12], [top.x + aw + 8, my - h / 2], [top.x - aw - w - 8, my - h / 2]])
+      .filter(([, y], i) => i || flip || y >= 8).map(fit);   // above only when the arrow's top is in view
     const clear = ([x, y]) => !guideUi.hud.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
     const [lx, ly] = spots.find(clear) || spots[0];
     lab.style.left = Math.round(lx) + 'px'; lab.style.top = Math.round(ly) + 'px';
@@ -12016,7 +12177,7 @@ function guideDraw() {
     if ($('guideEdgeText').textContent !== name) $('guideEdgeText').textContent = name;
     // Where the line from the middle of the screen to the place meets an inset frame (clear of the HUD's edges).
     const cx = W / 2, cy = H / 2, dx = foot.x - cx, dy = foot.y - cy, land = W > H;
-    const L = 46, R = W - 46, T = land ? 100 : 150, B = H - (land ? 76 : 100);
+    const L = 46, R = W - 46, T = land ? 100 : nextUi.shown ? 205 : 150, B = H - (land ? 76 : 100);   // D21: below the Next job line
     let k = Infinity;
     if (dx) k = Math.min(k, ((dx > 0 ? R : L) - cx) / dx);
     if (dy) k = Math.min(k, ((dy > 0 ? B : T) - cy) / dy);
@@ -12154,8 +12315,11 @@ function onTap(px, py) {
     const yw = camYawTarget();
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
+  wbUi.pending = null; officeUi.pendingTab = null;
   const work = workBoardHitAt(px, py);
   if (work) { openWorkCard(work, true); return; }    // the work board behind the counter (D20), from inside the booth
+  const sign = boardHitOf(px, py, 'sign');
+  if (sign && workBoardGo(sign.st)) return;          // the WORK BOARD sign on the roof (D21): walk in to the board
   const board = boardHitAt(px, py);
   if (board) { ttCardPin(board); return; }          // a painted departure board: its station card
   // The ticket window and the office desk (in front of the depot's door, beside the window since the booth) can be

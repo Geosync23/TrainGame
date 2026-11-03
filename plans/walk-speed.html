@@ -89,25 +89,15 @@ button:disabled { opacity: .5; cursor: default; }
 
 <div class="wrap">
   <header style="display:grid;gap:12px">
-    <span class="eyebrow">M1 fix round, one question</span>
+    <span class="eyebrow">M1 fix round, walking again</span>
     <h1>Railhead walking speed</h1>
-    <p class="muted">You asked for a slower walk. A slower walk breaks the timetable, so I need your choice before I put together the next playable link. Everything else you asked for (wider platforms, the see-through roof, the new walk animation) goes in whatever you choose.</p>
+    <p class="muted">On the scale check you said the walk is still too fast. Crossings, the view into the cars and the departure board are being built now; this question only decides how the walk looks.</p>
   </header>
 
   <section>
-    <h2>What happened</h2>
-    <p>You are one person doing every job: tickets, freight, wood and water. In the bigger station the walks are longer. The test player plays a whole week by the timetable, and at a slower walk it could not keep up:</p>
-    <div class="tbl-wrap"><table>
-      <thead><tr><th>Walk speed</th><th class="n">On screen at 1x</th><th class="n">Latest train in the test week</th></tr></thead>
-      <tbody>
-        <tr><td>2.8 (what you played)</td><td class="n">3.7 units a second</td><td class="n">7 min, passes</td></tr>
-        <tr><td>2.4</td><td class="n">3.2</td><td class="n">48 min (day 2 only)</td></tr>
-        <tr><td>2.2</td><td class="n">2.9</td><td class="n">143 min</td></tr>
-        <tr><td>2.0 (what you asked for)</td><td class="n">2.7</td><td class="n">207 min</td></tr>
-      </tbody>
-    </table></div>
-    <p class="muted">A unit is about one person's height. The game clock runs fast: one game minute lasts 0.75 real seconds, so a full game day is 18 real minutes.</p>
-    <p>What looks too fast is the speed on screen. That can be slowed in two ways: walk slower in game time (which costs time at work), or run the game clock a little slower (everything on screen moves calmer, and the work still fits).</p>
+    <h2>Where it stands</h2>
+    <p>You chose the slower clock: one game minute now lasts 1 real second, and you cover about 2.8 units (a unit is about one person's height) a second on screen. The characters have short legs, so to keep their feet from sliding they take about 6.5 steps a second. That busy stepping may be part of what looks fast.</p>
+    <p>Walking slower in game time still breaks the timetable for one person (at the slowest tried, trains ran up to 207 minutes late in the test week), so the options below avoid that unless you choose otherwise.</p>
   </section>
 
   <section>
@@ -119,13 +109,12 @@ button:disabled { opacity: .5; cursor: default; }
 
 <script>
 const QS = [
-  { id: 'walk', q: 'How should the walk get calmer?',
-    o: [['clock', 'Slow the game clock a little: one game minute lasts 1.0 real second instead of 0.75, so a game day is 24 real minutes instead of 18. You walk at 2.8 units a second on screen, a quarter slower than you saw and about the same as the 2.0 walk. Trains and people on screen also move a quarter slower. The timetable and the work fit as before, and 2x and 4x still speed things up.', 1],
-        ['crew', 'Walk 2.0 as asked, and take work off you: the engine crew takes their own wood and water (as real crews did in 1866), and trains get ready earlier. On-screen speed as you asked; I would check whether the week then fits.'],
-        ['mid', 'Walk 2.4: a little slower on screen (3.2), and the timetable mostly fits (one late day in the test week).'],
-        ['both', 'Slow the clock and also walk 2.4, for the calmest look; the week may run a little late.'],
-        ['keep', 'Keep the walk as it was (2.8 at today\'s clock), with the new walk animation.']] },
-  { id: 'else', q: 'Anything else on walking or the clock?', o: [] },
+  { id: 'walk2', q: 'What should change?',
+    o: [['both', 'Both: longer, calmer strides (about 4 steps a second instead of 6.5, same speed) and the clock slowed a bit more (one game minute lasts 1.25 real seconds, a game day 30 real minutes), so everything on screen is another fifth slower. The timetable still fits.', 1],
+        ['stride', 'Only the longer, calmer strides: same speed, fewer steps. No other change.'],
+        ['clock', 'Only the clock slowed a bit more (1.25 real seconds a game minute, a 30-minute day).'],
+        ['slowwalk', 'Walk slower in game time (2.4) and accept that the timetable gets tight for one person (in the test week one day ran late).']] },
+  { id: 'else', q: 'Anything else about how people walk?', o: [] },
 ];
 const answers = {};
 const statusEl = document.getElementById('status'), saveBtn = document.getElementById('save');
@@ -178,7 +167,7 @@ saveBtn.addEventListener('click', () => { dirty = true; clearTimeout(timer); sav
   try { db = window.claude ? await window.claude.use('db') : null; } catch (e) { db = null; }
   clearTimeout(to);
   if (!db) { status('Saving is not available here'); saveBtn.disabled = true; return; }
-  ref = db.doc('answers/walk-speed');
+  ref = db.doc('answers/walk-speed-2');
   try {
     const snap = await ref.get();
     if (snap.exists) { const d = snap.data(); if (d && d.answers) for (const k in d.answers) if (!answers[k]) answers[k] = d.answers[k]; render(); status('Loaded your saved answers', true); }

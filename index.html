@@ -222,6 +222,9 @@
   #guideEdgeArrow svg { width: 34px; height: 34px; fill: #fff; }
   #guideEdgeText { background: var(--paper); color: var(--ink); border: 2px solid #b04a08; border-radius: 6px; padding: 2px 6px; font: 600 13px/1.2 Georgia, serif;
     white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  #guideTrain { left: 0; top: 0; pointer-events: none; z-index: 1; transform: translate(-50%, calc(-100% - 10px)); background: #fff3c4; color: var(--ink);
+    border: 2px solid #b04a08; border-radius: 8px; padding: 3px 8px; font: 600 14px/1.2 Georgia, serif; white-space: nowrap; }
+  #guideTrain::after { content: ''; position: absolute; left: 50%; bottom: -11px; transform: translateX(-50%); border: 9px solid transparent; border-top-color: #b04a08; border-bottom: 0; }
   @keyframes guidePulse { 50% { box-shadow: 0 0 0 6px rgba(255,122,26,.35); } }
 </style>
 <!-- three.js, pinned to one exact version. Changing it is its own reviewed step. -->
@@ -256,6 +259,7 @@
   <button id="hintBtn" aria-pressed="false" aria-label="Helper arrows: show the way to the next job">Arrows off</button>
 </div>
 <div id="guideLabel" class="hud" aria-live="polite" hidden></div>
+<div id="guideTrain" class="hud" hidden><span></span></div>
 <div id="guideEdge" class="hud" hidden><div id="guideEdgeArrow"><svg viewBox="0 0 40 40"><path d="M6 13h16V5l14 15-14 15v-8H6z"/></svg></div><span id="guideEdgeText"></span></div>
 <div id="toast" class="hud" role="status" aria-live="polite"></div>
 <div id="carry" class="hud" role="status" aria-live="polite" hidden><span id="carryText"></span><button id="carryPut">Put down</button></div>
@@ -5398,7 +5402,7 @@ const TUT_STEPS = [
     body: S => `You have the line, engine No. 1 and ${econMoney(S.econ.cash)} of my money. For two days I will wire you what to do first, one thing at a time. Tap OK to begin. If you know railroading already, tap Skip tutorial. HARTWELL`,
     buttons: [{ label: 'OK', cmd: null }, { label: 'Skip tutorial', cmd: { t: 'tutorialSkip' } }] },
   { key: 'accept', got: TUT_GOT.accept, title: 'Take a contract',
-    body: () => 'Contracts pay. The Hub General Store wants flour. Follow the arrow to the office desk in the depot, tap it, open Contracts and accept the store\'s offer. HARTWELL' },
+    body: () => 'Contracts pay. The Hub General Store wants flour. Follow the arrow to the telegraph key in the depot window (or the office desk inside), tap it, open Contracts and accept the store\'s offer. HARTWELL' },
   { key: 'order', got: TUT_GOT.order, title: 'Order the goods',
     body: S => `Now buy what the contract needs from the Overland market: on the contract, tap its order button, then Send order. Wired now, the goods come on the Overland of ${econWhen(econNextVisit(S.time))}. HARTWELL` },
   { key: 'tickets', got: TUT_GOT.tickets, title: `Sell ${TUT.TICKETS} tickets`,
@@ -10762,7 +10766,8 @@ function lookUpdate() {
 // also holds the Arrows toggle, which stays after the tutorial, so the box shows without a chip then.
 const tutUi = { step: -2, hide: null, chip: null };
 function tutHud() {
-  const c = tutCurrent(S), box = $('tutTask'), hide = bigPanelOpen() || lookUi.open;
+  // Landscape: the train panel reaches up beside the box (the Arrows toggle widened it), so it hides then.
+  const c = tutCurrent(S), box = $('tutTask'), hide = bigPanelOpen() || lookUi.open || (landscapeUi() && ui.panelTrain !== null);
   if (hide !== tutUi.hide) { tutUi.hide = hide; box.hidden = hide; }
   if (!c !== tutUi.chip) { tutUi.chip = !c; $('tutChip').hidden = !c; }
   guideHud();
@@ -10785,8 +10790,18 @@ $('tutChip').addEventListener('click', () => { const c = tutCurrent(S); if (c) o
 const GUIDE = { DOTS: 140, GAP: 0.75, NEAR: 1.6, REPATH_S: 0.5, OFF: 2.5, PREF: 'railhead-arrows', PX: 86 };
 const guideUi = { pref: null, t: null, nextT: 0, hud: [], boardStep: -2, boardSeen: false, path: [], pathKey: '', pathAt: -1e9, from: -1, arrow: null, dots: null };
 try { const v = localStorage.getItem(GUIDE.PREF); if (v === 'on' || v === 'off') guideUi.pref = v; } catch (e) { /* no storage: the default */ }
-// Are the arrows on? The toggle when the player set it; else on during the tutorial and off after it.
-function guideOn() { return guideUi.pref ? guideUi.pref === 'on' : !!tutCurrent(S); }
+// The player's own engine (No. 1 in a new game): the first train of ours with a locomotive, or null.
+function guideOurTrain() { return S.trains.find(t => !t.owner && !trainOff(t) && trainLocos(t).length) || null; }
+// The guided part of the game: 'tut' (a tutorial step is up), 'tt' (the tutorial finished, not skipped, and No. 1 is
+// not on the timetable yet: its last telegram asks for that), or null.
+function guideStage() {
+  if (tutCurrent(S)) return 'tut';
+  const U = S.tut, tr = U && U.done && !U.skipped && U.step >= 0 && S.tt ? guideOurTrain() : null;
+  return tr && !S.tt.services.some(v => v.train === tr.id) ? 'tt' : null;
+}
+// Are the arrows on? The toggle when the player set it; else on while the game guides (tutorial, then the timetable
+// step) and off after it.
+function guideOn() { return guideUi.pref ? guideUi.pref === 'on' : !!guideStage(); }
 function guideSetPref(on) {
   guideUi.pref = on ? 'on' : 'off'; guideUi.nextT = 0;
   try { localStorage.setItem(GUIDE.PREF, guideUi.pref); } catch (e) { /* no storage: this visit only */ }
@@ -10816,7 +10831,13 @@ function guideNeedLabel(need) {
 // The tutorial step's place and label: { x, z, label, k } or null.
 function guideTutTarget(c) {
   const t = tutTarget(S);
-  if (c.key === 'accept' || c.key === 'order') return t && { x: t.x, z: t.z, k: 'desk', label: c.key === 'accept' ? 'Office desk: take a contract' : 'Office desk: order the goods' };
+  if (c.key === 'accept' || c.key === 'order') {
+    // The telegraph key in the depot's window (seen from the platform), or the office desk inside when the player is
+    // already by it (both open Contracts).
+    const k = econTelegraphKey(), d = econDeskSpot(), P = S.player, key = Math.hypot(d.x - P.x, d.z - P.z) > 3 || Math.hypot(k.x - P.x, k.z - P.z) <= Math.hypot(d.x - P.x, d.z - P.z);
+    const at = key ? k : d, what = c.key === 'accept' ? 'take a contract' : 'order the goods';
+    return { x: at.x, z: at.z, k: key ? 'telegraph' : 'desk', label: (key ? 'Telegraph key: ' : 'Office desk: ') + what };
+  }
   if (c.key === 'tickets') return t && { x: t.x, z: t.z, k: 'window', label: `Ticket window: sell tickets (${S.tut.tickets} of ${TUT.TICKETS})` };
   if (c.key === 'switch') {
     // First the work board (what the next train needs), then the switch. Seen once the player stands by it.
@@ -10854,6 +10875,15 @@ function hintTarget() {
   }
   return null;
 }
+// After the tutorial: put No. 1 on the timetable. First No. 1 itself (tap her), then, with her panel open, the
+// panel's Timetable button (k 'button': no world arrow; the edge arrow points at the button on the screen).
+function guideTtTarget() {
+  const tr = guideOurTrain();
+  if (!tr) return null;
+  if (ui.panelTrain === tr.id && !$('panelTt').hidden) return { k: 'button', el: 'ttToggle', label: `${tr.name}: tap Timetable to put her on a run`, x: 0, z: 0 };
+  const ps = trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.k === 'loco'), p = ps[Math.max(0, i)];
+  return p && { x: p.x, z: p.z, k: 'car', label: `${tr.name}: tap her to put her on the timetable` };
+}
 // The place the arrows point at now ({ x, z, k, label } or null), looked at four times a second.
 function guideTarget() {
   if (animT < guideUi.nextT) return guideUi.t;
@@ -10862,7 +10892,7 @@ function guideTarget() {
   guideUi.hud = [...document.querySelectorAll('.hud')].filter(e => e.id !== 'guideLabel' && e.id !== 'guideEdge' && e.id !== 'toast' && !e.hidden && e.getClientRects().length)
     .map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
   const c = tutCurrent(S);
-  guideUi.t = !guideOn() || S.player.ride ? null : c ? guideTutTarget(c) : hintTarget();
+  guideUi.t = !guideOn() || S.player.ride ? null : c ? guideTutTarget(c) : guideStage() === 'tt' ? guideTtTarget() : hintTarget();
   return guideUi.t;
 }
 // The arrow: a low-poly downward arrow (head and shaft, one merged mesh), unlit orange with baked shading, drawn
@@ -10942,6 +10972,19 @@ function guideDraw() {
   const t = guideTarget();
   if (!guideUi.arrow) { guideUi.arrow = guideArrowMesh(); guideUi.dots = guideDotsMesh(); scene.add(guideUi.arrow, guideUi.dots); }
   const A = guideUi.arrow, lab = $('guideLabel'), edge = $('guideEdge');
+  guideTrainTag(t);
+  edge.style.zIndex = t && t.k === 'button' ? '3' : '';   // over the panel that holds the button
+  if (t && t.k === 'button') {   // a page button: the round arrow just right of it, pointing left at it
+    A.visible = false; guideDrawDots(null); lab.hidden = true;
+    const b = $(t.el), r = b && !b.hidden && b.getClientRects().length ? b.getBoundingClientRect() : null;
+    edge.hidden = !r;
+    if (r) {
+      if ($('guideEdgeText').textContent !== 'Tap Timetable') $('guideEdgeText').textContent = 'Tap Timetable';
+      edge.style.left = Math.round(r.right + 52) + 'px'; edge.style.top = Math.round(r.top + r.height / 2 + 10) + 'px';
+      $('guideEdgeArrow').style.transform = 'rotate(180deg)'; edge.dataset.ang = Math.PI.toFixed(3);
+    }
+    return;
+  }
   guideDrawDots(t);
   if (!t) { A.visible = false; lab.hidden = edge.hidden = true; return; }
   // A steady size on screen (about GUIDE.PX tall) whatever the zoom.
@@ -10977,6 +11020,23 @@ function guideDraw() {
     $('guideEdgeArrow').style.transform = `rotate(${(ang * 180 / Math.PI).toFixed(1)}deg)`;
     edge.dataset.ang = ang.toFixed(3);
   }
+}
+// "Your train": a tag with a pointer over the player's own engine while the arrows are on (page element, no draw
+// call), so it is clear which train is ours. Left out while the big arrow already stands over her.
+function guideTrainTag(t) {
+  const el = $('guideTrain'), tr = guideOn() && !S.player.ride ? guideOurTrain() : null;
+  const ps = tr ? trainPoses(S.track, tr) : [], i = tr ? tr.consist.findIndex(c => c.k === 'loco') : -1, p = ps[Math.max(0, i)];
+  const hide = !p || (t && t.k === 'car' && Math.hypot(t.x - p.x, t.z - p.z) < 1) || bigPanelOpen() || lookUi.open || (typeof bt !== 'undefined' && bt.on);
+  if (hide) { el.hidden = true; return; }
+  // Over the engine's middle, or over the part of her still on the screen (a third of her length either way).
+  const W = window.innerWidth, H = window.innerHeight, dx = Math.cos(p.yaw), dz = -Math.sin(p.yaw);
+  const q = [0, -0.3, 0.3].map(f => { const x = p.x + dx * f * p.len, z = p.z + dz * f * p.len; return toScreen(x, terrainHeight(x, z) + 3.3 * WS, z); })
+    .find(q => q.x > 60 && q.x < W - 60 && q.y > 60 && q.y < H);
+  if (!q) { el.hidden = true; return; }
+  const txt = `Your train: ${tr.name}`;
+  if (el.firstChild.textContent !== txt) el.firstChild.textContent = txt;
+  el.hidden = false;
+  el.style.left = Math.round(q.x) + 'px'; el.style.top = Math.round(q.y) + 'px';
 }
 // The Arrows toggle (under the Current task chip): its words follow guideOn().
 function guideHud() {
@@ -11495,7 +11555,7 @@ window.__railhead = {
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
-  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi }, // helper arrows, D20 (6)
+  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi }, // helper arrows, D20 (6)
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,

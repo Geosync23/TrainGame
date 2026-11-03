@@ -29,6 +29,7 @@ const READ = () => {
   return { t, arrow: A && A.visible ? { x: A.position.x, z: A.position.z, y: A.position.y } : null, dots: D && D.visible ? D.count : 0,
     label: vis('guideLabel') ? document.getElementById('guideLabel').textContent : null, labelBox: vis('guideLabel') ? box('guideLabel') : null,
     edge: vis('guideEdge') ? { text: document.getElementById('guideEdgeText').textContent, ang: Number(document.getElementById('guideEdge').dataset.ang), box: box('guideEdgeArrow') } : null,
+    train: vis('guideTrain') ? { text: document.getElementById('guideTrain').textContent, ...box('guideTrain') } : null,
     toggle: vis('hintBtn') ? { ...box('hintBtn'), on: document.getElementById('hintBtn').getAttribute('aria-pressed') === 'true', text: document.getElementById('hintBtn').textContent } : null,
     vw: innerWidth, vh: innerHeight, dc: R.drawCalls };
 };
@@ -38,23 +39,40 @@ module.exports = async function checkArrows() {
   for (const orient of ['portrait', 'landscape']) {
     const { browser, page, errors } = await openGame(orient, { query: '?paused' });
     try {
-      const frames = async () => { await page.waitForTimeout(450); };
+      const frames = async () => {
+        await page.waitForTimeout(500);
+        // Under a loaded machine a frame can be slow: wait until the arrow stands where the arrows point now.
+        await page.waitForFunction(() => { const R = window.__railhead, t = R.guide.now(), A = R.guide.ui.arrow;
+          return !t || t.k === 'button' || (A && A.visible && Math.hypot(A.position.x - t.x, A.position.z - t.z) < 0.05); }, null, { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(200);
+      };
       // ---- 1. The first step: the arrow over the office desk; panned away: the edge arrow ----
       await page.evaluate(() => { const R = window.__railhead; R.importSave(JSON.stringify({ state: R.newState(1866) })); R.step(2); R.send({ t: 'tgAnswer', id: R.state.tut.tg, b: 0 }); R.step(2);
         // The camera halfway between the player and the desk, so both are in view (in portrait the desk starts just
         // past the right edge at the start zoom, where the edge arrow points to it).
-        const d = R.office.econDeskSpot(), P = R.state.player; R.camera.ox = (d.x - P.x) / 2; R.camera.oz = (d.z - P.z) / 2; });
+        const d = R.econ.econTelegraphKey(), P = R.state.player; R.camera.ox = (d.x - P.x) / 2; R.camera.oz = (d.z - P.z) / 2; });
       await frames();
       const a = await page.evaluate(READ);
-      const desk = await page.evaluate(() => window.__railhead.office.econDeskSpot());
+      const desk = await page.evaluate(() => { const R = window.__railhead, P = R.state.player, k = R.econ.econTelegraphKey(), d = R.office.econDeskSpot();
+        return Math.hypot(d.x - P.x, d.z - P.z) > 3 || Math.hypot(k.x - P.x, k.z - P.z) <= Math.hypot(d.x - P.x, d.z - P.z) ? { x: k.x, z: k.z, k: 'telegraph', name: 'Telegraph key' } : { x: d.x, z: d.z, k: 'desk', name: 'Office desk' }; });
       await page.screenshot({ path: screenshotPath(`arrows-first-${orient}`) });
-      if (!a.t || a.t.k !== 'desk' || !near(a.t, desk) || !near(a.arrow, desk)) problems.push(`${orient}: the first step's arrow should stand over the office desk: ${JSON.stringify({ t: a.t, arrow: a.arrow, desk })}`);
-      if (a.label !== 'Office desk: take a contract') problems.push(`${orient}: the first step's label: ${a.label}`);
+      if (!a.t || a.t.k !== desk.k || !near(a.t, desk) || !near(a.arrow, desk)) problems.push(`${orient}: the first step's arrow should stand over the telegraph key (or the desk when the player is by it): ${JSON.stringify({ t: a.t, arrow: a.arrow, desk })}`);
+      if (a.label !== desk.name + ': take a contract') problems.push(`${orient}: the first step's label: ${a.label}`);
+
       if (a.edge) problems.push(`${orient}: no edge arrow while the desk is on screen`);
       if (!(a.dots > 0)) problems.push(`${orient}: the dotted path should show from the player to the desk`);
       if (!a.toggle || a.toggle.h < 48 || a.toggle.w < 48 || !a.toggle.on) problems.push(`${orient}: the Arrows toggle should show, on, at least 48 px: ${JSON.stringify(a.toggle)}`);
       if (a.labelBox && (a.labelBox.x < 0 || a.labelBox.r > a.vw || a.labelBox.y < 0)) problems.push(`${orient}: the label runs off the screen`);
       const dcOn = a.dc;
+      // "Your train": the tag over No. 1 from the start (the camera on her).
+      await page.evaluate(() => { const R = window.__railhead, tr = R.guide.ourTrain(), P = R.state.player, p = R.trainPoses(R.state.track, tr)[0]; R.camera.ox = p.x - P.x; R.camera.oz = p.z - P.z; });
+      await frames();
+      const yt = await page.evaluate(READ);
+      const ytAt = await page.evaluate(() => { const R = window.__railhead, p = R.trainPoses(R.state.track, R.guide.ourTrain())[0]; return R.toScreen(p.x, p.z, 0); });
+      if (!yt.train || yt.train.text !== 'Your train: No. 1' || Math.abs(yt.train.x + yt.train.w / 2 - ytAt.x) > 140 || yt.train.b > ytAt.y) problems.push(`${orient}: the "Your train" tag should stand over No. 1 from the start: ${JSON.stringify({ tag: yt.train, at: ytAt })}`);
+      await page.screenshot({ path: screenshotPath(`arrows-yourtrain-${orient}`) });
+      await page.evaluate(() => { const R = window.__railhead, d = R.econ.econTelegraphKey(), P = R.state.player; R.camera.ox = (d.x - P.x) / 2; R.camera.oz = (d.z - P.z) / 2; });
+      await frames();
       // The same frame with the arrows off (the toggle), for the draw calls; then on again.
       await page.evaluate(() => window.__railhead.guide.setPref(false));
       await frames();
@@ -72,7 +90,7 @@ module.exports = async function checkArrows() {
         let da = Math.abs(e.edge.ang - want); if (da > Math.PI) da = 2 * Math.PI - da;
         if (da > 0.08) problems.push(`${orient} ${tag}: the edge arrow points the wrong way (${e.edge.ang}, want ${want.toFixed(3)})`);
         if (e.edge.box.x < 0 || e.edge.box.y < 0 || e.edge.box.r > e.vw || e.edge.box.b > e.vh) problems.push(`${orient} ${tag}: the edge arrow is off the screen: ${JSON.stringify(e.edge.box)}`);
-        if (e.edge.text !== 'Office desk') problems.push(`${orient} ${tag}: the edge arrow should name the desk: ${e.edge.text}`);
+        if (e.edge.text !== desk.name) problems.push(`${orient} ${tag}: the edge arrow should name the desk: ${e.edge.text}`);
         if (e.label) problems.push(`${orient} ${tag}: the label should hide while the place is off screen`);
         console.log(`  ${orient} ${tag}: edge arrow at (${Math.round(e.edge.box.x + e.edge.box.w / 2)}, ${Math.round(e.edge.box.y + e.edge.box.h / 2)}) px, ${(e.edge.ang * 180 / Math.PI).toFixed(0)} degrees`);
       }
@@ -112,7 +130,10 @@ module.exports = async function checkArrows() {
         const base = k.replace('+car', '');
         if (!r.t || !r.arrow) { problems.push(`${orient}: no arrow at the ${k} step`); continue; }
         if (!near(r.arrow, r.t)) problems.push(`${orient}: the arrow is not over its place at the ${k} step`);
-        if (base === 'accept' || base === 'order') { if (r.t.k !== 'desk' || !near(r.t, exp.t)) problems.push(`${orient}: ${k}: the arrow should be over the office desk`); }
+        if (base === 'accept' || base === 'order') {
+          const ok = await page.evaluate(t => { const R = window.__railhead, k = R.econ.econTelegraphKey(), d = R.office.econDeskSpot(); return Math.hypot(t.x - k.x, t.z - k.z) < 0.05 || Math.hypot(t.x - d.x, t.z - d.z) < 0.05; }, r.t);
+          if (!ok || !/^(Telegraph key|Office desk): /.test(r.t.label)) problems.push(`${orient}: ${k}: the arrow should be over the telegraph key or the office desk: ${JSON.stringify(r.t)}`);
+        }
         else if (base === 'tickets') { if (r.t.k !== 'window' || !near(r.t, exp.t) || !/^Ticket window: sell tickets/.test(r.t.label)) problems.push(`${orient}: tickets: the arrow should be over the ticket counter: ${JSON.stringify(r.t)}`); }
         else if (base === 'switch') {
           // The work board first (the player away from it), then the switch once the board is seen.
@@ -141,6 +162,32 @@ module.exports = async function checkArrows() {
         }
       }
       for (const k of keys) if (!got[k]) problems.push(`${orient}: the ${k} step was never looked at`);
+      // After the last step: put No. 1 on the timetable. The arrow over No. 1, then (her panel open) at the button.
+      // The Arrows toggle back to its default (the draw call test above set it on).
+      const tt = await page.evaluate(() => {
+        const R = window.__railhead, W = window.__arw;
+        try { localStorage.removeItem('railhead-arrows'); } catch (e) { /* none */ } R.guide.ui.pref = null;
+        for (let i = 0; i < 21600 && !W.X.S.tut.done; i++) window.__tut.step(W.X, 1);
+        R.importSave(JSON.stringify({ state: W.X.S }));
+        const tr = R.guide.ourTrain(), t = R.guide.now();
+        return { stage: R.guide.stage(), t, tr: tr && { id: tr.id, name: tr.name } };
+      });
+      await frames();
+      const t1 = await page.evaluate(READ);
+      if (tt.stage !== 'tt' || !t1.t || t1.t.k !== 'car' || !/^No\. 1: tap her to put her on the timetable$/.test(t1.t.label) || !t1.arrow) problems.push(`${orient}: after the tutorial the arrow should point at No. 1 to put her on the timetable: ${JSON.stringify({ tt, t: t1.t })}`);
+      await page.evaluate(id => { const R = window.__railhead; R.guide.openPanel(id); R.guide.ui.nextT = 0; }, tt.tr ? tt.tr.id : 0);
+      await frames();
+      const t2 = await page.evaluate(READ);
+      const btn = await page.evaluate(() => { const b = document.getElementById('ttToggle').getBoundingClientRect(); return { r: b.right, y: b.y, b: b.bottom }; });
+      await page.screenshot({ path: screenshotPath(`arrows-timetable-${orient}`) });
+      if (!t2.t || t2.t.k !== 'button' || !t2.edge || t2.edge.box.x < btn.r || t2.edge.box.x > btn.r + 40 || t2.edge.box.y + t2.edge.box.h / 2 < btn.y || t2.edge.box.y + t2.edge.box.h / 2 > btn.b || t2.edge.box.r > t2.vw || t2.arrow) problems.push(`${orient}: with No. 1's panel open the arrow should point at the Timetable button: ${JSON.stringify({ t: t2.t, edge: t2.edge, btn })}`);
+      await page.tap('#ttToggle');
+      await page.evaluate(() => window.__railhead.step(2));
+      await frames();
+      const t3 = await page.evaluate(READ), st3 = await page.evaluate(() => window.__railhead.guide.stage());
+      if (st3 || t3.t || t3.arrow || t3.edge || t3.train) problems.push(`${orient}: once No. 1 is on the timetable the guided start is over and the arrows go: ${JSON.stringify({ st3, t3 })}`);
+      await page.tap('#panelClose');
+      console.log(`  ${orient}: timetable step: "${t1.t && t1.t.label}", then "${t2.edge && t2.edge.text}" beside the button; after it: ${st3 ? 'still on' : 'arrows off'}; screenshot arrows-timetable-${orient}.png`);
       if (orient === 'portrait') for (const [k, g] of Object.entries(got)) console.log(`  ${k}: ${g.k} "${g.label}"${g.then ? ' then "' + g.then + '"' : ''}, ${g.dots} dots`);
 
       // ---- 3. Skip removes them; the toggle brings the hint arrow back ----

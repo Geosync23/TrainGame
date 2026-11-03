@@ -43,6 +43,14 @@ module.exports = async function checkBoard() {
     const { browser, page, errors } = await openGame(orientation, { query: '?paused' });
     const R = (fn, arg) => page.evaluate(fn, arg);
     const frames = ms => page.waitForTimeout(ms || 400);
+    // At least ms of real time AND at least n drawn frames. The shell's fade eases per drawn frame with dt capped at
+    // 0.25 s, so it needs 3 frames to settle however slow they are; on a busy test machine (headless software GL at
+    // 2 frames a second or less) 1500 ms alone can hold only 2.
+    const drawnFrames = (ms, n) => page.evaluate(([ms, n]) => new Promise(res => {
+      const t0 = performance.now(); let k = 0;
+      const f = () => { k++; if (k >= n && performance.now() - t0 >= ms) res(); else requestAnimationFrame(f); };
+      requestAnimationFrame(f);
+    }), [ms, n]);
     // Points the camera at a board (its middle), the player standing at (x, z).
     const look = (st, zoom, x, z) => R(([st, zoom, x, z]) => {
       const R = window.__railhead, S = R.state, b = R.board.list.find(b => b.st === st), c = R.camera, el = R.CFG.ISO_EL;
@@ -208,7 +216,7 @@ module.exports = async function checkBoard() {
       if (!(booth.sold >= 8)) P(`${orientation}: only ${booth.sold} tickets sold in 40 ticks from the booth (one every 30 game seconds is about 10)`);
       if (!booth.wfSame) P(`${orientation}: Willow Ford's booth cannot be reached from its platform`);
       await R(() => { window.__railhead.camera.zoom = 2.5; window.__railhead.camera.ox = 0; window.__railhead.camera.oz = 0; });
-      await frames(1500);
+      await drawnFrames(1500, 6);
       const sh = await R(() => { const m = window.__railhead.board.shell.mesh.material; return { op: m.opacity, dw: m.depthWrite, dc: window.__railhead.drawCalls }; });
       if (!(sh.op <= 0.2) || sh.dw) P(`${orientation}: in the booth the depot's shell should be see-through: opacity ${sh.op.toFixed(2)}, depth writes ${sh.dw}`);
       await page.screenshot({ path: screenshotPath('booth-' + orientation) });
@@ -220,7 +228,7 @@ module.exports = async function checkBoard() {
       }
       // Out again: the shell turns solid.
       await R(() => { const R = window.__railhead, K = R.pax.paxStation('hub'); R.send({ t: 'walkTo', x: Math.round(K.line.x * 100), z: Math.round((K.line.z + 1) * 100) }); R.step(40); });
-      await frames(1500);
+      await drawnFrames(1500, 6);
       const sh2 = await R(() => { const m = window.__railhead.board.shell.mesh.material; return { op: m.opacity, dw: m.depthWrite, desk: window.__railhead.state.pax.desk }; });
       if (!(sh2.op >= 0.999) || !sh2.dw) P(`${orientation}: back on the platform the shell should be solid again: opacity ${sh2.op.toFixed(2)}`);
       if (sh2.desk) P(`${orientation}: walking out of the booth should stop the sales`);

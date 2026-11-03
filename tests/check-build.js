@@ -179,6 +179,8 @@ async function checkDebugBuild(problems) {
       tr.front = { e: top.id, s: 20 * SC, d: 1 }; tr.v = 0; tr.mode = 'idle'; tr.route = null;
       const ev0 = R.simTick(S, [{ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) }]);
       out.routeSet = ev0.some(e => e.t === 'routeSet');
+      // D20: switches are manual: the route names the switches to throw, and the player throws them (here at once).
+      for (const w of (ev0.find(e => e.t === 'routeSet') || { throws: [] }).throws) R.simTick(S, [{ t: 'throwSwitch', sw: w.sw }]);
       const swIds = [swA && swA.sw, swB && swB.sw];
       out.reversed = swIds.filter(i => i !== null && T().switches[i].state === 'R').length;
       let arrived = -1;

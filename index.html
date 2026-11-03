@@ -209,6 +209,9 @@
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } }
   /* Helper arrows (D20 (6)): the Arrows toggle under the chip, the label over the world arrow, the arrow at the edge. */
   #hintBtn { font-size: 14px; padding: 0 10px; }
+  /* Landscape: the toggle beside the chip, not under it, so the alerts below keep their room. */
+  @media (orientation: landscape) and (max-height: 500px) { #tutTask { display: flex; justify-content: flex-end; align-items: stretch; max-width: min(64vw, 440px); }
+    #hintBtn { order: -1; flex: none; } #tutChip { min-width: 0; } }
   #hintBtn[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-left: 7px solid #ff7a1a; }
   #guideLabel { left: 0; top: 0; pointer-events: none; max-width: min(70vw, 280px); box-sizing: border-box; background: var(--paper); color: var(--ink);
     border: 2px solid #b04a08; border-left: 7px solid #ff7a1a; border-radius: 8px; padding: 5px 9px; font: 600 15px/1.2 Georgia, serif; z-index: 1;

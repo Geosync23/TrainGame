@@ -8,3 +8,4 @@ Small bugs and ideas found outside the current task. Each entry: date, what, whe
 
 - 2026-11-02 (D15 scale): in check-m1 the bot's morning boarding at Willow Ford fails with "The train moved off" (also before the scale). tests/m1-bot.js or the dwell at an unstaffed stop.
 - 2026-11-02 (D15 scale): the bot's week sold 120 tickets (173 before the scale) and ran up to 7 min late (0 before). Probably longer walks in the bigger station; not investigated.
+- 2026-11-03 (builder TA): check-feet.js fails on the lead's commit f5e1d78 too: "a tap on the deck at (-2.20, -11.40) lands at" x -2.147, z -11.419 (0.056u off, limit 0.05). Same numbers every run, so not timing; probably the camera or the deck point moved in an earlier round. Not investigated.

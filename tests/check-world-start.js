@@ -2,7 +2,7 @@
 // - A new game (no ?world=yard) is in the real start: the hub with its buildings and Willow Ford with its kit.
 // - The spur from the hub's platform switch to Willow Ford's west switch is about 160u x SC (10 miles, 256u since D15).
 // - The track passes the validator; every building keeps the section 6 clearance from every track edge;
-//   no footprints overlap (except a depot's office bay on its platform, lamps on platforms, the shed's dock);
+//   no footprints overlap (except a depot's office bay on its platform, lamps and station props on platforms, the shed's dock);
 //   the hub's buildings and tool spots stand inside the hub boundary; each depot's use spots (ticket window,
 //   telegraph, desk) are on its platform and can be walked to.
 // - The interchange is joined to the hub's main track by a switch, and No. 1 can be routed to its end.
@@ -87,7 +87,7 @@ module.exports = async function checkWorldStart() {
         for (let i = 0; i < fps.length; i++) for (let j = i + 1; j < fps.length; j++) {
           const a = fps[i], b = fps[j], pair = [a.id, b.id].sort().join('+');
           if (['depot+platform', 'wfdepot+wfplatform', 'freightdock+freightshed'].includes(pair)) continue;
-          if ((a.kind === 'lamp' && b.flush) || (b.kind === 'lamp' && a.flush)) continue;
+          if (((a.kind === 'lamp' || a.prop) && b.flush) || ((b.kind === 'lamp' || b.prop) && a.flush)) continue; // lamps and station props (D19) stand on decks
           if (overlap(a, b)) P(`${a.id} overlaps ${b.id}`);
         }
         const H = Wd.HUB, inHub = (x, z) => x >= H.x0 && x <= H.x1 && z >= H.z0 && z <= H.z1;

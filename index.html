@@ -7187,6 +7187,8 @@ const HUB_PZ = -TURN_OFF;
 // the track-side edge stays 0.9 x WS from the platform track, so the platform and everything standing on or behind
 // it (depot, telegraph pole, the lamps on the platform; the towns follow their depots) moved back by BLD_WIDE_BACK.
 const BLD_WIDE_BACK = (BLD_PLAT_DEEP_M1 - 2.4) * WS;
+// The platforms' back edges (z), where the station props stand (D19).
+const HUB_PB = HUB_PZ - 0.9 * WS - BLD_PLAT_DEEP_M1 * WS, WF_PB = WFORD.z - 0.9 * WS - BLD_PLAT_DEEP_M1 * WS;
 BLD_LAYOUTS.start = [
   { id: 'platform', x: 8 * WS, z: HUB_PZ - 0.9 * WS - BLD_PLAT_DEEP_M1 / 2 * WS, yaw: 0 },
   { id: 'depot', x: 5.6 * WS, z: HUB_PZ - 4.4 * WS - BLD_WIDE_BACK, yaw: 0 },
@@ -7207,6 +7209,18 @@ BLD_LAYOUTS.start = [
   { id: 'cabin2', x: WFORD.x + 13.5 * WS, z: WFORD.z - 13 * WS, yaw: -0.15 },
   { id: 'cabin3', x: WFORD.x + 25 * WS, z: WFORD.z - 11.5 * WS, yaw: 0.1 },
   { id: 'cabin4', x: WFORD.x + 32.5 * WS, z: WFORD.z - 8.5 * WS, yaw: -0.35 },
+  // D19 ("more visual detail at the station"): props, human-sized (true units), along the platforms' back edges clear
+  // of the use spots, the queue (east of the hub's ticket window), the booth door and the track side. Each is a
+  // footprint (prop: true) that blocks walking like a lamp post; y stands those on a platform on its deck.
+  { id: 'freightpile1', kind: 'freightpile', x: -1.75, z: HUB_PB + 0.75, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'baggagewagon1', kind: 'baggagewagon', x: 2.65, z: HUB_PB + 0.8, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'freightscale1', kind: 'freightscale', x: 4.4, z: HUB_PB + 0.62, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'waterbarrel1', kind: 'waterbarrel', x: 13.2, z: HUB_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'planter1', kind: 'planter', x: 16.5, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'planter2', kind: 'planter', x: 19.0, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'hitchrail1', kind: 'hitchrail', x: 17.4, z: HUB_PB - 3.0, yaw: 0 },
+  { id: 'wfcrates1', kind: 'crates', x: WFORD.x + 20 * WS - 9.5, z: WF_PB + 0.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wfwaterbarrel1', kind: 'waterbarrel', x: WFORD.x + 20 * WS + 0.4, z: WF_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
 ];
 let BLD_LAYOUT = BLD_LAYOUTS.yard;
 function bldKindOf(at) { return at.kind || bldKind(at.id); }
@@ -7269,6 +7283,7 @@ function bldPlacer(kit, glow, at, vary, sc, lift, roof, shell) {
     k.add(geo, col, at.x + v.x, (at.y || 0) + lift + v.y, at.z + v.z, e.x, e.y, e.z);
   };
   return {
+    at,   // the layout entry (D19: seeds the plank tones)
     raw: () => bldPlacer(kit, glow, at, vary, 1, lift, roof, shell),
     on: dy => bldPlacer(kit, glow, at, vary, sc, lift + dy, roof, shell),
     add: (geo, hex, x, y, z, rx, ry, rz) => place(kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
@@ -7300,7 +7315,17 @@ const BLD_EXT_M1 = {
   woodstage: [-3, 3, -2, 2],            // 3 x 2 tiles (design-doc 15)
   tpole: [-0.12, 0.12, -0.12, 0.12],
   cabin: [-1.2, 1.2, -1, 1],
+  // D19 props: true units (they keep their size), here / WS.
+  freightpile: [-1.15, 1.15, -0.6, 0.6].map(v => v / WS),
+  crates: [-0.8, 0.8, -0.45, 0.45].map(v => v / WS),
+  baggagewagon: [-1.0, 1.0, -0.48, 0.48].map(v => v / WS),
+  freightscale: [-0.36, 0.36, -0.4, 0.4].map(v => v / WS),
+  planter: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
+  waterbarrel: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
+  hitchrail: [-1.4, 1.4, -0.6, 0.6].map(v => v / WS),
 };
+// The station props (D19): small, human-sized things that block walking; their footprints carry prop: true.
+const BLD_PROPS = new Set(['freightpile', 'crates', 'baggagewagon', 'freightscale', 'planter', 'waterbarrel', 'hitchrail']);
 const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) => [k, e.map(v => v * WS)]));
 // Use spots in a building's local frame [x, z] (local +z faces the track): where a person stands to use
 // something inside. Just outside the walk grid's block (the footprint grown by 0.25u), on the platform.
@@ -7365,7 +7390,10 @@ const BLD_RECIPES = {
     b.add(box(4.3, floorTop + 0.05, 1.05 - z0), PAL.trim, 0, (floorTop - 0.05) / 2, (z0 + 1.05) / 2); // the booth's floor, 6 mm under the platform top
     b.add(box(4.2, 1.69, 1 + z0), PAL.wall, 0, 0.845, (z0 - 1) / 2);                              // the closed block (office, waiting room)
     b.shell(bldPrism(4.6, 2.6, 0.9), PAL.roof, 0, 1.7, 0);
-    b.shell(box(0.3, 0.6, 0.3), PAL.trim, 1.2, 2.45, -0.35);
+    // D19: a stovepipe (was a box chimney), with a collar on the roof and a rain cap.
+    b.shell(cyl(0.07, 0.07, 0.72), PAL.loco, 1.2, 2.6, -0.35);
+    b.shell(cyl(0.11, 0.11, 0.05), PAL.loco, 1.2, 2.37, -0.35);
+    b.shell(new THREE.ConeGeometry(0.15, 0.1, SEG), PAL.loco, 1.2, 3.02, -0.35);
     for (const x of [-2.07, 2.07]) b.shell(box(0.06, 1.69, zw - z0), PAL.wall, x, 0.845, (z0 + zw) / 2); // the strip's end walls
     // The front wall, with the door and ticket window cut out of it.
     const [d0, d1] = B.door, [w0, w1] = B.win, [wy0, wy1] = B.winY, H = 1.7;
@@ -7397,6 +7425,7 @@ const BLD_RECIPES = {
     b.win(bay - 0.6, 1.05, 1.2, 0.22, 0.5, 'x', -1); b.win(bay + 0.6, 1.05, 1.2, 0.22, 0.5, 'x');
     for (const x of [-1.2, 0.3, 1.4]) b.win(x, 1.05, -1.0, 0.55, 0.6, 'z', -1);
     b.win(2.1, 1.05, -0.35, 0.55, 0.6, 'x'); b.win(-2.1, 1.05, -0.35, 0.55, 0.6, 'x', -1);
+    bldDepotDetail(b);
     return BLD_EXTENTS.depot;
   },
   // Telegraph shanty, with the pole and its crossarm beside it.
@@ -7426,8 +7455,10 @@ const BLD_RECIPES = {
   // red siding and a grey tin roof.
   // D15: the dock keeps the platform's step height; the shed on it grows.
   freightshed(b) {
-    const top = BLD_PLATFORM_TOP, d = b.on(top);
-    b.raw().add(box(4.6 * WS, top + 0.05, 3.4 * WS), BLD_COL.plat, 0, (top - 0.05) / 2, 0);
+    const top = BLD_PLATFORM_TOP, d = b.on(top), r = b.raw(), zf = 0.72 * WS;
+    // D19: the dock in front of the doors is a plank deck like the platforms; under the shed it stays a plain base.
+    r.add(box(4.6 * WS, top + 0.05, zf + 1.7 * WS), BLD_COL.plat, 0, (top - 0.05) / 2, (zf - 1.7 * WS) / 2);
+    bldDeck(r, -2.3 * WS, 2.3 * WS, zf, 1.7 * WS, top, bldSeedOf(b.at), { ends: true, back: false });
     d.add(box(4.4, 1.5, 2.4), PAL.red, 0, 0.74, -0.5);
     d.add(bldPrism(4.7, 2.9, 0.7), BLD_COL.tin, 0, 1.49, -0.5);
     for (const x of [-1.6, -0.55, 0.55, 1.6]) d.add(box(0.85, 1.1, 0.05), PAL.trim, x, 0.55, 0.725);
@@ -7468,6 +7499,76 @@ const BLD_RECIPES = {
     b.add(box(0.28, 0.6, 0.28), PAL.trim, 0.7, 1.8, -0.3);
     return BLD_EXTENTS.cabin;
   },
+  // D19 station props, drawn in true units (b.raw()), standing at the layout's y (a platform's deck or the ground).
+  freightpile(b) {   // crates, barrels, sacks and milk cans waiting for a train
+    const r = b.raw();
+    bldCrate(r, -0.75, 0, -0.25, 0.5, 0.05); bldCrate(r, -0.2, 0, -0.3, 0.48, -0.08); bldCrate(r, -0.5, 0.5, -0.28, 0.4, 0.25);
+    for (const [x, z] of [[0.38, -0.3], [0.86, -0.26]]) bldBarrel(r, x, 0, z);
+    for (const [x, y, z, ry] of [[-0.85, 0, 0.3, 0.2], [-0.4, 0, 0.32, -0.1], [-0.62, 0.17, 0.3, 0.4]]) bldSack(r, x, y, z, ry);
+    for (const [x, z] of [[0.15, 0.3], [0.42, 0.36], [0.68, 0.3], [0.93, 0.36]]) bldMilkCan(r, x, 0, z);
+    return BLD_EXTENTS.freightpile;
+  },
+  crates(b) {        // Willow Ford's smaller pile
+    const r = b.raw();
+    bldCrate(r, -0.45, 0, -0.1, 0.5, 0.1); bldCrate(r, -0.42, 0.5, -0.12, 0.38, -0.3); bldSack(r, 0.12, 0, 0.12, 0.3);
+    for (const [x, z] of [[0.45, -0.18], [0.66, 0.1]]) bldMilkCan(r, x, 0, z);
+    return BLD_EXTENTS.crates;
+  },
+  baggagewagon(b) {  // a four-wheeled baggage wagon with iron-tyred wheels, a trunk and a valise on it
+    const r = b.raw(), C = BLD_PROP_COL;
+    r.add(box(1.5, 0.06, 0.78), C.wood, -0.15, 0.46, 0);
+    for (const z of [-0.375, 0.375]) r.add(box(1.5, 0.12, 0.035), C.crateDark, -0.15, 0.55, z);
+    r.add(box(0.035, 0.12, 0.78), C.crateDark, -0.88, 0.55, 0);
+    for (const x of [-0.6, 0.3]) {
+      r.add(box(0.1, 0.18, 0.7), C.crateDark, x, 0.34, 0);
+      r.add(box(0.04, 0.04, 0.9), C.iron, x, 0.2, 0);
+      for (const z of [-0.43, 0.43]) { r.add(cyl(0.2, 0.2, 0.035, 8), C.iron, x, 0.2, z, Math.PI / 2); r.add(cyl(0.165, 0.165, 0.05, 8), C.wood, x, 0.2, z, Math.PI / 2); }
+    }
+    r.add(box(0.5, 0.035, 0.035), C.iron, 0.78, 0.62, 0, 0, 0, 0.7);
+    r.add(box(0.035, 0.035, 0.4), C.iron, 0.95, 0.78, 0);
+    r.add(box(0.6, 0.34, 0.42), '#5d3f28', -0.5, 0.66, -0.05);
+    for (const x of [-0.68, -0.32]) r.add(box(0.04, 0.35, 0.44), C.iron, x, 0.66, -0.05);
+    r.add(box(0.42, 0.22, 0.3), '#3f3326', 0.12, 0.6, 0.1, 0, 0.15);
+    return BLD_EXTENTS.baggagewagon;
+  },
+  freightscale(b) {  // a platform scale: a low weighing deck and an iron column with its beam and weight
+    const r = b.raw(), C = BLD_PROP_COL;
+    r.add(box(0.6, 0.12, 0.7), C.iron, 0, 0.06, 0.04);
+    r.add(box(0.54, 0.03, 0.56), C.wood, 0, 0.135, 0.08);
+    r.add(box(0.07, 0.95, 0.07), C.iron, 0, 0.55, -0.32);
+    r.add(box(0.46, 0.035, 0.03), PAL.brass, 0.12, 1.0, -0.32);
+    r.add(box(0.05, 0.07, 0.05), C.iron, 0.26, 0.99, -0.32);
+    r.add(box(0.12, 0.05, 0.08), C.iron, 0, 1.05, -0.32);
+    return BLD_EXTENTS.freightscale;
+  },
+  planter(b) {       // a wooden planter with a shrub and a few flowers
+    const r = b.raw(), C = BLD_PROP_COL;
+    r.add(box(0.5, 0.36, 0.5), PAL.trim, 0, 0.18, 0);
+    r.add(box(0.56, 0.05, 0.56), C.crateDark, 0, 0.385, 0);
+    r.add(ico(0.26, 0), C.leaf, 0, 0.6, 0);
+    r.add(ico(0.16, 0), C.leaf2, 0.08, 0.8, 0.05);
+    for (const [x, z, col] of [[0.18, 0.12, '#b8403a'], [-0.15, 0.17, '#d8b23c'], [0.05, -0.2, '#b8403a']]) r.add(box(0.06, 0.06, 0.06), col, x, 0.72, z);
+    return BLD_EXTENTS.planter;
+  },
+  waterbarrel(b) {   // a drinking-water barrel on a stand, with its lid and a dipper
+    const r = b.raw(), C = BLD_PROP_COL;
+    r.add(box(0.5, 0.18, 0.5), C.crateDark, 0, 0.09, 0);
+    bldBarrel(r, 0, 0.18, 0);
+    r.add(cyl(0.19, 0.19, 0.03, 8), C.wood, 0, 0.75, 0);
+    r.add(box(0.3, 0.02, 0.02), C.iron, 0.05, 0.79, 0.04, 0, 0.4, 0.15);
+    r.add(cyl(0.05, 0.04, 0.05, 6), C.can, -0.08, 0.79, 0.1);
+    return BLD_EXTENTS.waterbarrel;
+  },
+  hitchrail(b) {     // a hitching rail and a horse trough, on the town side
+    const r = b.raw(), C = BLD_PROP_COL;
+    for (const x of [-1.15, 1.15]) r.add(box(0.12, 0.95, 0.12), PAL.trim, x, 0.475, 0.3);
+    r.add(box(2.6, 0.09, 0.09), PAL.trim, 0, 0.85, 0.3);
+    r.add(box(1.5, 0.36, 0.48), C.wood, 0, 0.18, -0.25);
+    for (const z of [-0.465, -0.035]) r.add(box(1.5, 0.06, 0.05), C.crateDark, 0, 0.39, z);
+    for (const x of [-0.725, 0.725]) r.add(box(0.05, 0.06, 0.48), C.crateDark, x, 0.39, -0.25);
+    r.add(box(1.4, 0.02, 0.38), C.water, 0, 0.37, -0.25);
+    return BLD_EXTENTS.hitchrail;
+  },
   // Lamp post (style test page): iron post, glowing lamp, cone cap.
   lamp(b) {
     b.add(cyl(0.05, 0.07, 1.6), PAL.loco, 0, 0.8, 0);
@@ -7477,14 +7578,107 @@ const BLD_RECIPES = {
   },
 };
 function bldKind(id) { return id.replace(/\d+$/, ''); }
+// ---- Station props and the depot's detail (D19) ----
+const BLD_PROP_COL = { crate: '#8d6b45', crateDark: '#5e4329', barrel: '#7a5634', hoop: '#3a3633', sack: '#cdbb92', can: '#a3a39b',
+  iron: '#3a3836', wood: '#8a6a48', leaf: '#4b6e2e', leaf2: '#5d8236', water: '#5f7a86', batten: '#9c7049',
+  paper: ['#ece2c8', '#e8d9a8', '#d9d2c0', '#f1e9cf'] };
+// Small pieces in true units on a raw placer, standing at height y.
+function bldCrate(r, x, y, z, s, ry) {
+  const C = BLD_PROP_COL;
+  r.add(box(s, s, s), C.crate, x, y + s / 2, z, 0, ry);
+  r.add(box(s + 0.02, 0.05, s + 0.02), C.crateDark, x, y + s / 2, z, 0, ry);
+  r.add(box(s + 0.02, 0.04, s + 0.02), C.crateDark, x, y + s - 0.04, z, 0, ry);
+}
+function bldBarrel(r, x, y, z) {
+  const C = BLD_PROP_COL;
+  r.add(cyl(0.2, 0.2, 0.55, 8), C.barrel, x, y + 0.275, z);
+  for (const h of [0.1, 0.45]) r.add(cyl(0.21, 0.21, 0.04, 8), C.hoop, x, y + h, z);
+}
+function bldSack(r, x, y, z, ry) { r.add(ico(0.2, 0).scale(1.2, 0.6, 0.85), BLD_PROP_COL.sack, x, y + 0.11, z, 0, ry); }
+function bldMilkCan(r, x, y, z) {
+  const C = BLD_PROP_COL;
+  r.add(cyl(0.1, 0.11, 0.34, 7), C.can, x, y + 0.17, z);
+  r.add(cyl(0.055, 0.1, 0.07, 7), C.can, x, y + 0.375, z);
+  r.add(cyl(0.07, 0.07, 0.03, 7), C.iron, x, y + 0.425, z);
+}
+// The depot's period detail (D19), for both depots: board-and-batten siding, corner boards, window sills and heads,
+// brackets under the eaves, a name board on each gable, a notice board with paper bills on the end wall by the door,
+// and a wood box under the end window by the stove. Parts on the shell (the roof, the front wall, the booth strip's
+// end walls) go to b.shell, so they fade with it while the player is in the booth; the rest go to the kit.
+const BLD_STATION_NAMES = { depot: 'HUB', wfdepot: 'WILLOW FORD' };
+// A 3 x 5 block font for the gable boards (rows from the top; the letters the station names need, and a few more).
+const BLD_FONT = { A: ['111', '101', '111', '101', '101'], B: ['110', '101', '110', '101', '110'], D: ['110', '101', '101', '101', '110'],
+  E: ['111', '100', '110', '100', '111'], F: ['111', '100', '110', '100', '100'], H: ['101', '101', '111', '101', '101'],
+  I: ['111', '010', '010', '010', '111'], L: ['100', '100', '100', '100', '111'], O: ['111', '101', '101', '101', '111'],
+  P: ['110', '101', '110', '100', '100'], R: ['110', '101', '110', '101', '101'], T: ['111', '010', '010', '010', '010'],
+  U: ['101', '101', '101', '101', '111'], W: ['101', '101', '101', '111', '101'] };
+// Letters as flat dark quads (2 triangles a piece; a letter's pixels joined in runs down its columns or along its rows,
+// whichever needs fewer) on the shell, facing out along x (sx), centred at (x, yc, 0), px the pixel size (M1 units).
+function bldSignText(b, text, sx, x, yc, px) {
+  const cols = text.length * 4 - 1;
+  const put = (c0, r0, wc, hr) => b.shell(new THREE.PlaneGeometry(wc * px, hr * px).rotateY(sx * Math.PI / 2), PAL.loco,
+    x, yc + (2.5 - r0 - hr / 2) * px, -sx * (c0 + wc / 2 - cols / 2) * px);   // read left to right from outside
+  [...text].forEach((ch, k) => {
+    const g = BLD_FONT[ch];
+    if (!g) return;
+    const colRuns = [], rowRuns = [];
+    for (let c = 0; c < 3; c++) for (let r = 0; r < 5;) { if (g[r][c] !== '1') { r++; continue; } let e = r; while (e < 5 && g[e][c] === '1') e++; colRuns.push([c, r, 1, e - r]); r = e; }
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 3;) { if (g[r][c] !== '1') { c++; continue; } let e = c; while (e < 3 && g[r][e] === '1') e++; rowRuns.push([c, r, e - c, 1]); c = e; }
+    for (const [c, r, wc, hr] of (colRuns.length <= rowRuns.length ? colRuns : rowRuns)) put(k * 4 + c, r, wc, hr);
+  });
+}
+function bldDepotDetail(b) {
+  const B = BLD_BOOTH, C = BLD_PROP_COL, H0 = 0.25, H1 = 1.69, hb = H1 - H0, yb = (H0 + H1) / 2;
+  for (let i = 0; i <= 13; i++) {                                   // battens on the back wall, between its windows
+    const x = -1.95 + i * 0.3;
+    if (![-1.2, 0.3, 1.4].some(w => Math.abs(x - w) < 0.4)) b.add(box(0.035, hb, 0.025), C.batten, x, yb, -1.0125);
+  }
+  for (const sx of [-1, 1]) for (let i = 0; i < 6; i++) {           // and on the end walls (the strip's part fades)
+    const z = -0.85 + i * 0.3;
+    if (Math.abs(z + 0.35) < 0.4) continue;                         // the end window
+    (z > B.z0 ? b.shell : b.add)(box(0.025, hb, 0.035), C.batten, sx * 2.1125, yb, z);
+  }
+  for (const sx of [-1, 1]) {                                       // corner boards
+    b.add(box(0.08, hb, 0.08), PAL.trim, sx * 2.1, yb, -1.0);
+    b.shell(box(0.08, hb, 0.08), PAL.trim, sx * 2.1, yb, B.wall - 0.03);
+  }
+  // Sills and heads on the back and end windows (glass 1.05 high in the middle, 0.6 tall).
+  for (const x of [-1.2, 0.3, 1.4]) { b.add(box(0.75, 0.04, 0.08), PAL.trim, x, 0.72, -1.04); b.add(box(0.71, 0.05, 0.05), PAL.trim, x, 1.4, -1.025); }
+  for (const sx of [-1, 1]) { b.add(box(0.08, 0.04, 0.75), PAL.trim, sx * 2.14, 0.72, -0.35); b.add(box(0.05, 0.05, 0.71), PAL.trim, sx * 2.125, 1.4, -0.35); }
+  // Brackets under the eaves: a strut from the wall up to the roof's edge, and a short upright on the wall.
+  const bracket = (x, s) => { b.shell(box(0.05, 0.05, 0.4), PAL.trim, x, 1.56, s * 1.15, -s * 0.675); b.shell(box(0.05, 0.16, 0.04), PAL.trim, x, 1.5, s * 1.02); };
+  for (const x of [-1.8, -0.6, 0.6, 1.8]) bracket(x, -1);
+  for (const x of [0.58, 1.245, 2.06]) bracket(x, 1);               // the front: clear of the bay, the board and the door's sign
+  // The station's name on each gable: a cream board in a frame, lettered in a 3 x 5 block font.
+  const name = BLD_STATION_NAMES[b.at.id] || 'DEPOT', px = Math.min(0.028, 0.8 / (name.length * 4 - 1));
+  for (const sx of [-1, 1]) {
+    b.shell(box(0.03, 0.26, 0.98), PAL.trim, sx * 2.315, 2.02, 0);
+    b.shell(box(0.03, 0.2, 0.9), BLD_COL.canvas, sx * 2.33, 2.02, 0);
+    bldSignText(b, name, sx, sx * 2.347, 2.02, px);
+  }
+  // True-unit pieces on the east end wall (x = 2.1 M1, plus the battens): the notice board by the door and the wood box.
+  const r = b.raw(), xw = 2.125 * WS;
+  r.shell(box(0.03, 0.6, 0.72), PAL.trim, xw + 0.02, 0.98, 0.95);
+  r.shell(box(0.02, 0.52, 0.64), C.wood, xw + 0.04, 0.98, 0.95);
+  r.shell(box(0.1, 0.03, 0.8), PAL.trim, xw + 0.06, 1.3, 0.95);
+  for (const [y, z, h, w, i] of [[1.08, 0.75, 0.22, 0.18, 0], [1.1, 1.0, 0.18, 0.2, 1], [0.84, 0.86, 0.2, 0.24, 2], [0.86, 1.14, 0.24, 0.16, 3]])
+    r.shell(box(0.01, h, w), C.paper[i], xw + 0.055, y, z);
+  const xb = 2.15 * WS + 0.23;
+  r.add(box(0.42, 0.38, 0.8), C.crateDark, xb, 0.19, -1.2);
+  for (const dx of [-0.12, 0, 0.12]) r.add(cyl(0.065, 0.065, 0.74, 6), PAL.trunk, xb + dx, 0.44, -1.2, Math.PI / 2);
+}
 // A platform slab of plan ext (M1 units, local +z the track side), with a bench (human-sized, D15) facing the track
 // 0.65 M1 units in from the back edge at x = benchX, and optionally a canopy over the middle 10u along the track-side
 // edge: the canopy stops 0.05 short of that edge and is 1.75 deep, on 8 posts, all grown by WS. The slab is grown in plan
 // but keeps its step height (BLD_PLATFORM_TOP). The canopy roof goes to the placer's roof kit (its own mesh, which
 // turns see-through near the player: bldRoofFade); the posts stay in the main mesh.
+// D19 ("The platform should be made of planks"): the slab is a plank deck (bldDeck) with plank steps down at both ends
+// (bldSteps), on the track-side half of each end, where the crossings come.
 function bldPlatform(b, ext, benchX, canopy) {
-  const [x0, x1, z0, z1] = ext, len = x1 - x0, dep = z1 - z0, top = BLD_PLATFORM_TOP, r = b.raw();
-  r.add(box(len * WS, top + 0.05, dep * WS), BLD_COL.plat, (x0 + x1) / 2 * WS, (top - 0.05) / 2, (z0 + z1) / 2 * WS);
+  const [x0, x1, z0, z1] = ext, top = BLD_PLATFORM_TOP, r = b.raw(), X0 = x0 * WS, X1 = x1 * WS, Z1 = z1 * WS;
+  bldDeck(r, X0, X1, z0 * WS, Z1, top, bldSeedOf(b.at), { ends: true, back: true });
+  const sw = bldStepWidth(ext);
+  for (const s of [-1, 1]) bldSteps(r, s < 0 ? X0 : X1, s, Z1 - sw, Z1, top);
   if (canopy) {
     const cz = z1 - 0.05 - 1.75 / 2;
     b.roof(box(10, 0.12, 1.75), PAL.roof, 0, 2.05, cz);
@@ -7500,6 +7694,95 @@ function bldBench(r, bx, bz, top) {
   r.add(box(1.2, 0.3, 0.05), PAL.trim, bx, top + 0.65, bz - 0.16);
   for (const x of [-0.5, 0.5]) r.add(box(0.07, 0.37, 0.3), PAL.loco, bx + x, top + 0.18, bz);
 }
+// ---- Plank decks (D19) ----
+// A deck of boards running lengthwise (local x), each a weathered tone picked by a seeded random number, butt joints
+// staggered, with thin dark gaps between them where the under-structure shows (its top BLD_PLANK.SINK below the
+// boards, so no two surfaces lie on each other). A heavier edge timber (sill) runs along the track side (+z), the ends
+// and the back, all with their tops at the deck top; under the track-side and end sills short posts stand in front of
+// the set-back under-structure. The boards are flat quads (2 triangles each). All in true units on a raw placer r,
+// over the local rectangle [X0, X1] x [Z0, Z1]. o.ends: sills and posts at the ends; o.back: a sill at the back.
+const BLD_PLANK = { W: 0.22, GAP: 0.025, SINK: 0.035, SILL: 0.34, SILL_H: 0.14, BACK: 0.2, MIN: 2.0, MAX: 4.4, POST: 1.6, POST_W: 0.14,
+  TONES: ['#a39684', '#998a74', '#ad9f8a', '#928370', '#a8987f', '#8e806c'], UNDER: '#3d3126', TIMBER: '#6b5843',
+  STEP_RUN: 0.7, STEP_TREAD: 0.3, STEP_W: 2.4 };
+const bldSeedOf = at => (CFG.SEED * 7919 + Math.round(at.x * 100) * 31 + Math.round(at.z * 100) * 17) | 0;
+function bldDeck(r, X0, X1, Z0, Z1, top, seed, o) {
+  const P = BLD_PLANK, rng = rngSeed(seed), back = o.back ? P.BACK : 0, eW = o.ends ? P.SILL : 0, under = top - P.SINK;
+  const ix = o.ends ? 0.12 : 0, izf = 0.22, izb = o.back ? 0.1 : 0;
+  r.add(box(X1 - X0 - 2 * ix, under + 0.05, Z1 - Z0 - izf - izb), P.UNDER, (X0 + X1) / 2, (under - 0.05) / 2, (Z0 + izb + Z1 - izf) / 2);
+  const sh = P.SILL_H, sy = top - sh / 2, ph = top - sh, pw = P.POST_W;
+  r.add(box(X1 - X0, sh, P.SILL), P.TIMBER, (X0 + X1) / 2, sy, Z1 - P.SILL / 2);               // the track-side sill
+  if (o.back) r.add(box(X1 - X0 - 2 * eW, sh, P.BACK), P.TIMBER, (X0 + X1) / 2, sy, Z0 + P.BACK / 2);
+  const nx = Math.max(2, Math.round((X1 - X0) / P.POST) + 1);
+  for (let i = 0; i < nx; i++) r.add(box(pw, ph, pw), P.TIMBER, X0 + 0.02 + pw / 2 + i * (X1 - X0 - 0.04 - pw) / (nx - 1), ph / 2, Z1 - 0.02 - pw / 2);
+  if (o.ends) for (const s of [-1, 1]) {
+    const xe = s < 0 ? X0 : X1;
+    r.add(box(P.SILL, sh, Z1 - P.SILL - Z0), P.TIMBER, xe - s * P.SILL / 2, sy, (Z0 + Z1 - P.SILL) / 2);
+    const nz = Math.max(2, Math.round((Z1 - Z0) / P.POST) + 1);
+    for (let i = 0; i < nz - 1; i++) r.add(box(pw, ph, pw), P.TIMBER, xe - s * (0.02 + pw / 2), ph / 2, Z0 + 0.02 + pw / 2 + i * (Z1 - Z0 - 0.04 - pw) / (nz - 1));
+  }
+  // The boards, row by row from the back to the track-side sill.
+  const px0 = X0 + eW + P.GAP, px1 = X1 - eW - P.GAP, pz0 = Z0 + back + P.GAP, pz1 = Z1 - P.SILL - P.GAP;
+  const rows = Math.max(1, Math.round((pz1 - pz0 + P.GAP) / (P.W + P.GAP))), pitch = (pz1 - pz0 + P.GAP) / rows;
+  let n = 0;
+  for (let i = 0; i < rows; i++) {
+    const z = pz0 + i * pitch + (pitch - P.GAP) / 2;
+    let x = px0, first = true;
+    while (x < px1 - 1e-6) {
+      let len = first ? 0.6 + rngNext(rng) * (P.MAX - 0.6) : P.MIN + rngNext(rng) * (P.MAX - P.MIN);
+      first = false;
+      if (px1 - (x + len + P.GAP) < P.MIN * 0.6) len = px1 - x;
+      r.add(new THREE.PlaneGeometry(len, pitch - P.GAP).rotateX(-Math.PI / 2), P.TONES[Math.floor(rngNext(rng) * P.TONES.length)], x + len / 2, top, z);
+      x += len + P.GAP; n++;
+    }
+  }
+  bldDeck.planks = (bldDeck.planks || 0) + n; // counted for the checks (window.__railhead.buildings.planks)
+  return n;
+}
+// The width of a platform's end steps (true units): on the track-side half only, so the middle of each end (where
+// travellers leave the platform) keeps its short step.
+const bldStepWidth = ext => Math.min(BLD_PLANK.STEP_W, (ext[3] - ext[2]) * WS / 2 - 0.5);
+// Plank steps down from a deck's end at local x = xe, going out along s (+1 or -1), across [za, zb]: two treads, each a
+// timber block with two boards on it, below the deck top in thirds. The feet follow a straight slope over them (bldStepY).
+function bldSteps(r, xe, s, za, zb, top) {
+  const P = BLD_PLANK, w = zb - za, zc = (za + zb) / 2, t = P.STEP_TREAD, bw = (t - P.GAP) / 2;
+  for (let k = 1; k <= 2; k++) {
+    const h = top * (1 - k / 3), a = (k - 0.5) * t + 0.005;
+    r.add(box(t, h + 0.02 - 0.015, w), P.TIMBER, xe + s * a, (h - 0.015 - 0.02) / 2, zc);
+    for (const j of [0, 1]) r.add(new THREE.PlaneGeometry(bw, w - 0.04).rotateX(-Math.PI / 2), P.TONES[(k * 2 + j) % P.TONES.length],
+      xe + s * ((k - 1) * t + 0.005 + bw / 2 + j * (bw + P.GAP)), h, zc);
+  }
+}
+// The platforms' end steps as world data for the feet: { x, z (the top edge's middle), ux, uz (out, down the steps),
+// vx, vz (across), run, half }. Plain data, worked out from the layout.
+const bldStepCache = { layout: null, list: null };
+function bldStepList() {
+  if (bldStepCache.layout === BLD_LAYOUT) return bldStepCache.list;
+  const out = [];
+  for (const at of BLD_LAYOUT) {
+    const k = bldKindOf(at);
+    if (!bldIsPlatform(k)) continue;
+    const e = BLD_EXT_M1[k], sw = bldStepWidth(e), c = Math.cos(at.yaw || 0), sn = Math.sin(at.yaw || 0), lz = e[3] * WS - sw / 2;
+    for (const s of [-1, 1]) {
+      const lx = (s < 0 ? e[0] : e[1]) * WS;
+      out.push({ x: at.x + lx * c + lz * sn, z: at.z - lx * sn + lz * c, ux: s * c, uz: -s * sn, vx: sn, vz: c, run: BLD_PLANK.STEP_RUN, half: sw / 2 });
+    }
+  }
+  bldStepCache.layout = BLD_LAYOUT; bldStepCache.list = out;
+  return out;
+}
+// The feet's height on the end steps (a straight slope from the deck top down to the ground over the run, eased off at
+// the sides like a deck's edge), or -Infinity off them.
+function bldStepY(x, z) {
+  let best = -Infinity;
+  for (const s of bldStepList()) {
+    const dx = x - s.x, dz = z - s.z, a = dx * s.ux + dz * s.uz, b = Math.abs(dx * s.vx + dz * s.vz);
+    if (a < -BLD_STEP_R || a > s.run || b > s.half + BLD_STEP_R) continue;   // (from just inside the deck's edge, where its own step eases)
+    let y = BLD_PLATFORM_TOP * (1 - Math.max(0, a) / s.run);
+    if (b > s.half - BLD_STEP_R) { const t = (s.half + BLD_STEP_R - b) / (2 * BLD_STEP_R); y *= t * t * (3 - 2 * t); }
+    if (y > best) best = y;
+  }
+  return best;
+}
 
 // Plan rectangles {id, kind, x, z, w, d, yaw, flush}, for the player's walk grid and so other code
 // (terrain, the build tool, the crowd) can keep clear. Pure data: no three.js. flush marks the ones
@@ -7511,7 +7794,9 @@ function buildingFootprints() {
     const kind = bldKindOf(at), ext = BLD_EXTENTS[kind];
     const rect = (id, [x0, x1, z0, z1], flush) => {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, c = Math.cos(at.yaw), s = Math.sin(at.yaw);
-      out.push({ id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush });
+      const f = { id, kind, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: x1 - x0, d: z1 - z0, yaw: at.yaw, flush };
+      if (BLD_PROPS.has(kind)) f.prop = true;
+      out.push(f);
     };
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
     else rect(at.id, ext, bldIsPlatform(kind));
@@ -7541,10 +7826,11 @@ function bldDeckInside(x, z) {
 }
 function bldStandY(x, z) {
   const ground = terrainHeight(x, z), d = bldDeckInside(x, z);
-  if (d <= -BLD_STEP_R) return ground;
   if (d >= BLD_STEP_R) return BLD_PLATFORM_TOP;
-  const t = (d + BLD_STEP_R) / (2 * BLD_STEP_R), k = t * t * (3 - 2 * t);
-  return ground + (BLD_PLATFORM_TOP - ground) * k;
+  let y = ground;
+  if (d > -BLD_STEP_R) { const t = (d + BLD_STEP_R) / (2 * BLD_STEP_R), k = t * t * (3 - 2 * t); y = ground + (BLD_PLATFORM_TOP - ground) * k; }
+  const s = bldStepY(x, z);   // D19: the plank steps at the platforms' ends
+  return s > y ? s : y;
 }
 // The hub boundary (design-doc 15), drawn subtly: a pale dashed line 1 cm above the ground (below the 3 cm
 // ballast where it crosses track) with a short survey stake at each corner and every 16u. In the merged mesh.
@@ -7623,12 +7909,16 @@ function bldShellFade(x, z, dt) {
   const M = R.mesh.material;
   M.opacity = R.opacity; M.depthWrite = R.opacity > 0.99;
 }
+let bldPlankCount = {};   // boards drawn per building id (D19), for the checks
 function buildBuildings(G) {
   const kit = new Kit(), glow = new Kit(), roof = new Kit(), shell = new Kit();
+  bldDeck.planks = 0; bldPlankCount = {};
   BLD_LAYOUT.forEach((at, i) => {
     const kind = bldKindOf(at);
     const vary = kind === 'lamp' ? null : bldVary(rngSeed(CFG.SEED * 31 + 101 * (i + 1)));
+    const p0 = bldDeck.planks;
     BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary, undefined, 0, roof, shell));
+    if (bldDeck.planks > p0) bldPlankCount[at.id] = bldDeck.planks - p0;
   });
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
@@ -7647,7 +7937,8 @@ function buildBuildings(G) {
   }
   boardBuild(G); // the painted departure boards on the depots (section "departure boards")
   townBuildingsDraw(G); // the towns' businesses and homes: their own meshes per town, so a town out of view is skipped
-  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], roof: bldRoof, shell: bldShell, booths: buildingBooths, shellWantFaded: bldShellWantFaded, roofRects: () => bldRoof.rects, roofWantFaded: bldRoofWantFaded, footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
+  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], roof: bldRoof, shell: bldShell, booths: buildingBooths, shellWantFaded: bldShellWantFaded, roofRects: () => bldRoof.rects, roofWantFaded: bldRoofWantFaded, footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP,
+    planks: bldPlankCount, steps: bldStepList, stepY: bldStepY, triangles: { kit: m.geometry.attributes.position.count / 3, shell: shell.p.length / 9, glow: glow.p.length / 9 } };
 }
 
 // ---- Departure boards (D15, 2026-11-03: "Departure board: make it both") ----

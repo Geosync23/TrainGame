@@ -1,0 +1,289 @@
+<title>Railhead Fix Round Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column: what was built, screenshots, results, gaps, then question slips; a fixed save bar at the foot. */
+:root {
+  --paper: #f3f1ea; --slip: #fffdf7; --ink: #262420; --muted: #6c675c;
+  --rule: #d9d3c4; --brass: #8a6418; --brass-soft: #f1e4c4; --ok: #2f6b3a; --ok-soft: #dcebd9; --warn: #9a4a1c; --warn-soft: #f6e0d2;
+  --f-display: "Zilla Slab", Georgia, serif;
+  --f-body: "Source Sans 3", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-body); }
+.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 120px; display: grid; gap: 28px; }
+.wrap > section { display: grid; gap: 12px; min-width: 0; }
+h1 { font: 700 1.9rem/1.15 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 700 1.35rem/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 500 1.1rem/1.3 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--brass); }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 .75rem var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.play { display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 4px;
+  background: var(--brass); color: var(--slip); font-weight: 600; text-decoration: none; justify-self: start; }
+.shots { display: grid; grid-auto-flow: column; grid-auto-columns: min(70%, 240px); gap: 12px; overflow-x: auto;
+  padding-bottom: 8px; scroll-snap-type: x mandatory; }
+.shots figure { margin: 0; scroll-snap-align: start; display: grid; gap: 6px; align-content: start; }
+.shots img { width: 100%; border: 1px solid var(--rule); border-radius: 4px; display: block; background: var(--slip); }
+.shots figcaption { font-size: .85rem; color: var(--muted); }
+.slip { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.res { display: grid; gap: 12px; }
+.res-row { display: grid; gap: 4px; }
+.pill { font: 500 .72rem var(--f-mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 3px; padding: 1px 6px; justify-self: start; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.you { background: var(--brass-soft); color: var(--brass); }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; }
+td.n { text-align: right; white-space: nowrap; }
+.gap { border-left: 3px solid var(--warn); padding-left: 10px; }
+details.group { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; }
+details.group > summary { list-style: none; cursor: pointer; padding: 14px 16px; min-height: 48px; box-sizing: border-box;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font: 500 1.2rem var(--f-mono); color: var(--brass); }
+details.group[open] > summary::after { content: "\2212"; }
+.gcount { font: 500 .75rem var(--f-mono); color: var(--muted); white-space: nowrap; }
+.gbody { padding: 0 16px 16px; display: grid; gap: 14px; }
+.keepall { justify-self: start; background: transparent; color: var(--brass); border: 1px solid var(--brass); }
+.item { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.item p { font-size: .95rem; }
+.who { font: 500 .7rem var(--f-mono); color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule);
+  border-radius: 4px; cursor: pointer; font-size: .95rem; }
+.seg label:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.seg input { accent-color: var(--brass); width: 18px; height: 18px; margin: 0; }
+.opts { display: grid; gap: 8px; border: 0; margin: 0; padding: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px; min-height: 48px; box-sizing: border-box;
+  border: 1px solid var(--rule); border-radius: 4px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.opt input { margin-top: 4px; accent-color: var(--brass); width: 18px; height: 18px; flex: none; }
+.opt span { min-width: 0; }
+.tag { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--brass);
+  border: 1px solid var(--brass); border-radius: 3px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+label.note { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+textarea { font: 16px/1.4 var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 8px 10px; min-height: 44px; resize: vertical; box-sizing: border-box; width: 100%; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--slip); border-top: 1px solid var(--rule);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+.bar-in { max-width: 680px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#status { font: 500 .8rem var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+#status.ok { color: var(--ok); }
+button { font: 600 1rem var(--f-body); min-height: 48px; padding: 0 20px; border-radius: 4px; border: 0;
+  background: var(--brass); color: var(--slip); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:12px">
+    <span class="eyebrow">End of the M1 fix round</span>
+    <h1>Railhead fix round review</h1>
+    <p class="muted">Everything from your end-of-M1 review and your notes since is built. Please play it, then answer below. Your answers save on this page as you go.</p>
+    <a class="play" href="https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s" target="_blank" rel="noopener">Play the fix-round build</a>
+    <p class="muted" style="font-size:.85rem">Same link as before; your saved game carries on.</p>
+  </header>
+
+  <section>
+    <h2>What changed in this round</h2>
+    <ul class="plain">
+      <li><b>A bigger world.</b> Track, trains, buildings and distances are 1.6 times bigger around the people; the map is 640 by 320 units. You approved this size.</li>
+      <li><b>Wide plank platforms.</b> Both platforms are 9.6 units deep, made of weathered planks, with steps at the ends.</li>
+      <li><b>The platform roof turns see-through</b> when you are under it, near it, or behind it from the camera.</li>
+      <li><b>Feet on the floor.</b> You stand on platforms, the dock and the booth floor.</li>
+      <li><b>A calmer clock.</b> One game minute lasts 1 real second; a game day is 24 real minutes. The timetable still fits.</li>
+      <li><b>A new walk</b> for you and everyone else: feet stay planted, arms swing, the body bobs and leans.</li>
+      <li><b>Crossings.</b> Track is walked across only on plank crossings: at both ends of each platform, west of the freight shed, and at Willow Ford. You can build your own with the Build tool (tap a track; one tie bundle). Switches, couplings, wood and water work from either side.</li>
+      <li><b>The cutaway.</b> When you board, the combine opens: you in the baggage end, travellers seated, freight by the wall.</li>
+      <li><b>Departure boards</b> on both depot walls, showing the next 4 departures; tap one for the card.</li>
+      <li><b>The ticket booth.</b> You sell tickets from inside the depot, behind the window; the depot turns see-through while you are in it.</li>
+      <li><b>Station detail.</b> Trim, a stovepipe and name boards on the depots; a notice board, baggage wagon, freight scale, crates, barrels, milk cans, planters and a hitching rail.</li>
+      <li><b>Three small gaps fixed.</b> Materials at a building job can be picked back up; a switch beside a platform no longer cancels trains; items in the wrong bay show a warning mark.</li>
+    </ul>
+    <div class="shots" id="shots" aria-label="Screenshots, swipe sideways"></div>
+    <p class="muted" style="font-size:.85rem">Swipe the pictures sideways. They come from the checks at phone size.</p>
+  </section>
+
+  <section>
+    <h2>Test results</h2>
+    <div class="slip res">
+      <div class="res-row"><span class="pill ok">Passed</span><h3>All 36 checks</h3><p class="muted">Old saves convert and load, and the game gives the same result every time from the same start.</p></div>
+      <div class="res-row"><span class="pill ok">Passed</span><h3>The test player's week</h3><p class="muted">Every train within 2 minutes of time, none cancelled; all 82 ordered goods arrived; 117 tickets sold; the pressure evenings came in 0 to 11 minutes apart.</p></div>
+      <div class="res-row"><span class="pill ok">Under budget</span><h3>Phone speed</h3><p class="muted">The busiest scene (the hub zoomed fully out) uses 91 draw calls of the 100 budget.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Known gaps</h2>
+    <div class="slip" style="gap:10px">
+      <p class="gap"><b>The departure board</b> is fully readable from about 2.5x zoom; at the start zoom you see the header and times.</p>
+      <p class="gap"><b>The platform roof's shadow</b> still darkens the platform while the roof is see-through.</p>
+      <p class="gap"><b>Steps are quick:</b> about 6.5 steps a second, because the legs are short and the feet must not slide. The walking question below is about this.</p>
+      <p class="gap"><b>Close up, the B on the name board</b> can look a little like an E (the small block letters).</p>
+      <p class="gap"><b>A far-off spot across the line</b> with no crossing nearby can be hard to route to on foot; build a crossing there.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your answers, part 1: the choices made while building</h2>
+    <p>Pick <b>Keep</b>, <b>Change</b> (say how in the note) or <b>Not sure</b>. If a whole group is fine, use its Keep all button.</p>
+    <div id="groups" style="display:grid;gap:12px"></div>
+  </section>
+
+  <section>
+    <h2>Your answers, part 2: walking and what next</h2>
+    <div id="qs" style="display:grid;gap:16px"></div>
+  </section>
+</div>
+<div class="bar"><div class="bar-in"><span id="status">Connecting...</span><button id="save" type="button">Save answers</button></div></div>
+
+<script>
+const SHOTS = __SHOTS__;
+const GROUPS = [
+  { id: 'station', t: 'The station', items: [
+    ['platdepth', 'Both platforms are 9.6 units deep (two and a half times the scaled size), same length; the depots and the town moved back.'],
+    ['height', 'Platforms and the dock stay one step high, so you step up onto them.'],
+    ['roof', 'The platform roof fades to almost see-through when you are under it, within 3 units of it, or behind it from the camera; its shadow stays.'],
+    ['planks', 'Planks run along the platform in six weathered tones, with an edge timber, posts under the front, and two steps down at each end on the track side.'],
+    ['props', 'Props stand on the platform\'s back edge and the town side, never on the track side or in the way of the queue, the booth door or a crossing.'],
+    ['wfprops', 'Willow Ford gets the same booth and board, and lighter detail (a crate pile and a water barrel).'],
+  ]},
+  { id: 'tickets', t: 'Tickets and the departure board', items: [
+    ['booth', 'You go in by the depot door and sell from behind the window; travellers queue outside where you used to stand.'],
+    ['order', 'The depot front runs, west to east: the agent\'s bay, the departure board, the ticket window, the door (the door next to the window keeps trains on time).'],
+    ['seethrough', 'The depot\'s roof and front wall turn see-through while you are in the booth.'],
+    ['boardrows', 'The board lists the next 4 departures with On time, Late, Boarding, No engine or Cancelled; a cancelled run stays listed for 2 game hours.'],
+    ['boardtap', 'Tapping the board opens the card over it for 15 seconds or until your next tap.'],
+  ]},
+  { id: 'track', t: 'Crossings', items: [
+    ['where', 'Fixed crossings: both ends of each platform, one west of the freight shed across all three hub tracks, and at Willow Ford.'],
+    ['own', 'Your own crossing: in build mode tap a track (no drag), Stake it, bring one tie bundle, then set 10 planks (about 5.5 game minutes).'],
+    ['clear', 'New track plans must keep 2.6 units clear of a crossing.'],
+    ['blocked', 'A train standing on a crossing blocks it; you go round by another or wait.'],
+    ['hold', 'Press and hold aimed across the track turns into a walk routed by the nearest crossing.'],
+  ]},
+  { id: 'riding', t: 'Riding and the cutaway', items: [
+    ['endwall', 'The near end wall opens as well as the near side, so you can see the baggage end from every camera angle.'],
+    ['seats', 'Travellers fill the seats from the partition back; freight stands against the baggage-end wall.'],
+    ['sway', 'You stand in the baggage end with a small sway that grows with the train\'s speed.'],
+  ]},
+];
+const QS = [
+  { id: 'walk', q: 'The walk still has quick steps. What should change?', ctx: 'This is the same question as on the walking page; answer it in either place.',
+    o: [['both', 'Longer, calmer strides (about 4 steps a second, same speed) and the clock slowed a bit more (1.25 real seconds a game minute, a 30-minute day)', 1],
+        ['stride', 'Only the longer, calmer strides'],
+        ['clock', 'Only the clock slowed a bit more'],
+        ['fine', 'It looks fine now; leave it']] },
+  { id: 'feel', q: 'Having played it, is the fix round what you wanted?',
+    o: [['yes', 'Yes; small changes only (in my notes)', 1], ['mostly', 'Mostly, with changes I describe in my note'], ['notyet', 'Not yet; something important is still wrong (in my note)']] },
+  { id: 'next', q: 'What should come next?',
+    o: [['m2', 'Plan M2 (towns with real people), with a survey', 1], ['playtest', 'Playtest with five outside players first; make a short feedback page for them'], ['more', 'Another short fix round first (in my note)']] },
+  { id: 'else', q: 'Anything else?', o: [] },
+];
+const answers = {};
+const statusEl = document.getElementById('status'), saveBtn = document.getElementById('save');
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+const shotsEl = document.getElementById('shots');
+for (const s of SHOTS) { const f = el('figure'); const i = el('img'); i.src = s.src; i.alt = s.cap; i.loading = 'lazy'; f.append(i, el('figcaption', null, s.cap)); shotsEl.append(f); }
+
+const groupsEl = document.getElementById('groups');
+const CHOICES = [['keep', 'Keep'], ['change', 'Change'], ['unsure', 'Not sure']];
+function noteBox(key, label) {
+  const nl = el('label', 'note', label); const ta = el('textarea'); ta.id = 'note-' + key; ta.rows = 1;
+  ta.addEventListener('input', () => setA(key, 'note', ta.value)); nl.append(ta); return nl;
+}
+for (const G of GROUPS) {
+  const d = el('details', 'group'); d.id = 'grp-' + G.id;
+  const sm = el('summary'); const st = el('h3', null, G.t); const cnt = el('span', 'gcount'); cnt.id = 'cnt-' + G.id;
+  sm.append(st, cnt); d.append(sm);
+  const body = el('div', 'gbody');
+  const ka = el('button', 'keepall', 'Keep all in this group'); ka.type = 'button';
+  ka.addEventListener('click', () => { for (const [k] of G.items) { const key = G.id + '.' + k; if (!(answers[key] || {}).choice) setA(key, 'choice', 'keep'); } render(); });
+  body.append(ka);
+  for (const [k, text] of G.items) {
+    const key = G.id + '.' + k;
+    const it = el('div', 'item'); it.append(el('p', null, text));
+    const fs = el('fieldset', 'seg'); fs.setAttribute('aria-label', text);
+    for (const [v, lab] of CHOICES) {
+      const l = el('label'); const r = el('input'); r.type = 'radio'; r.name = key; r.value = v; r.id = key + '-' + v;
+      r.addEventListener('change', () => { setA(key, 'choice', v); render(); }); l.append(r, document.createTextNode(lab)); fs.append(l);
+    }
+    it.append(fs, noteBox(key, 'Note (optional)')); body.append(it);
+  }
+  d.append(body); groupsEl.append(d);
+}
+const qsEl = document.getElementById('qs');
+QS.forEach((Q, i) => {
+  const s = el('section', 'slip'); s.append(el('div', 'eyebrow', 'Question ' + (i + 1)));
+  const h = el('h3', null, Q.q); h.id = 'q-' + Q.id; s.append(h);
+  if (Q.ctx) s.append(el('p', 'muted', Q.ctx));
+  if (Q.o.length) {
+    const fs = el('fieldset', 'opts'); fs.setAttribute('aria-labelledby', h.id);
+    for (const [v, label, sug] of Q.o) {
+      const l = el('label', 'opt'); const r = el('input'); r.type = 'radio'; r.name = 'q.' + Q.id; r.value = v; r.id = 'q.' + Q.id + '-' + v;
+      r.addEventListener('change', () => setA('q.' + Q.id, 'choice', v));
+      const t = el('span', null, label); if (sug) t.append(el('span', 'tag', 'Suggested'));
+      l.append(r, t); fs.append(l);
+    }
+    s.append(fs);
+  }
+  s.append(noteBox('q.' + Q.id, Q.o.length ? 'Note (optional)' : 'Your answer')); qsEl.append(s);
+});
+function render() {
+  for (const G of GROUPS) {
+    let n = 0;
+    for (const [k] of G.items) {
+      const key = G.id + '.' + k, a = answers[key] || {};
+      if (a.choice) n++;
+      for (const [v] of CHOICES) document.getElementById(key + '-' + v).checked = a.choice === v;
+      const ta = document.getElementById('note-' + key); if (document.activeElement !== ta) ta.value = a.note || '';
+    }
+    document.getElementById('cnt-' + G.id).textContent = n + ' of ' + G.items.length + ' answered';
+  }
+  for (const Q of QS) {
+    const key = 'q.' + Q.id, a = answers[key] || {};
+    for (const [v] of Q.o) document.getElementById(key + '-' + v).checked = a.choice === v;
+    const ta = document.getElementById('note-' + key); if (document.activeElement !== ta) ta.value = a.note || '';
+  }
+}
+render();
+let ref = null, dirty = false, saving = false, timer = null;
+function setA(id, k, v) { answers[id] = Object.assign({}, answers[id], { [k]: v }); dirty = true; status('Not saved yet'); clearTimeout(timer); timer = setTimeout(save, 1500); }
+function status(t, ok) { statusEl.textContent = t; statusEl.className = ok ? 'ok' : ''; }
+async function save() {
+  if (!ref) { status('Saving is not available here'); return; }
+  if (saving) { clearTimeout(timer); timer = setTimeout(save, 800); return; }
+  if (!dirty) return;
+  saving = true; dirty = false; saveBtn.disabled = true;
+  try { await ref.set({ answers, savedAt: Date.now() }); status('Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), true); }
+  catch (e) { dirty = true; status('Could not save: ' + ((e && e.message) || 'try again')); }
+  finally { saving = false; saveBtn.disabled = false; }
+}
+saveBtn.addEventListener('click', () => { dirty = true; clearTimeout(timer); save(); });
+(async () => {
+  const to = setTimeout(() => status('Still connecting; your choices are kept on screen'), 10000);
+  let db = null;
+  try { db = window.claude ? await window.claude.use('db') : null; } catch (e) { db = null; }
+  clearTimeout(to);
+  if (!db) { status('Saving is not available here'); saveBtn.disabled = true; return; }
+  ref = db.doc('answers/fix-round-review');
+  try {
+    const snap = await ref.get();
+    if (snap.exists) { const d = snap.data(); if (d && d.answers) for (const k in d.answers) if (!answers[k]) answers[k] = d.answers[k]; render(); status('Loaded your saved answers', true); }
+    else status('Nothing saved yet');
+  } catch (e) { status('Could not load saved answers'); }
+})();
+</script>

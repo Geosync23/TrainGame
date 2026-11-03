@@ -1,6 +1,9 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
-## Start here (latest, 2026-11-02 evening)
+## Start here (latest, 2026-11-03)
+The whole fix round is built and pushed (commit 5012289 and after; 36 checks pass): D15 crossings (schema 15, check-crossings), cutaway (check-cutaway), departure boards and the ticket booth inside the depot (check-board), D19 plank platforms and station detail (check-station; the M1 bot's boardLead sets off earlier when the combine is far). Playable link being updated to this build. End-of-round review page: https://claude.ai/artifact/KQQ2FMUHSBNGEkYEGy6djw (source plans/fix-round-review.html, pictures put in at publish; answers in `answers/fix-round-review`: keys `<group>.<item>` and `q.walk`, `q.feel`, `q.next`, `q.else`). The walking follow-up page https://claude.ai/artifact/E7Uqbtnynk4pbFVttfSohn (`answers/walk-speed-2`) asks the same walk question; read both. Measure memory with `python3 tools/context-usage.py`.
+
+## Earlier (2026-11-02 evening)
 After the designer's first look at the 1.6x build, D16 and D17 were built and pushed (commit f8856be; 32 checks pass): platforms 9.6u deep with everything behind them moved back; the canopy fades see-through near or over the player (check-roof); a new walk animation (GAIT, check-walk); a slower clock (one game minute = 1.0 real second, 7.5 ticks a second at 1x) with walk speeds back to 2.8 / 4.4. Playable link updated (version 4). Waiting for the designer to play it and answer the scale check page https://claude.ai/artifact/RPbPS5SWB7cRUAqxr3KL4T (answers/scale-review). Note: on screen the walk is 6.5 steps a second (short legs; the feet do not slide) - watch the designer's reaction. The walking-speed survey (D17) is https://claude.ai/artifact/E7Uqbtnynk4pbFVttfSohn.
 
 ## Earlier: scale step done, waiting for the designer's scale check

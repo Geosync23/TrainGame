@@ -509,3 +509,5 @@ Update (2026-11-02, fourth lead session): the fix-round plan and survey are publ
 
 
 Update (2026-11-02, fourth lead session): the 1.6x scale (D15), the feet fix and three gap fixes are merged and pushed (30 checks pass). Playable link updated; the designer's scale check page is https://claude.ai/artifact/RPbPS5SWB7cRUAqxr3KL4T (answers in `answers/scale-review`). Next: the rest of the fix round once they say go. See `plans/handover.md`.
+
+Update (2026-11-03): the whole M1 fix round is merged (36 checks pass). End-of-round review: https://claude.ai/artifact/KQQ2FMUHSBNGEkYEGy6djw (answers in `answers/fix-round-review`). Next: read the designer's answers.

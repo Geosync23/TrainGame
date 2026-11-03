@@ -230,6 +230,11 @@ function botFactory(R, mem0) {
     if (it.d.biz !== undefined) return 4;                   // deliver to the doors
     return 5;                                               // track materials and the rest
   }
+  // One of No. 1's timetabled hub departures today is within t seconds (and not yet made).
+  function depWithin(S, t) {
+    const sod = sodOf(S), day = dayOf(S);
+    return S.tt.services.some(v => v.train === 0 && v.last !== day && v.stops[0].dep !== null && v.stops[0].dep > sod && v.stops[0].dep - sod < t);
+  }
   function freightTask(S, maxRank) {
     const P = S.player, h = held(S);
     if (h.length) {
@@ -256,7 +261,9 @@ function botFactory(R, mem0) {
     // Cords of wood (D13): two or more the handcart can reach, with room for two or more, go on the handcart, but it is
     // fetched from its spot (by the freight shed) only when no departure is near; once pushed it takes any cord it reaches.
     const cords = r <= 2 ? long.filter(x => I(S).waybill[x.id].commodity === 'cordwood' && !noCart(x.sp[0], x.sp[1])) : [];
-    if ((maxRank === undefined && cords.length >= 2 && cordRoom(S) >= 2) || (pushing(S, 'cart') && cords.length)) {
+    // (Since D20's slower walk, 1.8 pushing: a handcart round of wood takes up to two hours, so it is not started with
+    // one of No. 1's hub departures less than two hours off: the bot would miss the train.)
+    if ((maxRank === undefined && cords.length >= 2 && cordRoom(S) >= 2 && !depWithin(S, 2 * H)) || (pushing(S, 'cart') && cords.length)) {
       if (!pushing(S, 'cart')) return toolFor(S, 'cart');
       return pick(S, cords[0].id, 'wood onto the handcart');
     }
@@ -291,6 +298,10 @@ function botFactory(R, mem0) {
     const why = run.why || '';
     if (/uncouple the engine/.test(why) && tr.consist.length > 1 && !skipped(S, 'uncouple')) { mem.stats.uncouple++; mem.taskKey = 'uncouple'; return send(S, { t: 'uncouple', tr: 0, at: R.tt.ttEngineJoint(tr) }, 'uncouple for the run-around'); }
     const L = tr.consist.find(c => c.k === 'loco');
+    // (Since D20's slower walk: while the uncoupled engine runs to Willow Ford's tower, go and meet it there, so the
+    // water is taken as soon as it stands, rather than starting the walk when it calls.)
+    if (st === 'willow' && /Running to the water tower/.test(why) && G.wf.water && !held(S).length && S.player.tool === null
+      && d2(S.player.x, S.player.z, G.wf.water.sx, G.wf.water.sz) > 1.5 && !skipped(S, 'toTower')) { skip(S, 'toTower', 30); return send(S, { t: 'walkTo', x: cm(G.wf.water.sx), z: cm(G.wf.water.sz) }, 'meet the engine at the water tower'); }
     if (/take water/.test(why) && L && L.water < R.CFG.WATER_U - 0.1 && !skipped(S, 'water')) { if (S.player.tool !== null) return held(S).length ? deliverTop(S) : toolFor(S, false); mem.stats.water++; mem.taskKey = 'water'; return send(S, { t: 'takeWater' }, 'take water'); }
     return null;
   }
@@ -371,6 +382,15 @@ function botFactory(R, mem0) {
     // selling tickets until then); the walk is only for a train it missed (the first rule above).
     if (atHub(S) && run && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '') && !hubOwes(S) && !held(S).length && P.tool === null && (mem.telDay === dayOf(S) || sodOf(S) >= 11 * H + 30 * M)
       && sodOf(S) >= svcStop(S, run).dep - boardLead(S) && !skipped(S, 'board')) return board(S, 'hub');
+    // Where the combine's door was on Willow Ford's platform when the bot last stepped off there (the cars stand there
+    // through the run-around); the line's spot until then.
+    const wfDoor = () => mem.wfDoor || G.wfWait;
+    // (Since D20, at the slower walk: the engine's run round its cars often ends only a minute before the departure,
+    // too late to walk from the water tower to the combine; cars with no engine cannot be boarded. So while the engine
+    // runs round, the bot waits on Willow Ford's platform by the line, beside the combine, as a player would.)
+    const rounding = run && run.ra && !run.ra.done && run.ra.step >= 2 && run.ra.step <= 5 && !/take water|uncouple/.test(run.why || '');
+    if (atWF(S) && run && run.i === 1 && run.ph === 'at' && rounding && !wfWork(S) && !held(S).length && P.tool === null
+      && d2(P.x, P.z, wfDoor()[0], wfDoor()[1]) > 1 && !skipped(S, 'wfWait')) { skip(S, 'wfWait', 60); return send(S, { t: 'walkTo', x: cm(wfDoor()[0]), z: cm(wfDoor()[1]) }, 'wait on the platform by the combine\'s door for the run-around'); }
     // (Since D13 the bot rides No. 1 back: it boards once Willow Ford's work is done and the train waits for its time.)
     if (atWF(S) && run && run.i === 1 && run.ph === 'at' && /its time/.test(run.why || '') && !wfWork(S) && !held(S).length && P.tool === null
       && sodOf(S) >= svcStop(S, run).dep - 20 * M && !skipped(S, 'board')) return board(S, 'willow');
@@ -379,12 +399,17 @@ function botFactory(R, mem0) {
     return null;
   }
   // How long before the departure to set off for the combine: 12 minutes, or more when it stands far off (at the water
-  // tower, about 30u from the booth since the ticket booth and the station props): the walk at 2.8u a minute with a
+  // tower, about 30u from the booth since the ticket booth and the station props): the walk at CFG.WALK u a minute (2.0 since D20) with a
   // quarter more for the way round things, and 3 minutes to spare.
   function boardLead(S) {
     const tr = no1(S), ps = R.trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.id === 1), p = ps[i];
     const far = p ? Math.hypot(p.x - S.player.x, p.z - S.player.z) : 0;
-    return Math.max(12, Math.ceil(far / 2.8 * 1.25) + 3) * M;
+    return Math.max(12, Math.ceil(far / R.CFG.WALK * 1.25) + 3) * M;
+  }
+  // No. 1's combine (stock 1) stands more than 8u from the water tower's stand (at the platform, not the spout).
+  function combineFar(S) {
+    const tr = no1(S), ps = R.trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.id === 1), p = ps[i];
+    return !!p && d2(p.x, p.z, G.stand[0], G.stand[1]) > 8;
   }
   // Board No. 1's combine (stock 1) at this station's platform, to ride to the other station (D13).
   function board(S, from) { mem.rideFrom = from; mem.taskKey = 'board'; return send(S, { t: 'boardCar', stock: 1 }, 'board No. 1 at ' + from); }
@@ -448,9 +473,16 @@ function botFactory(R, mem0) {
       // (Since D4 a run starts 60 minutes early and, with water taken on the way in, often only waits for its time
       // at the platform: then the bot keeps selling tickets.)
       const run = runOf(S), started = !!run, ready = started && run.i === 0 && run.ph === 'at' && /its time/.test(run.why || '');
-      const fr = freightTask(S, needsPile(S) && (!started || ready) ? 2 : 1); if (fr) return fr;
+      // (Since D20's slower walk: no wood to the pile, which can be 50u away (an hour there and back), in the last hour before boarding:
+      // the bot would miss the train.)
+      const soon = started && run.i === 0 && sodOf(S) >= svcStop(S, run).dep - boardLead(S) - 60 * M;
+      const fr = freightTask(S, needsPile(S) && (!started || ready) && !soon ? 2 : 1); if (fr) return fr;
       if (!started || ready) { const win = windowTask(S, 1); if (win) return win === 'stay' ? [] : win; }
       else if (S.pax.desk) return send(S, { t: 'leaveWindow' }, 'leave the window: the train needs me');
+      // (Since D20's slower walk: once the train is ready and waits for its time at the platform, the bot no longer
+      // walks off to the water tower's stand, from where it often missed the train walking back to the combine; it
+      // waits where it is (or on the platform, when it was working the siding) and boards in time, boardLead.)
+      if (ready && combineFar(S)) return working ? send(S, { t: 'walkTo', x: cm(G.hubWait[0]), z: cm(G.hubWait[1]) }, 'wait on the platform for the train') : [];
       const [x, z] = G.stand;
       if (d2(P.x, P.z, x, z) > 3 && !working) return send(S, { t: 'walkTo', x: cm(x), z: cm(z) }, 'wait by the water tower for the train');
       if (working) return send(S, { t: 'walkTo', x: cm(x), z: cm(z) }, 'wait by the water tower for the train');
@@ -466,6 +498,7 @@ function botFactory(R, mem0) {
   function observe(S, ev) {
     for (const e of ev) {
       if (e.t === 'ticketSold') mem.stats.tickets++;
+      if (e.t === 'rideOff' && e.st === 'willow') mem.wfDoor = [S.player.x, S.player.z];
       if (e.t === 'carryPicked') mem.stats.picks++;
       if (e.t === 'carryPut') mem.stats.puts++;
       if (e.t === 'bizDelivered') mem.stats.doors++;

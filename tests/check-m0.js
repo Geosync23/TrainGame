@@ -20,6 +20,7 @@
 // The art-style criterion is the designer's sign-off at the M0 review; no check can do that.
 
 const { openGame, waitReady, screenshotPath } = require('./browser');
+const { useSwitchman } = require('./switchman'); // D20: a switchman throws the switches routes need (as the player would)
 
 // Section 17 keyframes as written in the design doc, and the hour each one is reached on day 1
 // (spring: sunrise 06:00, sunset 19:00). Game time counts seconds from 05:00.
@@ -36,6 +37,7 @@ module.exports = async function checkM0() {
   // ?debug=1: the instant build (buildTrack through the page) is parked behind it (D10).
   const { browser, page, errors } = await openGame('portrait', { query: '?paused&crowd=200&debug=1&world=yard' });
   try {
+      await useSwitchman(page);
     // ---- 2 and 3 (second half): the sim on its own, from fresh states ----
     const sim = await page.evaluate(() => {
       const R = window.__railhead, out = {}, SC = R.CFG.SCALE;

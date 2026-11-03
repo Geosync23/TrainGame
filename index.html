@@ -2205,6 +2205,19 @@ function ttSwitchNeeds(S, day) {
   return out;
 }
 
+// For checks and debugging only (the game never calls it): the throws a switchman at every switch would make now,
+// so checks written before D20 can run trains over switches the player would have set. For each train on a route,
+// the first switch ahead it still needs thrown, when that switch is free. [{ t: 'throwSwitch', sw }]
+function ttSwitchman(S) {
+  const out = [], occ = occupiedSwitches(S);
+  for (const tr of S.trains) {
+    if (tr.mode !== 'route') continue;
+    const th = routeThrows(S.track, tr.route)[0];
+    if (th && !out.some(c => c.sw === th.sw) && !switchLockReason(S, th.sw, occ)) out.push({ t: 'throwSwitch', sw: th.sw });
+  }
+  return out;
+}
+
 // ---- Person tasks at a train: uncoupling, putting wood on the tender, taking water ----
 function ttStanding(tr) { return !!tr && !trainOff(tr) && tr.v === 0 && (tr.mode === 'idle' || tr.mode === 'stop') && !(tr.cw > 0); }
 // The joint between consist[k - 1] and consist[k]: { x, z, fx, fz } (fx, fz along the track).
@@ -11531,7 +11544,7 @@ window.__railhead = {
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState, ttStopNeeds, ttWoodNeedU,
     ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; },
-    ttSwitchNeeds, ttSwitchPlan, swStation, switchApproach, routeThrows, springTick, swName },   // D20: manual switches
+    ttSwitchNeeds, ttSwitchPlan, swStation, switchApproach, routeThrows, springTick, swName, ttSwitchman },   // D20: manual switches
   feet: { bldStandY, bldDeckInside, deckGroundAt, BLD_STEP_R, get playerY() { return view.player.position.y; }, get ringY() { return view.ring.position.y; },
     get actionRingY() { return carryView.ring.position.y; }, get toolYs() { return carryView.tools.map(v => v.g.position.y); } },
   gait: { GAIT, gaitNew, gaitStep, gaitPose, gaitStride, gaitApplyPlayer, get player() { return view.player; } },   // the walk (drawing only)

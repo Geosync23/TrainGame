@@ -8,7 +8,10 @@ module.exports = async function checkDeterminism() {
     const r = await page.evaluate(() => {
       const R = window.__railhead;
       const ticks = 3 * 86400 / 8;
+      // Since D21 No. 1 starts on both timetabled runs (and then drives herself): the script takes her off first, so
+      // its own driving commands count.
       const script = [
+        { tick: 0, cmd: { t: 'ttAssign', tr: 0, on: false } },
         { tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } },
         { tick: 5, cmd: { t: 'useSwitch', sw: 0 } },
         { tick: 900, cmd: { t: 'trainStop', tr: 0 } },

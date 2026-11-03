@@ -239,7 +239,9 @@ function botFactory(R, mem0) {
     const P = S.player, h = held(S);
     if (h.length) {
       // With the handcart: more cords from close by, while there is somewhere for them (the tender or the piles).
-      if (pushing(S, 'cart') && h.length < CART_CAP && h.length < cordRoom(S)) {
+      // (Since D20's slower walk, not with one of No. 1's hub departures less than 90 minutes off: putting each cord
+      // away takes minutes, and the bot would miss the train.)
+      if (pushing(S, 'cart') && h.length < CART_CAP && h.length < cordRoom(S) && !depWithin(S, 90 * M)) {
         const more = hubWork(S).filter(it => I(S).waybill[it.id].commodity === 'cordwood' && rank(S, it) <= 2 && !noCart(it.sp[0], it.sp[1]) && d2(it.sp[0], it.sp[1], P.x, P.z) < 8)
           .sort((a, b) => d2(a.sp[0], a.sp[1], P.x, P.z) - d2(b.sp[0], b.sp[1], P.x, P.z) || a.id - b.id);
         if (more.length) return pick(S, more[0].id, 'load the handcart with wood');
@@ -262,8 +264,9 @@ function botFactory(R, mem0) {
     // fetched from its spot (by the freight shed) only when no departure is near; once pushed it takes any cord it reaches.
     const cords = r <= 2 ? long.filter(x => I(S).waybill[x.id].commodity === 'cordwood' && !noCart(x.sp[0], x.sp[1])) : [];
     // (Since D20's slower walk, 1.8 pushing: a handcart round of wood takes up to two hours, so it is not started with
-    // one of No. 1's hub departures less than two hours off: the bot would miss the train.)
-    if ((maxRank === undefined && cords.length >= 2 && cordRoom(S) >= 2 && !depWithin(S, 2 * H)) || (pushing(S, 'cart') && cords.length)) {
+    // one of No. 1's hub departures less than two hours off: the bot would miss the train. Nor are more cords loaded
+    // with one less than 90 minutes off: the bot puts away what it has and leaves the handcart.)
+    if ((maxRank === undefined && cords.length >= 2 && cordRoom(S) >= 2 && !depWithin(S, 2 * H)) || (pushing(S, 'cart') && cords.length && !depWithin(S, 90 * M))) {
       if (!pushing(S, 'cart')) return toolFor(S, 'cart');
       return pick(S, cords[0].id, 'wood onto the handcart');
     }

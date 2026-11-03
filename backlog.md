@@ -8,3 +8,4 @@ Small bugs and ideas found outside the current task. Each entry: date, what, whe
 
 - 2026-11-02 (D15 scale): in check-m1 the bot's morning boarding at Willow Ford fails with "The train moved off" (also before the scale). tests/m1-bot.js or the dwell at an unstaffed stop.
 - 2026-11-02 (D15 scale): the bot's week sold 120 tickets (173 before the scale) and ran up to 7 min late (0 before). Probably longer walks in the bigger station; not investigated.
+- 2026-11-03 (D20, builder SW): page-touch steps are timing-sensitive when the machine is busy: check-ride (boarding with the hand truck: the toast still said "You take the hand truck."; the camera following the car), check-timetable part 2 (a tap on the joint or the engine missed) and check-office (telegram slide-in off screen in landscape) failed now and then with other test runs on the machine, the same on the unchanged build (f5e1d78); each passed when run alone.

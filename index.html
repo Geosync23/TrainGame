@@ -297,7 +297,7 @@ function scaleDeep(o) {
   return o;
 }
 const CFG = {
-  SCHEMA_VERSION: 15,
+  SCHEMA_VERSION: 16,
   SEED: 1866,
   SCALE: SC,                 // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
@@ -396,6 +396,16 @@ function trackSwitch(T, node, trunk, normal, reverse) {
     stand: { x: sx, z: sz, hx: h.x, hz: h.z, ux: sx - px * side * 0.65 * SC, uz: sz - pz * side * 0.65 * SC } });
   return id;
 }
+
+// D20: switches are manual. No train ever throws a switch: the player throws them at the stand (useSwitch, THROW_S).
+// A train meeting a switch set against its way stops CFG.STOP_GAP short of the switch's block and waits (trackScan
+// for a trailing switch; trainTick for a facing switch that a route needs the other way) and goes on once it is
+// thrown right. Spring switches (provisional, Willow Ford's run-around): W.spring is true and W.lever is where the
+// player set it; a train trailing through against the lever pushes the points over (W.state, only while it runs
+// over it) and they spring back to the lever once it has cleared (springTick). A facing train takes the lever's way.
+function switchSpring(W, lever) { W.spring = true; W.lever = lever; W.state = lever; }
+const swWant = st => st === 'N' ? 'normal' : 'reverse';
+const swName = id => `switch ${id}`;
 
 // Derived lookups (not saved): edges per node, switch per node, blocks.
 const trackIndexCache = new WeakMap();
@@ -693,8 +703,20 @@ function buildStartWorld() {
   trackSwitch(T, s1, eSpur, e1n, c1.e);
   trackSwitch(T, w1, eToW1, eW1n, l1.e);
   trackSwitch(T, w2, eHead, eW2n, l2.e);
+  startSwitchStates(T);
   T.crossings = xingFixed(T); // the plank crossings (D15)
   return T;
+}
+
+// D20 (provisional): a new game's switches. The platform switch (1) is set for the platform track, where No. 1
+// stands (the way it came in); Willow Ford is unstaffed, so its run-around switches are spring switches: switch 2
+// (west) lies for the main track (arrivals run to the platform; the engine comes back off the loop onto its cars) and
+// switch 3 (east) for the loop (the engine comes back out of the headshunt into the loop); trailing moves push
+// through them. The interchange switch (0) lies for the main track. Also used by the save step 15 -> 16.
+function startSwitchStates(T) {
+  if (T.switches[1]) T.switches[1].state = 'R';
+  if (T.switches[2]) switchSpring(T.switches[2], 'N');
+  if (T.switches[3]) switchSpring(T.switches[3], 'R');
 }
 
 // The worlds. terrain: the heightmap (tiles of `tile` u from x0, z0); walk: the player's walk grid (0.5u cells);
@@ -848,11 +870,37 @@ function occupiedSwitches(S) {
   }
   return occ;
 }
+// Switches a moving train would run over, as they lie, before it could stop (its braking distance and the stop gap):
+// { switch id: train id }. Throwing one now could turn the points under its wheels, so they are locked (D20, approach
+// locking). A switch the train is stopping short of anyway (set against it, or a route's facing switch set the other
+// way) is not in it: throwing that one right is always safe.
+function switchApproach(S) {
+  const T = S.track, ix = trackIndex(T), out = {};
+  for (const tr of S.trains) {
+    if (trainOff(tr) || !(tr.v > 1e-3)) continue;
+    const ahead = trackAhead(T, leadPos(T, tr, tr.m), (tr.v * tr.v) / (2 * CFG.BRAKE) + CFG.STOP_GAP + 0.1 * SC);
+    for (const p of ahead) {
+      const sw = ix.legSw[p.e];
+      if (sw === undefined) continue;
+      const W = T.switches[sw];
+      if (p.e !== (W.state === 'N' ? W.normal : W.reverse)) break;              // set against it: it stops short
+      if (routeWrongAt(tr, sw, W)) break;                                       // a route's facing switch the other way
+      if (out[sw] === undefined) out[sw] = tr.id;
+    }
+  }
+  return out;
+}
+// Does the train's route need this switch the other way, ahead of it? (It then stops short of it, trainTick.)
+function routeWrongAt(tr, sw, W) {
+  if (tr.mode !== 'route' || !tr.route || !tr.route.needs) return false;
+  const done = tr.route.total - tr.route.left;
+  return tr.route.needs.some(n => n.sw === sw && n.state !== W.state && done <= n.stopAt + 1e-6 && !(W.spring && !n.face));
+}
 function switchLockReason(S, swId, occ) {
   const W = S.track.switches[swId];
   occ = occ || occupiedSwitches(S);
   if (occ[swId] !== undefined) return 'a train is on it';
-  if (W.lockedBy !== null) return 'it is set for a train\'s route';
+  if (switchApproach(S)[swId] !== undefined) return 'a train is coming and could not stop';
   return null;
 }
 
@@ -882,11 +930,13 @@ function findRoute(T, start, target, avoid) {
     const options = [];
     if (swId !== undefined) {
       const W = T.switches[swId];
+      // D20: face (entering from the trunk) or trailing; stopAt is where the route reaches the switch's block (its
+      // node facing, the far end of the leg trailing): a train stops CFG.STOP_GAP before it while it is set wrong.
       if (cur.e === W.trunk) {
-        options.push({ e: W.normal, need: { sw: swId, state: 'N' }, extra: 0 });
-        options.push({ e: W.reverse, need: { sw: swId, state: 'R' }, extra: CFG.DIVERGE_PENALTY });
+        options.push({ e: W.normal, need: { sw: swId, state: 'N', face: true, stopAt: cur.dist }, extra: 0 });
+        options.push({ e: W.reverse, need: { sw: swId, state: 'R', face: true, stopAt: cur.dist }, extra: CFG.DIVERGE_PENALTY });
       } else {
-        options.push({ e: W.trunk, need: { sw: swId, state: cur.e === W.normal ? 'N' : 'R' }, extra: 0 });
+        options.push({ e: W.trunk, need: { sw: swId, state: cur.e === W.normal ? 'N' : 'R', face: false, stopAt: cur.dist - E.len }, extra: 0 });
       }
     } else {
       for (const o of ix.nodeEdges[node]) if (o !== cur.e) options.push({ e: o, need: null, extra: 0 });
@@ -909,6 +959,20 @@ function findRoute(T, start, target, avoid) {
     for (const n of best.needs) { if (want[n.sw] && want[n.sw] !== n.state) return null; want[n.sw] = n.state; }
   }
   return best;
+}
+// A train's route (D20): distance to run, and the switches it needs ({ sw, state, face, stopAt }, in path order,
+// one per switch). locks stay empty: routes no longer set or lock switches (kept for old saves and releaseRoute).
+function routeNew(r) {
+  const needs = [];
+  for (const n of r.needs) if (!needs.some(o => o.sw === n.sw)) needs.push({ sw: n.sw, state: n.state, face: !!n.face, stopAt: n.stopAt });
+  return { total: r.dist, left: r.dist, locks: [], needs };
+}
+// The switches a route still needs thrown (ahead of the train and set the other way): [{ sw, want }].
+function routeThrows(T, route) {
+  if (!route || !route.needs) return [];
+  const done = route.total - route.left;
+  return route.needs.filter(n => done <= n.stopAt + 1e-6 && T.switches[n.sw].state !== n.state && !(T.switches[n.sw].spring && !n.face))
+    .map(n => ({ sw: n.sw, want: swWant(n.state) }));
 }
 function leadPos(T, tr, m) {
   if (m > 0) return tr.front;
@@ -1020,10 +1084,12 @@ function applyCommand(S, c, ev) {
       for (const m of (moving ? [tr.m, -tr.m] : [1, -1])) {
         const r = findRoute(T, leadPos(T, tr, m), target);
         if (!r) continue;
+        // A switch it needs the other way that another train stands on cannot be thrown now (D20: the others are
+        // the player's to throw; the train runs up to the first one set wrong and waits there).
         const clash = r.needs.find(n => {
           const W = T.switches[n.sw];
-          if (W.state === n.state) return false;
-          return occ[n.sw] !== undefined || (W.lockedBy !== null && W.lockedBy !== tr.id);
+          if (W.state === n.state || (W.spring && !n.face)) return false;
+          return occ[n.sw] !== undefined && occ[n.sw] !== tr.id;
         });
         if (clash) continue;
         if (moving && m !== tr.m) { otherWay = true; continue; }
@@ -1035,17 +1101,13 @@ function applyCommand(S, c, ev) {
       const held = ttReservedBy(S, best.r.path, tr.id);
       if (held !== null) { ev.push({ t: 'noRoute', tr: tr.id, why: `The line is reserved for ${S.trains[held].name}: wait until it has passed.` }); return; }
       releaseRoute(S, tr);
-      const locks = [];
-      for (const n of best.r.needs) {
-        const W = T.switches[n.sw];
-        W.state = n.state; W.lockedBy = tr.id;
-        if (!locks.find(l => l.sw === n.sw)) locks.push({ sw: n.sw, at: n.at });
-      }
+      // D20: the switches stay as the player set them. The route remembers what it needs; the event lists the ones
+      // to throw (the train runs as far as it can and waits short of the first).
       tr.mode = 'route'; tr.m = best.m;
-      tr.route = { total: best.r.dist, left: best.r.dist, locks };
+      tr.route = routeNew(best.r);
       // Sent onto a standing cut of cars: run up to it and couple it (section "trains", coupling).
       if (S.trains.some(o => o !== tr && trainCanCouple(o) && trainSegs(T, o).some(([e, a, b]) => e === c.e && target.s >= a - 0.3 * SC && target.s <= b + 0.3 * SC))) tr.route.couple = true;
-      ev.push({ t: 'routeSet', tr: tr.id });
+      ev.push({ t: 'routeSet', tr: tr.id, throws: routeThrows(T, tr.route) });
       break;
     }
   }
@@ -1079,6 +1141,7 @@ function throwSwitch(S, swId, ev) {
   const why = switchLockReason(S, swId);
   if (why) { ev.push({ t: 'switchLocked', sw: swId, why }); return; }
   W.state = W.state === 'N' ? 'R' : 'N';
+  if (W.spring) W.lever = W.state;   // a spring switch: the lever sets where its points lie (D20)
   ev.push({ t: 'switchThrown', sw: swId, state: W.state });
 }
 
@@ -1103,6 +1166,8 @@ function trainTick(S, tr, ev) {
     const lead = leadPos(T, tr, tr.m);
     const look = (tr.v * tr.v) / (2 * CFG.BRAKE) + 4 * SC;
     sc = trackScan(T, lead, look);
+    // A spring switch set against a trailing move: the wheels push its points over (D20, Willow Ford's run-around).
+    for (let k = 0; k < 4 && sc.reason === 'against' && springPush(S, tr, sc.sw); k++) sc = trackScan(T, lead, look);
     stop = sc.stop; reason = sc.reason; sw = sc.sw;
     // Other trains ahead. The Overland runs up to its own set-out cars (its crew couples them, "The Overland").
     const ob = trainObstacle(S, tr, lead, look + 1);
@@ -1115,6 +1180,18 @@ function trainTick(S, tr, ev) {
   }
   if (driving) {
     if (tr.mode === 'route' && tr.route.left < stop) { stop = tr.route.left; reason = 'target'; obst = null; }
+    // D20: a switch the route needs the other way (facing ones: a trailing one set against it is in the scan too).
+    // Stop STOP_GAP short of its block and wait for the player to throw it.
+    if (tr.mode === 'route' && tr.route.needs) {
+      const done = tr.route.total - tr.route.left;
+      for (const n of tr.route.needs) {
+        if (done > n.stopAt + 1e-6) continue;   // already on it or past it
+        const W = T.switches[n.sw];
+        if (W.state === n.state || (W.spring && !n.face)) continue;
+        const at = Math.max(0, n.stopAt - CFG.STOP_GAP - done);
+        if (at < stop) { stop = at; reason = 'against'; sw = n.sw; obst = null; }
+      }
+    }
     vTarget = CFG.LOCO_MAX * (tenderFirst(tr, tr.m) ? CFG.TENDER_FIRST : 1);
     if (trainOutOf(tr)) vTarget = Math.min(vTarget, CFG.LIM.yard); // out of wood or water: creeping at yard speed
     // Speed limits on the track under the train and ahead of it.
@@ -1166,10 +1243,46 @@ function trainTick(S, tr, ev) {
     tr.v = 0;
     tr.status = reason === 'against' ? 'Waiting: the switch ahead is set against us' : reason === 'end' ? 'At the end of the track'
       : reason === 'train' ? 'Waiting: a train is in the way' : 'Waiting';
+    // D20: waiting at a switch set against it (an alert and a telegram, section "telegrams and alerts").
+    if (reason === 'against' && sw !== null && sw !== undefined) {
+      if (tr.swWait !== sw) { tr.swWait = sw; ev.push({ t: 'trainSwitchWait', tr: tr.id, sw }); }
+      return;
+    }
   } else if (tr.mode === 'run' || tr.mode === 'route') {
     const dir = (tr.m > 0 ? 'forward' : 'back') + (tenderFirst(tr, tr.m) ? ' (tender first)' : '');
     tr.status = (tr.mode === 'route' ? 'On its way, ' : 'Running ') + dir;
   } else if (tr.mode === 'idle' && tr.status !== 'Arrived') tr.status = 'Stopped';
+  if (tr.swWait !== undefined) delete tr.swWait;
+}
+// A train trailing through a spring switch set against it pushes the points over (D20): true if it did. Never under
+// another train (the points then lie for that train).
+function springPush(S, tr, swId) {
+  const W = S.track.switches[swId];
+  if (!W || !W.spring) return false;
+  const occ = occupiedSwitches(S);
+  if (occ[swId] !== undefined && occ[swId] !== tr.id) return false;
+  W.state = W.state === 'N' ? 'R' : 'N';
+  return true;
+}
+// After the trains move: a spring switch pushed over springs back to its lever once no train is on it or running
+// up to it through the pushed points (D20).
+function springTick(S) {
+  const T = S.track;
+  let occ = null, near = null;
+  for (const W of T.switches) {
+    if (!W.spring || W.state === W.lever) continue;
+    occ = occ || occupiedSwitches(S);
+    if (occ[W.id] !== undefined) continue;
+    if (!near) {
+      near = {};
+      const ix = trackIndex(T);
+      for (const tr of S.trains) {
+        if (trainOff(tr) || !(tr.v > 1e-3 || tr.mode === 'route' || tr.mode === 'run')) continue;
+        for (const p of trackAhead(T, leadPos(T, tr, tr.m), (tr.v * tr.v) / (2 * CFG.BRAKE) + 4 * SC + 1 * SC)) if (ix.legSw[p.e] !== undefined) near[ix.legSw[p.e]] = true;
+      }
+    }
+    if (!near[W.id]) W.state = W.lever;
+  }
 }
 
 // ---- Coupling, uncoupling and locomotive state (M1 package 6, builder C3; design-doc 7) ----
@@ -1604,7 +1717,8 @@ function ttPlan(S, tr, targets, ms, except) {
   for (const m of ms) for (const t of targets) {
     const r = findRoute(T, leadPos(T, tr, m), t, occ.edges);
     if (!r || (t.d && r.dEnd !== t.d)) continue;
-    if (r.needs.some(n => T.switches[n.sw].state !== n.state && ((sw[n.sw] !== undefined && sw[n.sw] !== tr.id) || (T.switches[n.sw].lockedBy !== null && T.switches[n.sw].lockedBy !== tr.id)))) continue;
+    // A switch it needs the other way that another train stands on cannot be thrown now (D20: the player throws the rest).
+    if (r.needs.some(n => T.switches[n.sw].state !== n.state && !(T.switches[n.sw].spring && !n.face) && sw[n.sw] !== undefined && sw[n.sw] !== tr.id)) continue;
     const time = r.cost / (CFG.LOCO_MAX * (tenderFirst(tr, m) ? CFG.TENDER_FIRST : 1));
     if (!best || time < best.time - 1e-9) best = { r, m, time };
   }
@@ -1629,14 +1743,9 @@ function ttGrant(S, tr, best, couple, except) {
   const blocks = ttPathBlocks(S.track, best.r.path), occ = ttOccupied(S, [tr.id, except === undefined ? -1 : except]).blocks;
   if (ttReservedBy(S, best.r.path, tr.id) !== null || blocks.some(b => occ.has(b))) return false;
   releaseRoute(S, tr);
-  const locks = [];
-  for (const n of best.r.needs) {
-    const W = S.track.switches[n.sw];
-    W.state = n.state; W.lockedBy = tr.id;
-    if (!locks.find(l => l.sw === n.sw)) locks.push({ sw: n.sw, at: n.at });
-  }
+  // D20: no switch is set for it: the train runs up to the first switch set against it and waits for the player.
   tr.mode = 'route'; tr.m = best.m;
-  tr.route = { total: best.r.dist, left: best.r.dist, locks };
+  tr.route = routeNew(best.r);
   if (couple) tr.route.couple = true;
   S.tt.res = S.tt.res.filter(r => r.tr !== tr.id).concat([{ tr: tr.id, blocks }]);
   return true;
@@ -1977,6 +2086,123 @@ function ttStatus(S) {
     const tr = S.trains[S.tt.services[run.svc].train];
     if (tr && tr.mode === 'idle' && !(tr.cw > 0) && run.why) tr.status = run.why;
   }
+}
+
+// ---- The switches the timetable needs (D20: switches are manual) ----
+// ttSwitchNeeds(S, day) lists, for one game day (default today), every switch a timetabled train will run over set
+// the wrong way unless the player throws it, with the time it is wanted by. Plain data for the work board:
+//   [{ svc, service, train, trainName, stop (the stop the move starts from), move ('leg': on to the next stop,
+//      'runaround': the engine's moves round its train at that stop), station, stationName (the station nearest
+//      the switch), sw, want ('normal' | 'reverse'), byTime (game time, as S.time), by ('HH:MM'), spring (a spring
+//      switch: only its lever counts, facing), set (it lies that way now), passed (the train has made that move),
+//      done (passed, or set with no earlier move still wanting it the other way) }], in byTime order.
+// Each move's route is planned from the stations' stopping tracks (as the dispatcher plans them, ignoring other
+// trains; a meet on the passing loop is not foreseen), once per track and service (ttSwitchPlan). byTime: on a leg,
+// the scheduled departure plus the leg's time in proportion to the distance to the switch (when the train should
+// reach it); in a run-around, the 1st, 2nd and 3rd move at a quarter, a half and three quarters of the stop's
+// dwell (an estimate). A spring switch a move trails through is not listed (the wheels push it over). The Overland
+// is not in it: it comes in on the interchange's own track from the map edge and passes no switch.
+const ttSwitchPlanCache = new WeakMap();
+function ttSwitchPlan(S, svc) {
+  const T = S.track, key = T.edges.length + '/' + T.nodes.length + '/' + T.switches.length + ':' + JSON.stringify(svc.stops);
+  let c = ttSwitchPlanCache.get(T);
+  if (!c) { c = {}; ttSwitchPlanCache.set(T, c); }
+  if (c[svc.id] && c[svc.id].key === key) return c[svc.id].moves;
+  const moves = [], need = (r, n) => ({ sw: n.sw, state: n.state, face: !!n.face, frac: r.dist > 0 ? Math.max(0, Math.min(1, n.stopAt / r.dist)) : 0 });
+  let arr = null;
+  for (let k = 0; k < svc.stops.length - 1; k++) {
+    const A = ttStation(S, svc.stops[k].st), B = ttStation(S, svc.stops[k + 1].st);
+    if (!A || !B || !A.trk || !B.trk) { arr = null; continue; }
+    if (svc.stops[k].turn === 'runaround' && arr && A.raPts) {
+      const ra = ttRaPlan(T, A, arr);
+      if (ra) ra.forEach((r, j) => moves.push({ stop: k, move: 'runaround', j, needs: r.needs.map(n => need(r, n)) }));
+    }
+    let best = null;
+    for (const a of A.trk.ends) for (const b of B.trk.ends) {
+      const r = findRoute(T, a, { e: b.e, s: b.s });
+      if (r && r.dEnd === b.d && (!best || r.dist < best.r.dist)) best = { r, b };
+    }
+    if (!best) { arr = null; continue; }
+    moves.push({ stop: k, move: 'leg', j: 0, needs: best.r.needs.map(n => need(best.r, n)) });
+    arr = { e: best.b.e, s: best.b.s, d: best.b.d };
+  }
+  c[svc.id] = { key, moves };
+  return moves;
+}
+// The run-around's three moves at station A for an engine arriving at arr (its leading end there, facing on): on to
+// the nearer run-around point ahead, back through the passing track (not the station track, where the cars stand)
+// to the other point, and on to the far end of the cars. [route, route, route] or null.
+function ttRaPlan(T, A, arr) {
+  let m1 = null;
+  for (const p of A.raPts) { const r = findRoute(T, arr, p); if (r && (!m1 || r.dist < m1.r.dist)) m1 = { r, p }; }
+  if (!m1) return null;
+  const other = A.raPts.find(p => p !== m1.p), r2 = other && findRoute(T, { e: m1.p.e, s: m1.p.s, d: -m1.r.dEnd }, other, new Set(ttSpanEdges(A.trk)));
+  if (!r2) return null;
+  let r3 = null;
+  for (const b of A.trk.ends) {
+    if (b.e === arr.e && Math.abs(b.s - arr.s) < 1e-6) continue;
+    const r = findRoute(T, { e: other.e, s: other.s, d: -r2.dEnd }, { e: b.e, s: b.s });
+    if (r && (!r3 || r.dist < r3.dist)) r3 = r;
+  }
+  return r3 ? [m1.r, r2, r3] : null;
+}
+// The station nearest a switch (its stopping track's middle within 60u), or null.
+function swStation(S, W) {
+  const T = S.track, N = T.nodes[W.node];
+  let best = null;
+  for (const st of ttStations(S)) {
+    if (!st.trk) continue;
+    const m = edgeAt(T, T.edges[st.trk.mid.e], st.trk.mid.s), d = Math.hypot(m.x - N.x, m.z - N.z);
+    if (d < 60 * SC && (!best || d < best.d)) best = { st, d };
+  }
+  return best ? best.st : null;
+}
+function ttSwitchNeeds(S, day) {
+  const D = S.tt;
+  if (!D) return [];
+  if (day === undefined) day = Math.floor((S.time + CFG.DAY_START_S) / 86400);
+  const T = S.track, out = [];
+  for (const svc of D.services) {
+    if (svc.train === null || !((svc.days >> (day % 7)) & 1)) continue;
+    const tr = S.trains[svc.train], run = D.runs.find(r => r.svc === svc.id && r.day === day) || null;
+    const over = !run && svc.last >= day;   // made (or cancelled) already
+    for (const mv of ttSwitchPlan(S, svc)) {
+      const st0 = svc.stops[mv.stop], st1 = svc.stops[mv.stop + 1];
+      let passed = over, byTime;
+      if (mv.move === 'leg') {
+        if (st0.dep === null || st1.arr === null) continue;
+        if (run) passed = run.i > mv.stop + 1 || (run.i === mv.stop + 1 && run.ph === 'at');
+      } else {
+        if (st0.arr === null || st0.dep === null) continue;
+        const ra = run && run.i === mv.stop && run.ph === 'at' ? run.ra : null;
+        if (run) passed = run.i > mv.stop || !!(ra && (ra.done || (ra.step < 5 && ra.step >= mv.j + 3)));
+      }
+      // On the leg now: a switch its route has taken it over, tail and all, is passed too.
+      const onLeg = run && mv.move === 'leg' && run.ph === 'go' && run.i === mv.stop + 1 && tr && tr.route && tr.route.needs ? tr.route : null;
+      for (const n of mv.needs) {
+        const W = T.switches[n.sw];
+        if (!W || (W.spring && !n.face)) continue;
+        const rn = onLeg && onLeg.needs.find(q => q.sw === n.sw && q.state === n.state);
+        const over = !!rn && onLeg.total - onLeg.left > rn.stopAt + trainLength(tr) + 6 * SC;
+        if (mv.move === 'leg') { const t0 = ttAt(day, st0.dep), t1 = ttAt(day, st1.arr); byTime = t0 + (t1 - t0) * n.frac; }
+        else { const a = ttAt(day, st0.arr), d = ttAt(day, st0.dep); byTime = a + (d - a) * (mv.j + 1) / 4; }
+        byTime = Math.floor(byTime / 60) * 60;
+        const near = swStation(S, W), sod = ((byTime + CFG.DAY_START_S) % 86400 + 86400) % 86400;
+        out.push({ svc: svc.id, service: svc.name, train: svc.train, trainName: tr ? tr.name : '', stop: mv.stop, move: mv.move,
+          station: near ? near.id : null, stationName: near ? near.name : '', sw: n.sw, want: swWant(n.state), byTime, by: ttClock(sod),
+          spring: !!W.spring, set: (W.spring ? W.lever : W.state) === n.state, passed: passed || over, done: false });
+      }
+    }
+  }
+  out.sort((a, b) => a.byTime - b.byTime || a.svc - b.svc || a.sw - b.sw);
+  // Done: made, or set now with no earlier move still to come wanting it the other way.
+  const first = {};
+  for (const x of out) {
+    if (x.passed) { x.done = true; continue; }
+    if (first[x.sw] === undefined) first[x.sw] = x.want;
+    x.done = x.set && first[x.sw] === x.want;
+  }
+  return out;
 }
 
 // ---- Person tasks at a train: uncoupling, putting wood on the tender, taking water ----
@@ -5187,11 +5413,12 @@ function rideCheckSaveShape(st) {
 //       event 'telegram' { id }. buttons: up to 3 of { label, cmd }: cmd is a command (plain data, whole numbers)
 //       run when the player taps that button (tgAnswer), or null for a button that only answers.
 //   alertsOf(S)   -> the active problems [{ key, k, title, body, x, z }], k one of 'wait' (a train waiting past its
-//       time), 'late' (a contract late), 'stock' (a business out of a good it uses), 'wood' (an engine under a cord)
+//       time), 'late' (a contract late), 'stock' (a business out of a good it uses), 'wood' (an engine under a cord),
+//       'switch' (D20: a train standing at a switch set against it; x, z the switch stand, sw its id)
 // Commands: { t: 'tgRead', id } (id -1: every telegram), { t: 'tgAnswer', id, b } (tap button b: the telegram is
 //   answered and read, then the button's command runs as if the player had sent it).
 // Events: telegram { id }, tgAnswered { id, b, kind }, tgRefused { why }.
-// Which game events become telegrams: TG_FROM_EVENT (one entry per event); and the alerts 'wait' and 'wood' when
+// Which game events become telegrams: TG_FROM_EVENT (one entry per event); and the alerts 'wait', 'wood' and 'switch' when
 // they start (tgTick, every TG.ALERT_EVERY ticks).
 const TG = { MAX: 150, SEEN_S: 6 * 3600, ALERT_EVERY: 8, TEXT_MAX: 600, BUTTONS_MAX: 3 };
 function tgNewStore() { return { list: [], next: 0, seen: {} }; }
@@ -5272,7 +5499,13 @@ function alertsOf(S) {
     if (tr.owner || trainOff(tr)) continue;
     const p = trainPoses(S.track, tr)[0], at = p ? { x: p.x, z: p.z } : { x: 0, z: 0 };
     const run = D ? ttRunOf(S, tr.id) : null;
-    if (run && run.why && /^(Waiting:|Hold for orders)/.test(run.why)) {
+    // D20: waiting at a switch set against it, timetabled or not: the player must throw it.
+    if (tr.swWait !== undefined && tr.v === 0) {
+      const W = S.track.switches[tr.swWait], st = W ? swStation(S, W) : null, Sw = swName(tr.swWait);
+      out.push({ key: `sw:${tr.id}:${tr.swWait}`, k: 'switch', title: `${tr.name} is waiting at ${Sw}` + (st ? ` (${st.name})` : ''),
+        body: `${Sw.replace(/^./, ch => ch.toUpperCase())} is set against it. Walk to the switch stand and throw it, and ${tr.name} carries on.`,
+        x: W ? W.stand.x : at.x, z: W ? W.stand.z : at.z, tr: tr.id, sw: tr.swWait });
+    } else if (run && run.why && /^(Waiting:|Hold for orders)/.test(run.why)) {
       // Only once it holds the train past its time: the stop's departure (or, running in, its arrival).
       const svc = D.services[run.svc], stop = svc.stops[run.i], sod = run.ph === 'at' && stop.dep !== null ? stop.dep : stop.arr;
       if (sod !== null && S.time > ttAt(run.day, sod)) {
@@ -5314,7 +5547,7 @@ function tgTick(S, ev) {
   if (S.tick % TG.ALERT_EVERY !== 0) return;
   for (const key of Object.keys(G.seen)) if (S.time - G.seen[key] > TG.SEEN_S) delete G.seen[key];
   for (const a of alertsOf(S)) {
-    if (a.k !== 'wait' && a.k !== 'wood') continue;
+    if (a.k !== 'wait' && a.k !== 'wood' && a.k !== 'switch') continue;
     const fresh = G.seen[a.key] === undefined;
     G.seen[a.key] = S.time;
     if (fresh) telegramSend(S, { from: 'Station agent', title: a.title, body: a.body, kind: a.k, ref: { kind: 'train', id: a.tr } }, ev);
@@ -5481,6 +5714,7 @@ function simTick(S, cmds) {
   overlandTick(S, ev);                                  // 3. dispatch: the Overland's visits (section "trains")
   ttTick(S, ev);                                        // 3. dispatch: timetable trains and reservations (section "timetable")
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
+  springTick(S);                                        // spring switches pushed over by a train spring back (D20)
   ttStatus(S);
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
@@ -5608,6 +5842,21 @@ function migrate(save) {
     if (st.track && typeof st.track === 'object' && Array.isArray(st.track.edges) && Array.isArray(st.track.nodes) && !Array.isArray(st.track.crossings)) st.track.crossings = xingFixed(st.track);
     st.schemaVersion = 15;
   }
+  if (st.schemaVersion === 15) {
+    // 15 -> 16 (manual switches, D20): routes no longer set or lock switches, so every lock is freed and the switches
+    // stay as they lie (a route already under way runs on over them). In the real start, Willow Ford's run-around
+    // switches become spring switches (2 lies for the main track, 3 for the loop: springTick turns a free one there).
+    const T = st.track;
+    if (T && typeof T === 'object' && Array.isArray(T.switches)) {
+      for (const W of T.switches) if (W && typeof W === 'object') W.lockedBy = null;
+      if (T.world === 'start' && T.switches[2] && T.switches[3]) {
+        T.switches[2].spring = true; T.switches[2].lever = 'N';
+        T.switches[3].spring = true; T.switches[3].lever = 'R';
+      }
+    }
+    if (Array.isArray(st.trains)) for (const tr of st.trains) if (tr && tr.route && typeof tr.route === 'object') tr.route.locks = [];
+    st.schemaVersion = 16;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   return save;
@@ -5685,7 +5934,7 @@ function checkSaveShape(st) {
   const nodeOk = i => Number.isInteger(i) && i >= 0 && i < T.nodes.length;
   const edgeOk = i => Number.isInteger(i) && i >= 0 && i < T.edges.length;
   for (const E of T.edges) if (!E || !nodeOk(E.a) || !nodeOk(E.b) || !num(E.len) || !(E.len > 0) || (E.k !== 'S' && E.k !== 'A') || !num(E.lim)) bad('track edge');
-  for (const W of T.switches) if (!W || !nodeOk(W.node) || !edgeOk(W.trunk) || !edgeOk(W.normal) || !edgeOk(W.reverse) || (W.state !== 'N' && W.state !== 'R') || !W.stand) bad('switch');
+  for (const W of T.switches) if (!W || !nodeOk(W.node) || !edgeOk(W.trunk) || !edgeOk(W.normal) || !edgeOk(W.reverse) || (W.state !== 'N' && W.state !== 'R') || !W.stand || (W.spring && W.lever !== 'N' && W.lever !== 'R')) bad('switch');
   if (!arr(T.crossings) || T.crossings.some(p => !p || !num(p.x) || !num(p.z) || !num(p.hx) || !num(p.hz))) bad('track crossings');
   if (!arr(st.trains)) bad('trains');
   for (const tr of st.trains) {
@@ -9722,6 +9971,8 @@ function handleEvent(e) {
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
   else if (e.t === 'reachedTrain') openPanel(e.tr);
   else if (e.t === 'noRoute') toast(e.why);
+  else if (e.t === 'routeSet' && e.throws && e.throws.length) toast(`On its way. Set ${e.throws.map(w => `${swName(w.sw)} to ${w.want === 'normal' ? 'straight (green)' : 'the turn-off (red)'}`).join(', ')}: it waits short of a switch set against it.`);
+  else if (e.t === 'trainSwitchWait') toast(`${S.trains[e.tr].name} is waiting at ${swName(e.sw)} (set against it).`);
   else if (e.t === 'trainArrived') { if (!S.trains[e.tr].owner) toast(`${S.trains[e.tr].name} has arrived.`); }
   else if (e.t === 'notYourTrain') toast(e.why + '.');
   else if (e.t === 'reachedCar') openCarPanel(e.stock);
@@ -10704,7 +10955,8 @@ function lookCardOf(S, pick) {
     const W = S.track.switches[pick.id];
     if (!W) return null;
     const why = switchLockReason(S, W.id);
-    return { title: `Switch ${W.id}`, lines: [`Set ${W.state === 'N' ? 'straight (green)' : 'to the turn-off (red)'}`, why ? `Locked: ${why}` : 'Free: tap it to throw it'] };
+    return { title: `Switch ${W.id}` + (W.spring ? ' (spring switch)' : ''), lines: [`Set ${(W.spring ? W.lever : W.state) === 'N' ? 'straight (green)' : 'to the turn-off (red)'}`,
+      ...(W.spring ? ['A train coming through from the other leg pushes it over; it springs back'] : []), why ? `Locked: ${why}` : 'Free: tap it to throw it'] };
   }
   return null;
 }
@@ -11278,7 +11530,8 @@ window.__railhead = {
     get view() { return paxView; }, get kits() { return crowd.kits; } },
   jobs: { JOB, JOB_MAT, jobGet, jobNeeds, jobPoint, jobTieAt, jobStepAt, jobPieceTotals, jobDebugScenario, jobNewStore },
   tt: { TT, TT_TEST_STATIONS, FUEL_CAP, ttStations, ttStation, ttBoard, ttRunOf, ttJointAt, ttEngineJoint, ttTenderAt, ttSpout, ttDebugScenario, ttNewState, ttStopNeeds, ttWoodNeedU,
-    ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; } },
+    ttPathBlocks, ttWorkDone, trainObstacle, tenderFirst, trainFacing, trackIndex, get boards() { return ttView; },
+    ttSwitchNeeds, ttSwitchPlan, swStation, switchApproach, routeThrows, springTick, swName },   // D20: manual switches
   feet: { bldStandY, bldDeckInside, deckGroundAt, BLD_STEP_R, get playerY() { return view.player.position.y; }, get ringY() { return view.ring.position.y; },
     get actionRingY() { return carryView.ring.position.y; }, get toolYs() { return carryView.tools.map(v => v.g.position.y); } },
   gait: { GAIT, gaitNew, gaitStep, gaitPose, gaitStride, gaitApplyPlayer, get player() { return view.player; } },   // the walk (drawing only)

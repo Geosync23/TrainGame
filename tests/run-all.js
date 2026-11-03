@@ -8,6 +8,7 @@ const checks = {
   'boot (page loads at phone size)': require('./check-boot'),
   'track (graph and validation)': require('./check-track'),
   'trains and switches': require('./check-trains'),
+  'manual switches (trains wait at a switch set against them; the timetable\'s switch list)': require('./check-switches'),
   'same start, same result': require('./check-determinism'),
   'saving and loading': require('./check-save'),
   'touch controls': require('./check-touch'),

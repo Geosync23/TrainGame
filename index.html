@@ -1430,7 +1430,7 @@ function overlandCheckSaveShape(st) {
 // (put the train on the timetable or take it off), ttHighball { tr } (wave it off without its stop actions).
 // Events: ttStarted, ttArrived, ttDeparted, ttDone, ttCancelled, ttAssigned, ttHighball, ttRefused, uncoupled,
 // coupled, tenderFuelled, waterTaken.
-const TT = { START_EARLY_S: 3600, IN_WATER_S: 600, DWELL_S: 300, PLAT_MAX_S: 900, BACK_S: 900, CANCEL_S: 6 * 3600, TOUCH: 0.35 * SC, SPOUT_MOVE: 40 * SC, BESIDE: 0.55 * SC + 0.6, TENDER_AT: -1.87 * SC, SPOUT_REACH: 1.2 * SC };
+const TT = { CXL_SHOW_S: 2 * 3600, START_EARLY_S: 3600, IN_WATER_S: 600, DWELL_S: 300, PLAT_MAX_S: 900, BACK_S: 900, CANCEL_S: 6 * 3600, TOUCH: 0.35 * SC, SPOUT_MOVE: 40 * SC, BESIDE: 0.55 * SC + 0.6, TENDER_AT: -1.87 * SC, SPOUT_REACH: 1.2 * SC };
 // D15: every number here is a place in the test yard, so the whole table is grown by SC (scaleDeep).
 const TT_TEST_STATIONS = scaleDeep([
   { id: 'hub', name: 'Hub (test)', tags: ['HUB', 'HUBWH'], track: { x0: 16, z0: -14, x1: -2, z1: -14 }, area: [-4, 18, -13, -9],
@@ -1718,6 +1718,9 @@ function ttEnd(S, run, ev, kind, why) {
   run.ph = 'done';
   const tr = S.trains[S.tt.services[run.svc].train];
   S.tt.res = S.tt.res.filter(r => !tr || r.tr !== tr.id);
+  // A cancelled run (not one taken off the timetable) is remembered on its service, so the departure boards say
+  // "Cancelled" for its stops still to come (ttBoard, for TT.CXL_SHOW_S).
+  if (kind !== 'done' && why !== 'taken off the timetable') S.tt.services[run.svc].cxl = { day: run.day, i: run.i, at: S.time };
   ev.push({ t: kind === 'done' ? 'ttDone' : 'ttCancelled', svc: run.svc, why: why || '' });
 }
 // Step 3: the timetable dispatcher.
@@ -1729,7 +1732,7 @@ function ttTick(S, ev) {
     if (svc.train === null || svc.last === day || !((svc.days >> (day % 7)) & 1)) continue;
     const d0 = svc.stops[0].dep;
     if (sod < d0 - TT.START_EARLY_S) continue;
-    if (sod > d0 + TT.CANCEL_S) { svc.last = day; ev.push({ t: 'ttCancelled', svc: svc.id, why: 'too late to start' }); continue; }
+    if (sod > d0 + TT.CANCEL_S) { svc.last = day; svc.cxl = { day, i: 0, at: S.time }; ev.push({ t: 'ttCancelled', svc: svc.id, why: 'too late to start' }); continue; }
     if (D.runs.some(r => D.services[r.svc].train === svc.train)) continue; // its engine is still on another run
     svc.last = day;
     D.runs.push({ svc: svc.id, day, i: 0, ph: 'go', arr: null, hb: false, ra: null, why: '' });
@@ -2100,7 +2103,8 @@ function ttActorTick(S, ev, poseCache) {
 
 // ---- The train order board (section 8): what each station's board shows ----
 // signal: 'green' while a timetable train is leaving this station on its reservation (proceed), else 'red' (hold).
-// lines: the next departures from this station (up to 3): { time, name, to, state }.
+// lines: the next departures from this station (up to 4): { time, sod (seconds of the day), name, to, state }; a run
+// cancelled today shows its stops still to come as 'Cancelled' for TT.CXL_SHOW_S after it was cancelled.
 function ttSignal(S, stId) {
   const D = S.tt;
   if (D) for (const run of D.runs) {
@@ -2120,6 +2124,7 @@ function ttBoard(S, stId) {
     let state;
     if (run && run.i === i && run.ph === 'at') state = run.why || 'Departing';
     else if (run && run.i <= i) state = 'On its way here';
+    else if (!run && svc.cxl && svc.cxl.day === day && i >= svc.cxl.i) { if (S.time > svc.cxl.at + TT.CXL_SHOW_S) return; state = 'Cancelled'; }
     else if (run || svc.last === day) return;            // already left today
     else if (svc.train === null) state = 'No engine on the timetable';
     else if (sod > p.dep + TT.CANCEL_S) return;
@@ -2127,7 +2132,7 @@ function ttBoard(S, stId) {
     rows.push({ time: ttClock(p.dep), sod: p.dep, name: svc.name, to: to ? to.name : '?', state });
   });
   rows.sort((a, b) => a.sod - b.sod || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  out.lines = rows.slice(0, 4).map(({ time, name, to, state }) => ({ time, name, to, state }));
+  out.lines = rows.slice(0, 4).map(({ time, sod, name, to, state }) => ({ time, sod, name, to, state }));
   return out;
 }
 
@@ -3761,8 +3766,22 @@ function walkGridBuild(T) {
   const fps = buildingFootprints(), solid = fps.filter(f => !f.flush);
   for (const f of fps) if (f.flush) walkStampRect(f, 0, i => { if (cost[i]) cost[i] = WALK.PLATFORM; });
   for (const f of solid) walkStampRect(f, WALK.R, i => { cost[i] = 0; });
+  walkBoothCarve(cost);
   return walkGridLayer(walkGridSig(T), cost, solid);
 }
+// The depots' ticket booths (buildingBooths): their strip and doorway are walked on like the platform, the rest of
+// the depot stays blocked. Open: the cells whose centre is inside a booth rectangle shrunk by the player's radius.
+function walkBoothCarve(cost) {
+  const N = WALK.N;
+  for (const r of buildingBooths()) {
+    const h = Math.hypot(r.w, r.d) / 2;
+    for (let j = walkRowOf(r.z - h); j <= walkRowOf(r.z + h); j++) for (let i = walkCellOf(r.x - h); i <= walkCellOf(r.x + h); i++) {
+      const [cx, cz] = walkCentre(j * N + i);
+      if (walkRectHits(r, -WALK.R, cx, cz, 0)) cost[j * N + i] = WALK.PLATFORM;
+    }
+  }
+}
+function walkInBooth(x, z) { return buildingBooths().some(r => walkRectHits(r, -WALK.R, x, z, 0)); }
 // A grid from its costs: connected areas, and the scratch arrays for the searches (sc; shared by the plain and the
 // handcart grid, as every search and train stamp starts afresh by bumping a counter in sc).
 function walkGridLayer(sig, cost, solid, sc) {
@@ -3950,7 +3969,7 @@ function walkPoints(S, poses, upTo) {
   return { pts: out, done: i >= pts.length, exact: plan.exact };
 }
 // Is (x, z) inside a building, grown by the player's radius? (For walking by direction.)
-function walkInBuilding(T, x, z) { return walkGrid(T).solid.some(f => walkRectHits(f, WALK.R, x, z, 0)); }
+function walkInBuilding(T, x, z) { return walkGrid(T).solid.some(f => walkRectHits(f, WALK.R, x, z, 0)) && !walkInBooth(x, z); }
 
 // ==== Section: player ====
 // Rough footprint test: is (x, z) inside a vehicle (plus the player's own radius)?
@@ -4414,29 +4433,36 @@ function paxStations(T) {
   const spots = typeof buildingSpots === 'function' ? buildingSpots() : [];
   const W = (g, lx, lz) => [g.x + lx * Math.cos(g.yaw) + lz * Math.sin(g.yaw), g.z - lx * Math.sin(g.yaw) + lz * Math.cos(g.yaw)];
   const dist = (a, f) => Math.hypot(a.x - f.x, a.z - f.z);
-  const make = (id, f, depot, staffAt) => {
+  // The ticket booth (2026-11-03): a depot's 'ticket' spot is inside it, behind the window, and its 'line' spot is
+  // outside on the platform, where the queue starts (and the player stood before the booth).
+  const spotOf = (depot, k) => depot ? spots.find(b => b.building === depot.id && b.kind === k) || null : null;
+  const make = (id, f, depot) => {
     const along = [Math.cos(f.yaw), -Math.sin(f.yaw)], nrm = [Math.sin(f.yaw), Math.cos(f.yaw)];
-    let win, staff;
-    if (staffAt) { staff = [staffAt.x, staffAt.z]; win = [staff[0] - nrm[0] * PAX.STAFF_OUT, staff[1] - nrm[1] * PAX.STAFF_OUT]; }
+    const staffAt = spotOf(depot, 'ticket'), lineAt = spotOf(depot, 'line');
+    let win, staff, line;
+    if (staffAt && lineAt) {
+      staff = [staffAt.x, staffAt.z]; line = [lineAt.x, lineAt.z];
+      const k = BLD_BOOTH.wall * WS - BLD_SPOTS.depot.ticket[1]; // from the counter out to the window in the front wall
+      win = [staff[0] + nrm[0] * k, staff[1] + nrm[1] * k];
+    } else if (staffAt) { staff = line = [staffAt.x, staffAt.z]; win = [staff[0] - nrm[0] * PAX.STAFF_OUT, staff[1] - nrm[1] * PAX.STAFF_OUT]; }
     else {
       win = depot ? W(depot, 0.35 * depot.w, depot.d / 2) : W(f, 0, -f.d / 2);
-      staff = [win[0] + nrm[0] * PAX.STAFF_OUT, win[1] + nrm[1] * PAX.STAFF_OUT];
+      staff = line = [win[0] + nrm[0] * PAX.STAFF_OUT, win[1] + nrm[1] * PAX.STAFF_OUT];
     }
     const exits = [-1, 1].map(k => W(f, k * (f.w / 2 + 0.8), 0));
-    return { id, plat: f, depot, window: { x: win[0], z: win[1] }, staff: { x: staff[0], z: staff[1] }, along, out: nrm, exits };
+    return { id, plat: f, depot, window: { x: win[0], z: win[1] }, staff: { x: staff[0], z: staff[1] }, line: { x: line[0], z: line[1] }, along, out: nrm, exits };
   };
   let out;
   if (table.length) {
     out = table.map(st => {
       const f = fps.find(g => g.id === (st.platforms || [])[0]);
       if (!f) return null;
-      const depot = fps.find(g => g.id === st.depot) || null, sp = spots.find(b => b.building === st.depot && b.kind === 'ticket') || null;
-      return make(st.id, f, depot, sp);
+      return make(st.id, f, fps.find(g => g.id === st.depot) || null);
     }).filter(Boolean);
   } else {
     out = fps.filter(f => bldIsPlatform(f.kind)).map((f, i) => {
       const depot = fps.filter(g => g.kind === 'depot' && dist(g, f) < 8 * SC).sort((a, b) => dist(a, f) - dist(b, f))[0] || null;
-      return make(i === 0 ? 'hub' : f.id, f, depot, null);
+      return make(i === 0 ? 'hub' : f.id, f, depot);
     });
   }
   return (paxStationsCache[wid] = out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
@@ -4457,7 +4483,7 @@ const paxQueueCache = {};
 function paxQueueSlots(S, K) {
   const G = walkGrid(S.track), key = K.id + '|' + G.sig;
   if (paxQueueCache[key]) return paxQueueCache[key];
-  const f = K.plat, [hx, hz] = paxLocal(K, K.staff.x, K.staff.z), out = [];
+  const f = K.plat, [hx, hz] = paxLocal(K, K.line.x, K.line.z), out = [];
   for (let row = 0; row < 3 && out.length < PAX.MAX_AT; row++) {
     const lz = hz + row * PAX.QGAP;
     if (lz > f.d / 2 - 0.45) break;
@@ -4633,7 +4659,7 @@ function paxDeskTick(S, ev) {
     const [sx, sz] = paxStaffAt(K);
     if (P.mode === 'to' && P.tx === sx && P.tz === sz) return null; // still walking there
     if (P.mode === 'idle' && !P.act && d <= 0.5) {
-      D.on = 1; P.f = Math.atan2(K.along[0], K.along[1]); // facing the queue
+      D.on = 1; P.f = Math.atan2(K.out[0], K.out[1]); // behind the counter, facing the window and the queue
       ev.push({ t: 'deskStaffed', st: K.id });
       return K.id;
     }
@@ -4680,7 +4706,7 @@ function paxTick(S, ev, poseCache) {
     queue.forEach((p, i) => { const sl = slots[Math.min(i, slots.length - 1)]; if (sl) paxGo(S, p, poses, sl[0], sl[1]); });
     // Selling: while the player staffs this window and the first in line has stepped up, 0.5 game minutes a ticket.
     const first = queue[0];
-    if (staffed === K.id && first && Math.hypot(first.x / 100 - K.staff.x, first.z / 100 - K.staff.z) <= PAX.REACH) {
+    if (staffed === K.id && first && Math.hypot(first.x / 100 - K.line.x, first.z / 100 - K.line.z) <= PAX.REACH) {
       X.sell[K.id] = (X.sell[K.id] || 0) + CFG.TICK_GAME_S;
       if (X.sell[K.id] >= PAX.SELL_S) {
         X.sell[K.id] -= PAX.SELL_S;
@@ -4777,7 +4803,7 @@ function paxDebugScenario(S, nQueue, nWait) {
     const w = paxWaitSpot(S, K), p = paxAdd(S, 'hub', 'hub', 'willow', w[0] / 100, w[1] / 100, ev);
     p.s = 'wait'; p.fare = paxFare('hub', 'willow'); p.tx = w[0]; p.tz = w[1];
   }
-  S.player.x = K.staff.x - 1.5; S.player.z = K.staff.z + 0.5;
+  S.player.x = K.line.x - 1.5; S.player.z = K.line.z + 0.5;
   if (S.overland) S.overland.phase = 'off';
   return S;
 }
@@ -6980,7 +7006,8 @@ function bldVary(rng) {
 // (WS) about the building's origin; b.raw() gives a placer in true units (not grown) for human-sized parts and heights,
 // and b.on(dy) one whose grown parts stand dy (true units, not grown) higher, on a platform or dock top.
 // roof (optional): a third kit for roofs that turn see-through near the player (b.roof; without it they go to kit).
-function bldPlacer(kit, glow, at, vary, sc, lift, roof) {
+// shell (optional): a fourth, for the depot's shell that turns see-through while the player is in its booth (b.shell).
+function bldPlacer(kit, glow, at, vary, sc, lift, roof, shell) {
   if (sc === undefined) sc = WS;
   lift = lift || 0;
   const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), at.yaw || 0);
@@ -6993,10 +7020,12 @@ function bldPlacer(kit, glow, at, vary, sc, lift, roof) {
     k.add(geo, col, at.x + v.x, (at.y || 0) + lift + v.y, at.z + v.z, e.x, e.y, e.z);
   };
   return {
-    raw: () => bldPlacer(kit, glow, at, vary, 1, lift, roof),
-    on: dy => bldPlacer(kit, glow, at, vary, sc, lift + dy, roof),
+    raw: () => bldPlacer(kit, glow, at, vary, 1, lift, roof, shell),
+    on: dy => bldPlacer(kit, glow, at, vary, sc, lift + dy, roof, shell),
     add: (geo, hex, x, y, z, rx, ry, rz) => place(kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
     roof: (geo, hex, x, y, z, rx, ry, rz) => place(roof || kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
+    // The depot's shell (roof, front wall, chimney: see BLD_BOOTH), which turns see-through while the player is in the booth.
+    shell: (geo, hex, x, y, z, rx, ry, rz) => place(shell || kit, geo, vary ? vary(hex) : hex, x, y, z, rx, ry, rz),
     glow: (geo, x, y, z, rx, ry, rz) => place(glow, geo, PAL.win, x, y, z, rx, ry, rz),
     // A glowing window in a trim frame, on a wall facing z (side 'z') or x (side 'x'); s = -1 faces the minus side.
     win(x, y, z, w, h, side, s) {
@@ -7028,9 +7057,37 @@ const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) =
 // something inside. Just outside the walk grid's block (the footprint grown by 0.25u), on the platform.
 // D15: x along the wall grows with the building; the person stands 0.85u in front of the depot's front: past the walk
 // grid's block (front + 0.25u) by more than one 0.5u cell, so the spot's cell is open, and well within reach (1.5u).
+// The ticket booth (2026-11-03, the designer: "when selling tickets you should be inside the booth"): the player goes in
+// by the depot's door and sells from behind the counter at the ticket window; travellers queue outside, from the
+// 'line' spot in front of the window (where the player used to stand). M1 units in the depot's local frame (x along
+// the front, +z towards the track): the door and window openings [x0, x1], the booth strip z0..wall (inside the front
+// wall, t thick), the bay's centre, and the departure board [x0, x1] x [y0, y1] beside the window.
+const BLD_BOOTH = { door: [1.32, 1.97], doorH: 1.25, win: [0.62, 1.17], winY: [0.75, 1.35], z0: 0.3, wall: 1.0, t: 0.06,
+  bay: -1.45, board: [-0.75, 0.5], boardY: [0.42, 1.42] };
 const BLD_SPOTS = {
-  depot: { ticket: [1.6 * WS, 1.48 * WS + 0.85], telegraph: [0.4 * WS, 1.48 * WS + 0.85], desk: [-1.3 * WS, 1.48 * WS + 0.85] },
+  depot: { ticket: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, (BLD_BOOTH.z0 + BLD_BOOTH.wall - BLD_BOOTH.t) / 2 * WS],
+    line: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, 1.48 * WS + 0.85],
+    telegraph: [BLD_BOOTH.bay * WS, 1.48 * WS + 0.85], desk: [(BLD_BOOTH.door[0] + BLD_BOOTH.door[1]) / 2 * WS, 1.48 * WS + 0.85] },
 };
+// The booths as plain data (no three.js; the walk grid and the feet read them): for each depot, its booth strip and
+// its doorway as world rectangles {id, part, x, z, w, d, yaw} (the strip inside the front wall; the doorway from the
+// strip out past the platform's back edge). The walk grid opens their cells (walkBoothCarve), so the rest of the depot
+// stays blocked; on them the feet stand at the platform's height.
+const bldBoothCache = { layout: null, list: null };
+function buildingBooths() {
+  if (bldBoothCache.layout === BLD_LAYOUT) return bldBoothCache.list;
+  const out = [], B = BLD_BOOTH;
+  for (const at of BLD_LAYOUT) {
+    if (bldKindOf(at) !== 'depot') continue;
+    const c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
+    const rect = (part, x0, x1, z0, z1) => { const cx = (x0 + x1) / 2 * WS, cz = (z0 + z1) / 2 * WS;
+      out.push({ id: at.id, part, x: at.x + cx * c + cz * s, z: at.z - cx * s + cz * c, w: (x1 - x0) * WS, d: (z1 - z0) * WS, yaw: at.yaw || 0 }); };
+    rect('strip', -2.04, 2.04, B.z0, B.wall - B.t);
+    rect('door', B.door[0], B.door[1], B.z0, 2.0);
+  }
+  bldBoothCache.layout = BLD_LAYOUT; bldBoothCache.list = out;
+  return out;
+}
 // Use spots as world points [{ building, kind, x, z }]: the ticket window, telegraph key and office desk of
 // each depot (C1's telegraph, C4's passengers). Plain data, no three.js.
 function buildingSpots() {
@@ -7046,23 +7103,51 @@ const BLD_RECIPES = {
   // Platforms: the hub's (20u long, D12) and the test yard's, with a canopy over the middle 10u and a bench.
   platform(b) { return bldPlatform(b, BLD_EXT_M1.platform, 3.1, true); },
   yardplatform(b) { return bldPlatform(b, BLD_EXT_M1.yardplatform, 3.1, true); },
-  // Small depot (style test page station): ticket window, telegraph, and the agent's office in the bay.
+  // Small depot (style test page station): the ticket booth behind its window (BLD_BOOTH: entered by the door, a
+  // walkable strip inside the front wall with a counter at the window; the rest of the depot is a closed block), the
+  // telegraph and the agent's office in the bay, and the painted departure board beside the window (its letters are
+  // the board's own mesh, see "departure boards"; its frame and lamp are here). Front, west to east: bay, board,
+  // ticket window, door (the board west of the window, so it never stands between the player at the counter and the
+  // default camera, which looks from the east; the door next to the window, so the walk in and out is short). The roof, the front wall, the strip's end walls and the chimney are the shell (b.shell), which turns
+  // see-through while the player is in the booth (bldShellFade); the floor, the closed block and the counter stay.
   depot(b) {
-    b.add(box(4.3, 0.3, 2.1), PAL.trim, 0, 0.1, 0);
-    b.add(box(4.2, 1.7, 2), PAL.wall, 0, 0.85, 0);
-    b.add(bldPrism(4.6, 2.6, 0.9), PAL.roof, 0, 1.7, 0);
-    b.add(box(0.3, 0.6, 0.3), PAL.trim, 1.2, 2.45, -0.35);
-    b.add(box(0.6, 1.0, 0.05), PAL.trim, -1.3, 0.75, 1.0);                  // door
-    b.add(box(1.5, 0.38, 0.04), PAL.trim, -1.3, 1.5, 1.01);                 // sign board (blank for now)
-    b.add(box(1.38, 0.26, 0.05), BLD_COL.canvas, -1.3, 1.5, 1.025);
+    const B = BLD_BOOTH, z0 = B.z0, zw = B.wall - B.t, zf = (zw + B.wall) / 2, floorTop = BLD_PLATFORM_TOP / WS - 0.006;
+    b.add(box(4.3, 0.3, 1.05 + z0), PAL.trim, 0, 0.1, (z0 - 1.05) / 2);                            // the closed block's base
+    b.add(box(4.3, floorTop + 0.05, 1.05 - z0), PAL.trim, 0, (floorTop - 0.05) / 2, (z0 + 1.05) / 2); // the booth's floor, 6 mm under the platform top
+    b.add(box(4.2, 1.69, 1 + z0), PAL.wall, 0, 0.845, (z0 - 1) / 2);                              // the closed block (office, waiting room)
+    b.shell(bldPrism(4.6, 2.6, 0.9), PAL.roof, 0, 1.7, 0);
+    b.shell(box(0.3, 0.6, 0.3), PAL.trim, 1.2, 2.45, -0.35);
+    for (const x of [-2.07, 2.07]) b.shell(box(0.06, 1.69, zw - z0), PAL.wall, x, 0.845, (z0 + zw) / 2); // the strip's end walls
+    // The front wall, with the door and ticket window cut out of it.
+    const [d0, d1] = B.door, [w0, w1] = B.win, [wy0, wy1] = B.winY, H = 1.7;
+    const wall = (x0, x1, y0, y1) => b.shell(box(x1 - x0, y1 - y0, B.t), PAL.wall, (x0 + x1) / 2, (y0 + y1) / 2, zf);
+    // Full-height pieces between the openings (in order along the wall), and the pieces above and below them.
+    const cuts = [[d0, d1, B.doorH, H], [w0, w1, 0, wy0], [w0, w1, wy1, H]].sort((a, b) => a[0] - b[0]);
+    let x = -2.1;
+    for (const [a, c] of [[d0, d1], [w0, w1]].sort((p, q) => p[0] - q[0])) { wall(x, a, 0, H); x = c; }
+    wall(x, 2.1, 0, H);
+    for (const [a, c, y0, y1] of cuts) wall(a, c, y0, y1);
+    const dc = (d0 + d1) / 2, wc = (w0 + w1) / 2;
+    for (const x of [d0 - 0.03, d1 + 0.03]) b.shell(box(0.06, B.doorH, 0.04), PAL.trim, x, B.doorH / 2, B.wall + 0.02); // door frame
+    b.shell(box(d1 - d0 + 0.12, 0.06, 0.04), PAL.trim, dc, B.doorH + 0.03, B.wall + 0.02);
+    b.shell(box(0.72, 0.24, 0.04), PAL.trim, dc, 1.46, B.wall + 0.02);                 // sign board (blank for now)
+    b.shell(box(0.62, 0.16, 0.05), BLD_COL.canvas, dc, 1.46, B.wall + 0.025);
+    for (const x of [w0 - 0.03, w1 + 0.03]) b.shell(box(0.06, wy1 - wy0 + 0.12, 0.04), PAL.trim, x, (wy0 + wy1) / 2, B.wall + 0.02); // window frame
+    b.shell(box(w1 - w0 + 0.12, 0.06, 0.04), PAL.trim, wc, wy1 + 0.03, B.wall + 0.02);
+    b.add(box(w1 - w0 + 0.16, 0.05, 0.42), PAL.trim, wc, wy0 - 0.025, B.wall - 0.1);    // the counter, through the window
+    // The departure board's frame and its lamp (the letters are the board's own mesh, just in front of the frame).
+    const [bx0, bx1] = B.board, [by0, by1] = B.boardY, bc = (bx0 + bx1) / 2;
+    b.shell(box(bx1 - bx0 + 0.08, by1 - by0 + 0.08, 0.03), PAL.trim, bc, (by0 + by1) / 2, B.wall + 0.015);
+    b.shell(box(0.04, 0.04, 0.1), PAL.loco, bc, by1 + 0.2, B.wall + 0.05);
+    b.glow(box(0.26, 0.04, 0.05), bc, by1 + 0.17, B.wall + 0.1);
     // The agent's office bay, windows on three sides so the agent can see up and down the line.
-    b.add(box(1.2, 1.25, 0.42), PAL.wall, 0.4, 0.875, 1.2);
-    b.add(box(1.34, 0.08, 0.52), PAL.roof, 0.4, 1.54, 1.22);
-    b.win(0.4, 1.05, 1.41, 0.55, 0.5, 'z');
-    b.win(-0.2, 1.05, 1.2, 0.22, 0.5, 'x', -1); b.win(1.0, 1.05, 1.2, 0.22, 0.5, 'x');
-    b.win(1.6, 1.05, 1.0, 0.55, 0.6, 'z');
+    const bay = B.bay;
+    b.add(box(1.2, 1.25, 0.42), PAL.wall, bay, 0.875, 1.2);
+    b.add(box(1.34, 0.08, 0.52), PAL.roof, bay, 1.54, 1.22);
+    b.win(bay, 1.05, 1.41, 0.55, 0.5, 'z');
+    b.win(bay - 0.6, 1.05, 1.2, 0.22, 0.5, 'x', -1); b.win(bay + 0.6, 1.05, 1.2, 0.22, 0.5, 'x');
     for (const x of [-1.2, 0.3, 1.4]) b.win(x, 1.05, -1.0, 0.55, 0.6, 'z', -1);
-    b.win(2.1, 1.05, 0, 0.55, 0.6, 'x'); b.win(-2.1, 1.05, 0, 0.55, 0.6, 'x', -1);
+    b.win(2.1, 1.05, -0.35, 0.55, 0.6, 'x'); b.win(-2.1, 1.05, -0.35, 0.55, 0.6, 'x', -1);
     return BLD_EXTENTS.depot;
   },
   // Telegraph shanty, with the pole and its crossarm beside it.
@@ -7192,7 +7277,7 @@ function buildingFootprints() {
 const BLD_STEP_R = 0.12;
 const bldDeckCache = { layout: null, rects: null };
 function bldDecks() {
-  if (bldDeckCache.layout !== BLD_LAYOUT) { bldDeckCache.layout = BLD_LAYOUT; bldDeckCache.rects = buildingFootprints().filter(f => f.flush); }
+  if (bldDeckCache.layout !== BLD_LAYOUT) { bldDeckCache.layout = BLD_LAYOUT; bldDeckCache.rects = buildingFootprints().filter(f => f.flush).concat(buildingBooths()); }
   return bldDeckCache.rects;
 }
 // How far (x, z) is inside the nearest deck (negative: outside it), or -Infinity with no deck near.
@@ -7275,12 +7360,26 @@ function bldRoofFade(x, y, z, dt) {
   const M = R.mesh.material;
   M.opacity = R.opacity; M.depthWrite = R.opacity > 0.99;
 }
+// The depots' shells (2026-11-03, the ticket booth): the roof, the front wall and the strip's end walls of every depot
+// are one more mesh (bldShell.mesh, 1 draw call plus its shadow), faded like the canopy (to ROOF_FADE.LOW, no depth
+// writes) while the player is in a booth or its doorway, so the player is seen behind the counter.
+const bldShell = { mesh: null, opacity: 1, target: 1 };
+function bldShellWantFaded(x, z) { return buildingBooths().some(r => walkRectHits(r, 0.3, x, z, 0)); }
+function bldShellFade(x, z, dt) {
+  const R = bldShell;
+  if (!R.mesh) return;
+  R.target = bldShellWantFaded(x, z) ? ROOF_FADE.LOW : 1;
+  R.opacity += (R.target - R.opacity) * (1 - Math.exp(-dt * ROOF_FADE.RATE));
+  if (Math.abs(R.opacity - R.target) < 0.005) R.opacity = R.target;
+  const M = R.mesh.material;
+  M.opacity = R.opacity; M.depthWrite = R.opacity > 0.99;
+}
 function buildBuildings(G) {
-  const kit = new Kit(), glow = new Kit(), roof = new Kit();
+  const kit = new Kit(), glow = new Kit(), roof = new Kit(), shell = new Kit();
   BLD_LAYOUT.forEach((at, i) => {
     const kind = bldKindOf(at);
     const vary = kind === 'lamp' ? null : bldVary(rngSeed(CFG.SEED * 31 + 101 * (i + 1)));
-    BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary, undefined, 0, roof));
+    BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary, undefined, 0, roof, shell));
   });
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
@@ -7291,8 +7390,130 @@ function buildBuildings(G) {
     r.material = KIT_MAT.clone(); r.material.transparent = true; r.material.opacity = bldRoof.opacity; r.material.depthWrite = bldRoof.opacity > 0.99;
     bldRoof.mesh = r; G.add(r);
   }
+  bldShell.mesh = null;
+  if (shell.p.length) {
+    const r = shell.mesh(); r.name = 'depotShells';
+    r.material = KIT_MAT.clone(); r.material.transparent = true; r.material.opacity = bldShell.opacity; r.material.depthWrite = bldShell.opacity > 0.99;
+    bldShell.mesh = r; G.add(r);
+  }
+  boardBuild(G); // the painted departure boards on the depots (section "departure boards")
   townBuildingsDraw(G); // the towns' businesses and homes: their own meshes per town, so a town out of view is skipped
-  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], roof: bldRoof, roofRects: () => bldRoof.rects, roofWantFaded: bldRoofWantFaded, footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
+  if (window.__railhead) window.__railhead.buildings = { meshes: [m, g], roof: bldRoof, shell: bldShell, booths: buildingBooths, shellWantFaded: bldShellWantFaded, roofRects: () => bldRoof.rects, roofWantFaded: bldRoofWantFaded, footprints: buildingFootprints, lights: buildingLights, spots: buildingSpots, platformTop: BLD_PLATFORM_TOP };
+}
+
+// ---- Departure boards (D15, 2026-11-03: "Departure board: make it both") ----
+// A painted board on each station's depot wall beside the ticket window (BLD_BOOTH.board), facing the platform: a
+// dark board with cream letters, the station's name at the top and its next 4 departures (time, destination, train,
+// and On time, Late, Boarding, No engine or Cancelled). The same departures as the station card (ttBoard; the card
+// stays as it was). All boards are ONE mesh (a quad each, 1 draw call, no shadow) on ONE canvas texture, a 512 x 512
+// region per board; a board is redrawn only when its rows change (boardUpdate compares a signature each frame). The
+// letters stand 1.2 cm in front of the board's frame (no surfaces on top of each other). Lit like the walls by day;
+// at night its lamp (in the glow mesh) lights it: the material's emissive follows GLOW_MAT's glow. A tap on a board
+// (or Look and then a tap on it) opens the station card for that station (ttCardPin).
+const BOARD = { PX: 512, ASPECT: (BLD_BOOTH.board[1] - BLD_BOOTH.board[0]) / (BLD_BOOTH.boardY[1] - BLD_BOOTH.boardY[0]),
+  LIFT: 0.012, NIGHT: 0.55, BG: '#1d2620', INK: '#efe3c2', DIM: '#c8b98f', LATE: '#f0a060', CXL: '#e86a52' };
+const boards = { list: [], mesh: null, canvas: null, tex: null, redraws: 0 };
+// The stations with a depot that has a board: [{ st, name, x, y, z, yaw, w, h }] (the board's centre and size, u).
+function boardPlaces() {
+  const out = [], B = BLD_BOOTH;
+  for (const K of paxStations(S.track)) {
+    const at = K.depot && BLD_LAYOUT.find(a => a.id === K.depot.id);
+    if (!at || bldKindOf(at) !== 'depot') continue;
+    const yaw = at.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
+    const lx = (B.board[0] + B.board[1]) / 2 * WS, lz = (B.wall + 0.03) * WS + BOARD.LIFT;
+    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null;
+    out.push({ st: K.id, name: tt ? tt.name : paxName(K.id), x: at.x + lx * c + lz * s, y: (B.boardY[0] + B.boardY[1]) / 2 * WS, z: at.z - lx * s + lz * c,
+      yaw, w: (B.board[1] - B.board[0]) * WS, h: (B.boardY[1] - B.boardY[0]) * WS });
+  }
+  return out;
+}
+// What the board says for one of ttBoard's lines: the card's wording, made short enough to paint.
+function boardState(l, sod) {
+  if (l.state === 'Cancelled' || l.state === 'Late' || l.state === 'On time') return l.state;
+  if (/^No engine/.test(l.state)) return 'No engine';
+  const late = sod > l.sod + 60;
+  if (l.state === 'On its way here') return late ? 'Late' : 'On time';
+  return late ? 'Late' : 'Boarding';   // the train stands at this stop (Departing, or Waiting: ...)
+}
+// The rows a board shows now: [{ time, to, train, state }] (up to 4, soonest first).
+function boardRows(stId) {
+  if (typeof ttBoard !== 'function' || !S.tt) return [];
+  const sod = (S.time + CFG.DAY_START_S) % 86400;
+  return ttBoard(S, stId).lines.map(l => ({ time: l.time, to: l.to, train: l.name, state: boardState(l, sod) }));
+}
+function boardBuild(G) {
+  boards.mesh = null; boards.list = boardPlaces().map(p => ({ ...p, sig: null, rows: [] }));
+  if (!boards.list.length) return;
+  const n = boards.list.length, rowsPow = 1 << Math.ceil(Math.log2(n)), PX = BOARD.PX;
+  if (!boards.canvas) boards.canvas = document.createElement('canvas');
+  boards.canvas.width = PX; boards.canvas.height = PX * rowsPow;
+  if (boards.tex) boards.tex.dispose();
+  boards.tex = new THREE.CanvasTexture(boards.canvas);
+  boards.tex.anisotropy = 4;
+  const pos = [], uv = [], idx = [], hPx = PX / BOARD.ASPECT, H = PX * rowsPow;
+  boards.list.forEach((b, k) => {
+    const c = Math.cos(b.yaw), s = Math.sin(b.yaw), rx = c * b.w / 2, rz = -s * b.w / 2, hy = b.h / 2;
+    pos.push(b.x - rx, b.y - hy, b.z - rz, b.x + rx, b.y - hy, b.z + rz, b.x + rx, b.y + hy, b.z + rz, b.x - rx, b.y + hy, b.z - rz);
+    const v1 = 1 - k * PX / H, v0 = 1 - (k * PX + hPx) / H;
+    uv.push(0, v0, 1, v0, 1, v1, 0, v1);
+    idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k, 4 * k + 2, 4 * k + 3);
+    b.region = [0, k * PX, PX, hPx];
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: boards.tex, emissive: '#ffffff', emissiveMap: boards.tex, emissiveIntensity: 0 }));
+  m.name = 'departureBoards'; m.castShadow = false; m.receiveShadow = false;
+  boards.mesh = m; G.add(m);
+  boardUpdate();
+}
+// Paints board b's rows into its region of the canvas.
+function boardPaint(b) {
+  const ctx = boards.canvas.getContext('2d'), [x0, y0, W, H] = b.region;
+  ctx.save(); ctx.translate(x0, y0);
+  ctx.fillStyle = BOARD.BG; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = BOARD.DIM; ctx.lineWidth = 3; ctx.strokeRect(9, 9, W - 18, H - 18);
+  const text = (t, x, y, px, col, align, maxW, font) => {
+    ctx.font = `${font || 'bold'} ${px}px Georgia, "Times New Roman", serif`; ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
+    const w = ctx.measureText(t).width;
+    if (maxW && w > maxW) { ctx.save(); ctx.translate(x, y); ctx.scale(maxW / w, 1); ctx.fillText(t, 0, 0); ctx.restore(); }
+    else ctx.fillText(t, x, y);
+  };
+  text(b.name.toUpperCase(), W / 2, 62, 44, BOARD.INK, 'center', W - 60);
+  text('DEPARTURES', W / 2, 92, 22, BOARD.DIM, 'center', W - 60);
+  ctx.fillStyle = BOARD.DIM; ctx.fillRect(24, 104, W - 48, 2);
+  const top = 112, rowH = (H - top - 14) / 4;
+  if (!b.rows.length) text('No more trains today', W / 2, top + rowH * 1.2, 30, BOARD.DIM, 'center', W - 60, 'italic');
+  b.rows.forEach((r, i) => {
+    const y = top + i * rowH, col = r.state === 'Cancelled' ? BOARD.CXL : r.state === 'Late' ? BOARD.LATE : BOARD.INK;
+    text(r.time, 24, y + 40, 36, BOARD.INK, 'left', 104);
+    text(r.to, 136, y + 40, 36, BOARD.INK, 'left', 230);
+    text(r.state, W - 24, y + 40, 30, col, 'right', 130);
+    text(r.train, 136, y + 68, 23, BOARD.DIM, 'left', W - 160, 'italic');
+    if (r.state === 'Cancelled') { ctx.fillStyle = BOARD.CXL; ctx.fillRect(24, y + 28, 340, 3); }
+    if (i < 3) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(24, y + rowH - 4, W - 48, 1); }
+  });
+  ctx.restore();
+}
+// Every frame: each board's rows; repainted (and the texture sent again) only when they change. The night glow.
+function boardUpdate() {
+  if (!boards.mesh) return;
+  let dirty = false;
+  for (const b of boards.list) {
+    const rows = boardRows(b.st), sig = JSON.stringify(rows);
+    if (sig === b.sig) continue;
+    b.sig = sig; b.rows = rows; boardPaint(b); boards.redraws++; dirty = true;
+  }
+  if (dirty) boards.tex.needsUpdate = true;
+  boards.mesh.material.emissiveIntensity = BOARD.NIGHT * (GLOW_MAT.emissiveIntensity / DAY.GLOW_MAX);
+}
+// Which board (its station id) is at screen point (px, py), or null.
+function boardHitAt(px, py) {
+  if (!boards.mesh) return null;
+  raycaster.setFromCamera(ndc(px, py), camera);
+  const h = raycaster.intersectObject(boards.mesh, false)[0];
+  return h ? boards.list[Math.floor(h.faceIndex / 2)].st : null;
 }
 
 // ---- Town buildings (M1 package 4, builder C5) ----
@@ -9460,7 +9681,11 @@ function ttOnEvent(e) {
 // the next departures. The board's lamp in the world is red (hold) or green (a train is leaving on its reservation).
 // Since the wide platforms moved the depot back, it also shows within 6u (x WS) of the station's ticket window spot,
 // so the departure board is still read while selling tickets; the card then stands over the ticket window spot.
-const ttCardUi = { st: null, sig: '', w: 0, h: 0 };
+// A tap on a station's painted departure board (or Look, then a tap on it) opens this card for that station from
+// anywhere (ttCardPin): it stands over the board for TT_CARD_PIN_MS, or until the next tap elsewhere.
+const ttCardUi = { st: null, sig: '', w: 0, h: 0, pin: null };
+const TT_CARD_PIN_MS = 15000;
+function ttCardPin(stId) { ttCardUi.pin = { st: stId, until: performance.now() + TT_CARD_PIN_MS }; ttCardUi.sig = ''; }
 function ttCardTicketSpot(id) {
   const st = (stationsOf(S.track) || []).find(t => t.id === id);
   return st ? buildingSpots().find(p => p.building === st.depot && p.kind === 'ticket') || null : null;
@@ -9473,6 +9698,12 @@ function ttCardHud() {
     const dt = tk ? Math.hypot(tk.x - P.x, tk.z - P.z) * 2 : Infinity; // a ticket window at 6u counts as a board at 12u
     const d = Math.min(db, dt), at = dt < db ? tk : st.board;            // the card stands over the nearer of the two
     if (d < 12 * WS && (!near || d < near.d)) near = { st, d, at };
+  }
+  const pin = ttCardUi.pin;
+  if (pin && performance.now() > pin.until) ttCardUi.pin = null;
+  else if (pin) {
+    const st = ttStation(S, pin.st), bp = boards.list.find(b => b.st === pin.st);
+    if (st && bp) near = { st, d: 0, at: { x: bp.x, z: bp.z } };
   }
   const card = $('ttCard');
   const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
@@ -9802,6 +10033,8 @@ function lookPickAt(px, py) {
     if (tr && (tr.owner === 'interchange' || tr.owner === 'cut' || (!tr.owner && f && f.car.k !== 'loco'))) return { k: 'car', id: stock };
     if (tr) return { k: 'train', id: tr.id };
   }
+  const board = boardHitAt(px, py);
+  if (board) return { k: 'board', id: board };
   const biz = townHitAt(px, py);
   if (biz !== null) return { k: 'biz', id: biz };
   const job = jobHitAt(groundAt(px, py));
@@ -9813,6 +10046,7 @@ function lookTap(px, py) {
   setLookArmed(false);
   const pick = lookPickAt(px, py);
   if (!pick) { toast('Nothing to look at there.'); return; }
+  if (pick.k === 'board') { ttCardPin(pick.id); return; } // a departure board: its station card
   closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox();
   lookUi.pick = pick; lookUi.open = true; lookUi.sig = ''; $('lookCard').hidden = false; lookUpdate();
 }
@@ -9968,6 +10202,7 @@ function pickAt(px, py) {
 function onTap(px, py) {
   if (lookUi.open) { closeLook(); return; }          // Look (D1): a tap elsewhere closes the card
   if (lookUi.armed) { lookTap(px, py); return; }     // the one tap after Look: inspect what is there
+  if (ttCardUi.pin) { ttCardUi.pin = null; ttCardUi.sig = ''; } // a tap anywhere puts away a card opened from a departure board
   const g = deckGroundAt(px, py);
   if (ui.sendMode) {
     const t = groundAt(px, py);   // track lies on the ground, not on a deck
@@ -9992,6 +10227,12 @@ function onTap(px, py) {
     const yw = camYawTarget();
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
+  const board = boardHitAt(px, py);
+  if (board) { ttCardPin(board); return; }          // a painted departure board: its station card
+  // The ticket window and the office desk (in front of the depot's door, beside the window since the booth) can be
+  // close on screen: the nearer one takes the tap.
+  const win = paxTapBest(px, py);
+  if (win && win.d < 34 && win.d <= econTapDist(px, py)) { paxTap(px, py); return; }
   if (econTelTap(px, py)) return;
   if (townTap(px, py)) return;
   if (paxTap(px, py)) return;
@@ -10004,11 +10245,18 @@ function onTap(px, py) {
 }
 // A tap on a station's ticket window walks there and staffs it (passengers, builder C4).
 function paxTap(px, py) {
-  for (const K of paxStations(S.track)) {
-    const p = toScreen(K.window.x, 1.0, K.window.z);
-    if (Math.hypot(p.x - px, p.y - py) < 34) { send({ t: 'staffWindow', st: K.id }); return true; }
-  }
+  const b = paxTapBest(px, py);
+  if (b && b.d < 34) { send({ t: 'staffWindow', st: b.K.id }); return true; }
   return false;
+}
+// The ticket window nearest the screen point: { K, d (px) }, or null.
+function paxTapBest(px, py) {
+  let best = null;
+  for (const K of paxStations(S.track)) {
+    const p = toScreen(K.window.x, 1.0, K.window.z), d = Math.hypot(p.x - px, p.y - py);
+    if (!best || d < best.d) best = { K, d };
+  }
+  return best;
 }
 // Riding taps (D13). While aboard: a tap on our train opens its panel (no walking), anything else says how to get
 // down. Otherwise a tap on a passenger car's door (within 30 px, and nearer than any coupling) boards it.
@@ -10138,6 +10386,10 @@ function ttTap(px, py, hit) {
 }
 // The telegraph key (economy): a tap on the depot's office bay window walks there and opens the telegraph panel.
 // The office desk (D1) is tapped the same way, on the depot wall behind its spot; the nearer of the two wins.
+function econTapDist(px, py) {
+  const k = econTelegraphKey(), p = toScreen(k.wx, k.wy, k.wz), d = econDeskSpot(), q = toScreen(d.wx, d.wy, d.wz);
+  return Math.min(Math.hypot(p.x - px, p.y - py), Math.hypot(q.x - px, q.y - py));
+}
 function econTelTap(px, py) {
   const k = econTelegraphKey(), p = toScreen(k.wx, k.wy, k.wz), dk = Math.hypot(p.x - px, p.y - py);
   const d = econDeskSpot(), q = toScreen(d.wx, d.wy, d.wz), dd = Math.hypot(q.x - px, q.y - py);
@@ -10351,6 +10603,8 @@ function render(alpha, dt) {
   placeCamera();
   cutawayDraw(dt);        // riding: the car opens and the player stands inside (D15 cutaway)
   bldRoofFade(px, pl.position.y, pz, dt); // the platform canopy turns see-through near the player (D15)
+  bldShellFade(px, pz, dt);               // the depot's shell, while the player is in its ticket booth
+  boardUpdate();                          // the departure boards: redrawn only when their departures change
   cargoDraw(S);           // item props and tags (section "cargo")
   applyDaylight(S, dt);
   updateCrowd(dt);
@@ -10466,6 +10720,10 @@ window.__railhead = {
       player: { visible: pl.visible, local: toLocal(c.m, pl.position.x, pl.position.y, pl.position.z) }, seated, items, half: [1.35 * WS, 0.475 * WS] } };
   },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
+  // The painted departure boards (D15) and the ticket booths (2026-11-03).
+  board: { BOARD, BLD_BOOTH, boardRows, boardState, boardHitAt, ttCardPin, get list() { return boards.list; }, get mesh() { return boards.mesh; },
+    get redraws() { return boards.redraws; }, get canvas() { return boards.canvas; }, get card() { return ttCardUi; },
+    booths: () => buildingBooths(), walkInBooth, get shell() { return bldShell; } },
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,

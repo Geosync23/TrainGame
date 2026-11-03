@@ -32,6 +32,7 @@ const checks = {
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
+  'departure boards on the depots and the ticket booth': require('./check-board'),
   'office, telegrams, alerts and Look (HUD and panels)': require('./check-office'),
   'riding our own train (board, ride, step off, save)': require('./check-ride'),
   'cutaway view into the combine while riding (D15)': require('./check-cutaway'),

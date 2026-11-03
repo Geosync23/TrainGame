@@ -77,8 +77,8 @@ function botFactory(R, mem0) {
     const T = S.track, ix = R.tt.trackIndex(T);
     const end = T.nodes.filter(N => ix.nodeEdges[N.id] && ix.nodeEdges[N.id].length === 1 && N.x > -50 * SC && N.x < 0 && Math.abs(N.z - hub.track.z0) < 0.2)[0];
     G = { hub, wf, bays: B.bays, pile, piles, stand, end, open,
-      wfDrop: [wf.track.x0 + 2 * SC, wf.track.z0 - 4.2 * SC], wfWait: [R.pax.paxStation('willow', T).staff.x, R.pax.paxStation('willow', T).staff.z],
-      hubWait: [R.pax.paxStation('hub', T).staff.x, R.pax.paxStation('hub', T).staff.z] };
+      wfDrop: [wf.track.x0 + 2 * SC, wf.track.z0 - 4.2 * SC], wfWait: [R.pax.paxStation('willow', T).line.x, R.pax.paxStation('willow', T).line.z],
+      hubWait: [R.pax.paxStation('hub', T).line.x, R.pax.paxStation('hub', T).line.z] };
     return G;
   }
   // ---- Reading the state ----

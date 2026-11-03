@@ -12,6 +12,7 @@ const checks = {
   'saving and loading': require('./check-save'),
   'touch controls': require('./check-touch'),
   'paths (walking round buildings and trains)': require('./check-paths'),
+  'plank crossings (track walked across only at crossings)': require('./check-crossings'),
   'station buildings': require('./check-buildings'),
   'platform canopy turns see-through near the player': require('./check-roof'),
   'debug tools (?debug=1)': require('./check-debug'),

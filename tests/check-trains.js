@@ -162,9 +162,11 @@ module.exports = async function checkTrains() {
       {
         const st = R.newState(1), W = st.track.switches[0];
         st.trains[0].front = { e: 0, s: 7.8 * SC, d: 1 };
-        st.player.x = W.stand.ux; st.player.z = 14 * SC + (14 * SC - W.stand.uz);
+        st.player.x = W.stand.ux; st.player.z = 14 * SC + (14 * SC - W.stand.uz) + 1.5; // (D15: beyond the walled-off ring of the far-side spot too)
         const G = walkGrid(st.track);
-        for (let i = 0; i < G.cost.length; i++) { const [x, z] = walkCentre(i), d = Math.hypot(x - W.stand.x, z - W.stand.z); if (d >= 2 && d <= 2.6) G.cost[i] = 0; }
+        // D15: a switch is also thrown from the far side of its trunk (switchSpots), so that spot is walled off too.
+        const far = switchSpots(st.track, W).far;
+        for (let i = 0; i < G.cost.length; i++) { const [x, z] = walkCentre(i), d = Math.hypot(x - W.stand.x, z - W.stand.z), f = Math.hypot(x - far.x, z - far.z); if ((d >= 2 && d <= 2.6) || (f >= 2 && f <= 2.6)) G.cost[i] = 0; }
         const e10 = runUntil(st, [{ t: 'useSwitch', sw: 0 }], 200);
         out.farThrow = e10.some(x => x.t === 'switchThrown');
         out.farBlocked = e10.some(x => x.t === 'blocked');
@@ -177,10 +179,11 @@ module.exports = async function checkTrains() {
         out.throwSurvivesRelease = e11.some(x => x.t === 'switchThrown');
       }
       // 13. Tapping the train from beyond its end: with the camera on the north side (view code 32),
-      //     the player ends up further north (towards the camera) than with no view given.
+      //     the player ends up further north (towards the camera) than with no view given. D15: the track is walked
+      //     across only at crossings, so the player stands on the station's west crossing (x -10), beside the train's end.
       {
         const endZ = (view) => {
-          const st = R.newState(1); st.player.x = -10.5 * SC; st.player.z = 14 * SC - 2.8;
+          const st = R.newState(1); st.trains[0].front = { e: 2, s: 0.7, d: 1 }; st.player.x = -9; st.player.z = 14 * SC - 0.2; // the train's front on the crossing (x -10.5)
           runUntil(st, [{ t: 'useTrain', tr: 0, view }], 200, (x, e) => e.some(v => v.t === 'reachedTrain'));
           return st.player.z;
         };

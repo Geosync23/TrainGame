@@ -206,8 +206,9 @@ async function checkDebugBuild(problems) {
         out.d4.under = why(R.simTick(JSON.parse(JSON.stringify(S3)), [sw(S3, tr3.front.s + 2 * SC, 1)]));
         const Sm = JSON.parse(JSON.stringify(S3)); Sm.trains[0].mode = 'run'; Sm.trains[0].v = 0.5 * SC;
         out.d4.moving = why(R.simTick(Sm, [sw(Sm, 45 * SC, 1)]));
-        // East of the train (s 3: the train stands beyond the cut, on a new piece) and west of it (s 45).
-        for (const s0 of [3, 45]) {
+        // East of the train (s 1.5: the train stands beyond the cut, on a new piece; D15: s 3 is now too close to the
+        // plank crossing at the platform's east end) and west of it (s 45).
+        for (const s0 of [1.5, 45]) {
           const s = s0 * SC;
           let res = null;
           for (const side of [1, -1]) {
@@ -221,7 +222,7 @@ async function checkDebugBuild(problems) {
             res.stillSame = after === R.trainPoses(Sx.track, Sx.trains[0]).map(p => [p.x.toFixed(3), p.z.toFixed(3)].join()).join(';');
             break;
           }
-          out.d4['s' + s0] = res;
+          out.d4[s0 === 45 ? 'west' : 'east'] = res;
         }
       }
       return out;
@@ -241,12 +242,12 @@ async function checkDebugBuild(problems) {
       const d = sim.d4;
       if (!/standing where the switch would go/.test(d.under || '')) problems.push('a switch where No. 1 stands on the platform track should be refused: ' + JSON.stringify(d));
       if (!/moving on that track/.test(d.moving || '')) problems.push('a switch on a track a train is moving on should be refused: ' + JSON.stringify(d));
-      for (const k of ['s3', 's45']) {
+      for (const k of ['east', 'west']) {
         const r = d[k];
         if (!r || !r.built || !r.same || !r.stillSame || !r.stable) problems.push(`a switch on the platform track clear of No. 1 (${k}) should be built, with No. 1 keeping its place: ` + JSON.stringify(d));
       }
-      if (d.s3 && d.s3.built && d.s3.edge === d.s3.oldEdge) problems.push('No. 1 should have moved onto the split-off piece of the platform track: ' + JSON.stringify(d.s3));
-      console.log(`  switch on the platform track with No. 1 home: under it "${d.under}", moving "${d.moving}", east ${JSON.stringify(d.s3)}, west ${JSON.stringify(d.s45)}`);
+      if (d.east && d.east.built && d.east.edge === d.east.oldEdge) problems.push('No. 1 should have moved onto the split-off piece of the platform track: ' + JSON.stringify(d.east));
+      console.log(`  switch on the platform track with No. 1 home: under it "${d.under}", moving "${d.moving}", east ${JSON.stringify(d.east)}, west ${JSON.stringify(d.west)}`);
     }
 
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));

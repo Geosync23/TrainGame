@@ -286,6 +286,10 @@ module.exports = async function checkTimetable() {
         {
           const st = R.newState(1866), tr = st.trains[0], T = st.track, K = R.pax.paxStation('willow', T), slots = R.pax.paxQueueSlots(st, K);
           R.simTick(st, [{ t: 'ttAssign', tr: 0, on: true }]);
+          // D20 (3): nobody gives up in the ticket line now, so a day of Willow Ford's own travellers (about 20) would
+          // fill the combine's 12 seats ahead of this check's (boarding goes in id order). No new ones come there
+          // here, so each visit's seats are for the travellers this check adds.
+          st.pax.due.willow = 1e12;
           const comb = tr.consist.find(c => c.k === 'combine').id;
           const combAt = () => { const t = st.trains.find(o => o.consist.some(c => c.id === comb)), ps = R.trainPoses(T, t), p = ps[t.consist.findIndex(c => c.id === comb)]; return p.x.toFixed(3) + ',' + p.z.toFixed(3); };
           const atPlat = () => R.pax.paxCarsAt(st, K, { 0: R.trainPoses(T, tr) }).some(C => C.stock === comb);

@@ -4,8 +4,11 @@
 // - There is a board at both stations (the hub and Willow Ford, which is unstaffed), on its depot's front wall (the
 //   platform side), beside the ticket window, facing the platform, lifted off the wall (not on top of it).
 // - All boards are one mesh with no shadow (1 draw call) on one canvas texture.
-// - Each board's rows are the station card's next departures (the same times and destinations in the same order, and
-//   the same state where the card says On time, Late or Cancelled), with No. 1 on the timetable.
+// - Since D20 (2) the board is the public schedule board: each row has the columns train, from, to, arrival,
+//   departure, platform and state; arrivals (a run's last stop) are listed too; its departures are the station card's
+//   (the same times and destinations in the same order, and the same state where the card says On time, Late or
+//   Cancelled), with No. 1 on the timetable. Below zoom 2.5 it is painted in its big layout, from 2.5 in columns,
+//   repainted once when the zoom crosses that line.
 // - A board is repainted only when its departures change (not every frame), and it changes when No. 1 leaves the hub.
 // - A run cancelled today shows as Cancelled on the boards and the card.
 // - A tap on a board (real touch) opens the station card from far away; a tap elsewhere puts it away; Look and then a
@@ -30,10 +33,15 @@ const cardRows = page => page.evaluate(() => {
     return m ? { time: m[1], to: m[2], state: m[3] } : { bad: t };
   });
 });
-// Board rows against the card's: same times and destinations in order; the same state when the card's is short.
+// The schedule board's departures (rows with a departure time) against the card's: the same times and destinations
+// in order (the card may list more: the board shows 4 rows, arrivals among them); the same state when the card's is
+// short. Every row must have the board's columns.
+const COLS = ['train', 'from', 'to', 'arr', 'dep', 'plat', 'state'];
 function sameRows(board, card) {
-  if (!card || board.length !== card.length) return false;
-  return board.every((b, i) => b.time === card[i].time && b.to === card[i].to
+  if (!card || board.some(r => COLS.some(c => typeof r[c] !== 'string'))) return false;
+  const deps = board.filter(r => r.dep && r.to);
+  if (deps.length > card.length) return false;
+  return deps.every((b, i) => b.dep === card[i].time && b.to === card[i].to
     && (!/^(On time|Late|Cancelled)$/.test(card[i].state) || card[i].state === b.state));
 }
 
@@ -63,14 +71,14 @@ module.exports = async function checkBoard() {
       // ---- 1. Where the boards are ----
       const geo = await R(() => {
         const R = window.__railhead, B = R.board, out = [];
-        for (const b of B.list) {
+        for (const b of B.list.filter(b => b.kind === 'sched')) {
           const K = R.pax.paxStation(b.st), at = R.world.layout.find(a => a.id === K.depot.id), wall = B.BLD_BOOTH.wall * R.CFG.SCALE;
           const ox = b.x - at.x, oz = b.z - at.z, out_ = ox * K.out[0] + oz * K.out[1], along = (b.x - K.window.x) * K.along[0] + (b.z - K.window.z) * K.along[1];
           out.push({ st: b.st, depot: K.depot.id, staffed: !R.pax.paxUnstaffed(R.state.track, b.st), lift: out_ - wall, along, w: b.w, h: b.h, y: b.y,
             facing: Math.sin(b.yaw) * K.out[0] + Math.cos(b.yaw) * K.out[1], winY: B.BLD_BOOTH.winY.map(v => v * R.CFG.SCALE) });
         }
         const m = B.mesh;
-        return { out, mesh: !!m, shadow: m && m.castShadow, quads: m ? m.geometry.index.count / 6 : 0, tex: m && !!m.material.map, own: m && m.material !== R.buildings.meshes[0].material };
+        return { out, mesh: !!m, shadow: m && m.castShadow, quads: m ? m.geometry.index.count / 6 : 0, all: B.list.length, tex: m && !!m.material.map, own: m && m.material !== R.buildings.meshes[0].material };
       });
       for (const st of ['hub', 'willow']) {
         const g = geo.out.find(o => o.st === st);
@@ -82,20 +90,36 @@ module.exports = async function checkBoard() {
         if (!(g.w > 1.8 && g.h > 1.4)) P(`${orientation}: ${st}'s board is small: ${g.w.toFixed(2)} x ${g.h.toFixed(2)}u`);
       }
       if (!geo.out.some(o => o.st === 'willow' && !o.staffed)) P(`${orientation}: Willow Ford should be unstaffed and still have its board`);
-      if (!geo.mesh || geo.shadow || geo.quads !== geo.out.length || !geo.tex || !geo.own) P(`${orientation}: the boards should be one mesh, a quad each, no shadow, own textured material: ${JSON.stringify(geo)}`);
+      if (!geo.mesh || geo.shadow || geo.quads !== geo.all || geo.all !== 2 * geo.out.length || !geo.tex || !geo.own) P(`${orientation}: the boards should be one mesh, a quad each, no shadow, own textured material: ${JSON.stringify(geo)}`);
 
       // ---- 2. Rows match the card; repainted only on change; a departure updates it ----
       await R(() => { const R = window.__railhead, S = R.state, K = R.pax.paxStation('hub'); R.send({ t: 'ttAssign', tr: 0, on: true }); R.step(1); S.player.x = K.line.x; S.player.z = K.line.z; });
       await frames(600);
       let rows = await R(() => window.__railhead.board.list.find(b => b.st === 'hub').rows), card = await cardRows(page);
-      if (!rows.length) P(`${orientation}: the hub's board shows no departures with No. 1 on the timetable`);
+      if (!rows.length) P(`${orientation}: the hub's board shows no trains with No. 1 on the timetable`);
       if (!sameRows(rows, card)) P(`${orientation}: the hub's board rows ${JSON.stringify(rows)} differ from the card's ${JSON.stringify(card)}`);
+      // The new columns: the morning train out (no arrival, from nowhere) and its return (from Willow Ford, no departure).
+      const out8 = rows.find(r => r.dep === '08:00'), in13 = rows.find(r => r.arr === '13:00');
+      if (!out8 || out8.to !== 'Willow Ford' || out8.from !== '' || out8.arr !== '' || out8.plat !== '1' || out8.train !== 'Mixed AM') P(`${orientation}: the 08:00 departure's columns are wrong: ${JSON.stringify(out8)}`);
+      if (!in13 || in13.from !== 'Willow Ford' || in13.to !== '' || in13.dep !== '') P(`${orientation}: the 13:00 arrival from Willow Ford is not on the board as an arrival: ${JSON.stringify(in13)}`);
       const wfRows = await R(() => { const R = window.__railhead; return { b: R.board.list.find(b => b.st === 'willow').rows, t: R.tt.ttBoard(R.state, 'willow').lines }; });
-      if (!wfRows.b.length || wfRows.b.length !== wfRows.t.length || wfRows.b.some((r, i) => r.time !== wfRows.t[i].time || r.to !== wfRows.t[i].to)) P(`${orientation}: Willow Ford's board ${JSON.stringify(wfRows.b)} differs from its card's departures ${JSON.stringify(wfRows.t)}`);
+      if (!wfRows.b.length || wfRows.b.length !== wfRows.t.length || wfRows.b.some((r, i) => r.dep !== wfRows.t[i].time || r.to !== wfRows.t[i].to || !r.arr || r.from !== 'Hub')) P(`${orientation}: Willow Ford's board ${JSON.stringify(wfRows.b)} differs from its card's departures ${JSON.stringify(wfRows.t)} (or lacks the arrival times)`);
       const red0 = await R(() => window.__railhead.board.redraws);
       await frames(1000);
       const red1 = await R(() => window.__railhead.board.redraws);
       if (red1 !== red0) P(`${orientation}: the boards were repainted ${red1 - red0} times in a second with nothing changing (want only on a change)`);
+      // The layout follows the zoom: big below 2.5, in columns from 2.5, one repaint of each schedule board on the change.
+      const lay = await R(() => { const R = window.__railhead; R.camera.zoom = 1.5; return null; });
+      await frames(400);
+      const mz = await R(() => ({ m: window.__railhead.board.list.filter(b => b.kind === 'sched').map(b => b.mode), red: window.__railhead.board.redraws }));
+      await R(() => { window.__railhead.camera.zoom = 3; });
+      await frames(400);
+      const mz3 = await R(() => ({ m: window.__railhead.board.list.filter(b => b.kind === 'sched').map(b => b.mode), red: window.__railhead.board.redraws }));
+      if (mz.m.some(m => m !== 'big') || mz3.m.some(m => m !== 'full')) P(`${orientation}: the schedule boards' layouts at zoom 1.5 and 3: ${JSON.stringify(mz.m)} and ${JSON.stringify(mz3.m)} (want big, then full)`);
+      if (mz3.red - mz.red !== mz.m.length) P(`${orientation}: the zoom change repainted ${mz3.red - mz.red} boards (want each schedule board once: ${mz.m.length})`);
+      await R(() => { window.__railhead.camera.zoom = 1.5; });
+      await frames(400);
+      const red1b = await R(() => window.__railhead.board.redraws);
       const dep = await R(() => {
         const R = window.__railhead, S = R.state;
         for (let i = 0; i < 400; i++) { R.step(10); const run = S.tt.runs.find(r => r.svc === 0); if (run && run.i >= 1) return { ok: true, time: S.time }; }
@@ -106,10 +130,11 @@ module.exports = async function checkBoard() {
       await frames(600);
       const after = await R(() => ({ rows: window.__railhead.board.list.find(b => b.st === 'hub').rows, red: window.__railhead.board.redraws }));
       card = await cardRows(page);
-      if (after.rows.some(r => r.time === '08:00')) P(`${orientation}: the hub's board still shows the 08:00 after No. 1 left: ${JSON.stringify(after.rows)}`);
-      if (!(after.red > red1)) P(`${orientation}: the boards were not repainted when No. 1 left`);
+      if (after.rows.some(r => r.dep === '08:00')) P(`${orientation}: the hub's board still shows the 08:00 after No. 1 left: ${JSON.stringify(after.rows)}`);
+      if (!(after.red > red1b)) P(`${orientation}: the boards were not repainted when No. 1 left`);
       if (!sameRows(after.rows, card)) P(`${orientation}: after the departure the board ${JSON.stringify(after.rows)} differs from the card ${JSON.stringify(card)}`);
-      console.log(`  ${orientation}: hub board before ${rows.map(r => r.time + ' ' + r.state).join(', ')}; after No. 1 left ${after.rows.map(r => r.time + ' ' + r.state).join(', ')}`);
+      const rowText = r => `${r.train} ${r.from || '-'} > ${r.to || '-'} ${r.arr || '-'}/${r.dep || '-'} pl ${r.plat} ${r.state}`;
+      console.log(`  ${orientation}: hub board before ${rows.map(rowText).join(', ')}; after No. 1 left ${after.rows.map(rowText).join(', ')}`);
 
       // ---- 3. Cancelled: a new game with No. 1 on the timetable and the clock jumped past 14:00, so the morning run
       // is too late to start ----
@@ -121,7 +146,7 @@ module.exports = async function checkBoard() {
       });
       await frames(600);
       rows = await R(() => window.__railhead.board.list.find(b => b.st === 'hub').rows); card = await cardRows(page);
-      if (!rows.some(r => r.time === '08:00' && r.state === 'Cancelled')) P(`${orientation}: a cancelled run should show as Cancelled: ${JSON.stringify(rows)}`);
+      if (!rows.some(r => r.dep === '08:00' && r.state === 'Cancelled')) P(`${orientation}: a cancelled run should show as Cancelled: ${JSON.stringify(rows)}`);
       if (!sameRows(rows, card)) P(`${orientation}: with a cancelled run the board ${JSON.stringify(rows)} differs from the card ${JSON.stringify(card)}`);
 
       // ---- 4. A tap on the board opens the card; Look on it too ----

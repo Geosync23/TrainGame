@@ -7192,7 +7192,9 @@ const HUB_PB = HUB_PZ - 0.9 * WS - BLD_PLAT_DEEP_M1 * WS, WF_PB = WFORD.z - 0.9 
 BLD_LAYOUTS.start = [
   { id: 'platform', x: 8 * WS, z: HUB_PZ - 0.9 * WS - BLD_PLAT_DEEP_M1 / 2 * WS, yaw: 0 },
   { id: 'depot', x: 5.6 * WS, z: HUB_PZ - 4.4 * WS - BLD_WIDE_BACK, yaw: 0 },
-  { id: 'tpole', x: 8.6 * WS, z: HUB_PZ - 4.4 * WS - BLD_WIDE_BACK, yaw: 0 },
+  // The pole stands off the depot's east gable, east and a little back, so from the default camera its crossarm is
+  // clear of the gable's name board (at 1.1u straight east it covered the B of HUB).
+  { id: 'tpole', x: 8.9 * WS, z: HUB_PZ - 4.7 * WS - BLD_WIDE_BACK, yaw: 0 },
   { id: 'watertower', x: 22.6 * WS, z: HUB_PZ - 2.2 * WS, yaw: 0 },
   { id: 'woodstage', x: 27.5 * WS, z: HUB_PZ - 3.1 * WS, yaw: 0 },
   { id: 'freightshed', x: -7.6 * WS, z: HUB_PZ - 2.6 * WS, yaw: 0 },

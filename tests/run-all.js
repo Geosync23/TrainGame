@@ -34,6 +34,7 @@ const checks = {
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
   'departure boards on the depots and the ticket booth': require('./check-board'),
+  'work board behind the counter, public schedule board, patient ticket line (D20)': require('./check-workboard'),
   'station look (plank platforms, end steps, props, depot detail)': require('./check-station'),
   'office, telegrams, alerts and Look (HUD and panels)': require('./check-office'),
   'riding our own train (board, ride, step off, save)': require('./check-ride'),

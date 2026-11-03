@@ -188,6 +188,17 @@
   #lookCard h2 { margin: 0; font-size: 18px; color: var(--ink); flex: 1; min-width: 0; }
   #lookBody { font-size: 14px; color: var(--ink); line-height: 1.35; display: grid; gap: 3px; }
   #lookBody small { color: #5a4a3a; font-size: 13px; }
+  /* The work board's card (D20): one block per train, scrolling when long. */
+  #workBody { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--ink); line-height: 1.3; }
+  .wbTrain { border: 1px solid var(--paper-2); border-left: 6px solid #5b6fa8; border-radius: 6px; padding: 6px 8px; display: grid; gap: 2px; }
+  .wbHead { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; }
+  .wbState { font-weight: 700; white-space: nowrap; }
+  .wbSw { font-weight: 700; margin-top: 2px; }
+  .wbSwRow { display: flex; align-items: center; gap: 6px; }
+  .wbBox { flex: none; min-width: 26px; height: 18px; border: 2px solid var(--edge); border-radius: 4px; font-size: 11px; text-align: center; line-height: 18px; }
+  .wbSwRow[data-done] .wbBox { background: #3d7a36; border-color: #2c5a27; color: #fff; }
+  .wbSwRow[data-done] { color: #5a4a3a; }
+  .wbLate { color: #b8432c; }
   #lookBtn[aria-pressed="true"] { background: #5b6fa8; border-color: #3c4d7d; color: #fff; }
   @media (orientation: landscape) and (max-height: 500px) {
     #tgBtn { top: calc(env(safe-area-inset-top) + 10px); right: calc(env(safe-area-inset-right) + 96px); }
@@ -227,6 +238,7 @@
   <button id="rotR" aria-label="Turn view right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 3v5h-5"/></svg></button>
   <button id="lookBtn" aria-pressed="false" aria-label="Look: tap, then tap a thing to see its card">Look</button>
   <button id="officeBtn" aria-pressed="false" hidden>Office</button>
+  <button id="workBtn" aria-pressed="false" hidden>Work board</button>
 </div>
 <button id="tgBtn" class="hud" aria-label="Telegrams" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="1.5"/><path d="M3.5 7l8.5 6.5 8.5-6.5"/></svg><span id="tgCount"></span></button>
 <div id="alerts" class="hud" role="group" aria-label="Problems"></div>
@@ -273,6 +285,10 @@
 <div id="lookCard" class="hud" hidden>
   <div class="row"><h2 id="lookTitle"></h2><button id="lookClose" aria-label="Close">X</button></div>
   <div id="lookBody"></div>
+</div>
+<div id="workCard" class="hud bigPanel" hidden>
+  <div class="row"><h2 class="grow" id="workTitle">Work board</h2><button id="workClose" aria-label="Close">X</button></div>
+  <div id="workBody"></div>
 </div>
 <div id="carPanel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="carTitle">Car</h2><button id="carClose" aria-label="Close">X</button></div>
@@ -4595,8 +4611,8 @@ function carryCheckSaveShape(st) {
 // Owner: M1 package 5 (builder C4). Travellers (design-doc 9 "Passengers", simple): they appear at fixed rates
 // at each station, queue at the depot's ticket window, buy a ticket while the player staffs the window, wait on
 // the platform, board a passenger car (the combine) standing at the platform, step off at the other station
-// and walk away. Without a ticket a traveller waits up to 60 game minutes and then goes home (no conductors in
-// M1), and the station remembers it (S.pax.rep, a simple per-station count).
+// and walk away. Since D20 (3) a traveller in the ticket line waits as long as needed (the 60-minute give-up of M1
+// is parked: PAX.GIVE_UP_S 0); S.pax.rep, the per-station count of those who gave up, stays in the save.
 // Pure simulation: no three.js, no page elements. Whole numbers only in the state (positions in hundredths).
 //
 // S.pax holds:
@@ -4620,7 +4636,7 @@ function carryCheckSaveShape(st) {
 // unless the player stands at the window. Travellers still come and wait in line by the window; when a train of
 // ours that serves them stands at the platform, those in line board it without a ticket (after the ticketed
 // ones, in id order, never past the seats), and each pays the fare on arrival as they step off: one ledger entry
-// ('fares', ref { kind: 'FARE', id }). They still go home after 60 game minutes in line with no train. A staffed
+// ('fares', ref { kind: 'FARE', id }). Like everyone in line they wait for a train as long as needed (D20). A staffed
 // station (the hub, even while the player is away from its window) keeps the rule: no ticket, no boarding.
 // Stations come from the building data (paxStations): each platform footprint is one station, and its depot has
 // the ticket window. C2's layout may name them with a `station` field on the footprints; otherwise the first
@@ -4629,13 +4645,13 @@ const PAX = {
   STEP: 27,                 // hundredths of a u per tick: 2.0 u per game minute, citizen walk (section 4)
   SELL_S: 30,               // a ticket takes 0.5 game minutes to sell (section 9)
   BOARD_S: 6,               // boarding or stepping off: 0.1 game minutes each, per door (section 9)
-  GIVE_UP_S: 3600,          // without a ticket a traveller waits up to 60 game minutes
+  GIVE_UP_S: 0,             // D20 (3): travellers in the ticket line wait as long as needed (0: never give up). Parked: 3600 gave up after 60 game minutes (D13)
   FARE_CENTS_PER_MILE: 4, FARE_MIN: 10, U_PER_MILE: MILE_U,
   MILES: { 'hub|willow': 10 }, // the existing spur to Willow Ford is 256u (160u x SC), 10 miles (section 15)
   LINE: { hub: 'willow', willow: 'hub' }, // where each station's travellers want to go (a two-station railroad in M1)
   MEAN_MIN: { hub: 20, willow: 45 }, // average game minutes between travellers (provisional); each gap is 0.5 to 1.5 times this
   OPEN: [6 * 3600, 21 * 3600], // travellers come between 06:00 and 21:00
-  MAX_AT: 24,               // at most this many travellers wait at a station (queue plus platform); more do not come
+  MAX_AT: 48,               // at most this many travellers wait at a station (queue plus platform); more do not come (D20: 48, was 24, as nobody gives up now)
   OVERLAND_MIN: 1, OVERLAND_MAX: 3, // travellers off each Overland visit, who go on to Willow Ford
   SEATS: { combine: 12, coach: 30 }, // passengers per car (section 7)
   DOORS: { combine: [-1.25 * SC], coach: [-1.3 * SC, 1.3 * SC] }, // passenger doors along the car from its centre (u, grown with the cars); the combine's at its passenger end
@@ -4929,8 +4945,9 @@ function paxTick(S, ev, poseCache) {
   // 2. Each station: giving up, the queue, ticket sales, stepping off and boarding.
   for (const K of stations) {
     const slots = paxQueueSlots(S, K), here = X.list.filter(p => p.st === K.id), unstaffed = paxUnstaffed(S.track, K.id);
-    // 60 game minutes without a ticket, and no conductor aboard (none in M1): home, and the station remembers it.
-    for (const p of here) if (p.s === 'queue' && S.time - p.t0 >= PAX.GIVE_UP_S) {
+    // Giving up (parked since D20 (3), "people should wait in line as long as needed": PAX.GIVE_UP_S is 0, so nobody
+    // leaves the line). Before: 60 game minutes without a ticket and home, and the station remembered it.
+    for (const p of here) if (PAX.GIVE_UP_S > 0 && p.s === 'queue' && S.time - p.t0 >= PAX.GIVE_UP_S) {
       p.s = 'leave'; p.tx = null; p.tz = null; p.path = []; paxCount(X.rep, K.id);
       ev.push({ t: 'paxGaveUp', id: p.id, st: K.id });
     }
@@ -7338,8 +7355,12 @@ const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) =
 // 'line' spot in front of the window (where the player used to stand). M1 units in the depot's local frame (x along
 // the front, +z towards the track): the door and window openings [x0, x1], the booth strip z0..wall (inside the front
 // wall, t thick), the bay's centre, and the departure board [x0, x1] x [y0, y1] beside the window.
+// D20 (2): the departure board is the public schedule board, grown down the wall (1.22 x 1.12 M1, was 1.25 x 1.0; its
+// top stays at 1.42, as the eave hides the wall above that from the default camera, and its west edge clears the
+// bay's roof); the work board [x0, x1] x [y0, y1] hangs on the booth's inside wall (the closed block's front face,
+// z0) behind the ticket counter, facing the window.
 const BLD_BOOTH = { door: [1.32, 1.97], doorH: 1.25, win: [0.62, 1.17], winY: [0.75, 1.35], z0: 0.3, wall: 1.0, t: 0.06,
-  bay: -1.45, board: [-0.75, 0.5], boardY: [0.42, 1.42] };
+  bay: -1.45, board: [-0.72, 0.5], boardY: [0.3, 1.42], work: [-1.0, 0.45], workY: [0.55, 1.42] };
 const BLD_SPOTS = {
   depot: { ticket: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, (BLD_BOOTH.z0 + BLD_BOOTH.wall - BLD_BOOTH.t) / 2 * WS],
     line: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, 1.48 * WS + 0.85],
@@ -7419,6 +7440,10 @@ const BLD_RECIPES = {
     b.shell(box(bx1 - bx0 + 0.08, by1 - by0 + 0.08, 0.03), PAL.trim, bc, (by0 + by1) / 2, B.wall + 0.015);
     b.shell(box(0.04, 0.04, 0.1), PAL.loco, bc, by1 + 0.2, B.wall + 0.05);
     b.glow(box(0.26, 0.04, 0.05), bc, by1 + 0.17, B.wall + 0.1);
+    // The work board's frame on the booth's inside wall (D20 (2)); its letters are the boards' mesh. Not shell: it
+    // stays solid while the front wall fades, so it is seen from the booth.
+    const [kx0, kx1] = B.work, [ky0, ky1] = B.workY;
+    b.add(box(kx1 - kx0 + 0.08, ky1 - ky0 + 0.08, 0.03), PAL.trim, (kx0 + kx1) / 2, (ky0 + ky1) / 2, z0 + 0.015);
     // The agent's office bay, windows on three sides so the agent can see up and down the line.
     const bay = B.bay;
     b.add(box(1.2, 1.25, 0.42), PAL.wall, bay, 0.875, 1.2);
@@ -7943,33 +7968,240 @@ function buildBuildings(G) {
     planks: bldPlankCount, steps: bldStepList, stepY: bldStepY, triangles: { kit: m.geometry.attributes.position.count / 3, shell: shell.p.length / 9, glow: glow.p.length / 9 } };
 }
 
-// ---- Departure boards (D15, 2026-11-03: "Departure board: make it both") ----
-// A painted board on each station's depot wall beside the ticket window (BLD_BOOTH.board), facing the platform: a
-// dark board with cream letters, the station's name at the top and its next 4 departures (time, destination, train,
-// and On time, Late, Boarding, No engine or Cancelled). The same departures as the station card (ttBoard; the card
-// stays as it was). All boards are ONE mesh (a quad each, 1 draw call, no shadow) on ONE canvas texture, a 512 x 512
-// region per board; a board is redrawn only when its rows change (boardUpdate compares a signature each frame). The
-// letters stand 1.2 cm in front of the board's frame (no surfaces on top of each other). Lit like the walls by day;
-// at night its lamp (in the glow mesh) lights it: the material's emissive follows GLOW_MAT's glow. A tap on a board
-// (or Look and then a tap on it) opens the station card for that station (ttCardPin).
-const BOARD = { PX: 512, ASPECT: (BLD_BOOTH.board[1] - BLD_BOOTH.board[0]) / (BLD_BOOTH.boardY[1] - BLD_BOOTH.boardY[0]),
-  LIFT: 0.012, NIGHT: 0.55, BG: '#1d2620', INK: '#efe3c2', DIM: '#c8b98f', LATE: '#f0a060', CXL: '#e86a52' };
-const boards = { list: [], mesh: null, canvas: null, tex: null, redraws: 0 };
-// The stations with a depot that has a board: [{ st, name, x, y, z, yaw, w, h }] (the board's centre and size, u).
-function boardPlaces() {
-  const out = [], B = BLD_BOOTH;
-  for (const K of paxStations(S.track)) {
-    const at = K.depot && BLD_LAYOUT.find(a => a.id === K.depot.id);
-    if (!at || bldKindOf(at) !== 'depot') continue;
-    const yaw = at.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
-    const lx = (B.board[0] + B.board[1]) / 2 * WS, lz = (B.wall + 0.03) * WS + BOARD.LIFT;
-    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null;
-    out.push({ st: K.id, name: tt ? tt.name : paxName(K.id), x: at.x + lx * c + lz * s, y: (B.boardY[0] + B.boardY[1]) / 2 * WS, z: at.z - lx * s + lz * c,
-      yaw, w: (B.board[1] - B.board[0]) * WS, h: (B.boardY[1] - B.boardY[0]) * WS });
+// ---- The station boards' data (D20 (2), builder WB): plain data, no three.js ----
+// Two boards at each station: the PUBLIC SCHEDULE board on the depot's platform wall (for travellers: train, from,
+// to, arrival, departure, platform, On time / Late / Cancelled) and the WORK BOARD on the booth's inside wall behind
+// the ticket counter (for the player: what each train coming in the next hours needs). Both read the timetable
+// (S.tt) and the rest of the state; nothing here changes the state, so the sim stays as it was.
+const SCHED = { ROWS: 4, HORIZON_S: 6 * 3600, LATE_S: 60 };
+// A short name for a service, for the boards: "Willow Ford Mixed, morning" -> "Mixed AM"; others as they are.
+function ttShortName(svc) {
+  const m = /(\w+), (morning|afternoon|evening)$/.exec(svc.name || '');
+  return m ? `${m[1]} ${m[2] === 'morning' ? 'AM' : 'PM'}` : (svc.name || '?');
+}
+// Where a service's run stands relative to its stop i today: 'gone' (passed it), 'at' (standing there), 'coming'
+// (on its way), 'cancelled' (cancelled today, shown for TT.CXL_SHOW_S), or 'later' (not started yet today; 'gone'
+// too when it already ran today).
+function schedStopState(S, svc, i, day) {
+  const run = S.tt.runs.find(r => r.svc === svc.id && r.ph !== 'done');
+  if (run) return run.i > i ? 'gone' : run.i === i && run.ph === 'at' ? 'at' : 'coming';
+  if (svc.cxl && svc.cxl.day === day && i >= svc.cxl.i) return S.time > svc.cxl.at + TT.CXL_SHOW_S ? 'gone' : 'cancelled';
+  return svc.last === day ? 'gone' : 'later';
+}
+// Every stop at station stId of every service still to come today (or cancelled today), soonest first:
+// [{ svc, i, sod (the time it is listed by), train (short name), from, to (station names, '' at the ends of a run),
+//    arr, dep ('hh:mm' or ''), plat, state ('On time', 'Late', 'Cancelled' or 'No engine'), at (standing there) }].
+function schedStops(S, stId) {
+  const D = S.tt;
+  if (!D || !ttStation(S, stId)) return [];
+  const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), sod = abs % 86400, rows = [];
+  const nm = id => { const st = ttStation(S, id); return st ? st.name : paxPlaceName(id); };
+  for (const svc of D.services) svc.stops.forEach((p, i) => {
+    if (p.st !== stId) return;
+    const where = schedStopState(S, svc, i, day);
+    if (where === 'gone') return;
+    const next = p.arr !== null && p.arr !== undefined ? p.arr : p.dep;   // the time it is listed by: arrival, or departure where it starts
+    let state;
+    if (where === 'cancelled') state = 'Cancelled';
+    else if (svc.train === null) state = 'No engine';
+    else if (where === 'at') state = p.dep !== null && sod > p.dep + SCHED.LATE_S ? 'Late' : 'On time';
+    else if (where === 'coming') state = sod > next + SCHED.LATE_S ? 'Late' : 'On time';
+    else if (sod > (p.dep !== null ? p.dep : next) + TT.CANCEL_S) return;
+    else state = sod > (p.dep !== null ? p.dep : next) + SCHED.LATE_S ? 'Late' : 'On time';
+    const prev = svc.stops[i - 1], nx = svc.stops[i + 1];
+    rows.push({ svc: svc.id, i, sod: next, train: ttShortName(svc), name: svc.name, from: prev ? nm(prev.st) : '', to: nx ? nm(nx.st) : '',
+      arr: p.arr !== null && p.arr !== undefined ? ttClock(p.arr) : '', dep: p.dep !== null && p.dep !== undefined ? ttClock(p.dep) : '', plat: '1', state, at: where === 'at' });
+  });
+  return rows.sort((a, b) => a.sod - b.sod || a.svc - b.svc);
+}
+// The public schedule board's rows (up to SCHED.ROWS): { train, from, to, arr, dep, plat, state }.
+function schedRows(S, stId) {
+  return schedStops(S, stId).slice(0, SCHED.ROWS).map(({ train, from, to, arr, dep, plat, state }) => ({ train, from, to, arr, dep, plat, state }));
+}
+// Counts per destination tag as a sorted list: { WILLOW: 2, HUB: 1 } -> [['W', 2], ['T', 1]] (CARGO_TAGS letters).
+function wbTagList(by) {
+  return Object.keys(by).sort((a, b) => by[b] - by[a] || (a < b ? -1 : 1)).map(t => [(CARGO_TAGS[t] || { letter: '?' }).letter, by[t]]);
+}
+const wbSum = by => Object.values(by).reduce((a, b) => a + b, 0);
+// Goods in a station's area (on the ground or in the freight shed's bays) whose tag is one of tags: { tag: n }.
+function wbGoodsAt(S, st, tags) {
+  const I = S.items, out = {}, [x0, x1, z0, z1] = st.area || [0, 0, 0, 0];
+  if (!tags.size) return out;
+  for (let id = 0; id < I.next; id++) {
+    const w = I.where[id];
+    if (!I.alive[id] || !w || (w.kind !== 'GROUND' && w.kind !== 'BAY')) continue;
+    const tag = itemTag(I.waybill[id]);
+    if (!tags.has(tag)) continue;
+    const p = carrySpot(w);
+    if (p && p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1) out[tag] = (out[tag] || 0) + 1;
   }
   return out;
 }
-// What the board says for one of ttBoard's lines: the card's wording, made short enough to paint.
+// Wood and water the engine will want at stop i: { cords, water } (cords to put on; water true when the tank wants
+// filling), judged from the engine's wood and water now less what the legs still to run before it gets there burn.
+function wbEngineNeeds(S, svc, i, tr, where) {
+  const L = tr ? trainLocos(tr)[0] : null, p = svc.stops[i], acts = p.acts || [];
+  if (!L) return null;
+  const run = S.tt.runs.find(r => r.svc === svc.id && r.ph !== 'done'), burn = trainBurnRate(tr), stOf = k => ttStation(S, svc.stops[k].st);
+  let u = 0;
+  if (where === 'coming' && run) for (let k = Math.max(1, run.i); k <= i; k++) { const a = stOf(k - 1), b = stOf(k), d = a && b ? ttLegU(S, a, b) : 0; u += Number.isFinite(d) ? d : 0; }
+  const fuel = Math.max(0, L.fuel - u * burn), water = Math.max(0, L.water - u * burn);
+  let cords = 0;
+  if (acts.includes('wood') && i < svc.stops.length - 1 && where === 'at') {
+    // Standing at the stop: the dispatcher's own figure (ttWoodNeedU), so the board and the train agree.
+    const need = ttWoodNeedU(S, svc, i, tr);
+    if (!(run && run.wood) && fuel < need) cords = Math.min(Math.floor((FUEL_CAP - fuel) / CFG.CORD_U + 1e-9), Math.ceil((need - fuel) / CFG.CORD_U - 1e-9));
+  } else if (acts.includes('wood') && i < svc.stops.length - 1) {
+    let need = CFG.FUEL_RESERVE_U;
+    for (let k = i + 1; k < svc.stops.length; k++) {
+      const a = stOf(k - 1), b = stOf(k), d = a && b ? ttLegU(S, a, b) : 0;
+      need += Number.isFinite(d) ? d : 0;
+      if (!b || b.wood) break;
+      if (svc.stops[k].turn === 'runaround' && b.raPts) { const T = S.track, [q, r] = b.raPts.map(n => edgeAt(T, T.edges[n.e], n.s)); need += 2 * Math.hypot(q.x - r.x, q.z - r.z); }
+    }
+    need *= burn;
+    if (fuel < need) cords = Math.min(Math.floor((FUEL_CAP - fuel) / CFG.CORD_U + 1e-9), Math.ceil((need - fuel) / CFG.CORD_U - 1e-9));
+  }
+  return { cords: Math.max(0, cords), water: acts.includes('water') && water < CFG.WATER_U - TT.SPOUT_MOVE * burn - 1e-6, fuelNow: L.fuel, waterNow: L.water };
+}
+// The switches the player must set for a service before it gets to station stId, from the manual-switch builder's
+// ttSwitchNeeds(state) -> [{ service, train, switch, want, byTime, done }] when it exists; null when it does not yet
+// (the boards then say "Switches: (coming)").
+function wbSwitches(S, svcId) {
+  if (typeof ttSwitchNeeds !== 'function') return null;
+  let all;
+  try { all = ttSwitchNeeds(S) || []; } catch (e) { return null; }
+  return all.filter(n => n && n.service === svcId).map(n => ({ sw: n.switch, want: n.want, by: n.byTime, done: !!n.done }))
+    .sort((a, b) => (a.by || 0) - (b.by || 0) || a.sw - b.sw);
+}
+// The work board's rows for station stId: each train coming in or leaving in the next SCHED.HORIZON_S (and any
+// standing there now), soonest first. A row: { key, svc (service id, or 'overland'), train (service name), short,
+//   engine (our train's name or null), kind ('Freight', 'Passengers' or 'Mixed'), arr, dep ('hh:mm' or ''), state,
+//   at (standing there now), cars: { n, kinds: [[name, n]] }, unload: { n, tags: [[letter, n]] }, load: { n, tags },
+//   paxOff, paxOn, paxTicketed, wood (cords to put on, or null), water (true: fill the tank here), switches (list or
+//   null: not known yet) }.
+function wbRows(S, stId) {
+  const D = S.tt, st = ttStation(S, stId), out = [];
+  if (!D || !st) return out;
+  const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), sod = abs % 86400;
+  const X = S.pax, I = S.items, carName = k => (CAR_NAMES[k] || k).toLowerCase();
+  for (const r of schedStops(S, stId)) {
+    if (!r.at && r.state !== 'Late' && r.sod - sod > SCHED.HORIZON_S) continue;
+    const svc = D.services[r.svc], i = r.i, tr = svc.train !== null ? S.trains[svc.train] : null, where = schedStopState(S, svc, i, day);
+    const run = D.runs.find(q => q.svc === svc.id && q.ph !== 'done');
+    // Cars, and what kind of train it is.
+    const cars = tr ? tr.consist.filter(c => c.k !== 'loco') : [], kinds = {};
+    for (const c of cars) kinds[carName(c.k)] = (kinds[carName(c.k)] || 0) + 1;
+    const pass = cars.some(c => PAX.SEATS[c.k]), frt = cars.some(c => !PAX.SEATS[c.k]);
+    const kind = !tr ? '?' : pass && frt ? 'Mixed' : pass ? 'Passengers' : 'Freight';
+    // The stops of this run still before this one (goods and travellers there will be aboard when it gets here).
+    const k0 = where === 'later' ? 0 : where === 'coming' && run ? run.i : i, before = [];
+    for (let k = k0; k < i; k++) before.push(k);
+    const last = i === svc.stops.length - 1, here = new Set(st.tags), later = new Set();
+    for (const q of svc.stops.slice(i + 1)) { const s2 = ttStation(S, q.st); if (s2 && s2.id !== st.id) for (const t of s2.tags) later.add(t); }
+    // Goods to unload here: aboard now for this station (everything, at the end of the run) unless a stop before
+    // this one takes them off, plus goods waiting at the stops before this one for this station.
+    const unload = {}, carIds = new Set(cars.map(c => c.id)), offBefore = new Set();
+    for (const k of before) { const s0 = ttStation(S, svc.stops[k].st); if (s0) for (const t of s0.tags) offBefore.add(t); }
+    if (tr) for (let id = 0; id < I.next; id++) {
+      const w = I.where[id];
+      if (!I.alive[id] || !w || w.kind !== 'CAR' || !carIds.has(w.stockId)) continue;
+      const tag = itemTag(I.waybill[id]);
+      if ((last || here.has(tag)) && !offBefore.has(tag)) unload[tag] = (unload[tag] || 0) + 1;
+    }
+    for (const k of before) { const s0 = ttStation(S, svc.stops[k].st); if (s0 && s0.id !== st.id) { const g = wbGoodsAt(S, s0, here); for (const t of Object.keys(g)) unload[t] = (unload[t] || 0) + g[t]; } }
+    // Goods to load here: waiting in this station's area for a later stop of this run.
+    const load = last ? {} : wbGoodsAt(S, st, later);
+    // Travellers: stepping off here (aboard now, or waiting at a stop before this one, for here); waiting to board.
+    let paxOff = 0, paxOn = 0, paxTicketed = 0;
+    const laterSt = new Set(svc.stops.slice(i + 1).map(q => q.st)), beforeSt = new Set(before.map(k => svc.stops[k].st));
+    const seats = cars.reduce((a, c) => a + (PAX.SEATS[c.k] || 0), 0);
+    if (X) for (const p of X.list) {
+      if (p.s === 'aboard' && carIds.has(p.car) && p.to === stId) paxOff++;
+      else if ((p.s === 'queue' || p.s === 'wait' || p.s === 'board') && beforeSt.has(p.st) && p.to === stId) paxOff++;
+      else if ((p.s === 'queue' || p.s === 'wait' || p.s === 'board') && p.st === stId && laterSt.has(p.to)) { paxOn++; if (p.fare) paxTicketed++; }
+    }
+    if (seats) paxOff = Math.min(paxOff, seats);
+    const eng = tr ? wbEngineNeeds(S, svc, i, tr, where) : null;
+    out.push({ key: 's' + svc.id + ':' + i, svc: svc.id, train: svc.name, short: r.train, engine: tr ? tr.name : null, kind, arr: r.arr, dep: r.dep, state: r.state, at: r.at, sod: r.sod,
+      cars: { n: cars.length, kinds: Object.keys(kinds).sort().map(k => [k, kinds[k]]) },
+      unload: { n: wbSum(unload), tags: wbTagList(unload) }, load: { n: wbSum(load), tags: wbTagList(load) },
+      paxOff, paxOn, paxTicketed, seats, wood: eng ? eng.cords : null, water: eng ? eng.water : null, switches: null });
+  }
+  // The switches (when known): each one goes with the row of its service here whose time is nearest its deadline
+  // (the train's move into or out of this station that it is set for); one with no deadline with the first row.
+  const abs0 = S.time - sod;   // S.time at today's 00:00
+  for (const svcId of new Set(out.map(r => r.svc))) {
+    if (svcId === 'overland') continue;
+    const mine = out.filter(r => r.svc === svcId).sort((a, b) => a.sod - b.sod), all = wbSwitches(S, svcId);
+    if (all === null) continue;
+    for (const r of mine) r.switches = [];
+    for (const w of all) {
+      let best = mine[0];
+      if (typeof w.by === 'number') for (const r of mine) if (Math.abs(abs0 + r.sod - w.by) < Math.abs(abs0 + best.sod - w.by)) best = r;
+      best.switches.push(w);
+    }
+  }
+  // The Overland (the outside railroad's train) at the hub's interchange: what it brings (orders due by then) and
+  // what it takes away (the cars standing on the interchange).
+  const O = S.overland, OT = overlandTrain(S);
+  if (stId === 'hub' && O && OT && O.phase !== 'off') {
+    const inNow = O.phase !== 'away';
+    let next = null;
+    for (const v of OVERLAND.DUE) { const d = (v - sod + 86400) % 86400; if (next === null || d < next.d) next = { v, d }; }
+    if (inNow || next.d <= SCHED.HORIZON_S) {
+      const due = inNow ? S.time : S.time + next.d, E = S.econ;
+      const lines = E ? E.orders.filter(o => o.due <= due).reduce((a, o) => a.concat(o.lines), []) : [];
+      const units = econLineUnits(lines), packed = units.length ? econPack(units) : [], cut = interchangeCut(S);
+      const out_ = {};
+      if (cut) for (let id = 0; id < I.next; id++) { const w = I.where[id]; if (I.alive[id] && w && w.kind === 'CAR' && cut.consist.some(c => c.id === w.stockId)) { const t = itemTag(I.waybill[id]); out_[t] = (out_[t] || 0) + 1; } }
+      const kinds = {};
+      for (const c of packed) kinds[c.k] = (kinds[c.k] || 0) + 1;
+      out.push({ key: 'overland', svc: 'overland', train: 'The Overland', short: 'Overland', engine: null, kind: 'Freight', arr: ttClock(inNow ? sod : next.v), dep: '', state: inNow ? 'At the interchange' : 'On time', at: inNow, sod: inNow ? sod : (sod + next.d),
+        cars: { n: inNow ? OT.consist.length - 1 : packed.length, kinds: inNow ? [] : Object.keys(kinds).sort().map(k => [(CAR_NAMES[k] || k).toLowerCase(), kinds[k]]) },
+        unload: { n: inNow ? 0 : units.length, tags: [] }, load: { n: wbSum(out_), tags: wbTagList(out_) }, outCars: cut ? cut.consist.length : 0,
+        paxOff: 0, paxOn: 0, paxTicketed: 0, seats: 0, wood: null, water: null, switches: null, overland: true });
+    }
+  }
+  return out.sort((a, b) => a.sod - b.sod || String(a.svc).localeCompare(String(b.svc)));
+}
+
+// ---- Departure boards (D15, 2026-11-03: "Departure board: make it both"); since D20 (2) the public schedule board
+// and the work board ----
+// Two painted boards at each station's depot, both in ONE mesh (a quad each, 1 draw call, no shadow) on ONE canvas
+// texture (1024 x 1024: the schedule boards stacked in the left half, the work boards in the right), each repainted
+// only when what it shows changes (boardUpdate compares a signature, at most once a sim tick).
+// - The PUBLIC SCHEDULE board (kind 'sched') on the depot's front wall beside the ticket window (BLD_BOOTH.board),
+//   facing the platform, for travellers: from schedRows, each train's short name, from, to, arrival, departure,
+//   platform and On time / Late / Cancelled (No engine while no train is on the service). Two layouts: below zoom
+//   BOARD.FULL_ZOOM (the start zoom 1.5 among them) the BIG one, the next 3 trains in big letters (time, where to or
+//   from, and the state); from there on the FULL one, 4 trains in the columns train, from, to / arr, dep, pl, status.
+// - The WORK board (kind 'work') on the booth's inside wall behind the counter (BLD_BOOTH.work), for the player: the
+//   next 3 trains (wbRows), two lines each: time, train and cars; then off / on goods, travellers, wood, water and
+//   switches as short marks. Its card (the full detail) opens with a tap on it from inside the booth, the Work board
+//   button there, or Look and a tap on it.
+// The letters stand 1.2 cm in front of their frames (no surfaces on top of each other). Lit like the walls by day;
+// at night the material's emissive follows GLOW_MAT's glow. A tap on a schedule board (or Look and then a tap on it)
+// opens the station card for that station (ttCardPin).
+const BOARD = { CW: 1024, LIFT: 0.012, NIGHT: 0.55, FULL_ZOOM: 2.5, BG: '#1d2620', INK: '#efe3c2', DIM: '#c8b98f', LATE: '#f0a060', CXL: '#e86a52',
+  OK: '#bfe3a0', WORK_BG: '#2a2219', CHALK: '#f2ead8', TICK: '#9fd98a' };
+const boards = { list: [], mesh: null, canvas: null, tex: null, redraws: 0 };
+// The stations' boards: [{ kind, st, depot, name, x, y, z, yaw, w, h }] (the board's centre and size, u).
+function boardPlaces() {
+  const out = [], B = BLD_BOOTH;
+  for (const kind of ['sched', 'work']) for (const K of paxStations(S.track)) {
+    const at = K.depot && BLD_LAYOUT.find(a => a.id === K.depot.id);
+    if (!at || bldKindOf(at) !== 'depot') continue;
+    const yaw = at.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
+    const [x0, x1] = kind === 'sched' ? B.board : B.work, [y0, y1] = kind === 'sched' ? B.boardY : B.workY;
+    const lx = (x0 + x1) / 2 * WS, lz = ((kind === 'sched' ? B.wall : B.z0) + 0.03) * WS + BOARD.LIFT;
+    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null;
+    out.push({ kind, st: K.id, depot: at.id, name: tt ? tt.name : paxName(K.id), x: at.x + lx * c + lz * s, y: (y0 + y1) / 2 * WS, z: at.z - lx * s + lz * c,
+      yaw, w: (x1 - x0) * WS, h: (y1 - y0) * WS });
+  }
+  return out;
+}
+// What the old departure lines said, made short (kept for the station card's wording; see ttBoard).
 function boardState(l, sod) {
   if (l.state === 'Cancelled' || l.state === 'Late' || l.state === 'On time') return l.state;
   if (/^No engine/.test(l.state)) return 'No engine';
@@ -7977,29 +8209,42 @@ function boardState(l, sod) {
   if (l.state === 'On its way here') return late ? 'Late' : 'On time';
   return late ? 'Late' : 'Boarding';   // the train stands at this stop (Departing, or Waiting: ...)
 }
-// The rows a board shows now: [{ time, to, train, state }] (up to 4, soonest first).
-function boardRows(stId) {
-  if (typeof ttBoard !== 'function' || !S.tt) return [];
-  const sod = (S.time + CFG.DAY_START_S) % 86400;
-  return ttBoard(S, stId).lines.map(l => ({ time: l.time, to: l.to, train: l.name, state: boardState(l, sod) }));
+// The rows the public schedule board shows now (schedRows): [{ train, from, to, arr, dep, plat, state }].
+function boardRows(stId) { return S.tt ? schedRows(S, stId) : []; }
+// The work board's short lines in the world: the next 3 trains, [{ time, train, cars, marks: [[text, done]] }].
+function workBoardLines(stId) {
+  if (!S.tt) return [];
+  return wbRows(S, stId).slice(0, 3).map(r => {
+    const m = [];
+    if (r.unload.n) m.push(['Off ' + r.unload.n, false]);
+    if (r.load.n) m.push(['On ' + r.load.n, false]);
+    if (r.paxOff || r.paxOn) m.push([`Pax ${r.paxOff}/${r.paxOn}`, false]);
+    if (r.wood) m.push(['Wood ' + r.wood, false]);
+    if (r.water) m.push(['Water', false]);
+    if (r.switches && r.switches.length) m.push([`Sw ${r.switches.filter(w => w.done).length}/${r.switches.length}`, r.switches.every(w => w.done)]);
+    if (!m.length) m.push([r.state === 'No engine' ? 'No engine' : 'Nothing to do', false]);
+    return { time: r.dep && !r.at && !r.arr ? r.dep : r.arr || r.dep, train: r.short, cars: r.cars.n, state: r.state, marks: m };
+  });
 }
 function boardBuild(G) {
-  boards.mesh = null; boards.list = boardPlaces().map(p => ({ ...p, sig: null, rows: [] }));
+  boards.mesh = null; boards.list = boardPlaces().map(p => ({ ...p, sig: null, rows: [], tick: -1 }));
   if (!boards.list.length) return;
-  const n = boards.list.length, rowsPow = 1 << Math.ceil(Math.log2(n)), PX = BOARD.PX;
+  // The regions: schedule boards stacked at the left (480 px wide), work boards at the right (512 px wide).
+  const col = { sched: { x: 0, y: 0, W: 480 }, work: { x: BOARD.CW / 2, y: 0, W: BOARD.CW / 2 } };
+  for (const b of boards.list) { const c = col[b.kind], H = Math.round(c.W * b.h / b.w); b.region = [c.x, c.y, c.W, H]; c.y += H; }
+  const CW = BOARD.CW, CH = 1 << Math.ceil(Math.log2(Math.max(col.sched.y, col.work.y, 1)));
   if (!boards.canvas) boards.canvas = document.createElement('canvas');
-  boards.canvas.width = PX; boards.canvas.height = PX * rowsPow;
+  boards.canvas.width = CW; boards.canvas.height = CH;
   if (boards.tex) boards.tex.dispose();
   boards.tex = new THREE.CanvasTexture(boards.canvas);
   boards.tex.anisotropy = 4;
-  const pos = [], uv = [], idx = [], hPx = PX / BOARD.ASPECT, H = PX * rowsPow;
+  const pos = [], uv = [], idx = [];
   boards.list.forEach((b, k) => {
-    const c = Math.cos(b.yaw), s = Math.sin(b.yaw), rx = c * b.w / 2, rz = -s * b.w / 2, hy = b.h / 2;
+    const c = Math.cos(b.yaw), s = Math.sin(b.yaw), rx = c * b.w / 2, rz = -s * b.w / 2, hy = b.h / 2, [x0, y0, W, H] = b.region;
     pos.push(b.x - rx, b.y - hy, b.z - rz, b.x + rx, b.y - hy, b.z + rz, b.x + rx, b.y + hy, b.z + rz, b.x - rx, b.y + hy, b.z - rz);
-    const v1 = 1 - k * PX / H, v0 = 1 - (k * PX + hPx) / H;
-    uv.push(0, v0, 1, v0, 1, v1, 0, v1);
+    const u0 = x0 / CW, u1 = (x0 + W) / CW, v1 = 1 - y0 / CH, v0 = 1 - (y0 + H) / CH;
+    uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
     idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k, 4 * k + 2, 4 * k + 3);
-    b.region = [0, k * PX, PX, hPx];
   });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -8010,52 +8255,124 @@ function boardBuild(G) {
   boards.mesh = m; G.add(m);
   boardUpdate();
 }
-// Paints board b's rows into its region of the canvas.
+// Text on the boards' canvas: squeezed sideways to maxW when longer.
+function boardText(ctx, t, x, y, px, col, align, maxW, font) {
+  ctx.font = `${font || 'bold'} ${px}px Georgia, "Times New Roman", serif`; ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
+  const w = ctx.measureText(t).width;
+  if (maxW && w > maxW) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(maxW / w, 1);
+    ctx.fillText(t, 0, 0); ctx.restore();
+  } else ctx.fillText(t, x, y);
+}
+const boardStateCol = st => st === 'Cancelled' ? BOARD.CXL : st === 'Late' ? BOARD.LATE : st === 'No engine' ? BOARD.DIM : BOARD.OK;
+// Paints board b into its region of the canvas.
 function boardPaint(b) {
   const ctx = boards.canvas.getContext('2d'), [x0, y0, W, H] = b.region;
   ctx.save(); ctx.translate(x0, y0);
-  ctx.fillStyle = BOARD.BG; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = BOARD.DIM; ctx.lineWidth = 3; ctx.strokeRect(9, 9, W - 18, H - 18);
-  const text = (t, x, y, px, col, align, maxW, font) => {
-    ctx.font = `${font || 'bold'} ${px}px Georgia, "Times New Roman", serif`; ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
-    const w = ctx.measureText(t).width;
-    if (maxW && w > maxW) { ctx.save(); ctx.translate(x, y); ctx.scale(maxW / w, 1); ctx.fillText(t, 0, 0); ctx.restore(); }
-    else ctx.fillText(t, x, y);
-  };
-  text(b.name.toUpperCase(), W / 2, 62, 44, BOARD.INK, 'center', W - 60);
-  text('DEPARTURES', W / 2, 92, 22, BOARD.DIM, 'center', W - 60);
-  ctx.fillStyle = BOARD.DIM; ctx.fillRect(24, 104, W - 48, 2);
-  const top = 112, rowH = (H - top - 14) / 4;
-  if (!b.rows.length) text('No more trains today', W / 2, top + rowH * 1.2, 30, BOARD.DIM, 'center', W - 60, 'italic');
-  b.rows.forEach((r, i) => {
-    const y = top + i * rowH, col = r.state === 'Cancelled' ? BOARD.CXL : r.state === 'Late' ? BOARD.LATE : BOARD.INK;
-    text(r.time, 24, y + 40, 36, BOARD.INK, 'left', 104);
-    text(r.to, 136, y + 40, 36, BOARD.INK, 'left', 230);
-    text(r.state, W - 24, y + 40, 30, col, 'right', 130);
-    text(r.train, 136, y + 68, 23, BOARD.DIM, 'left', W - 160, 'italic');
-    if (r.state === 'Cancelled') { ctx.fillStyle = BOARD.CXL; ctx.fillRect(24, y + 28, 340, 3); }
-    if (i < 3) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(24, y + rowH - 4, W - 48, 1); }
-  });
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+  if (b.kind === 'work') boardPaintWork(ctx, b, W, H); else boardPaintSched(ctx, b, W, H);
   ctx.restore();
 }
-// Every frame: each board's rows; repainted (and the texture sent again) only when they change. The night glow.
+function boardPaintSched(ctx, b, W, H) {
+  const T = (t, x, y, px, col, align, maxW, font) => boardText(ctx, t, x, y, px, col, align, maxW, font);
+  ctx.fillStyle = BOARD.BG; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = BOARD.DIM; ctx.lineWidth = 3; ctx.strokeRect(8, 8, W - 16, H - 16);
+  if (b.mode === 'big') {
+    // The big layout: 3 trains in big letters (no title: it is read where it hangs): time and state; where to or from.
+    const top = 12, rowH = (H - top - 10) / 3;
+    if (!b.rows.length) T('No more trains today', W / 2, top + rowH, 40, BOARD.DIM, 'center', W - 40, 'italic');
+    b.rows.slice(0, 3).forEach((r, i) => {
+      const y = top + i * rowH, ends = !r.to, time = ends ? r.arr : r.dep || r.arr;
+      T(time, 18, y + 60, 62, BOARD.INK, 'left', 190);
+      T(r.state, W - 18, y + 58, 52, boardStateCol(r.state), 'right', W - 220);
+      T(ends ? 'from ' + r.from : 'to ' + r.to, 18, y + 118, 50, BOARD.INK, 'left', W - 36);
+      if (r.state === 'Cancelled') { ctx.fillStyle = BOARD.CXL; ctx.fillRect(18, y + 38, 180, 5); }
+      if (i < 2) { ctx.fillStyle = 'rgba(200,185,143,0.45)'; ctx.fillRect(18, y + rowH - 4, W - 36, 2); }
+    });
+    return;
+  }
+  // The full layout: columns train, from, to (first line) and arr, dep, pl, status (second line), 4 trains.
+  T(b.name.toUpperCase() + ' - TRAINS', W / 2, 36, 28, BOARD.INK, 'center', W - 40);
+  const C1 = [18, 168, 318], C2 = [18, 120, 222, 272], hy = 60;
+  ['TRAIN', 'FROM', 'TO'].forEach((h, i) => T(h, C1[i], hy, 20, BOARD.DIM, 'left', 140));
+  ['ARR', 'DEP', 'PL', 'STATUS'].forEach((h, i) => T(h, C2[i], hy + 22, 20, BOARD.DIM, 'left', 140));
+  ctx.fillStyle = BOARD.DIM; ctx.fillRect(18, hy + 32, W - 36, 2);
+  const top = hy + 36, rowH = (H - top - 8) / 4;
+  if (!b.rows.length) T('No more trains today', W / 2, top + rowH, 32, BOARD.DIM, 'center', W - 40, 'italic');
+  b.rows.forEach((r, i) => {
+    const y = top + i * rowH, dash = v => v || '-';
+    T(r.train, C1[0], y + 34, 30, BOARD.INK, 'left', 144);
+    T(dash(r.from), C1[1], y + 34, 30, BOARD.INK, 'left', 144);
+    T(dash(r.to), C1[2], y + 34, 30, BOARD.INK, 'left', W - C1[2] - 14);
+    T(dash(r.arr), C2[0], y + 68, 30, BOARD.INK, 'left', 98);
+    T(dash(r.dep), C2[1], y + 68, 30, BOARD.INK, 'left', 98);
+    T(r.plat, C2[2], y + 68, 30, BOARD.INK, 'left', 44);
+    T(r.state, C2[3], y + 68, 30, boardStateCol(r.state), 'left', W - C2[3] - 14);
+    if (i < 3) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(18, y + rowH - 3, W - 36, 1); }
+  });
+}
+function boardPaintWork(ctx, b, W, H) {
+  const T = (t, x, y, px, col, align, maxW, font) => boardText(ctx, t, x, y, px, col, align, maxW, font);
+  ctx.fillStyle = BOARD.WORK_BG; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = BOARD.DIM; ctx.lineWidth = 3; ctx.strokeRect(8, 8, W - 16, H - 16);
+  T('WORK BOARD', 20, 40, 28, BOARD.CHALK, 'left', 230);
+  T(b.name, W - 20, 40, 24, BOARD.DIM, 'right', 230, 'italic');
+  ctx.fillStyle = BOARD.DIM; ctx.fillRect(18, 50, W - 36, 2);
+  const top = 54, rowH = (H - top - 6) / 3;
+  if (!b.rows.length) T('No trains in the next hours', W / 2, top + rowH, 28, BOARD.DIM, 'center', W - 40, 'italic');
+  b.rows.forEach((r, i) => {
+    const y = top + i * rowH;
+    T(`${r.time}  ${r.train}`, 20, y + 36, 32, BOARD.CHALK, 'left', W - 150);
+    T(r.cars + (r.cars === 1 ? ' car' : ' cars'), W - 20, y + 36, 26, BOARD.DIM, 'right', 120);
+    let x = 20;
+    for (const [t, ok] of r.marks) {
+      ctx.font = `bold 26px Georgia, "Times New Roman", serif`;
+      const w = Math.min(ctx.measureText(t).width, W - 20 - x);
+      if (w <= 0) break;
+      T(t, x, y + 70, 26, ok ? BOARD.TICK : BOARD.LATE, 'left', w);
+      x += w + 18;
+    }
+    if (i < 2) { ctx.fillStyle = 'rgba(200,185,143,0.35)'; ctx.fillRect(18, y + rowH - 3, W - 36, 1); }
+  });
+}
+// Every frame (the work at most once a sim tick): each board's rows; repainted (and the texture sent again) only when
+// what it shows changes. The schedule board's layout follows the zoom (big below BOARD.FULL_ZOOM). The night glow.
 function boardUpdate() {
   if (!boards.mesh) return;
   let dirty = false;
+  const mode = cam.zoom < BOARD.FULL_ZOOM ? 'big' : 'full';
   for (const b of boards.list) {
-    const rows = boardRows(b.st), sig = JSON.stringify(rows);
+    if (b.tick === S.tick && (b.kind === 'work' || b.mode === mode) && b.S === S) continue;
+    b.tick = S.tick; b.S = S;
+    const rows = b.kind === 'work' ? workBoardLines(b.st) : boardRows(b.st), sig = (b.kind === 'work' ? '' : mode) + JSON.stringify(rows);
     if (sig === b.sig) continue;
-    b.sig = sig; b.rows = rows; boardPaint(b); boards.redraws++; dirty = true;
+    b.sig = sig; b.rows = rows; b.mode = mode; boardPaint(b); boards.redraws++; dirty = true;
   }
   if (dirty) boards.tex.needsUpdate = true;
   boards.mesh.material.emissiveIntensity = BOARD.NIGHT * (GLOW_MAT.emissiveIntensity / DAY.GLOW_MAX);
 }
-// Which board (its station id) is at screen point (px, py), or null.
-function boardHitAt(px, py) {
+// The nearest board at screen point (px, py) of one kind ('sched' or 'work'): its entry, or null.
+function boardHitOf(px, py, kind) {
   if (!boards.mesh) return null;
   raycaster.setFromCamera(ndc(px, py), camera);
-  const h = raycaster.intersectObject(boards.mesh, false)[0];
-  return h ? boards.list[Math.floor(h.faceIndex / 2)].st : null;
+  for (const h of raycaster.intersectObject(boards.mesh, false)) { const b = boards.list[Math.floor(h.faceIndex / 2)]; if (b.kind === kind) return b; }
+  return null;
+}
+// Which schedule board (its station id) is at screen point (px, py), or null.
+function boardHitAt(px, py) { const b = boardHitOf(px, py, 'sched'); return b ? b.st : null; }
+// The station whose booth the player stands in (or in its doorway), or null.
+function wbBoothStation(x, z) {
+  const r = buildingBooths().find(r => walkRectHits(r, 0.1, x, z, 0));
+  if (!r) return null;
+  const K = paxStations(S.track).find(K => K.depot && K.depot.id === r.id);
+  return K ? K.id : null;
+}
+// Which work board (its station id) is at screen point (px, py), or null. Unless any is true (Look), only the work
+// board of the booth the player stands in counts: from outside it is behind the depot's front wall.
+function workBoardHitAt(px, py, any) {
+  const b = boardHitOf(px, py, 'work');
+  if (!b) return null;
+  return any || wbBoothStation(S.player.x, S.player.z) === b.st ? b.st : null;
 }
 
 // ---- Town buildings (M1 package 4, builder C5) ----
@@ -10081,7 +10398,8 @@ let paxDeskSig = '';
 function paxOnEvent(e) {
   if (e.t === 'deskStaffed') toast('You staff the ticket window. Tickets sell while you stay here.');
   else if (e.t === 'deskLeft') toast(e.why ? e.why + '.' : 'You leave the ticket window.');
-  else if (e.t === 'paxGaveUp') toast('A traveller waited an hour for a ticket and went home.');
+  // (paxGaveUp: parked since D20 (3); nobody gives up in the ticket line, so its toast never shows.)
+  else if (e.t === 'paxGaveUp' && PAX.GIVE_UP_S > 0) toast('A traveller waited an hour for a ticket and went home.');
 }
 // Is a screen rectangle clear of the buttons and panels?
 function paxClear(r) {
@@ -10206,6 +10524,8 @@ function updateHud() {
   tutHud();            // before the slide-in, which keeps clear of the tutorial chip
   officeUpdate();      // office, telegrams, alerts and Look (D1)
   officeBtnHud();
+  workCardUpdate();    // the work board's card (D20)
+  workBtnHud();
   inboxUpdate();
   tgBtnHud();
   tgSlideHud();
@@ -10279,16 +10599,18 @@ function ttCardHud() {
     const tk = ttCardTicketSpot(st.id), db = Math.hypot(st.board.x - P.x, st.board.z - P.z);
     const dt = tk ? Math.hypot(tk.x - P.x, tk.z - P.z) * 2 : Infinity; // a ticket window at 6u counts as a board at 12u
     const d = Math.min(db, dt), at = dt < db ? tk : st.board;            // the card stands over the nearer of the two
-    if (d < 12 * WS && (!near || d < near.d)) near = { st, d, at };
+    if (d < 12 * WS && (!near || d < near.d)) near = { st, d, at, high: at === tk };
   }
   const pin = ttCardUi.pin;
   if (pin && performance.now() > pin.until) ttCardUi.pin = null;
   else if (pin) {
     const st = ttStation(S, pin.st), bp = boards.list.find(b => b.st === pin.st);
-    if (st && bp) near = { st, d: 0, at: { x: bp.x, z: bp.z } };
+    if (st && bp) near = { st, d: 0, at: { x: bp.x, z: bp.z }, high: true };
   }
   const card = $('ttCard');
-  const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
+  // In a booth the work board is read instead (D20), so the card stays away unless a board was tapped.
+  const inBooth = !pin && wbBoothStation(P.x, P.z) !== null;
+  const hide = !near || inBooth || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
   const b = ttBoard(S, near.st.id);
   const sig = near.st.id + b.signal + b.lines.map(l => l.time + l.name + l.state).join('|');
@@ -10301,7 +10623,8 @@ function ttCardHud() {
     for (const l of b.lines) { const d = document.createElement('div'); d.textContent = `${l.time} to ${l.to}: ${l.state}`; box.appendChild(d); }
     card.hidden = false; ttCardUi.w = card.offsetWidth; ttCardUi.h = card.offsetHeight;
   }
-  const p = toScreen(near.at.x, 1.9 * WS, near.at.z), W = window.innerWidth;
+  // At the depot (the ticket window or a pinned board) it stands above the roof, clear of the schedule board (D20).
+  const p = toScreen(near.at.x, (near.high ? 3.1 : 1.9) * WS, near.at.z), W = window.innerWidth;
   const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2)), y = Math.max(64, p.y - ttCardUi.h - 6);
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
@@ -10331,9 +10654,9 @@ const inboxUi = { open: false, sig: '', expanded: null };
 const lookUi = { armed: false, open: false, pick: null, sig: '' };
 const OFFICE_TAB_NAMES = { contracts: 'Contracts', market: 'Market', ledger: 'Ledger', trains: 'Trains', timetable: 'Timetable' };
 const TG_SLIDE_MS = 4500;
-function bigPanelOpen() { return officeUi.open || inboxUi.open; }
+function bigPanelOpen() { return officeUi.open || inboxUi.open || (typeof wbUi !== 'undefined' && wbUi.open); }
 function openOffice() {
-  closePanel(); closeCarPanel(); closeTelPanel(); closeInbox(); closeLook();
+  closePanel(); closeCarPanel(); closeTelPanel(); closeInbox(); closeLook(); closeWorkCard();
   officeUi.open = true; officeUi.sig = ''; $('office').hidden = false; officeUpdate();
 }
 function closeOffice() { officeUi.open = false; officeUi.sig = ''; $('office').hidden = true; }
@@ -10461,9 +10784,74 @@ function officeBtnHud() {
   officeBtnSig = sig; $('officeBtn').hidden = !show; $('officeBtn').setAttribute('aria-pressed', String(officeUi.open));
 }
 $('officeBtn').addEventListener('click', () => { if (officeUi.open) closeOffice(); else openOffice(); });
+// ---- The work board's card (D20 (2), builder WB) ----
+// Opened by a tap on the work board from inside the booth (workBoardHitAt), by the Work board button shown while the
+// player stands in a booth, or by Look and a tap on the board. It lists every train of wbRows (the next hours at
+// that station), soonest first, in full: kind, train, cars, times, goods off and on per tag, travellers, wood and
+// water, and the switches to set (from ttSwitchNeeds when the switches are manual; "(coming)" until then). It
+// scrolls when long; it closes with its X or the button, and when the player walks out of the booth it was opened in.
+const wbUi = { open: false, st: null, sig: '', booth: false };
+function openWorkCard(st, fromBooth) {
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook();
+  wbUi.open = true; wbUi.st = st; wbUi.sig = ''; wbUi.booth = !!fromBooth; $('workCard').hidden = false; $('workBody').scrollTop = 0; workCardUpdate();
+}
+function closeWorkCard() { wbUi.open = false; wbUi.sig = ''; $('workCard').hidden = true; }
+const wbTagText = tags => tags.length ? ' (' + tags.map(([l, n]) => `${l} ${n}`).join(', ') + ')' : '';
+const wbClockOf = t => ttClock(((t + CFG.DAY_START_S) % 86400 + 86400) % 86400);
+// One train's block of the card, as HTML.
+function workCardRowHtml(r) {
+  const L = [], st = r.state;
+  const col = st === 'Cancelled' ? '#b8432c' : st === 'Late' ? '#b5651d' : st === 'No engine' ? '#6a5a48' : '#3d7a36';
+  const time = r.arr && r.dep ? `${r.arr} to ${r.dep}` : r.arr ? `in ${r.arr}` : `out ${r.dep}`;
+  L.push(`<div class="wbHead"><b>${esc(time)}</b><span class="wbState" style="color:${col}">${esc(st)}</span></div>`);
+  L.push(`<div><b>${esc(r.train)}</b>: ${esc(r.kind === '?' ? 'no engine on it' : r.kind)}${r.engine ? ', ' + esc(r.engine) : ''}</div>`);
+  const kinds = r.cars.kinds.map(([k, n]) => `${n} ${k}${n > 1 ? (k === 'boxcar' || k === 'flatcar' || k === 'combine' ? 's' : '') : ''}`).join(', ');
+  L.push(`<div>Cars: ${r.cars.n}${kinds ? ' (' + esc(kinds) + ')' : ''}${r.overland && r.outCars ? `; takes away the ${r.outCars} on the interchange` : ''}</div>`);
+  if (r.arr || r.dep) L.push(`<div>Arrives ${esc(r.arr || '-')}, departs ${esc(r.dep || '-')}</div>`);
+  L.push(`<div>Unload here: ${r.unload.n}${esc(wbTagText(r.unload.tags))}${r.overland && r.unload.n ? ' ordered' : ''}</div>`);
+  L.push(`<div>Load here: ${r.load.n}${esc(wbTagText(r.load.tags))}</div>`);
+  if (!r.overland) L.push(`<div>Passengers: ${r.paxOff} getting off, ${r.paxOn} waiting to board${r.paxOn ? ` (${r.paxTicketed} with tickets)` : ''}${r.seats ? `, ${r.seats} seats` : ''}</div>`);
+  if (r.wood !== null || r.water !== null) {
+    const need = [r.wood ? `${r.wood} cord${r.wood > 1 ? 's' : ''} of wood` : '', r.water ? 'water at the tower' : ''].filter(Boolean);
+    L.push(`<div>Engine needs: ${need.length ? need.join(', ') : 'nothing'}</div>`);
+  }
+  if (r.overland) { /* the outside railroad's train: no switches of ours to set for it */ }
+  else if (r.switches === null) L.push(`<div class="wbSw">Switches: (coming)</div>`);
+  else if (!r.switches.length) L.push(`<div class="wbSw">Switches: none to set</div>`);
+  else {
+    L.push(`<div class="wbSw">Switches to set:</div>`);
+    for (const w of r.switches) {
+      const late = !w.done && typeof w.by === 'number' && S.time > w.by;
+      const want = w.want === 'N' ? 'straight (green)' : w.want === 'R' ? 'to the turn-off (red)' : String(w.want);
+      L.push(`<div class="wbSwRow"${w.done ? ' data-done' : ''}><span class="wbBox">${w.done ? 'Set' : ''}</span>Switch ${esc(w.sw)}: ${esc(want)}${typeof w.by === 'number' ? `, by ${wbClockOf(w.by)}` : ''}${late ? ' <b class="wbLate">late</b>' : ''}</div>`);
+    }
+  }
+  return `<div class="wbTrain" data-key="${esc(r.key)}">${L.join('')}</div>`;
+}
+function workCardUpdate() {
+  if (!wbUi.open) return;
+  if (wbUi.booth && wbBoothStation(S.player.x, S.player.z) !== wbUi.st) { closeWorkCard(); return; }
+  const rows = S.tt ? wbRows(S, wbUi.st) : [], sig = wbUi.st + JSON.stringify(rows);
+  if (sig === wbUi.sig) return;
+  wbUi.sig = sig;
+  const st = ttStation(S, wbUi.st);
+  $('workTitle').textContent = `Work board: ${st ? st.name : paxPlaceName(wbUi.st)}`;
+  const body = $('workBody'), top = body.scrollTop;
+  body.innerHTML = rows.length ? rows.map(workCardRowHtml).join('') : '<div>No trains in the next hours.</div>';
+  body.scrollTop = top;
+}
+$('workClose').addEventListener('click', closeWorkCard);
+// The Work board button: shown while the player stands in a station's booth.
+let workBtnSig = '';
+function workBtnHud() {
+  const st = wbBoothStation(S.player.x, S.player.z), show = !!st && !!S.tt && !(typeof bt !== 'undefined' && bt.on), sig = show + '|' + st + '|' + wbUi.open;
+  if (sig === workBtnSig) return;
+  workBtnSig = sig; $('workBtn').hidden = !show; $('workBtn').setAttribute('aria-pressed', String(wbUi.open)); $('workBtn').dataset.st = st || '';
+}
+$('workBtn').addEventListener('click', () => { if (wbUi.open) closeWorkCard(); else if ($('workBtn').dataset.st) openWorkCard($('workBtn').dataset.st, true); });
 // ---- The inbox ----
 function openInbox(id) {
-  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook();
+  closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook(); closeWorkCard();
   inboxUi.open = true; inboxUi.sig = ''; $('inbox').hidden = false; tgSlideHide();
   if (id !== undefined && id !== null) { inboxUi.expanded = id; const g = tgGet(S, id); if (g && !g.read) telSend({ t: 'tgRead', id }); }
   inboxUpdate();
@@ -10617,6 +11005,8 @@ function lookPickAt(px, py) {
   }
   const board = boardHitAt(px, py);
   if (board) return { k: 'board', id: board };
+  const work = workBoardHitAt(px, py, true);
+  if (work) return { k: 'work', id: work };
   const biz = townHitAt(px, py);
   if (biz !== null) return { k: 'biz', id: biz };
   const job = jobHitAt(groundAt(px, py));
@@ -10629,6 +11019,7 @@ function lookTap(px, py) {
   const pick = lookPickAt(px, py);
   if (!pick) { toast('Nothing to look at there.'); return; }
   if (pick.k === 'board') { ttCardPin(pick.id); return; } // a departure board: its station card
+  if (pick.k === 'work') { openWorkCard(pick.id, false); return; } // a work board (D20): its card
   closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox();
   lookUi.pick = pick; lookUi.open = true; lookUi.sig = ''; $('lookCard').hidden = false; lookUpdate();
 }
@@ -10809,6 +11200,8 @@ function onTap(px, py) {
     const yw = camYawTarget();
     send({ t: 'useTrain', tr: hit.id, view: angleCode(Math.sin(yw), Math.cos(yw)) }); return;
   }
+  const work = workBoardHitAt(px, py);
+  if (work) { openWorkCard(work, true); return; }    // the work board behind the counter (D20), from inside the booth
   const board = boardHitAt(px, py);
   if (board) { ttCardPin(board); return; }          // a painted departure board: its station card
   // The ticket window and the office desk (in front of the depot's door, beside the window since the booth) can be
@@ -11312,7 +11705,8 @@ window.__railhead = {
   },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   // The painted departure boards (D15) and the ticket booths (2026-11-03).
-  board: { BOARD, BLD_BOOTH, boardRows, boardState, boardHitAt, ttCardPin, get list() { return boards.list; }, get mesh() { return boards.mesh; },
+  board: { BOARD, BLD_BOOTH, boardRows, boardState, boardHitAt, ttCardPin, schedRows, schedStops, wbRows: (st, S2) => wbRows(S2 || S, st), workBoardLines, workBoardHitAt, wbBoothStation,
+    openWorkCard, closeWorkCard, get workUi() { return wbUi; }, get list() { return boards.list; }, get mesh() { return boards.mesh; },
     get redraws() { return boards.redraws; }, get canvas() { return boards.canvas; }, get card() { return ttCardUi; },
     booths: () => buildingBooths(), walkInBooth, get shell() { return bldShell; } },
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),

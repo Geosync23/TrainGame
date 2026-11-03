@@ -4,7 +4,8 @@
 // - Staffing the ticket window by real touch (a tap on the window walks the player there): tickets sell at
 //   0.5 game minutes each, the fare is 4 cents a mile with a 10 cent minimum (40 cents for the 10-mile spur),
 //   every fare goes into the ledger once (C1's econPost, category 'fares') and the money rule holds; walking away stops the sales.
-// - A traveller without a ticket gives up after exactly 60 game minutes and the station's count goes up.
+// - Travellers in the ticket line wait as long as needed (D20 (3)): over 16 game hours with nobody selling, nobody
+//   gives up or leaves, the stations' give-up counts stay 0, and no more than PAX.MAX_AT wait at a station.
 // - Boarding and stepping off with the combine standing at the platform: 0.1 game minutes each per door,
 //   stepping off first, never more than the combine's 12 seats; a train that moves off stops the boarding;
 //   travellers who stepped off walk to the station's edge and leave the map there.
@@ -23,7 +24,7 @@ module.exports = async function checkPassengers() {
   try {
     // 1. Rates, giving up and walking clear of buildings and trains: 16 game hours in the sim alone.
     const r1 = await R(() => {
-      const R = window.__railhead, S = R.newState(1866), T = S.track, out = { arrive: [], gaveUp: [], gone: 0, inBld: 0, inTrain: 0, sample: null };
+      const R = window.__railhead, S = R.newState(1866), T = S.track, out = { arrive: [], gaveUp: [], gone: 0, inBld: 0, inTrain: 0, sample: null, leave: 0, maxAt: 0, longest: 0 };
       const fps = R.buildings.footprints().filter(f => !f.flush);
       const inRect = (f, x, z) => { const c = Math.cos(f.yaw), s = Math.sin(f.yaw), dx = x - f.x, dz = z - f.z; return Math.abs(dx * c - dz * s) < f.w / 2 && Math.abs(dx * s + dz * c) < f.d / 2; };
       const t0 = performance.now();
@@ -36,7 +37,10 @@ module.exports = async function checkPassengers() {
           if (e.t === 'paxGone') out.gone++;
         }
         const poses = [].concat(...S.trains.map(tr => R.trainPoses(T, tr)));
+        for (const st of ['hub', 'willow']) out.maxAt = Math.max(out.maxAt, S.pax.list.filter(p => p.st === st && (p.s === 'queue' || p.s === 'wait' || p.s === 'board')).length);
         for (const p of S.pax.list) {
+          if (p.s === 'leave') out.leave++;
+          if (p.s === 'queue') out.longest = Math.max(out.longest, S.time - p.t0);
           if (p.s === 'aboard') continue;
           const x = p.x / 100, z = p.z / 100;
           if (fps.some(f => inRect(f, x, z))) { out.inBld++; out.sample = out.sample || [p.id, p.s, x, z]; }
@@ -48,6 +52,7 @@ module.exports = async function checkPassengers() {
       }
       out.ms = performance.now() - t0; out.rep = Object.values(S.pax.rep).reduce((a, b) => a + b, 0);
       out.stations = R.pax.paxStations(T).map(K => K.id);
+      out.inLine = S.pax.list.filter(p => p.s === 'queue').length; out.MAX_AT = R.pax.PAX.MAX_AT;
       return out;
     });
     const hubArr = r1.arrive.filter(a => a.from === 'hub'), outside = r1.arrive.filter(a => a.from === 'outside');
@@ -59,12 +64,14 @@ module.exports = async function checkPassengers() {
     if (r1.arrive.some(a => (a.st === 'hub' && a.to !== 'willow') || (a.st === 'willow' && a.to !== 'hub'))) problems.push('a traveller does not want to go to the other station');
     const wf = r1.arrive.filter(a => a.from === 'willow');
     if (r1.stations.includes('willow') && (wf.length < 13 || wf.length > 28)) problems.push(`Willow Ford travellers 06:00 to 21:00: ${wf.length}, expected about 20 (one every 45 game minutes)`);
-    if (!r1.gaveUp.length || r1.gaveUp.some(g => g.waited !== 3600)) problems.push('unticketed travellers should give up after exactly 60 game minutes: ' + JSON.stringify(r1.gaveUp.slice(0, 5)));
-    if (r1.rep !== r1.gaveUp.length) problems.push(`the stations' give-up counts add up to ${r1.rep}, ${r1.gaveUp.length} gave up`);
-    if (r1.gone < r1.gaveUp.length - 4) problems.push(`travellers who gave up should walk off the map (${r1.gone} left of ${r1.gaveUp.length})`);
+    // D20 (3): nobody gives up in the ticket line; with nobody selling, every traveller who came is still in line.
+    if (r1.gaveUp.length || r1.rep || r1.leave || r1.gone) problems.push(`travellers left the ticket line: ${r1.gaveUp.length} gave up (${JSON.stringify(r1.gaveUp.slice(0, 5))}), give-up count ${r1.rep}, ${r1.leave} traveller-ticks walking home, ${r1.gone} left the map`);
+    if (r1.inLine !== r1.arrive.length) problems.push(`${r1.arrive.length} travellers came and nobody sold a ticket, but ${r1.inLine} are in line at the end`);
+    if (!(r1.longest >= 10 * 3600)) problems.push(`the longest wait in line was only ${(r1.longest / 3600).toFixed(1)} game hours (want a long wait, over 10 hours, to show nobody leaves)`);
+    if (r1.maxAt > r1.MAX_AT) problems.push(`${r1.maxAt} travellers waited at one station, more than the cap of ${r1.MAX_AT}`);
     if (r1.inBld) problems.push(`travellers stood inside a building ${r1.inBld} times, e.g. ${JSON.stringify(r1.sample)}`);
     if (r1.inTrain) problems.push(`travellers stood inside a train ${r1.inTrain} times, e.g. ${JSON.stringify(r1.sample)}`);
-    console.log(`  passengers (stations ${r1.stations.join(', ')}): ${r1.arrive.length} arrivals in 16 game hours (${hubArr.length} at the hub, ${wf.length} at Willow Ford, ${outside.length} off the Overland), ${r1.gaveUp.length} gave up; sim ${r1.ms.toFixed(0)} ms for 7200 ticks`);
+    console.log(`  passengers (stations ${r1.stations.join(', ')}): ${r1.arrive.length} arrivals in 16 game hours (${hubArr.length} at the hub, ${wf.length} at Willow Ford, ${outside.length} off the Overland), ${r1.gaveUp.length} gave up, ${r1.inLine} still in line (longest wait ${(r1.longest / 3600).toFixed(1)} h, most at one station ${r1.maxAt}); sim ${r1.ms.toFixed(0)} ms for 7200 ticks`);
 
     // 2. Fares.
     const fares = await R(() => { const P = window.__railhead.pax; return [P.paxFare('hub', 'willow'), P.paxFare('willow', 'hub'), P.paxFare('hub', 'nowhere')]; });

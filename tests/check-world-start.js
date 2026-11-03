@@ -99,11 +99,15 @@ module.exports = async function checkWorldStart() {
         }
         // Use spots: on the platform and open in the walk grid.
         const G = Wd.walkGrid(T), spots = Wd.buildingSpots();
-        for (const st of St) for (const k of ['ticket', 'telegraph', 'desk']) {
+        // The ticket spot is inside the depot's booth (behind the counter, 2026-11-03); the queue's start ('line') is on the platform.
+        for (const st of St) for (const k of ['ticket', 'line', 'telegraph', 'desk']) {
           const sp = spots.find(s => s.building === st.depot && s.kind === k);
           if (!sp) { P(`${st.id}: no ${k} spot`); continue; }
           const pf = fps.find(f => f.id === st.platforms[0]);
-          if (!pf || dist(pf, sp.x, sp.z) > 1e-6) P(`${st.id}: the ${k} spot is not on the platform`);
+          if (k === 'ticket') {
+            const dp = fps.find(f => f.id === st.depot), strip = R.board.booths().find(b => b.id === st.depot && b.part === 'strip');
+            if (!dp || dist(dp, sp.x, sp.z) > 1e-6 || !strip || dist(strip, sp.x, sp.z) > 1e-6) P(`${st.id}: the ticket spot is not in the depot's booth`);
+          } else if (!pf || dist(pf, sp.x, sp.z) > 1e-6) P(`${st.id}: the ${k} spot is not on the platform`);
           const W = Wd.walk, i = Math.floor((sp.x - W.X0) / W.CELL), j = Math.floor((sp.z - W.Z0) / W.CELL);
           if (!G.cost[j * W.N + i]) P(`${st.id}: the ${k} spot cannot be walked to`);
         }

@@ -87,7 +87,7 @@ module.exports = async function checkPassengers() {
     await page.waitForTimeout(150);
     let staffedAt = null;
     const sales = [];
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 100; i++) {
       const ev = await R(() => { const R = window.__railhead, S = R.state, n0 = S.pax.sold.hub || 0; R.step(1); return { time: S.time, sold: (S.pax.sold.hub || 0) - n0, desk: S.pax.desk }; });
       if (staffedAt === null && ev.desk && ev.desk.on) staffedAt = ev.time;
       for (let k = 0; k < ev.sold; k++) sales.push(ev.time);
@@ -96,7 +96,7 @@ module.exports = async function checkPassengers() {
     const st3 = await R(() => { const S = window.__railhead.state; return { sold: S.pax.sold.hub || 0, cents: S.pax.cents.hub || 0, wait: S.pax.list.filter(p => p.s !== 'queue').length, desk: S.pax.desk }; });
     if (staffedAt === null) problems.push('a tap on the ticket window did not walk the player there and staff it');
     else {
-      // 80 ticks = 640 game seconds; staffed from staffedAt: sales every 30 s while the line lasts.
+      // 100 ticks = 800 game seconds (the walk in by the booth door takes about 30 ticks of them); staffed from staffedAt: sales every 30 s while the line lasts.
       if (sales.length < 15) problems.push(`tickets sold while staffing: ${sales.length} in ${(sales[sales.length - 1] || 0) - staffedAt} game seconds (expected one every 30 s)`);
       // Sales land on tick boundaries (8 s), so each is within one tick of one every 30 s, and the average is 30 s.
       for (let k = 1; k < sales.length; k++) {

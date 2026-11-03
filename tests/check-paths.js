@@ -24,7 +24,8 @@ module.exports = async function checkPaths() {
       const r = await page.evaluate(() => {
         const R = window.__railhead, out = {}, SC = R.CFG.SCALE;
         const solid = buildingFootprints().filter(f => !f.flush);
-        const inBuilding = (x, z) => solid.some(f => walkRectHits(f, 0, x, z, 0));
+        // The depot's ticket booth (its strip inside the front wall and its doorway) is open ground, not inside the building.
+        const inBuilding = (x, z) => solid.some(f => walkRectHits(f, 0, x, z, 0)) && !R.board.walkInBooth(x, z);
         const poses = st => [].concat(...st.trains.map(tr => R.trainPoses(st.track, tr)));
         // Runs commands from tick 0 (or at given ticks) and records every position and event.
         const run = (st, script, maxTicks, stopWhen) => {

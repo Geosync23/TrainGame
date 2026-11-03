@@ -16,6 +16,7 @@
 // - Screenshots timetable-board-portrait.png, timetable-runaround-portrait.png, timetable-landscape.png; draw calls.
 
 const { openGame, waitReady, screenshotPath } = require('./browser');
+const { useSwitchman } = require('./switchman'); // D20: a switchman throws the switches routes need (as the player would)
 
 // Helpers defined in the page: an automatic player who does the station tasks (teleporting next to the work, so
 // long runs stay short), and a tick runner that records what happens.
@@ -79,6 +80,7 @@ module.exports = async function checkTimetable() {
   {
     const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
     try {
+      await useSwitchman(page);
       await page.evaluate(HELPERS);
       const r = await page.evaluate(() => {
         const R = window.__railhead, C = window.__c3, out = {}, SC = R.CFG.SCALE;
@@ -385,6 +387,7 @@ module.exports = async function checkTimetable() {
     const SC = await page.evaluate(() => window.__railhead.CFG.SCALE);
     const stepUntil = (cond, max) => R(([c, m]) => { const f = new Function('R', 'return ' + c); const R = window.__railhead; for (let i = 0; i < m; i++) { if (f(R)) return i; R.step(1); } return f(R) ? m : -1; }, [cond, max]);
     try {
+      await useSwitchman(page);
       await R(() => { window.rh.scenario('timetable'); for (const o of ['blocks', 'locks', 'routes', 'path']) window.rh.overlay(o, false); window.__railhead.camera.zoom = 2; });
       await R(() => { const R = window.__railhead; for (const s of R.state.tt.services) s.train = null; }); // off the timetable for the touch tests
       await page.waitForTimeout(900);
@@ -460,6 +463,7 @@ module.exports = async function checkTimetable() {
   {
     const { browser, page, errors } = await openGame('landscape', { query: '?paused' });
     try {
+      await useSwitchman(page);
       await page.evaluate(HELPERS);
       await page.evaluate(() => { const R = window.__railhead; R.send({ t: 'ttAssign', tr: 0, on: true }); R.step(1); for (let i = 0; i < 3 * 3600 / 8 + 500; i++) R.step(1); R.camera.zoom = 1.3; });
       const before = await page.evaluate(async () => { const R = window.__railhead; await R.saveGame(); const r = R.tt.ttRunOf(R.state, 0); return { h: R.hash(), tick: R.state.tick, run: r && { i: r.i, ph: r.ph } }; });

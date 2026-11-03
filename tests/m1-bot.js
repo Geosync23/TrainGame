@@ -2,7 +2,7 @@
 //
 // The bot plays the real start through the game's own commands only: the same commands the page's taps and
 // buttons send (walkTo, carryPick, carryPut, carryTool, useCar, useTelegraph, econOrder, contractAccept, stakeJob,
-// jobWork, staffWindow, uncouple, takeWater, fuelTender, ttAssign, setBayTag, boardCar, stepOff). It never edits the state and uses
+// jobWork, staffWindow, uncouple, takeWater, fuelTender, ttAssign, setBayTag, boardCar, stepOff, useSwitch). It never edits the state and uses
 // no debug tools. It reads the state the way a player reads the screen (where things are, what a train waits for,
 // what a contract still needs), and it reads each tick's events the way a player reads the messages.
 //
@@ -29,6 +29,8 @@
 //      doors; cordwood to the tender or the pile; track materials to the job's stakes.
 //   4. Every morning at the telegraph: accept the towns' offers it can fill and order what open contracts still
 //      need, plus cordwood: when fewer than 12 cords are at hand or coming, enough for 16.
+//   2b. Switches (D20, manual): throw the switches the timetable needs (ttSwitchNeeds, the work board's list) at the
+//      station it is at, and any switch No. 1 waits at (switchTask).
 //   5. Otherwise: staff the hub's ticket window while travellers queue (06:00 to 21:00), else work the track job.
 //      (Not Willow Ford's since D13: it is unstaffed, and its travellers pay the fare on arrival.)
 //
@@ -292,6 +294,27 @@ function botFactory(R, mem0) {
     if (/take water/.test(why) && L && L.water < R.CFG.WATER_U - 0.1 && !skipped(S, 'water')) { if (S.player.tool !== null) return held(S).length ? deliverTop(S) : toolFor(S, false); mem.stats.water++; mem.taskKey = 'water'; return send(S, { t: 'takeWater' }, 'take water'); }
     return null;
   }
+  // Switches (D20: they are manual): the timetable's list of switches to set (the work board's data, ttSwitchNeeds),
+  // read like a player reads the board. At the station the bot is at: No. 1 waiting at a switch set against it (the
+  // telegram), else the earliest switch still to set for one of No. 1's moves due within 3 game hours (only the first
+  // move still to come for each switch counts: a later one may want it the other way). The switch must be free.
+  function switchTask(S) {
+    const here = st => st === 'hub' ? atHub(S) : st === 'willow' ? atWF(S) : false;
+    const tr = no1(S), T = S.track;
+    let sw = null;
+    if (tr.swWait !== undefined) { const st = R.tt.swStation(S, T.switches[tr.swWait]); if (st && here(st.id)) sw = tr.swWait; }
+    if (sw === null) {
+      const seen = {};
+      for (const n of R.tt.ttSwitchNeeds(S)) {
+        if (n.passed || seen[n.sw]) continue;
+        seen[n.sw] = 1;
+        if (n.train === 0 && !n.set && here(n.station) && n.byTime - S.time < 3 * H) { sw = n.sw; break; }
+      }
+    }
+    if (sw === null || skipped(S, 'sw:' + sw) || R.switchLockReason(S, sw)) return null;
+    mem.taskKey = 'sw:' + sw; mem.stats.switches = (mem.stats.switches || 0) + 1;
+    return send(S, { t: 'useSwitch', sw }, 'throw ' + R.tt.swName(sw) + ' for the timetable');
+  }
   // Does the hub still owe the departing train anything (water, wood, goods for Willow Ford)?
   function hubOwes(S) {
     const run = runOf(S);
@@ -416,7 +439,7 @@ function botFactory(R, mem0) {
     const staffed = !!S.pax.desk;
     if (walking && !working) return [];
     if ((working || staffed) && S.tick % 4) return [];             // look up from the work now and then
-    const tasks = [setupTask, trainTask, tripTask, telegraphTask];
+    const tasks = [setupTask, trainTask, switchTask, tripTask, telegraphTask];
     for (const f of tasks) { const r = f(S); if (r) return r; }
     if (atWF(S)) { const r = wfWork(S); if (r) return r; const w = windowTask(S, 1); return w === 'stay' || !w ? [] : w; }
     if (!atHub(S)) return [];
@@ -455,7 +478,7 @@ function botFactory(R, mem0) {
           if (c.t === 'carryPick') skip(S, 'pick:' + c.id);
           else if ((c.t === 'carryPut' || c.t === 'fuelTender') && mem.putKey) skip(S, mem.putKey);
           else if (c.t === 'contractAccept') skip(S, 'offer:' + c.id, 100000);
-          else if (mem.taskKey && (c.t === 'uncouple' || c.t === 'takeWater' || c.t === 'jobWork' || c.t === 'boardCar')) skip(S, mem.taskKey, 30);
+          else if (mem.taskKey && (c.t === 'uncouple' || c.t === 'takeWater' || c.t === 'jobWork' || c.t === 'boardCar' || c.t === 'useSwitch')) skip(S, mem.taskKey, 30);
         }
         if (e.t === 'jobStopped') skip(S, 'job', 75);
       }

@@ -155,6 +155,8 @@ async function checkRules(problems) {
       const last = S.track.edges[S.track.edges.length - 1];
       let ev = R.simTick(S, [{ t: 'trainSendTo', tr: 0, e: last.id, s: Math.round(last.len / 2 * 1000) }]);
       out.routeSet = ev.some(e => e.t === 'routeSet'); out.arrived = -1;
+      // D20: switches are manual: the player throws the switches the route names (here at once).
+      for (const w of (ev.find(e => e.t === 'routeSet') || { throws: [] }).throws) R.simTick(S, [{ t: 'throwSwitch', sw: w.sw }]);
       for (let i = 0; i < 6000 && out.routeSet; i++) { ev = R.simTick(S, []); if (ev.some(e => e.t === 'trainArrived')) { out.arrived = i; break; } }
       out.trainEdge = S.trains[0].front.e; out.lastEdge = last.id;
       // 2. Missing materials, one at a time.

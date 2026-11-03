@@ -16,12 +16,14 @@
 //   grid cells the handcart may reach; item conservation passes; the test yard (?world=yard) still starts with none.
 
 const { openGame, screenshotPath } = require('./browser');
+const { useSwitchman } = require('./switchman'); // D20: a switchman throws the switches routes need (as the player would)
 
 module.exports = async function checkWorldStart() {
   const problems = [];
   {
     const { browser, page, errors } = await openGame('portrait', { query: '?paused' });
     try {
+      await useSwitchman(page);
       const r = await page.evaluate(() => {
         const R = window.__railhead, Wd = R.world, S = R.state, T = S.track, out = { bad: [] }, P = m => out.bad.push(m), SC = R.CFG.SCALE;
         if (T.world !== 'start') P(`a new game is in the "${T.world}" world, not the real start`);

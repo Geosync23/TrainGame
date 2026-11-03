@@ -1,12 +1,13 @@
 // Check: switches and trains, run in the game's own simulation (no drawing involved).
-// - Sent to the passing siding, the train finds the way, sets the switch and stops at the spot.
+// - Sent to the passing siding, the train finds the way, names the switch to throw (D20: switches are manual; the
+//   check throws it) and stops at the spot.
 // - A switch with a train on it refuses to move.
 // - Changing a switch changes where a running train goes; at a dead end it stops CFG.STOP_GAP (0.8u since D15) short.
 // - A switch set against a train makes it wait CFG.STOP_GAP before the switch's block, and go on once thrown.
 // - The player walks to a switch stand and throws it.
 // Regression checks for the piece 1 review and play-test:
-// - Route locks are freed on arrival over a switch and on Stop mid-route (switches under the train
-//   stay locked only while the train is on them).
+// - No route lock is left on arrival over a switch or on Stop mid-route (since D20 routes lock nothing; switches
+//   under the train stay locked only while the train is on them).
 // - A stopping train still stops CFG.STOP_GAP before a switch set against it.
 // - A moving train never reverses at once (Forward/Back or Send to); bad Send-to spots are refused.
 // - The player only throws a switch from within reach; letting go of a hold does not cancel a throw;
@@ -30,14 +31,22 @@ module.exports = async function checkTrains() {
         return evs;
       };
       const posXZ = (S, p) => R.edgeAt(S.track, S.track.edges[p.e], p.s);
+      // D20: switches are manual. Send to names the switches to throw (routeSet.throws); the player throws them at
+      // once here (throwSwitch), as the checks below are about routes and locks, not walking.
+      const sendSet = (S, cmd) => {
+        const e = R.simTick(S, [cmd]), rs = e.find(x => x.t === 'routeSet');
+        if (rs) for (const w of rs.throws) e.push(...R.simTick(S, [{ t: 'throwSwitch', sw: w.sw }]));
+        return e;
+      };
 
       // 1. Send to the middle of the siding.
       let S = R.newState(1);
       const T = S.track;
       const siding = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && T.nodes[E.a].z > 17 * SC && T.nodes[E.b].z > 17 * SC);
       const target = { e: siding.id, s: siding.len / 2 };
-      const evs = runUntil(S, [{ t: 'trainSendTo', tr: 0, e: target.e, s: Math.round(target.s * 1000) }], 20000,
-        (st, e) => e.some(x => x.t === 'trainArrived'));
+      const evs = sendSet(S, { t: 'trainSendTo', tr: 0, e: target.e, s: Math.round(target.s * 1000) });
+      out.throwsListed = (evs.find(x => x.t === 'routeSet') || {}).throws;
+      evs.push(...runUntil(S, [], 20000, (st, e) => e.some(x => x.t === 'trainArrived')));
       const tr = S.trains[0];
       out.arrived = evs.some(x => x.t === 'trainArrived');
       out.noRoute = evs.filter(x => x.t === 'noRoute').map(x => x.why);
@@ -104,7 +113,8 @@ module.exports = async function checkTrains() {
       {
         const st = R.newState(1), T6 = st.track;
         const sid = T6.edges.find(E => E.k === 'S' && E.cls === 'yard' && T6.nodes[E.a].z > 17 * SC && T6.nodes[E.b].z > 17 * SC);
-        runUntil(st, [{ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) }], 20000, (x, e) => e.some(v => v.t === 'trainArrived'));
+        sendSet(st, { t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) });
+        runUntil(st, [], 20000, (x, e) => e.some(v => v.t === 'trainArrived'));
         const under = Object.keys(R.occupiedSwitches(st)).map(Number);
         runUntil(st, [{ t: 'trainRun', tr: 0, dir: st.trains[0].m }], 3000, (x) => under.every(sw => R.occupiedSwitches(x)[sw] === undefined));
         R.simTick(st, [{ t: 'trainStop', tr: 0 }]); runUntil(st, [], 100);
@@ -115,7 +125,8 @@ module.exports = async function checkTrains() {
       {
         const st = R.newState(1), T7 = st.track;
         const sid = T7.edges.find(E => E.k === 'S' && E.cls === 'yard' && T7.nodes[E.a].z > 17 * SC && T7.nodes[E.b].z > 17 * SC);
-        runUntil(st, [{ t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) }], 5000, (x) => Object.keys(R.occupiedSwitches(x)).length > 0);
+        sendSet(st, { t: 'trainSendTo', tr: 0, e: sid.id, s: Math.round(sid.len / 2 * 1000) });
+        runUntil(st, [], 5000, (x) => Object.keys(R.occupiedSwitches(x)).length > 0);
         const under = Object.keys(R.occupiedSwitches(st)).map(Number);
         R.simTick(st, [{ t: 'trainStop', tr: 0 }]); runUntil(st, [], 100);
         out.stopLocks = T7.switches.map(W => W.lockedBy);
@@ -199,6 +210,7 @@ module.exports = async function checkTrains() {
     });
     const problems = [];
     if (!r.arrived) problems.push('train sent to the siding did not arrive ' + JSON.stringify(r.noRoute));
+    if (!r.throwsListed || !r.throwsListed.length) problems.push('Send to the siding did not list the switch to throw: ' + JSON.stringify(r.throwsListed));
     if (!(r.stopError < 0.5)) problems.push(`train stopped ${r.stopError.toFixed(3)}u from the target (limit 0.5u)`);
     if (!r.occupied.length) problems.push('expected the train on the siding to be standing on a switch');
     else if (!r.lockEvent || !r.lockKept) problems.push('a switch under the train could be thrown');

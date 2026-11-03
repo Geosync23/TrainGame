@@ -279,11 +279,18 @@ function botFactory(R, mem0) {
     return pick(S, it.id, ['load for Willow Ford', 'wood for the tender', 'wood to the pile', 'unload a set-out car', 'deliver', 'materials'][r]);
   }
   // At Willow Ford: unload goods for it from No. 1 and take them to the store.
+  // (Since D20's slower walk: Willow Ford's store door is about 10 minutes' walk there and back from the platform, so
+  // in the last 25 minutes before No. 1 leaves the bot only takes the goods off the train and puts them down on the
+  // platform, then boards; it carries them to the door on its next visit. Before, it often missed the train and
+  // walked back to the hub, about 2 hours, and the next run waited for it.)
+  function wfHurry(S) { const run = runOf(S); return !!run && run.i === 1 && run.ph === 'at' && sodOf(S) >= svcStop(S, run).dep - 25 * M; }
   function wfWork(S) {
-    const h = held(S);
+    const h = held(S), hurry = wfHurry(S);
+    if (h.length && hurry && destOf(S, h[h.length - 1])) { const P = S.player, id = h[h.length - 1], d = { x: cm(P.x + 0.6), z: cm(P.z) };
+      if (!skipped(S, 'put:' + id + ':' + JSON.stringify(d))) { mem.putKey = 'put:' + id + ':' + JSON.stringify(d); return send(S, putCmd(S, d), 'put ' + I(S).waybill[id].commodity + ' down on the platform: the train leaves soon'); } }
     if (h.length) return deliverTop(S);
     if (S.player.tool !== null) return null;
-    const ids = alive(S, (i, w) => ((w.kind === 'CAR' && carOfOurs(S, w.stockId) && !R.interchange.carryCarWhy(S, w.stockId)) || (w.kind === 'GROUND' && w.x > 15000 * SC)) && !skipped(S, 'pick:' + i))
+    const ids = alive(S, (i, w) => ((w.kind === 'CAR' && carOfOurs(S, w.stockId) && !R.interchange.carryCarWhy(S, w.stockId)) || (w.kind === 'GROUND' && w.x > 15000 * SC && !hurry)) && !skipped(S, 'pick:' + i))
       .filter(id => tag(S, id) === 'WILLOW' && destOf(S, id))
       .sort((a, b) => (I(S).where[a].kind === 'CAR' ? 0 : 1) - (I(S).where[b].kind === 'CAR' ? 0 : 1) || a - b);   // off the train first
     if (!ids.length) return null;
@@ -464,6 +471,11 @@ function botFactory(R, mem0) {
     const staffed = !!S.pax.desk;
     if (walking && !working) return [];
     if ((working || staffed) && S.tick % 4) return [];             // look up from the work now and then
+    // (Since D20's slower walk: once at the telegraph key, the bot finishes the morning's telegraph before going back
+    // to the train's water or wood, as a player would; walking back and forth between the key and the water tower
+    // (25u, 13 minutes each way) made it miss the 08:00 train.)
+    const k = R.econ.econTelegraphKey();
+    if (mem.telDay !== dayOf(S) && atHub(S) && !held(S).length && d2(P.x, P.z, k.x, k.z) <= 2.5) { const r = telegraphTask(S); if (r) return r; }
     const tasks = [setupTask, trainTask, switchTask, tripTask, telegraphTask];
     for (const f of tasks) { const r = f(S); if (r) return r; }
     if (atWF(S)) { const r = wfWork(S); if (r) return r; const w = windowTask(S, 1); return w === 'stay' || !w ? [] : w; }
@@ -482,7 +494,10 @@ function botFactory(R, mem0) {
       // (Since D20's slower walk: once the train is ready and waits for its time at the platform, the bot no longer
       // walks off to the water tower's stand, from where it often missed the train walking back to the combine; it
       // waits where it is (or on the platform, when it was working the siding) and boards in time, boardLead.)
-      if (ready && combineFar(S)) return working ? send(S, { t: 'walkTo', x: cm(G.hubWait[0]), z: cm(G.hubWait[1]) }, 'wait on the platform for the train') : [];
+      // (Also while it still waits for the bot's own last cord: the walk to the tower is not broken off, and from there
+      // the combine is 20u back.)
+      const atPlatform = started && run.i === 0 && run.ph === 'at' && !/water/.test(run.why || '');
+      if ((ready || atPlatform) && combineFar(S)) return working ? send(S, { t: 'walkTo', x: cm(G.hubWait[0]), z: cm(G.hubWait[1]) }, 'wait on the platform for the train') : [];
       const [x, z] = G.stand;
       if (d2(P.x, P.z, x, z) > 3 && !working) return send(S, { t: 'walkTo', x: cm(x), z: cm(z) }, 'wait by the water tower for the train');
       if (working) return send(S, { t: 'walkTo', x: cm(x), z: cm(z) }, 'wait by the water tower for the train');

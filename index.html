@@ -5572,17 +5572,76 @@ function modelBoxcar() {
   for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
   return growMesh(k.mesh());
 }
+// The combine (D15 cutaway, builder V): one mesh, built as named runs of vertices: the two side walls, the two end
+// walls, the roof and the rest (underframe, wheels, floor and the inside). Closed, it draws them all and looks as
+// before: the walls are thin skins (outside colour, a darker lining inside) with the windows and the baggage door
+// through them. Opened (combineCut), the same mesh draws a cut version of its geometry: the same vertex buffers
+// with an index that leaves out the roof, one side wall and one end wall (the ones facing the camera), so the
+// cutaway costs no extra draw calls. Inside: a plank floor, 12 seats on benches (6 rows, one seat each side of
+// the aisle, facing the baggage end) in the passenger end, a low partition with a gap, and the baggage end (+x).
+const COMBINE_IN = { // the inside, in M1 units (x along the car; grown by WS when drawn)
+  FLOOR: RAIL_TOP_M1 + 0.62, SEAT_H: 0.16, ROWS: [-1.08, -0.82, -0.56, -0.30, -0.04, 0.22], SIDE: 0.24, PART: 0.40,
+  STAND: 0.72,                                   // where the rider stands in the baggage end (x)
+  ITEM_X: 1.13, ITEM_Z: [-0.27, 0, 0.27], ITEM_LAYER: 0.26, // freight: a row of 3 against the end wall, stacked in layers
+};
 function modelCombine() {
   // Passenger end (windows) and baggage end (door), in the style page's colours.
-  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
-  k.add(box(2.8, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
-  k.add(box(2.7, 1.0, 0.95), PAL.wall, 0, B + 1.08, 0);
-  for (const x of [-1.05, -0.6, -0.15]) k.add(box(0.3, 0.32, 0.97), PAL.glass, x, B + 1.2, 0);
-  k.add(box(0.6, 0.8, 0.97), PAL.trim, 0.75, B + 1.05, 0);
-  k.add(box(2.8, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
-  k.add(box(1.9, 0.14, 0.6), PAL.roof, -0.2, B + 1.73, 0);
-  for (const x of [-0.9, 0.9]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
-  return growMesh(k.mesh());
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2, I = COMBINE_IN, FT = I.FLOOR, parts = {};
+  const LINE = '#7a4e30', FLOOR = '#6b4a2c', SEAT = '#8a5a34', mark = () => k.p.length / 3;
+  const part = (name, f) => { const a = mark(); f(); parts[name] = [a, mark()]; };
+  const side = s => () => {   // one side wall: outer skin, inner lining, the windows and the baggage door through it
+    k.add(box(2.7, 1.0, 0.03), PAL.wall, 0, B + 1.08, s * 0.46);
+    k.add(box(2.62, 0.96, 0.02), LINE, 0, B + 1.08, s * 0.435);
+    for (const x of [-1.05, -0.6, -0.15]) k.add(box(0.3, 0.32, 0.07), PAL.glass, x, B + 1.2, s * 0.45);
+    k.add(box(0.6, 0.8, 0.07), PAL.trim, 0.75, B + 1.05, s * 0.45);
+  };
+  const end = s => () => {    // one end wall (between the side skins) and its lining
+    k.add(box(0.03, 1.0, 0.89), PAL.wall, s * 1.335, B + 1.08, 0);
+    k.add(box(0.02, 0.96, 0.85), LINE, s * 1.31, B + 1.08, 0);
+  };
+  part('sideP', side(1)); part('sideM', side(-1)); part('endP', end(1)); part('endM', end(-1));
+  part('roof', () => {
+    k.add(box(2.8, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
+    k.add(box(1.9, 0.14, 0.6), PAL.roof, -0.2, B + 1.73, 0);
+  });
+  part('inside', () => {
+    k.add(box(2.8, 0.15, 0.9), PAL.trim, 0, B + 0.5, 0);
+    for (const x of [-0.9, 0.9]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
+    k.add(box(2.6, 0.04, 0.85), FLOOR, 0, FT - 0.02, 0);
+    for (const s of [-1, 1]) k.add(box(0.03, 0.5, 0.295), PAL.trim, I.PART, FT + 0.25, s * 0.2775); // low partition with a gap
+    for (const x of I.ROWS) for (const s of [-1, 1]) {   // benches: a base, the seat and its back (on the -x side)
+      k.add(box(0.1, I.SEAT_H - 0.04, 0.26), PAL.trim, x, FT + (I.SEAT_H - 0.04) / 2, s * I.SIDE);
+      k.add(box(0.15, 0.04, 0.3), SEAT, x, FT + I.SEAT_H - 0.02, s * I.SIDE);
+      k.add(box(0.03, 0.26, 0.3), SEAT, x - 0.065, FT + I.SEAT_H + 0.13, s * I.SIDE);
+    }
+  });
+  const m = growMesh(k.mesh());
+  m.userData.cut = { parts, whole: m.geometry, geos: {}, side: 0, end: 0, hidden: [] };
+  return m;
+}
+// Opens the combine: side 1 hides the +z side wall, -1 the -z one; end 1 the +x end wall, -1 the -x one; with
+// either open the roof is hidden too. combineCut(m, 0, 0) closes it. The cut geometries share the whole one's
+// buffers and are made once per car and opening (at most 4).
+function combineCut(m, side, end) {
+  const u = m.userData.cut;
+  if (!u || (u.side === side && u.end === end)) return;
+  u.side = side; u.end = end;
+  if (!side && !end) { m.geometry = u.whole; u.hidden = []; return; }
+  const key = side + ',' + end;
+  if (!u.geos[key]) {
+    const hide = ['roof'];
+    if (side) hide.push(side > 0 ? 'sideP' : 'sideM');
+    if (end) hide.push(end > 0 ? 'endP' : 'endM');
+    const W = u.whole, idx = [], n = W.attributes.position.count;
+    for (let i = 0; i < n; i++) if (!hide.some(h => i >= u.parts[h][0] && i < u.parts[h][1])) idx.push(i);
+    const g = new THREE.BufferGeometry();
+    for (const a of Object.keys(W.attributes)) g.setAttribute(a, W.attributes[a]);
+    g.setIndex(idx);
+    if (!W.boundingSphere) W.computeBoundingSphere();
+    g.boundingSphere = W.boundingSphere.clone();
+    u.geos[key] = { g, hide };
+  }
+  m.geometry = u.geos[key].g; u.hidden = u.geos[key].hide;
 }
 // The chunky kit (character pitch 1). Faces +z. Legs and arms are separate so they can swing.
 function modelChunky() {
@@ -6032,7 +6091,10 @@ function trainViewSig(S) {
   return trainViewIds.get(S) + ':' + S.trains.map(tr => tr.consist.map(c => c.id).join(',')).join('|');
 }
 function buildActors(S) {
-  if (view.trainGroup) { scene.remove(view.trainGroup); view.trainGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  if (view.trainGroup) {
+    scene.remove(view.trainGroup);
+    view.trainGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); const u = o.userData.cut; if (u) { u.whole.dispose(); for (const k of Object.keys(u.geos)) u.geos[k].g.dispose(); } });
+  }
   view.trainGroup = new THREE.Group(); scene.add(view.trainGroup);
   view.byStock = {};
   view.train = S.trains.map(tr => tr.consist.map(c => {
@@ -6278,6 +6340,15 @@ function cargoFlatPoses(S) {
     const m = view.byStock[sid];
     if (!m || !m.visible) continue;
     const f = carryCarOf(S, +sid);
+    if (f && view.cut && view.cut.m === m) {   // the open combine (D15 cutaway): its freight stands in the baggage end
+      m.updateMatrixWorld();
+      const I = COMBINE_IN;
+      byCar[sid].forEach((id, r) => {
+        cargoFlatV.set(I.ITEM_X * WS, I.FLOOR * WS + 0.004 + Math.floor(r / 3) * I.ITEM_LAYER * WS, I.ITEM_Z[r % 3] * WS); m.localToWorld(cargoFlatV);
+        out[id] = { x: cargoFlatV.x, y: cargoFlatV.y, z: cargoFlatV.z, yaw: m.rotation.y };
+      });
+      continue;
+    }
     if (!f || f.car.k !== 'flatcar') continue;
     m.updateMatrixWorld();
     let nl = 0, nc = 0;
@@ -6318,7 +6389,7 @@ function cargoDraw(S) {
   for (let i = 0; i < I.next; i++) {
     const w = I.where[i];
     if (!w) continue;
-    if (w.kind === 'CARRIED' && S.player.ride) continue;   // riding: the items in hand ride inside the car, not drawn
+    if (w.kind === 'CARRIED' && S.player.ride && !view.cut) continue;   // riding a closed car: the items in hand are not drawn
     const p = w.kind === 'CARRIED' ? cargoCarriedPose(S, w, actorOf(w.actorId), i) : w.kind === 'CAR' ? flat[i] : poses[i];
     if (p) cargoSetItem(S, i, p);
   }
@@ -7734,7 +7805,11 @@ function crowdPose(w) {
   const K = crowd.kits[w.d.kit], M = K.meshes, i = w.ki, s = w.d.scale, Lp = K.legPiv, A = K.armPiv, H = Lp[1];
   if (!w.g) w.g = gaitNew();
   const g = w.g, o = gaitPose(g, H * s, crowdGP, false);
-  const yaw = w.yaw + Math.sin(w.t * 0.3) * CROWD.DRIFT * (1 - g.sw); // slow idle look-around
+  if (w.sit) {   // seated (a traveller in the open combine, D15): thighs forward down to the floor, hips on the seat
+    o.legL = o.legR = Math.acos(Math.min(1, w.sit / (H * s))) + 0.15; o.lenL = o.lenR = 1;
+    o.hipY = 0; o.swayX = 0; o.roll = 0; o.twist = 0; o.hipTwist = 0; o.lean = -0.05; o.armL = o.armR = 0.5;
+  }
+  const yaw = w.yaw + (w.sit ? 0 : Math.sin(w.t * 0.3) * CROWD.DRIFT * (1 - g.sw)); // slow idle look-around
   const sy = Math.sin(yaw), cy = Math.cos(yaw);
   const y = w.y !== undefined ? w.y : terrainHeight(w.x, w.z);
   const breath = 1 + Math.sin(w.t * CROWD.BREATH_HZ * Math.PI * 2) * CROWD.BREATH * (1 - g.sw);
@@ -7836,7 +7911,10 @@ function paxLook(id) {
 }
 const paxStandY = bldStandY;   // the same lookup as the player's feet (buildings section)
 function paxDraw(alpha, dt) {
-  const X = S.pax, list = X ? X.list.filter(p => p.s !== 'aboard') : [];
+  // Travellers aboard are not drawn, except in the open combine while the player rides (D15 cutaway): seated there.
+  const cutStock = view.cut ? view.cut.stock : null;
+  const X = S.pax, seatOf = new Map(), seats = COMBINE_IN.ROWS.length * 2;
+  const list = X ? X.list.filter(p => p.s !== 'aboard' || (p.car === cutStock && seatOf.size < seats && seatOf.set(p.id, seatOf.size))) : [];
   if (paxView.S !== S || paxView.tick !== S.tick) {
     paxView.prev = paxView.S === S && paxView.tick === S.tick - 1 ? paxView.cur : null;
     paxView.cur = new Map(list.map(p => [p.id, [p.x / 100, p.z / 100]]));
@@ -7862,6 +7940,16 @@ function paxDraw(alpha, dt) {
     arr.forEach(([p, w], j) => {
       w.ki = K.n + j;
       if (recolour) crowdColour(K.iA, K.iB, w.ki, w.d);
+      const seat = p.s === 'aboard' ? cutawaySeat(seatOf.get(p.id)) : null;
+      if (seat) {   // seated in the open combine: no walk, hips on the seat, facing the baggage end
+        if (!w.g) w.g = gaitNew();
+        gaitStep(w.g, 0, t1x * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
+        w.t += t1x; w.x = seat.x; w.z = seat.z; w.yaw = seat.yaw; w.sit = seat.sit;
+        w.y = seat.y - crowd.kits[w.d.kit].legPiv[1] * w.d.scale;
+        crowdPose(w);
+        return;
+      }
+      w.sit = 0;
       const a = paxView.prev && paxView.prev.get(p.id), b = paxView.cur.get(p.id) || [p.x / 100, p.z / 100];
       const x = a ? lerp(a[0], b[0], alpha) : b[0], z = a ? lerp(a[1], b[1], alpha) : b[1], moved = Math.hypot(x - w.x, z - w.z);
       // Standing in line: face the window; waiting on the platform: face the track; walking: the way they go.
@@ -10171,6 +10259,51 @@ window.addEventListener('blur', () => keys.clear());
 const lerp = (a, b, f) => a + (b - a) * f;
 function lerpAngle(a, b, f) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * f; }
 let lastFrame = performance.now(), animT = 0;
+// The cutaway (D15, builder V), drawing only: while the player rides, the car they are in (a combine) loses its
+// roof, the side wall and the end wall nearer the camera (combineCut), following the camera's turns and the car's heading; the
+// player stands in its baggage end, facing the open side, swaying a little with the train's speed. paxDraw seats
+// the travellers aboard it and cargoFlatPoses puts its freight in the baggage end. Every other car stays whole.
+// view.cut: null, or { stock, m (the car's mesh), open (1: the +z side is open, -1: the -z side), end (1: the +x end, -1: the -x end) }.
+const cutV = new THREE.Vector3();
+const cutState = { m: null, x: 0, z: 0, v: 0 };
+function cutawayDraw(dt) {
+  const R = S.player.ride, m = R && view.byStock ? view.byStock[R.stock] : null;
+  const on = m && m.visible && m.userData.cut ? m : null;
+  if (cutState.m && cutState.m !== on) combineCut(cutState.m, 0, 0);
+  if (!on) {
+    if (view.cut && typeof cargoView !== 'undefined') cargoView.dirty = true;
+    view.cut = null; cutState.m = null; return;
+  }
+  // The near side and end: the car's +z side faces the camera when its outward normal points towards it, and so
+  // does its +x end (the baggage end).
+  const r = on.rotation.y, open = Math.cos(r - cam.yaw) > 0 ? 1 : -1, end = Math.sin(cam.yaw - r) > 0 ? 1 : -1;
+  combineCut(on, open, end);
+  if (!view.cut || view.cut.m !== on) { if (typeof cargoView !== 'undefined') cargoView.dirty = true; cutState.x = on.position.x; cutState.z = on.position.z; cutState.v = 0; }
+  view.cut = { stock: R.stock, m: on, open, end };
+  cutState.m = on;
+  // The car's speed as drawn (u per real second), for the rider's sway.
+  const d = Math.hypot(on.position.x - cutState.x, on.position.z - cutState.z);
+  cutState.x = on.position.x; cutState.z = on.position.z;
+  if (dt > 0 && d < 3) cutState.v += (d / dt - cutState.v) * (1 - Math.exp(-dt * 3));
+  on.updateMatrixWorld();
+  const pl = view.player, u = pl.userData;
+  cutV.set(COMBINE_IN.STAND * WS, COMBINE_IN.FLOOR * WS, 0); on.localToWorld(cutV);
+  pl.position.copy(cutV);
+  pl.rotation.y = r + (open > 0 ? 0 : Math.PI);
+  pl.visible = true;
+  const sway = Math.min(1, cutState.v / 6);
+  u.upper.rotation.z += Math.sin(animT * 2.3) * 0.035 * sway;
+  u.upper.position.x += Math.sin(animT * 2.3) * 0.012 * sway;
+  pl.updateMatrixWorld(true);
+}
+// Where a seated traveller goes: seat k (0 to 11) of the open combine, as { x, y, z, yaw } (y: the seat top).
+function cutawaySeat(k) {
+  const c = view.cut, I = COMBINE_IN;
+  if (!c || k >= I.ROWS.length * 2) return null;
+  const row = I.ROWS.length - 1 - (k >> 1), s = k & 1 ? 1 : -1;
+  cutV.set((I.ROWS[row] - 0.01) * WS, (I.FLOOR + I.SEAT_H) * WS, s * I.SIDE * WS); c.m.localToWorld(cutV);
+  return { x: cutV.x, y: cutV.y, z: cutV.z, yaw: c.m.rotation.y + Math.PI / 2, sit: I.SEAT_H * WS };
+}
 function render(alpha, dt) {
   animT += dt;
   worldUse(S.track);
@@ -10192,9 +10325,9 @@ function render(alpha, dt) {
   // Player.
   const P = S.player, pl = view.player, u = pl.userData;
   const px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
-  const moved = Math.hypot(px - pl.position.x, pz - pl.position.z);
+  const moved = P.ride ? 0 : Math.hypot(px - pl.position.x, pz - pl.position.z);   // riding: standing in the car
   pl.position.set(px, bldStandY(px, pz), pz);   // on the platform or dock deck (D15); the sim stays at 0
-  pl.visible = !P.ride;   // riding: inside the car (the camera follows it, as P.x and P.z follow the car)
+  pl.visible = !P.ride;   // riding: inside the car (the camera follows it, as P.x and P.z follow the car); cutawayDraw shows them in an open combine
   pl.rotation.y = lerpAngle(pl.rotation.y, P.f, 1 - Math.exp(-dt * 12));
   // The walk (GAIT, models section): stride from the distance drawn, so the feet do not slide. A jump (riding,
   // a load or a teleport in a check) is not a stride.
@@ -10216,6 +10349,7 @@ function render(alpha, dt) {
   cam.fx += (px - cam.fx) * k; cam.fz += (pz - cam.fz) * k;
   cam.yaw += (camYawTarget() - cam.yaw) * (1 - Math.exp(-dt * 10));
   placeCamera();
+  cutawayDraw(dt);        // riding: the car opens and the player stands inside (D15 cutaway)
   bldRoofFade(px, pl.position.y, pz, dt); // the platform canopy turns see-through near the player (D15)
   cargoDraw(S);           // item props and tags (section "cargo")
   applyDaylight(S, dt);
@@ -10304,6 +10438,33 @@ window.__railhead = {
     get actionRingY() { return carryView.ring.position.y; }, get toolYs() { return carryView.tools.map(v => v.g.position.y); } },
   gait: { GAIT, gaitNew, gaitStep, gaitPose, gaitStride, gaitApplyPlayer, get player() { return view.player; } },   // the walk (drawing only)
   ride: { RIDE, rideCarOf: (stock, st) => rideCarOf(st || S, stock), rideAtPlatform, ridePoses, rideDoors, get playerVisible() { return view.player.visible; } },
+  // The cutaway (D15): each combine's open side and draw range; the open car, and the player, seated travellers
+  // and freight drawn in it, in the car's own frame (x along it, the baggage end +x; z across; y up from the rail line).
+  cutaway() {
+    const toLocal = (m, x, y, z) => { const v = new THREE.Vector3(x, y, z); m.worldToLocal(v); return [v.x, v.y, v.z]; };
+    const cars = Object.entries(view.byStock || {}).filter(([, m]) => m.userData.cut).map(([sid, m]) => {
+      const u = m.userData.cut, whole = m.geometry === u.whole, n = u.whole.attributes.position.count;
+      // drawn: which parts the mesh's current geometry draws (from its index, or all for the whole geometry)
+      const ix = m.geometry.index, has = {};
+      if (ix) for (let i = 0; i < ix.count; i++) has[ix.getX(i)] = 1;
+      const drawn = {};
+      for (const [name, [a, b]] of Object.entries(u.parts)) { let all = true; if (!whole) for (let i = a; i < b && all; i++) if (!has[i]) all = false; drawn[name] = all; }
+      return { stock: +sid, side: u.side, end: u.end, whole, drawn, n, visible: m.visible };
+    });
+    const c = view.cut;
+    if (!c) return { cars, cut: null };
+    c.m.updateMatrixWorld();
+    const pl = view.player, seated = [];
+    for (const [id, w] of paxView.w) if (w.sit) {
+      const p = S.pax.list.find(q => q.id === id);
+      if (p && p.s === 'aboard' && p.car === c.stock) seated.push({ id, local: toLocal(c.m, w.x, w.y + crowd.kits[w.d.kit].legPiv[1] * w.d.scale, w.z) });
+    }
+    const flat = cargoFlatPoses(S), items = Object.keys(flat).filter(id => { const w = S.items.where[id]; return w && w.stockId === c.stock; }).map(id => ({ id: +id, local: toLocal(c.m, flat[id].x, flat[id].y, flat[id].z) }));
+    const toCam = [Math.sin(cam.yaw), Math.cos(cam.yaw)], r = c.m.rotation.y;
+    return { cars, cut: { stock: c.stock, open: c.open, end: c.end, nearPlus: Math.sin(r) * toCam[0] + Math.cos(r) * toCam[1] > 0,
+      nearEndPlus: Math.cos(r) * toCam[0] - Math.sin(r) * toCam[1] > 0,
+      player: { visible: pl.visible, local: toLocal(c.m, pl.position.x, pl.position.y, pl.position.z) }, seated, items, half: [1.35 * WS, 0.475 * WS] } };
+  },
   toScreen: (x, z, y) => toScreen(x, y || 0, z),
   exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },

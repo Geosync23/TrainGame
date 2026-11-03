@@ -1,7 +1,7 @@
 // Check: riding our own train as a passenger (D13, design-doc 5 "Interaction model").
 // - With a hand truck the player cannot board (a tap on the combine's door is refused with the reason).
 // - Boarding by real touch: a tap on the combine's door (No. 1 at the hub's platform, on the timetable) walks the
-//   player there and boards in 0.1 game minutes (one tick); while aboard the player is hidden, moves with the car,
+//   player there and boards in 0.1 game minutes (one tick); while aboard the player is drawn inside the open combine (D15), moves with the car,
 //   and a Step off button (at least 48 px) shows.
 // - Riding from the hub to Willow Ford: the camera follows the car; walking and uncoupling are refused while
 //   aboard; Step off is refused while the train moves; at Willow Ford it puts the player on the platform beside the door.
@@ -79,7 +79,7 @@ module.exports = async function checkRide() {
     if (!walked) problems.push('a tap on the combine\'s door did not walk the player there');
     if (!b.ride || b.ride.stock !== 1 || b.mode !== 'ride') problems.push('the player did not board the combine: ' + JSON.stringify(b));
     if (boardTicks !== 1) problems.push(`boarding should take 0.1 game minutes (1 tick of 8 s); it took ${boardTicks}`);
-    if (b.visible) problems.push('the player is still drawn while aboard');
+    if (!b.visible) problems.push('the player is not drawn inside the open combine while aboard (D15 cutaway)');
     if (Math.hypot(b.x - b.cx, b.z - b.cz) > 0.01) problems.push('aboard, the player is not with the car');
     if (!b.readout || !/Riding No\. 1/.test(b.text)) problems.push(`the riding readout is missing (${b.text})`);
     if (b.bw < 48 || b.bh < 48) problems.push(`the Step off button is smaller than 48 px (${b.bw} x ${b.bh})`);

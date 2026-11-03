@@ -222,7 +222,8 @@ module.exports = async function checkTrains() {
     if (!r.badSpotRefused) problems.push('Send to a spot beyond the end of an edge was not refused');
     if (r.farThrow || !r.farBlocked) problems.push('the player threw a switch from beyond reach, or no "blocked" message came');
     if (!r.throwSurvivesRelease) problems.push('letting go of a hold cancelled a switch throw');
-    if (!(r.sideCamera > r.sideNoView + 0.5)) problems.push(`tapping the train did not prefer the camera's side (z ${r.sideCamera} vs ${r.sideNoView})`);
+    if (!(r.sideCamera > r.sideNoView + 0.4))   // (D20: a walk tick is 0.27u, so the stopping points come in finer steps)
+      problems.push(`tapping the train did not prefer the camera's side (z ${r.sideCamera} vs ${r.sideNoView})`);
     if (!r.edgeWalkEnded) problems.push('a walk towards a point beyond the map edge never ended');
     if (/\d/.test(r.againstStatus)) problems.push('status names a switch number: ' + r.againstStatus);
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));

@@ -5610,7 +5610,6 @@ function migrate(save) {
     st.schemaVersion = 15;
   }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
-  if (st.player && typeof st.player === 'object') delete st.player.run;   // D20: no running (older saves kept a run flag)
   checkSaveShape(st);
   return save;
 }

@@ -41,6 +41,7 @@ const checks = {
   'riding our own train (board, ride, step off, save)': require('./check-ride'),
   'cutaway view into the combine while riding (D15)': require('./check-cutaway'),
   'tutorial (the investor\'s telegrams, days 1 and 2)': require('./check-tutorial'),
+  'helper arrows (where to go next, D20 (6))': require('./check-arrows'),
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
 };
 

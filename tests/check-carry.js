@@ -177,7 +177,8 @@ module.exports = async function checkCarry() {
     // Other long bundles stay by hand only; no long bundle on the hand truck; cords go onto the tender cord by cord.
     const cart = await R(() => {
       const R = window.__railhead, C = R.cargo, out = { bad: [] };
-      const fresh = () => R.newState(1866, 'start');
+      // Since D21 No. 1 starts on both timetabled runs; these games leave her off it (she stands at the platform as before).
+      const fresh = () => { const st = R.newState(1866, 'start'); for (const v of st.tt.services) v.train = null; return st; };
       const cordsOf = S => C.itemsAt(S, { kind: 'GROUND' }).filter(i => S.items.waybill[i].commodity === 'cordwood');
       const run = (S, cmd, n) => { const ev = R.simTick(S, cmd ? [cmd] : []); for (let i = 0; i < (n || 0); i++) ev.push(...R.simTick(S, [])); return ev; };
       const held = S => R.carry.carryHeld(S);

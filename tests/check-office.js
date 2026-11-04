@@ -221,7 +221,7 @@ module.exports = async function checkOffice() {
           const b = document.getElementById('officeBody'), S = window.__railhead.state;
           return { text: b.textContent, accept: b.querySelectorAll('button[data-act="accept"]').length, offered: S.econ.contracts.filter(k => k.status === 'OFFERED').length,
             rows: b.querySelectorAll('.row[data-c]').length, sparks: b.querySelectorAll('svg.spark polyline').length, goods: window.__railhead.econ.ECON_ORDERABLE.length,
-            ledgerRows: b.querySelectorAll('table tr').length, cards: b.querySelectorAll('.card').length, starts: b.querySelectorAll('button[data-act="ttOn"]').length,
+            ledgerRows: b.querySelectorAll('table tr').length, cards: b.querySelectorAll('.card').length, starts: b.querySelectorAll('button[data-act="ttOn"]').length, stops: b.querySelectorAll('button[data-act="ttOff"]').length,
             pressed: document.querySelector(`#officeTabs button[aria-pressed="true"]`).dataset.tab };
         });
         await settle(200);
@@ -233,13 +233,14 @@ module.exports = async function checkOffice() {
       if (T.market.rows !== T.market.goods || T.market.sparks !== T.market.goods || !/buy \$4\.00, sell \$2\.50/.test(T.market.text)) problems.push(`${orient}: the Market tab should list ${T.market.goods} goods with buy and sell prices and a line each (${T.market.rows} rows, ${T.market.sparks} lines)`);
       if (!/Money in/.test(T.ledger.text) || !/Loans:/.test(T.ledger.text) || T.ledger.ledgerRows < 3) problems.push(`${orient}: the Ledger tab should show the totals table and loans`);
       if (!/No\. 1/.test(T.trains.text) || !/Wood 4 of 4 cords, water 100%/.test(T.trains.text) || !/combine 1/.test(T.trains.text) || !/Where: At Hub/.test(T.trains.text)) problems.push(`${orient}: the Trains tab should show No. 1 at the Hub with its wood, water and cars: ${T.trains.text.slice(0, 200)}`);
-      if (T.timetable.cards !== 2 || T.timetable.starts !== 2 || !/09:30/.test(T.timetable.text) || !/run round/.test(T.timetable.text)) problems.push(`${orient}: the Timetable tab should show both services' stops with Start`);
-      // Start and stop the morning service by touch.
-      await tapSel('#officeBody button[data-act="ttOn"][data-svc="0"]');
-      const on = await R(() => window.__railhead.state.tt.services.map(s => s.train).join());
+      // D21: a new game has No. 1 on both services, so each shows Stop (Start once taken off).
+      if (T.timetable.cards !== 2 || T.timetable.stops !== 2 || T.timetable.starts !== 0 || !/09:30/.test(T.timetable.text) || !/run round/.test(T.timetable.text)) problems.push(`${orient}: the Timetable tab should show both services' stops with Stop (No. 1 on both from the start)`);
+      // Stop and start the morning service by touch.
       await tapSel('#officeBody button[data-act="ttOff"][data-svc="0"]');
       const off = await R(() => window.__railhead.state.tt.services.map(s => s.train).join());
-      if (on !== '0,' || off !== ',') problems.push(`${orient}: Start and Stop a service by touch: ${on} then ${off}`);
+      await tapSel('#officeBody button[data-act="ttOn"][data-svc="0"]');
+      const on = await R(() => window.__railhead.state.tt.services.map(s => s.train).join());
+      if (off !== ',0' || on !== '0,0') problems.push(`${orient}: Stop and Start a service by touch: ${off} then ${on}`);
       // Ordering from the Market tab.
       await tapSel('#officeTabs button[data-tab="market"]');
       const cashBefore = await page.textContent('#cash');
@@ -317,7 +318,7 @@ module.exports = async function checkOffice() {
       const eng = await R(p => window.__railhead.toScreen(p.x, p.z, 1.3), engAt);
       await tapSel('#lookBtn'); await tapAt(eng);
       const look2 = await R(() => ({ title: document.getElementById('lookTitle').textContent, body: document.getElementById('lookBody').textContent }));
-      if (look2.title !== 'No. 1' || !/Consist: engine, combine 1/.test(look2.body) || !/Next stop: Not on the timetable/.test(look2.body)) problems.push(`${orient}: Look at No. 1: ${JSON.stringify(look2)}`);
+      if (look2.title !== 'No. 1' || !/Consist: engine, combine 1/.test(look2.body) || !/Next stop: On the timetable/.test(look2.body)) problems.push(`${orient}: Look at No. 1: ${JSON.stringify(look2)}`);
       if (orient === 'portrait') await shot('look-train');
       // Look: the general store.
       await R(() => { const R = window.__railhead, d = R.town.townDoor(0); R.state.player.x = d.x - 2; R.state.player.z = d.z + 2; R.step(1); });

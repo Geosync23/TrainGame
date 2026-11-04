@@ -48,7 +48,7 @@ module.exports = async function checkWorkboard() {
             facing: Math.sin(b.yaw) * K.out[0] + Math.cos(b.yaw) * K.out[1], along, halfStrip: strip.w / 2, w: b.w, h: b.h, y0: b.y - b.h / 2, y1: b.y + b.h / 2 });
         }
         const m = B.mesh;
-        return { out, quads: m ? m.geometry.index.count / 6 : 0, n: B.list.length, sched: B.list.filter(b => b.kind === 'sched').length };
+        return { out, quads: m ? m.geometry.index.count / 6 : 0, n: B.list.length, sched: B.list.filter(b => b.kind === 'sched').length, work: B.list.filter(b => b.kind === 'work').length, sign: B.list.filter(b => b.kind === 'sign').length };
       });
       for (const st of ['hub', 'willow']) {
         const g = geo.out.find(o => o.st === st);
@@ -60,7 +60,8 @@ module.exports = async function checkWorkboard() {
         if (!(Math.abs(g.along) < 2.5)) P(`${st}'s work board is ${g.along.toFixed(2)}u from the counter along the wall (want behind it)`);
         if (!(g.w > 2 && g.h > 1.2 && g.y0 > 0.6 && g.y1 < 2.6)) P(`${st}'s work board size or height looks wrong: ${JSON.stringify(g)}`);
       }
-      if (geo.quads !== geo.n || geo.n !== 2 * geo.sched) P(`the boards should be one mesh with a quad per board (schedule and work): ${JSON.stringify(geo)}`);
+      if (geo.quads !== geo.n || geo.work !== geo.sched || geo.sign !== geo.sched || geo.n !== 3 * geo.sched)   // D21: and a roof sign per depot
+      P(`the boards should be one mesh with a quad per board (schedule and work): ${JSON.stringify(geo)}`);
 
       // ---- 2. Rows against the sim state: the passengers scenario (08:00, 6 in line, 4 ticketed), No. 1 at the hub
       // on the timetable, 3 goods for Willow Ford on the ground by the platform, 2 for the hub in No. 1's boxcar, and

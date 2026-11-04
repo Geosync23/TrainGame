@@ -11002,7 +11002,9 @@ function townSignHud() {
     if (!L.w) { L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; L.x = -1e9; }
     // D15: the grown buildings put their name boards higher on screen; while the board itself is on screen the label
     // is held just inside the top edge rather than dropped.
-    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), y = p.y > 0 ? Math.max(p.y, L.h + 4) : p.y;
+    // D21: held below the Next job line where it would meet it.
+    const x = Math.max(6 + L.w / 2, Math.min(W - 6 - L.w / 2, p.x)), nb = !$('nextJob').hidden ? $('nextJob').getBoundingClientRect() : null;
+    const top = nb && x + L.w / 2 > nb.left - 4 && x - L.w / 2 < nb.right + 4 ? nb.bottom + 6 : 4, y = p.y > 0 ? Math.max(p.y, L.h + top) : p.y;
     if (Math.abs(x - L.x) >= 0.5 || Math.abs(y - L.y) >= 0.5) { L.x = x; L.y = y; L.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -100%)`; }
     const r = { l: x - L.w / 2, r: x + L.w / 2, t: y - L.h, b: y };
     let show = p.x > 0 && p.x < W && r.t > 0 && r.b < H;
@@ -11231,6 +11233,8 @@ function ttOnEvent(e) {
 // A tap on a station's painted departure board (or Look, then a tap on it) opens this card for that station from
 // anywhere (ttCardPin): it stands over the board for TT_CARD_PIN_MS, or until the next tap elsewhere.
 const ttCardUi = { st: null, sig: '', w: 0, h: 0, pin: null };
+// D21: the card's rows can be buttons, so it also keeps clear of the tutorial box (chip, Arrows, Settings) over it.
+const TT_CARD_AVOID = JOB_SIGN_AVOID.concat(['tutTask']);
 const TT_CARD_PIN_MS = 15000;
 function ttCardPin(stId) { ttCardUi.pin = { st: stId, until: performance.now() + TT_CARD_PIN_MS }; ttCardUi.sig = ''; }
 function ttCardTicketSpot(id) {
@@ -11274,11 +11278,12 @@ function ttCardHud() {
   }
   // At the depot (the ticket window or a pinned board) it stands above the roof, clear of the schedule board (D20).
   const p = toScreen(near.at.x, (near.high ? 3.1 : 1.9) * WS, near.at.z), W = window.innerWidth;
-  const x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2));
-  const yMin = nextUi.shown ? Math.round($('nextJob').getBoundingClientRect().bottom + 6) : 64;   // below the Next job line (D21)
+  let x = Math.max(6, Math.min(W - 6 - ttCardUi.w, p.x - ttCardUi.w / 2));
+  // Below the Next job line (D21), or the telegram sliding in in its place.
+  const yMin = Math.max(64, ...['nextJob', 'tgSlide'].map(id => $(id)).filter(e => !e.hidden && (e.id !== 'tgSlide' || e.classList.contains('show'))).map(e => Math.round(e.getBoundingClientRect().bottom + 6)));
   let y = Math.max(yMin, p.y - ttCardUi.h - 6);
   // D21 (2): above the depot's WORK BOARD roof sign too, never over it.
-  const sg = near.high && boards.list.find(b => b.kind === 'sign' && b.st === near.st.id);
+  const sg = near.high && boards.list.find(b => b.kind === 'sign' && b.st === near.st.id && b.shown !== false);
   if (sg) {
     const c = Math.cos(sg.yaw) * sg.w / 2, s = -Math.sin(sg.yaw) * sg.w / 2, q = [toScreen(sg.x - c, sg.y + sg.h / 2, sg.z - s), toScreen(sg.x + c, sg.y + sg.h / 2, sg.z + s)];
     const top = Math.min(q[0].y, q[1].y), l = Math.min(q[0].x, q[1].x), r = Math.max(q[0].x, q[1].x);
@@ -11286,16 +11291,17 @@ function ttCardHud() {
     // No room above it (landscape): below the depot's front instead, on the platform.
     if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = toScreen(near.at.x, 0, near.at.z).y + 10;
   }
+  // D21: the card grew (a row with no engine is a button). Where it would meet a button or panel: moved left of a
+  // right-hand one when there is room, else below the depot's front (on the platform); hidden only when neither fits.
+  const boxes = TT_CARD_AVOID.map(id => $(id)).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
+  const hits = (x, y) => boxes.filter(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
+  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0]; };
+  let spot = place(x, y);
+  if (!spot[2] && near.high) { const b2 = place(x, toScreen(near.at.x, 0, near.at.z).y + 10); if (b2[2] && b2[1] + ttCardUi.h < window.innerHeight) spot = b2; }
+  [x, y] = spot;
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
-  let show = p.x > 0 && p.x < W && p.y > 0 && p.y < window.innerHeight;
-  for (const id of JOB_SIGN_AVOID) {
-    if (!show) break;
-    const e = $(id);
-    if (!e || e.hidden || !e.getClientRects().length) continue;
-    const q = e.getBoundingClientRect();
-    if (x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4) show = false;
-  }
+  const show = p.x > 0 && p.x < W && p.y > 0 && p.y < window.innerHeight && spot[2];
   card.style.visibility = show ? 'visible' : 'hidden';
 }
 // ---- Office, telegrams, alerts and Look (M1 package 7, builder D1, design-doc D13) ----
@@ -11650,9 +11656,8 @@ function tgSlideHud() {
   const more = ids.length - 1;
   $('tgSlideTitle').textContent = g.title;
   $('tgSlideFrom').textContent = g.from + (more ? `, and ${more} more` : '') + '. Tap to read.';
-  // Under the clock (and the Next job line, D21), and below the right-hand buttons (the tutorial chip, alerts) where it would meet them.
+  // Under the clock (in the Next job line's place, which steps aside meanwhile, D21), and below the right-hand buttons (the tutorial chip, alerts) where it would meet them.
   let top = $('topleft').getBoundingClientRect().bottom + 6;
-  if (!$('nextJob').hidden) top = Math.max(top, $('nextJob').getBoundingClientRect().bottom + 6);
   const w = el.offsetWidth, h = Math.max(el.offsetHeight, 48), x0 = el.getBoundingClientRect().left + w + 20; // its left edge once shown
   const right = ['tgBtn', 'tutTask'].map(id => $(id)).concat([...$('alerts').children]).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
   for (let k = 0; k < 4; k++) { const q = right.find(r => r.left < x0 + w && r.top < top + h && r.bottom > top); if (!q) break; top = q.bottom + 6; }
@@ -12218,7 +12223,10 @@ function nextJobSetPref(on) {
 }
 function nextJobHud() {
   const el = $('nextJob'), show = nextJobOn() && !!S.tg && !ui.sendMode && !(typeof bt !== 'undefined' && bt.on);
-  if (show !== nextUi.shown) { nextUi.shown = show; el.hidden = !show; document.body.classList.toggle('nextOn', show); }
+  if (show !== nextUi.shown) { nextUi.shown = show; document.body.classList.toggle('nextOn', show); }
+  // A new telegram slides in where the line is (under the clock) for its few seconds: the line steps aside meanwhile.
+  const vis = show && tgSlide.id === null;
+  if (el.hidden !== !vis) el.hidden = !vis;
   if (!show) return;
   guideTarget();
   const job = guideUi.job, text = job ? job.text : '';

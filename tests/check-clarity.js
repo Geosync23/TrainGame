@@ -54,7 +54,7 @@ module.exports = async function checkClarity() {
     const { browser, page, errors } = await openGame(orient, { query: '?paused' });
     const R = (f, a) => page.evaluate(f, a);
     const frames = async (ms) => { await page.waitForTimeout(ms || 450); };
-    const tapSel = async sel => { const b = await page.$(sel); if (b) await b.scrollIntoViewIfNeeded(); const r = b && await b.boundingBox(); if (!r) return false; await page.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await frames(300); return true; };
+    const tapSel = async sel => { const b = await page.$(sel); if (b) await b.evaluate(e => e.scrollIntoView({ block: 'nearest' })); const r = b && await b.boundingBox(); if (!r) return false; await page.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await frames(300); return true; };
     try {
       // ---------------- 1 and 2 in the sim (once) ----------------
       if (orient === 'portrait') {

@@ -123,6 +123,7 @@ module.exports = async function checkTimetable() {
         // 3. No. 1 fetches a set-out car from the interchange (the real start).
         {
           const st = R.interchange.withTestDelivery(R.newState(1866)), X = R.interchange;
+          R.simTick(st, [{ t: 'ttAssign', tr: 0, on: false }]);   // D21: No. 1 starts on the timetable; the player drives her here
           let left = -1;
           for (let i = 0; i < 1500 && left < 0; i++) { const ev = R.simTick(st, []); if (ev.some(e => e.t === 'overlandLeft')) left = i; }
           const cut = X.interchangeCut(st), cars = cut.consist.map(c => c.id), items = cars.map(id => R.cargo.itemsAt(st, { kind: 'CAR', stockId: id }).length);

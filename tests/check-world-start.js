@@ -133,6 +133,8 @@ module.exports = async function checkWorldStart() {
           out.routes.push(`${label} ${k} ticks`);
           return ps;
         };
+        // Since D21 No. 1 starts on both timetabled runs: off it, so Send to drives her (the run starts at 07:00).
+        R.simTick(S, [{ t: 'ttAssign', tr: 0, on: false }]);
         out.routes = [];
         const A = T.nodes[T.edges[ie].a], lead = T.edges.find(E => E.k === 'S' && E.cls === 'yard' && E.len < 2.5 * SC && Math.abs(T.nodes[E.a].z - 0.5 * A.z) < 1.5 * SC && T.nodes[E.a].x < 5 * SC);
         if (!lead) P('no lead track by the interchange');

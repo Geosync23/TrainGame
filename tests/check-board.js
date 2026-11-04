@@ -90,7 +90,8 @@ module.exports = async function checkBoard() {
         if (!(g.w > 1.8 && g.h > 1.4)) P(`${orientation}: ${st}'s board is small: ${g.w.toFixed(2)} x ${g.h.toFixed(2)}u`);
       }
       if (!geo.out.some(o => o.st === 'willow' && !o.staffed)) P(`${orientation}: Willow Ford should be unstaffed and still have its board`);
-      if (!geo.mesh || geo.shadow || geo.quads !== geo.all || geo.all !== 2 * geo.out.length || !geo.tex || !geo.own) P(`${orientation}: the boards should be one mesh, a quad each, no shadow, own textured material: ${JSON.stringify(geo)}`);
+      // (D21: three quads per depot: the schedule board, the work board and the WORK BOARD roof sign.)
+      if (!geo.mesh || geo.shadow || geo.quads !== geo.all || geo.all !== 3 * geo.out.length || !geo.tex || !geo.own) P(`${orientation}: the boards should be one mesh, a quad each, no shadow, own textured material: ${JSON.stringify(geo)}`);
 
       // ---- 2. Rows match the card; repainted only on change; a departure updates it ----
       await R(() => { const R = window.__railhead, S = R.state, K = R.pax.paxStation('hub'); R.send({ t: 'ttAssign', tr: 0, on: true }); R.step(1); S.player.x = K.line.x; S.player.z = K.line.z; });

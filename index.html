@@ -11297,7 +11297,7 @@ function ttCardHud() {
   const hits = (x, y) => boxes.filter(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
   const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0]; };
   let spot = place(x, y);
-  if (!spot[2] && near.high) { const b2 = place(x, toScreen(near.at.x, 0, near.at.z).y + 10); if (b2[2] && b2[1] + ttCardUi.h < window.innerHeight) spot = b2; }
+  if (!spot[2]) { const b2 = place(x, toScreen(near.at.x, 0, near.at.z).y + 10); if (b2[2] && b2[1] + ttCardUi.h < window.innerHeight) spot = b2; }
   [x, y] = spot;
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).

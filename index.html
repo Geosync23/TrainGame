@@ -7798,9 +7798,14 @@ BLD_LAYOUTS.start = [
   { id: 'baggagewagon1', kind: 'baggagewagon', x: 2.65, z: HUB_PB + 0.8, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'freightscale1', kind: 'freightscale', x: 4.4, z: HUB_PB + 0.62, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'waterbarrel1', kind: 'waterbarrel', x: 13.2, z: HUB_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'planter1', kind: 'planter', x: 16.5, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'planter1', kind: 'planter', x: 17.0, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },   // D22: was at 16.5, moved for the schedule board
   { id: 'planter2', kind: 'planter', x: 19.0, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'hitchrail1', kind: 'hitchrail', x: 17.4, z: HUB_PB - 3.0, yaw: 0 },
+  // D22 (3): the public schedule boards stand on their own posts on the platforms, at the back edge east of each depot,
+  // behind the ticket line (travellers waiting there face them), clear of the depot's front. Drawn only: their posts
+  // are thin like the canopy's and are not footprints (buildingFootprints skips them), so the walk grid is unchanged.
+  { id: 'schedboard1', kind: 'schedboard', x: 15.05, z: HUB_PB + 0.3, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wfschedboard1', kind: 'schedboard', x: WFORD.x + 20 * WS + 2.6, z: WF_PB + 0.3, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'wfcrates1', kind: 'crates', x: WFORD.x + 20 * WS - 9.5, z: WF_PB + 0.6, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'wfwaterbarrel1', kind: 'waterbarrel', x: WFORD.x + 20 * WS + 0.4, z: WF_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
 ];
@@ -7905,7 +7910,11 @@ const BLD_EXT_M1 = {
   planter: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
   waterbarrel: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
   hitchrail: [-1.4, 1.4, -0.6, 0.6].map(v => v / WS),
+  schedboard: [-1.35, 1.35, -0.12, 0.12].map(v => v / WS),   // D22 (3): drawn only, never a footprint
 };
+// D22 (3): the public schedule board on its own posts (true units, the board's local frame: x along it, +z its face
+// towards the track): the painted face w x h with its bottom edge y0 above the deck, on two posts at +-post.
+const BLD_SCHED_POST = { w: 2.4, h: 2.2, y0: 0.9, post: 1.12, face: 0.07 };
 // The station props (D19): small, human-sized things that block walking; their footprints carry prop: true.
 const BLD_PROPS = new Set(['freightpile', 'crates', 'baggagewagon', 'freightscale', 'planter', 'waterbarrel', 'hitchrail']);
 const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) => [k, e.map(v => v * WS)]));
@@ -7924,8 +7933,10 @@ const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) =
 // z0) behind the ticket counter, facing the window.
 // D21 (2): a painted "WORK BOARD" sign standing on the front of the depot's roof over the door (sign [x0, x1] x
 // [y0, y1] at z signZ, upright, facing the platform), so the board inside is found from the platform.
+// D22 (3): the public schedule board left the front wall for its own posts on the platform (BLD_SCHED_POST, layout kind
+// 'schedboard'); the roof sign grew to 2.42 x 0.8 M1 (was 1.56 x 0.52), over the window and the door.
 const BLD_BOOTH = { door: [1.32, 1.97], doorH: 1.25, win: [0.62, 1.17], winY: [0.75, 1.35], z0: 0.3, wall: 1.0, t: 0.06,
-  bay: -1.45, board: [-0.72, 0.5], boardY: [0.3, 1.42], work: [-1.0, 0.45], workY: [0.55, 1.42], sign: [0.62, 2.18], signY: [1.98, 2.5], signZ: 0.95 };
+  bay: -1.45, work: [-1.0, 0.45], workY: [0.55, 1.42], sign: [-0.3, 2.12], signY: [1.98, 2.78], signZ: 0.95 };
 const BLD_SPOTS = {
   depot: { ticket: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, (BLD_BOOTH.z0 + BLD_BOOTH.wall - BLD_BOOTH.t) / 2 * WS],
     line: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, 1.48 * WS + 0.85],
@@ -8002,11 +8013,7 @@ const BLD_RECIPES = {
     for (const x of [w0 - 0.03, w1 + 0.03]) b.shell(box(0.06, wy1 - wy0 + 0.12, 0.04), PAL.trim, x, (wy0 + wy1) / 2, B.wall + 0.02); // window frame
     b.shell(box(w1 - w0 + 0.12, 0.06, 0.04), PAL.trim, wc, wy1 + 0.03, B.wall + 0.02);
     b.add(box(w1 - w0 + 0.16, 0.05, 0.42), PAL.trim, wc, wy0 - 0.025, B.wall - 0.1);    // the counter, through the window
-    // The departure board's frame and its lamp (the letters are the board's own mesh, just in front of the frame).
-    const [bx0, bx1] = B.board, [by0, by1] = B.boardY, bc = (bx0 + bx1) / 2;
-    b.shell(box(bx1 - bx0 + 0.08, by1 - by0 + 0.08, 0.03), PAL.trim, bc, (by0 + by1) / 2, B.wall + 0.015);
-    b.shell(box(0.04, 0.04, 0.1), PAL.loco, bc, by1 + 0.2, B.wall + 0.05);
-    b.glow(box(0.26, 0.04, 0.05), bc, by1 + 0.17, B.wall + 0.1);
+    // D22 (3): the departure (public schedule) board left this wall for its own posts on the platform (schedboard).
     // The work board's frame on the booth's inside wall (D20 (2)); its letters are the boards' mesh. Not shell: it
     // stays solid while the front wall fades, so it is seen from the booth.
     const [kx0, kx1] = B.work, [ky0, ky1] = B.workY;
@@ -8015,7 +8022,7 @@ const BLD_RECIPES = {
     // just in front). Part of the shell, so it fades with the roof while the player is in the booth.
     const [sx0, sx1] = B.sign, [sy0, sy1] = B.signY, sz = B.signZ;
     b.shell(box(sx1 - sx0 + 0.08, sy1 - sy0 + 0.08, 0.04), PAL.trim, (sx0 + sx1) / 2, (sy0 + sy1) / 2, sz - 0.025);
-    for (const x of [sx0 + 0.15, sx1 - 0.15]) b.shell(box(0.06, 0.4, 0.06), PAL.trim, x, sy0 - 0.12, sz - 0.07);
+    for (const x of [sx0 + 0.2, (sx0 + sx1) / 2, sx1 - 0.2]) b.shell(box(0.06, 0.4, 0.06), PAL.trim, x, sy0 - 0.12, sz - 0.07);
     // The agent's office bay, windows on three sides so the agent can see up and down the line.
     const bay = B.bay;
     b.add(box(1.2, 1.25, 0.42), PAL.wall, bay, 0.875, 1.2);
@@ -8167,6 +8174,17 @@ const BLD_RECIPES = {
     for (const x of [-0.725, 0.725]) r.add(box(0.05, 0.06, 0.48), C.crateDark, x, 0.39, -0.25);
     r.add(box(1.4, 0.02, 0.38), C.water, 0, 0.37, -0.25);
     return BLD_EXTENTS.hitchrail;
+  },
+  // D22 (3): the public schedule board on two posts, with a small roof over it and a lamp for the night. Its letters
+  // are the boards' own mesh (see "departure boards"), just in front of the frame's face.
+  schedboard(b) {
+    const r = b.raw(), P = BLD_SCHED_POST, C = BLD_PROP_COL, top = P.y0 + P.h;
+    for (const x of [-P.post, P.post]) r.add(box(0.12, top + 0.25, 0.12), PAL.trim, x, (top + 0.25) / 2, -0.02);
+    r.add(box(P.w + 0.16, P.h + 0.16, 0.06), PAL.trim, 0, P.y0 + P.h / 2, P.face - 0.03);   // the frame (its face at z = P.face)
+    r.add(box(P.w + 0.5, 0.06, 0.42), PAL.roof, 0, top + 0.28, 0.05, 0.18);                  // a little roof, sloping forward
+    r.add(box(0.05, 0.04, 0.16), C.iron, 0, top + 0.22, P.face + 0.06);                      // the lamp's arm, under the roof
+    r.glow(box(0.3, 0.04, 0.05), 0, top + 0.2, P.face + 0.13);
+    return BLD_EXTENTS.schedboard;
   },
   // Lamp post (style test page): iron post, glowing lamp, cone cap.
   lamp(b) {
@@ -8397,6 +8415,7 @@ function buildingFootprints() {
       if (BLD_PROPS.has(kind)) f.prop = true;
       out.push(f);
     };
+    if (kind === 'schedboard') continue;   // D22 (3): the schedule board's thin posts do not block walking
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
     else rect(at.id, ext, bldIsPlatform(kind));
   }
@@ -8745,7 +8764,7 @@ function wbRows(S, stId) {
 // Two painted boards at each station's depot, both in ONE mesh (a quad each, 1 draw call, no shadow) on ONE canvas
 // texture (1024 x 1024: the schedule boards stacked in the left half, the work boards in the right), each repainted
 // only when what it shows changes (boardUpdate compares a signature, at most once a sim tick).
-// - The PUBLIC SCHEDULE board (kind 'sched') on the depot's front wall beside the ticket window (BLD_BOOTH.board),
+// - The PUBLIC SCHEDULE board (kind 'sched'), since D22 (3) on its own posts on the platform (BLD_SCHED_POST),
 //   facing the platform, for travellers: from schedRows, each train's short name, from, to, arrival, departure,
 //   platform and On time / Late / Cancelled (TT_NO_ENGINE, "Not running: needs an engine", while no train is on the service, D21). Two layouts: below zoom
 //   BOARD.FULL_ZOOM (the start zoom 1.5 among them) the BIG one, the next 3 trains in big letters (time, where to or
@@ -8761,16 +8780,26 @@ const BOARD = { CW: 1024, LIFT: 0.012, NIGHT: 0.55, FULL_ZOOM: 2.5, BG: '#1d2620
   OK: '#bfe3a0', WORK_BG: '#2a2219', CHALK: '#f2ead8', TICK: '#9fd98a' };
 const boards = { list: [], mesh: null, canvas: null, tex: null, redraws: 0 };
 // The stations' boards: [{ kind, st, depot, name, x, y, z, yaw, w, h }] (the board's centre and size, u).
+// D22 (3): the schedule board ('sched') stands on its own posts on the platform (the layout's 'schedboard' nearest the
+// station's depot); a world without one (the M0 test yard) has no schedule board. The work board and the roof sign
+// stay on the depot.
 function boardPlaces() {
-  const out = [], B = BLD_BOOTH;
+  const out = [], B = BLD_BOOTH, P = BLD_SCHED_POST;
   for (const kind of ['sched', 'work', 'sign']) for (const K of paxStations(S.track)) {
     const at = K.depot && BLD_LAYOUT.find(a => a.id === K.depot.id);
     if (!at || bldKindOf(at) !== 'depot') continue;
+    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null, name = tt ? tt.name : paxName(K.id);
+    if (kind === 'sched') {
+      const sb = BLD_LAYOUT.filter(a => bldKindOf(a) === 'schedboard').map(a => ({ a, d: Math.hypot(a.x - at.x, a.z - at.z) })).sort((p, q) => p.d - q.d)[0];
+      if (!sb || sb.d > 20 * WS) continue;
+      const a = sb.a, yaw = a.yaw || 0, lz = P.face + BOARD.LIFT;
+      out.push({ kind, st: K.id, depot: at.id, post: a.id, name, x: a.x + lz * Math.sin(yaw), y: (a.y || 0) + P.y0 + P.h / 2, z: a.z + lz * Math.cos(yaw), yaw, w: P.w, h: P.h });
+      continue;
+    }
     const yaw = at.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
-    const [x0, x1] = kind === 'sched' ? B.board : kind === 'sign' ? B.sign : B.work, [y0, y1] = kind === 'sched' ? B.boardY : kind === 'sign' ? B.signY : B.workY;
-    const lx = (x0 + x1) / 2 * WS, lz = (kind === 'sign' ? B.signZ : (kind === 'sched' ? B.wall : B.z0) + 0.03) * WS + BOARD.LIFT;
-    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null;
-    out.push({ kind, st: K.id, depot: at.id, name: tt ? tt.name : paxName(K.id), x: at.x + lx * c + lz * s, y: (y0 + y1) / 2 * WS, z: at.z - lx * s + lz * c,
+    const [x0, x1] = kind === 'sign' ? B.sign : B.work, [y0, y1] = kind === 'sign' ? B.signY : B.workY;
+    const lx = (x0 + x1) / 2 * WS, lz = (kind === 'sign' ? B.signZ : B.z0 + 0.03) * WS + BOARD.LIFT;
+    out.push({ kind, st: K.id, depot: at.id, name, x: at.x + lx * c + lz * s, y: (y0 + y1) / 2 * WS, z: at.z - lx * s + lz * c,
       yaw, w: (x1 - x0) * WS, h: (y1 - y0) * WS });
   }
   return out;
@@ -8979,6 +9008,12 @@ function boardHitOf(px, py, kind) {
   raycaster.setFromCamera(ndc(px, py), camera);
   for (const h of raycaster.intersectObject(boards.mesh, false)) { const b = boards.list[Math.floor(h.faceIndex / 2)]; if (b.kind === kind) return b; }
   return null;
+}
+// D22 (3): a board's box on the screen ({ left, top, right, bottom } in CSS pixels), from its quad's 4 corners.
+function boardScreenRect(b) {
+  const c = Math.cos(b.yaw) * b.w / 2, s = -Math.sin(b.yaw) * b.w / 2, pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => toScreen(b.x + u * c, b.y + v * b.h / 2, b.z + u * s));
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
 }
 // Which schedule board (its station id) is at screen point (px, py), or null.
 function boardHitAt(px, py) { const b = boardHitOf(px, py, 'sched'); return b ? b.st : null; }
@@ -11286,22 +11321,31 @@ function ttCardHud() {
   // Below the Next job line (D21), or the telegram sliding in in its place.
   const yMin = Math.max(64, ...['nextJob', 'tgSlide'].map(id => $(id)).filter(e => !e.hidden && (e.id !== 'tgSlide' || e.classList.contains('show'))).map(e => Math.round(e.getBoundingClientRect().bottom + 6)));
   let y = Math.max(yMin, p.y - ttCardUi.h - 6);
-  // D21 (2): above the depot's WORK BOARD roof sign too, never over it.
-  const sg = near.high && boards.list.find(b => b.kind === 'sign' && b.st === near.st.id && b.shown !== false);
-  if (sg) {
-    const c = Math.cos(sg.yaw) * sg.w / 2, s = -Math.sin(sg.yaw) * sg.w / 2, q = [toScreen(sg.x - c, sg.y + sg.h / 2, sg.z - s), toScreen(sg.x + c, sg.y + sg.h / 2, sg.z + s)];
-    const top = Math.min(q[0].y, q[1].y), l = Math.min(q[0].x, q[1].x), r = Math.max(q[0].x, q[1].x);
-    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = Math.max(yMin, top - ttCardUi.h - 6);
-    // No room above it (landscape): below the depot's front instead, on the platform.
-    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = toScreen(near.at.x, 0, near.at.z).y + 10;
+  // D21 (2): above the depot's WORK BOARD roof sign too, never over it; D22 (3): nor over the schedule board on its
+  // posts. Tried in turn: above the sign; below the depot's front (on the platform); then each of those moved left or
+  // right clear of the boards. The first clear of both boards wins.
+  const obs = boards.list.filter(b => b.st === near.st.id && (b.kind === 'sched' || (b.kind === 'sign' && b.shown !== false))).map(boardScreenRect);
+  const hitsObs = (x, y) => obs.some(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
+  if (near.high && obs.length && hitsObs(x, y)) {
+    const sg = obs[obs.length - 1], below = toScreen(near.at.x, 0, near.at.z).y + 10, ys = [Math.max(yMin, sg.top - ttCardUi.h - 6), below];
+    const xs = [x].concat(...obs.map(q => [q.left - 6 - ttCardUi.w, q.right + 6])).filter(v => v >= 6 && v + ttCardUi.w <= W - 6);
+    const c = [].concat(...ys.map(yy => xs.map(xx => [xx, yy]))).find(([xx, yy]) => !hitsObs(xx, yy) && yy >= yMin && yy + ttCardUi.h < window.innerHeight);
+    if (c) [x, y] = c; else y = Math.max(yMin, sg.top - ttCardUi.h - 6);
   }
   // D21: the card grew (a row with no engine is a button). Where it would meet a button or panel: moved left of a
   // right-hand one when there is room, else below the depot's front (on the platform); hidden only when neither fits.
   const boxes = TT_CARD_AVOID.map(id => $(id)).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
   const hits = (x, y) => boxes.filter(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
-  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0]; };
+  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0 && !(near.high && hitsObs(x, y))]; };
   let spot = place(x, y);
   if (!spot[2]) { const b2 = place(x, toScreen(near.at.x, 0, near.at.z).y + 10); if (b2[2] && b2[1] + ttCardUi.h < window.innerHeight) spot = b2; }
+  // D22 (3): still on a button or a board: any other spot beside the boards, above the sign or below the depot front.
+  if (!spot[2] && near.high) {
+    const below = toScreen(near.at.x, 0, near.at.z).y + 10, ys = [y, below].concat(obs.map(q => q.top - ttCardUi.h - 6), obs.map(q => q.bottom + 6)).filter(v => v >= yMin && v + ttCardUi.h < window.innerHeight);
+    const xs = [x].concat(...obs.map(q => [q.left - 6 - ttCardUi.w, q.right + 6]), ...boxes.map(q => [q.left - 5 - ttCardUi.w])).filter(v => v >= 6 && v + ttCardUi.w <= W - 6);
+    const c = [].concat(...ys.map(yy => xs.map(xx => [xx, yy]))).find(([xx, yy]) => !hits(xx, yy).length && !hitsObs(xx, yy));
+    if (c) spot = [c[0], c[1], true];
+  }
   [x, y] = spot;
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
@@ -12185,7 +12229,9 @@ function guideDraw() {
     // D21: none of those clear (the top of the screen is busy): further down beside the way, centred or to either side.
     const by = (flip ? top.y : foot.y) + 12;
     for (const dy of [0, 36, 72, 108, 144]) for (const x of [foot.x - w / 2, foot.x - w + 24, foot.x - 24]) spots.push(fit([x, by + dy]));
-    const clear = ([x, y]) => !guideUi.hud.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
+    // D22 (3): clear of the painted boards in the world too (the roof sign, the schedule board on its posts).
+    const avoid = guideUi.hud.concat(boards.list.filter(b => b.kind !== 'work' && b.shown !== false).map(boardScreenRect));
+    const clear = ([x, y]) => !avoid.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
     const [lx, ly] = spots.find(clear) || spots[0];
     lab.style.left = Math.round(lx) + 'px'; lab.style.top = Math.round(ly) + 'px';
   } else {

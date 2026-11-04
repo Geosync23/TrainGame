@@ -249,8 +249,8 @@
     height: 48px; box-sizing: border-box; text-align: left; padding: 3px 10px; border-left: 7px solid #ff7a1a; font: 600 14px/1.2 Georgia, serif;
     display: flex; align-items: center; }
   #nextJob span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  /* D22 (2): a long line (a warning of what an arrival brings) takes up to 3 lines in a smaller letter, clear of the tools below. */
-  #nextJob.long { height: auto; min-height: 48px; font-size: 13px; line-height: 1.12; padding: 2px 8px; }
+  /* D22 (2): a long line (a warning of what an arrival brings) takes up to 3 lines in a smaller letter, in the same 48 px. */
+  #nextJob.long { font-size: 12.5px; line-height: 1.1; padding: 1px 8px; }
   #nextJob.long span { -webkit-line-clamp: 3; }
   #nextJob[aria-pressed="true"] { background: #fff1dc; color: var(--ink); }
   body.nextOn #tutTask { top: calc(env(safe-area-inset-top) + 160px); }

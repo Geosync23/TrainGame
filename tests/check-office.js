@@ -62,7 +62,9 @@ module.exports = async function checkOffice() {
         const R = window.__railhead, O = R.office, E = R.econ, out = {};
         const D = 86400, H = 3600, toTime = (day, hh) => day * D + hh * H - 5 * H;
         // D2's tutorial (from schema 12) sends its own telegrams in a new game: these games start with it over.
-        const newS = () => { const st = R.newState(1866); if (st.tut) st.tut.done = true; return st; };
+        // D22 (7): a new game's switch 1 lies straight; these games have it set for the platform track (as a player who
+        // threw it would), so No. 1's runs go as before.
+        const newS = () => { const st = R.newState(1866); if (st.tut) st.tut.done = true; st.track.switches[1].state = 'R'; return st; };
         const run = (st, until) => { const ev = []; while (st.time < until) ev.push(...R.simTick(st, [])); return ev; };
         // 1. The inbox and its commands.
         const s0 = newS();

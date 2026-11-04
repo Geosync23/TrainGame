@@ -328,7 +328,8 @@ module.exports = async function checkExplain() {
       await R(() => {
         const R = window.__railhead, S = R.state, bot = (0, eval)('(' + window.__m1src + ')')(R);
         R.cards.setPref(false);
-        while ((S.time + 18000) % 86400 !== 17 * 3600 + 29 * 60) { const ev = R.simTick(S, bot.decide(S)); bot.observe(S, ev); }
+        const end = (Math.floor((S.time + 18000) / 86400) + 1) * 86400 + 17 * 3600 + 29 * 60 - 18000;   // the next day, 17:29
+        while (S.time < end) { const ev = R.simTick(S, bot.decide(S)); bot.observe(S, ev); }
         const sw = R.tt.ttSwitchNeeds(S).filter(n => !n.done);
         for (const n of sw) { const W = S.track.switches[n.sw]; if (W && !W.spring) W.state = n.want === 'reverse' ? 'R' : 'N'; }   // (screenshot only: no switch job in front of it)
         R.camera.zoom = 1.5;

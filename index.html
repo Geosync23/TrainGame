@@ -267,7 +267,7 @@
   #fcard .grow { flex: 1; min-width: 0; }
   #fcard small { color: #5a4a3a; font-size: 12px; line-height: 1.2; }
   #fcardShow { background: var(--edge); color: var(--paper); }
-  @media (orientation: landscape) and (max-height: 500px) { #fcard { top: calc(env(safe-area-inset-top) + 66px); width: 420px; } }
+  @media (orientation: landscape) and (max-height: 500px) { #fcard { top: calc(env(safe-area-inset-top) + 66px); width: 420px; left: auto; transform: none; right: calc(env(safe-area-inset-right) + 164px); } }
   #setBtn svg { width: 24px; height: 24px; display: block; }
   #settings .row { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); line-height: 1.3; }
   #settings .row button[aria-pressed] { min-width: 64px; }
@@ -11359,7 +11359,7 @@ function ttCardHud() {
   // right clear of the boards. The first clear of both boards wins.
   const obs = boards.list.filter(b => b.st === near.st.id && (b.kind === 'sched' || (b.kind === 'sign' && b.shown !== false))).map(boardScreenRect);
   const hitsObs = (x, y) => obs.some(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
-  if (near.high && obs.length && hitsObs(x, y)) {
+  if (obs.length && hitsObs(x, y)) {
     const sg = obs[obs.length - 1], below = toScreen(near.at.x, 0, near.at.z).y + 10, ys = [Math.max(yMin, sg.top - ttCardUi.h - 6), below];
     const xs = [x].concat(...obs.map(q => [q.left - 6 - ttCardUi.w, q.right + 6])).filter(v => v >= 6 && v + ttCardUi.w <= W - 6);
     const c = [].concat(...ys.map(yy => xs.map(xx => [xx, yy]))).find(([xx, yy]) => !hitsObs(xx, yy) && yy >= yMin && yy + ttCardUi.h < window.innerHeight);
@@ -11369,11 +11369,11 @@ function ttCardHud() {
   // right-hand one when there is room, else below the depot's front (on the platform); hidden only when neither fits.
   const boxes = TT_CARD_AVOID.map(id => $(id)).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
   const hits = (x, y) => boxes.filter(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
-  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0 && !(near.high && hitsObs(x, y))]; };
+  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0 && !hitsObs(x, y)]; };
   let spot = place(x, y);
   if (!spot[2]) { const b2 = place(x, toScreen(near.at.x, 0, near.at.z).y + 10); if (b2[2] && b2[1] + ttCardUi.h < window.innerHeight) spot = b2; }
   // D22 (3): still on a button or a board: any other spot beside the boards, above the sign or below the depot front.
-  if (!spot[2] && near.high) {
+  if (!spot[2]) {
     const below = toScreen(near.at.x, 0, near.at.z).y + 10, ys = [y, below].concat(obs.map(q => q.top - ttCardUi.h - 6), obs.map(q => q.bottom + 6)).filter(v => v >= yMin && v + ttCardUi.h < window.innerHeight);
     const xs = [x].concat(...obs.map(q => [q.left - 6 - ttCardUi.w, q.right + 6]), ...boxes.map(q => [q.left - 5 - ttCardUi.w])).filter(v => v >= 6 && v + ttCardUi.w <= W - 6);
     const c = [].concat(...ys.map(yy => xs.map(xx => [xx, yy]))).find(([xx, yy]) => !hits(xx, yy).length && !hitsObs(xx, yy));

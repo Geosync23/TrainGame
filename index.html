@@ -36,6 +36,9 @@
   #carryText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #carryPut { flex: none; }
   #centre { right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); }
+  /* D22 (3): the Work board button, always in the bottom row at the hub: two short lines, so the row fits a phone. */
+  #workBtn { width: 66px; padding: 0 6px; font-size: 14px; line-height: 1.05; white-space: normal; border-left: 6px solid #5b6fa8; }
+  #centre.up { bottom: calc(env(safe-area-inset-bottom) + 66px); }
   #toast { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 112px); max-width: min(92vw, 420px);
     background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.3;
     pointer-events: none; opacity: 0; transition: opacity .25s; text-align: center; }
@@ -217,20 +220,18 @@
     #officeInfo { font-size: 13px; }
     #lookCard { left: auto; transform: none; right: calc(env(safe-area-inset-right) + 110px); bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: calc(100vh - 76px); }
   }
-  /* The investor's tutorial (D2): the current task chip under the telegraph button (portrait) or Build (landscape). */
+  /* The tools box (D2's tutorial chip box; since D22 (5) the chip is gone and the Next job line is the only line): the
+     Arrows toggle and the Settings gear, under the telegraph button (portrait) or Build (landscape). */
   #tutTask { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 122px); display: grid; justify-items: end; gap: 6px;
     max-width: min(64vw, 300px); }
-  #tutChip { max-width: 100%; text-align: left; font-size: 14px; line-height: 1.2; padding: 4px 10px; border-left: 7px solid #c69a2c;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #tutChip small { display: block; font-size: 12px; font-weight: 400; color: #5a4a3a; }
-  #tutChip.pulse { animation: tutPulse 1.2s ease-in-out 3; }
+  #nextJob.pulse { animation: tutPulse 1.2s ease-in-out 3; }
   @keyframes tutPulse { 50% { background: #f6d98a; } }
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } }
   /* Helper arrows (D20 (6)): the Arrows toggle under the chip, the label over the world arrow, the arrow at the edge. */
   #hintBtn { font-size: 14px; padding: 0 10px; }
   /* Landscape: the toggle beside the chip, not under it, so the alerts below keep their room. */
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { display: flex; justify-content: flex-end; align-items: stretch; max-width: min(64vw, 440px); }
-    #tutTask .tools { order: -1; flex: none; } #tutChip { min-width: 0; } }
+    #tutTask .tools { order: -1; flex: none; } }
   #hintBtn[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-left: 7px solid #ff7a1a; }
   #guideLabel { left: 0; top: 0; pointer-events: none; max-width: min(70vw, 280px); box-sizing: border-box; background: var(--paper); color: var(--ink);
     border: 2px solid #b04a08; border-left: 7px solid #ff7a1a; border-radius: 8px; padding: 5px 9px; font: 600 15px/1.2 Georgia, serif; z-index: 1;
@@ -293,7 +294,6 @@
 <div id="buildLabel" class="hud" role="status" aria-live="polite" hidden></div>
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="tutTask" class="hud" hidden>
-  <button id="tutChip" aria-expanded="false"><small>Current task</small><span id="tutChipText"></span></button>
   <div class="tools"><button id="hintBtn" aria-pressed="false" aria-label="Helper arrows: show the way to the next job">Arrows off</button>
   <button id="setBtn" aria-pressed="false" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></button></div>
 </div>
@@ -11192,12 +11192,22 @@ $('rideBoard').addEventListener('click', () => { if (rideUi.stock !== null) send
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
 function setSendMode(on) { ui.sendMode = on; $('panel').classList.toggle('sending', on); $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
+// The Centre button (bottom right) shows while the view is panned away from the player. D22 (3): where the bottom
+// row (with the Office and Work board buttons) reaches it, it stands one row up instead.
+function centreHud() {
+  const c = $('centre'), hide = Math.hypot(cam.ox, cam.oz) < 0.5;
+  if (c.hidden !== hide) c.hidden = hide;
+  if (hide) return;
+  c.classList.remove('up');
+  const r = c.getBoundingClientRect(), bl = $('bottomleft').getBoundingClientRect();
+  if (bl.right + 6 > r.left && bl.top < r.bottom) c.classList.add('up');
+}
 function updateHud() {
   $('clock').textContent = clockText(S);
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
   ttPanelUpdate();
   ttCardHud();
-  $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
+  centreHud();
   carPanelUpdate();
   telPanelUpdate();
   cashHud();
@@ -11632,14 +11642,23 @@ $('workBody').addEventListener('click', e => {
 });
 $('workClose').addEventListener('click', closeWorkCard);
 $('ttCardLines').addEventListener('click', e => { const b = e.target.closest('.ttNeed'); if (b) ttNeedEngineGo(Number(b.dataset.svc)); });
-// The Work board button: shown while the player stands in a station's booth.
+// The Work board button: shown while the player stands in a station's booth, and (D22 (3)) anywhere on the hub's
+// station area (its tracks, platform, depot and freight shed: ttStation's area). In a booth it opens that board's card
+// at once; elsewhere at the hub it walks the player to the hub's work board and opens the card there (workBoardGo).
 let workBtnSig = '';
+function wbAtHub(x, z) { const st = S.tt ? ttStation(S, 'hub') : null, a = st && st.area; return !!a && x >= a[0] && x <= a[1] && z >= a[2] && z <= a[3]; }
 function workBtnHud() {
-  const st = wbBoothStation(S.player.x, S.player.z), show = !!st && !!S.tt && !(typeof bt !== 'undefined' && bt.on), sig = show + '|' + st + '|' + wbUi.open;
+  const P = S.player, booth = wbBoothStation(P.x, P.z), st = booth || (!P.ride && wbAtHub(P.x, P.z) && wbBoardSpot('hub') ? 'hub' : null);
+  const show = !!st && !!S.tt && !(typeof bt !== 'undefined' && bt.on), sig = show + '|' + st + '|' + !!booth + '|' + wbUi.open;
   if (sig === workBtnSig) return;
-  workBtnSig = sig; $('workBtn').hidden = !show; $('workBtn').setAttribute('aria-pressed', String(wbUi.open)); $('workBtn').dataset.st = st || '';
+  workBtnSig = sig; $('workBtn').hidden = !show; $('workBtn').setAttribute('aria-pressed', String(wbUi.open)); $('workBtn').dataset.st = st || ''; $('workBtn').dataset.booth = booth ? '1' : '';
 }
-$('workBtn').addEventListener('click', () => { if (wbUi.open) closeWorkCard(); else if ($('workBtn').dataset.st) openWorkCard($('workBtn').dataset.st, true); });
+$('workBtn').addEventListener('click', () => {
+  const b = $('workBtn'), st = b.dataset.st;
+  if (wbUi.open) closeWorkCard();
+  else if (st && b.dataset.booth) openWorkCard(st, true);
+  else if (st) workBoardGo(st);
+});
 // ---- The inbox ----
 function openInbox(id) {
   closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook(); closeWorkCard(); closeSettings();
@@ -11910,27 +11929,27 @@ function lookUpdate() {
 // marks it read. The chip hides while the office, the inbox or a Look card is open (they use that part of the
 // screen in landscape). The helper arrows (guideDraw, below) point at the place the step needs. D20 (6): the box
 // also holds the Arrows toggle, which stays after the tutorial, so the box shows without a chip then.
-const tutUi = { step: -2, hide: null, chip: null };
+// D22 (5): the Current task chip is gone: the Next job line at the top is the only line (it names the tutorial's step,
+// and pulses 3 times when a new step's telegram comes); the box keeps the Arrows toggle and the Settings gear.
+const tutUi = { step: -2, hide: null };
 function tutHud() {
   // Landscape: the train panel reaches up beside the box (the Arrows toggle widened it), so it hides then.
   const c = tutCurrent(S), box = $('tutTask'), hide = bigPanelOpen() || lookUi.open || (landscapeUi() && ui.panelTrain !== null);
   if (hide !== tutUi.hide) { tutUi.hide = hide; box.hidden = hide; }
-  if (!c !== tutUi.chip) { tutUi.chip = !c; $('tutChip').hidden = !c; }
   guideHud();
   if (!c) { tutUi.step = -2; return; }
   if (c.step !== tutUi.step) {
-    tutUi.step = c.step; $('tutChipText').textContent = c.title;
-    const ch = $('tutChip'); ch.classList.remove('pulse'); void ch.offsetWidth; ch.classList.add('pulse');
+    tutUi.step = c.step;
+    const ch = $('nextJob'); ch.classList.remove('pulse'); void ch.offsetWidth; ch.classList.add('pulse');
   }
 }
-$('tutChip').addEventListener('click', () => { const c = tutCurrent(S); if (c) openInbox(c.tg); });
 // ---- Helper arrows (D20 (6)): where to go next and what to do there ----
 // From the start of a new game a big arrow bobs over the next place the work needs, with a short label ("Office desk:
 // take a contract"), a dotted path on the ground from the player to it, and, when the place is off screen, an arrow at
 // the screen's edge pointing towards it with the place's name. During the tutorial the places follow its steps in
 // the flow of work (office desk, ticket window, work board, the switches the next train needs, the Overland's car,
 // the freight shed bay, the business's door). After the tutorial (or once skipped) the arrows are off unless the
-// Arrows toggle (under the Current task chip) is on; then they point at the most pressing job (hintTarget). The
+// Arrows toggle (beside the Settings gear, under the telegraph button) is on; then they point at the most pressing job (hintTarget). The
 // toggle is a viewer preference kept in localStorage (not in the save). Drawing and page only: the sim never reads
 // any of this. Draw calls: the arrow 1 and the dots 1 (one InstancedMesh), only while shown; no shadows.
 const GUIDE = { DOTS: 140, GAP: 0.75, NEAR: 1.6, REPATH_S: 0.5, OFF: 2.5, PREF: 'railhead-arrows', PX: 86, PEEK_S: 60, NEXT_PREF: 'railhead-nextjob' };
@@ -12250,7 +12269,7 @@ function guideDraw() {
     edge.dataset.ang = ang.toFixed(3);
   }
 }
-// The Arrows toggle (under the Current task chip): its words follow guideOn().
+// The Arrows toggle (beside the Settings gear): its words follow guideOn().
 function guideHud() {
   const b = $('hintBtn'), on = guideOn();
   if (b.getAttribute('aria-pressed') !== String(on)) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Arrows on' : 'Arrows off'; }

@@ -221,6 +221,7 @@ module.exports = async function checkPassengers() {
     const r5b = await R(() => {
       const R = window.__railhead, S = R.pax.paxDebugScenario(R.newState(1866), 0, 6), T = S.track;
       for (const v of S.tt.services) v.train = null;   // D21: a new game starts with No. 1 on the timetable; here the player drives her
+      S.track.switches[1].state = 'R';   // D22 (7): a new game's switch 1 lies straight; set for the platform, as a player who threw it
       const W = R.world && R.world.stationsOf(T).find(s => s.id === 'willow');
       if (!W) return { skip: true };
       for (let k = 0; k < 40; k++) R.simTick(S, []);
@@ -247,6 +248,7 @@ module.exports = async function checkPassengers() {
     const r5c = await R(() => {
       const R = window.__railhead, S = R.pax.paxDebugScenario(R.newState(1866), 3, 4), T = S.track, out = { bad: [] };
       for (const v of S.tt.services) v.train = null;   // D21: a new game starts with No. 1 on the timetable; here the player drives her
+      S.track.switches[1].state = 'R';   // D22 (7): a new game's switch 1 lies straight; set for the platform, as a player who threw it
       const W = R.world && R.world.stationsOf(T).find(s => s.id === 'willow');
       if (!W) return { skip: true };
       if (!R.pax.paxUnstaffed(T, 'willow') || R.pax.paxUnstaffed(T, 'hub')) out.bad.push('Willow Ford should be unstaffed and the hub staffed');

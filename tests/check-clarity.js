@@ -172,7 +172,10 @@ module.exports = async function checkClarity() {
         const face = first && first.object === R.board.mesh ? R.board.list[Math.floor(first.faceIndex / 2)] : null;
         // Nothing of the page over it either.
         const el = document.elementFromPoint(c.x, c.y);
-        return { c, h: bot.y - top.y, first: first && first.object.name, kind: face && face.kind, st: face && face.st, el: el && el.tagName, onScreen: c.x > 0 && c.x < innerWidth && c.y > 0 && c.y < innerHeight };
+        // (Tapped a quarter of the way up from its foot: since D22 the sign is bigger and in landscape its middle comes
+        // within a finger's reach of the Next job line, which a phone's touch adjustment would give the tap to.)
+        const tap = R.toScreen(b.x, b.z, b.y - b.h / 4);
+        return { c, tap, h: bot.y - top.y, first: first && first.object.name, kind: face && face.kind, st: face && face.st, el: el && el.tagName, onScreen: c.x > 0 && c.x < innerWidth && c.y > 0 && c.y < innerHeight };
       });
       if (!seen.onScreen || seen.kind !== 'sign' || seen.st !== 'hub' || seen.el !== 'CANVAS') P(`${orient} 2: the WORK BOARD sign should be seen first from the platform at zoom 1.5: ${JSON.stringify(seen)}`);
       if (!(seen.h >= 24)) P(`${orient} 2: the WORK BOARD sign should be at least 24 px tall at zoom 1.5: ${seen.h}`);
@@ -180,7 +183,7 @@ module.exports = async function checkClarity() {
       const pin = await R(() => { const R = window.__railhead, w = R.board.list.find(b => b.kind === 'work' && b.st === 'hub'); return { drawn: (w.offers || []).map(o => o.id), offers: R.state.econ.contracts.filter(k => k.status === 'OFFERED').map(k => k.id) }; });
       if (!pin.offers.length || pin.drawn.join() !== pin.offers.join()) P(`${orient} 2: the offers should be pinned on the work board in the world: ${JSON.stringify(pin)}`);
       // A real tap on the sign: the player walks in and the card opens with the offers.
-      await page.touchscreen.tap(seen.c.x, seen.c.y);
+      await page.touchscreen.tap(seen.tap.x, seen.tap.y);
       await frames(200);
       await R(() => { const R = window.__railhead; for (let i = 0; i < 300 && (R.state.player.mode === 'to' || i < 2); i++) R.step(1); });
       await frames(600);
@@ -251,6 +254,11 @@ module.exports = async function checkClarity() {
       await R(() => { try { localStorage.removeItem('railhead-arrows'); localStorage.removeItem('railhead-nextjob'); } catch (e) { /* none */ } const R = window.__railhead; R.guide.ui.pref = null; R.guide.next.pref = null;
         R.importSave(JSON.stringify({ state: R.newState(1866) })); R.step(2); R.send({ t: 'tgAnswer', id: R.state.tut.tg, b: 1 }); R.step(2); R.camera.ox = 0; R.camera.oz = 0; });
       await frames(600);
+      // D22 (7): a new game starts with switch 1 set straight, so the first job is to set it for the turn-off by 08:07;
+      // thrown, the line goes on to the contract (as at the start before D22).
+      const n0 = await R(() => { const R = window.__railhead, t = document.getElementById('nextJobText').textContent; R.send({ t: 'throwSwitch', sw: 1 }); R.step(2); return t; });
+      if (n0 !== 'Next: set switch 1 for the turn-off by 08:07') P(`${orient} 5: at 05:00 after Skip, the line should say "Next: set switch 1 for the turn-off by 08:07" (D22: switch 1 starts straight): ${n0}`);
+      await frames(600);
       const n1 = await R(() => { const R = window.__railhead; return { text: document.getElementById('nextJobText').textContent, job: R.guide.job(), hint: R.guide.hintTarget() }; });
       if (n1.text !== 'Next: take a contract at the work board' || !n1.hint || n1.hint.k !== 'workboard') P(`${orient} 5: at 05:00 after Skip, the line should say "Next: take a contract at the work board": ${JSON.stringify(n1)}`);
       // A tap shows the arrow (arrows off); a second tap hides it.
@@ -270,7 +278,7 @@ module.exports = async function checkClarity() {
       if (!n2.q || n2.a !== `Next: sell tickets, ${n2.q} waiting at the hub`) P(`${orient} 5: with travellers in line the line should say "Next: sell tickets, ${n2.q} waiting at the hub": ${n2.a}`);
       if (!n2.need) P(`${orient} 5: no switch need to test the line's words`);
       else if (n2.b !== `Next: set switch ${n2.need.sw} ${n2.need.want === 'reverse' ? 'for the turn-off' : 'straight'} by ${n2.need.by}`) P(`${orient} 5: the switch line: ${n2.b} (need ${JSON.stringify(n2.need)})`);
-      if (orient === 'portrait') console.log(`  5: "${n1.text}"; "${n2.a}"; "${n2.b}"`);
+      if (orient === 'portrait') console.log(`  5: "${n0}"; "${n1.text}"; "${n2.a}"; "${n2.b}"`);
       await frames(900);   // the slide-in's move in (0.3 s) is over
       const L1 = await R(LAYOUT, IDS);
       if (L1.overlaps.length) P(`${orient} 5: page elements overlap after Skip: ${L1.overlaps.join(', ')}`);

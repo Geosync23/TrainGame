@@ -12,9 +12,10 @@
 // 3. Save and reload mid-tutorial (at the tickets step) loads with the same hash, resumes the same step and ends
 //    with the same hash as the game played straight through; the game played twice gives the same hash.
 // 4. An old save (every sample in tests/fixtures before schema 12) loads with the tutorial done and sends none.
-// 5. In the page: the Current task chip, which opens D1's telegram inbox at the step's telegram (since D1's merge
-//    the inbox is the one place to read and answer telegrams), for the first telegram and a later one, portrait and landscape, buttons at least 48 px, the
-//    brass marker drawn over the step's place, no console errors. Screenshots tutorial-*.png.
+// 5. In the page: the Next job line (since D22 (5) the only line at the top: the Current task chip is gone), whose tap
+//    during the welcome opens D1's telegram inbox at it, and which names the next step once OK is tapped; a later
+//    telegram opened from the telegraph button (the inbox is the one place to read and answer telegrams), portrait and
+//    landscape, buttons at least 48 px, the marker drawn over the step's place, no console errors. Screenshots tutorial-*.png.
 
 const fs = require('fs');
 const path = require('path');
@@ -186,32 +187,33 @@ module.exports = async function checkTutorial() {
       const pg = orient === 'portrait' ? page : (await openGame('landscape', { query: '?paused' })).page;
       const errs = orient === 'portrait' ? errors : [];
       if (orient === 'landscape') pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-      // The first telegram: a new game after one tick, the chip tapped (the card opens and the telegram is read).
+      // The first telegram: a new game after one tick, the Next job line tapped (the card opens and the telegram is read).
       await pg.evaluate(() => { const R = window.__railhead; R.importSave(JSON.stringify({ state: R.newState(1866) })); R.step(2); });
       await pg.waitForTimeout(300);
-      const chipBox = await pg.evaluate(() => { const b = document.getElementById('tutChip').getBoundingClientRect(); return { w: b.width, h: b.height }; });
-      await pg.tap('#tutChip');
+      const chipBox = await pg.evaluate(() => { const b = document.getElementById('nextJob').getBoundingClientRect(); return { w: b.width, h: b.height, chip: !!document.getElementById('tutChip') }; });
+      if (chipBox.chip) problems.push(`${orient}: the Current task chip should be gone (D22 (5))`);
+      await pg.tap('#nextJob');
       await pg.evaluate(() => window.__railhead.step(1));
       await pg.waitForTimeout(400);
       const a = await pg.evaluate(() => {
         const r = id => { const e = document.getElementById(id); if (!e || e.hidden) return null; const b = e.getBoundingClientRect(); return { w: b.width, h: b.height, x: b.x, y: b.y, r: b.right, b: b.bottom }; };
         const btns = [...document.querySelectorAll('#inboxBody button[data-b]')].map(b => ({ t: b.textContent, h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width }));
         const open = document.querySelector('#inboxBody .tg[data-id="' + window.__railhead.state.tut.tg + '"] b');
-        return { chip: r('tutChip'), card: r('inbox'), btns, title: open ? open.textContent : '', read: window.__railhead.state.tg.list[0].read, vw: innerWidth, vh: innerHeight };
+        return { chip: r('nextJob'), card: r('inbox'), btns, title: open ? open.textContent : '', read: window.__railhead.state.tg.list[0].read, vw: innerWidth, vh: innerHeight };
       });
       await pg.screenshot({ path: screenshotPath(`tutorial-first-${orient}`) });
       if (!a.card || a.title !== 'Welcome to the Calder Valley') problems.push(`${orient}: the card should show the first telegram: ${JSON.stringify(a)}`);
       if (JSON.stringify(a.btns.map(b => b.t)) !== JSON.stringify(['OK', 'Skip tutorial'])) problems.push(`${orient}: the card's buttons should be OK and Skip tutorial: ${JSON.stringify(a.btns)}`);
-      a.chip = chipBox;   // the chip hides while the inbox is open; measured before the tap
+      a.chip = chipBox;   // measured before the tap
       if (a.btns.some(b => b.h < 48 || b.w < 48) || !a.chip || a.chip.h < 48) problems.push(`${orient}: a tutorial button is under 48 px: ${JSON.stringify(a)}`);
       if (!a.read) problems.push(`${orient}: opening the card should mark the telegram read`);
       if (a.card && (a.card.r > a.vw || a.card.b > a.vh || a.card.x < 0)) problems.push(`${orient}: the card runs off the screen: ${JSON.stringify(a)}`);
-      // OK by touch: the next step's telegram follows and the chip names it.
+      // OK by touch: the next step's telegram follows and the Next job line names it.
       await pg.tap('#inboxBody button[data-b]');
       await pg.evaluate(() => window.__railhead.step(2));
       await pg.waitForTimeout(300);
-      const b = await pg.evaluate(() => ({ chip: document.getElementById('tutChipText').textContent, card: document.getElementById('inbox').hidden, step: window.__railhead.state.tut.step }));
-      if (b.step !== 1 || b.chip !== 'Take a contract' || !b.card) problems.push(`${orient}: OK should close the card and the chip show the next task: ${JSON.stringify(b)}`);
+      const b = await pg.evaluate(() => ({ chip: document.getElementById('nextJobText').textContent, card: document.getElementById('inbox').hidden, step: window.__railhead.state.tut.step }));
+      if (b.step !== 1 || !/^Tutorial: take a contract/.test(b.chip) || !b.card) problems.push(`${orient}: OK should close the card and the Next job line name the next task: ${JSON.stringify(b)}`);
       // A later telegram: the bot's game at the sort step, the card open, the marker over the bay.
       await pg.evaluate(src => { window.__tutsrc = src; }, tutBotFactory.toString());
       await pg.evaluate(RUNNER);
@@ -220,16 +222,18 @@ module.exports = async function checkTutorial() {
         for (let i = 0; i < 21600 && X.S.tut.step !== 6; i++) window.__tut.step(X, 1);
         R.importSave(JSON.stringify({ state: X.S }));
         const t = R.tut.tutTarget(R.state); R.camera.ox = t.x - R.state.player.x; R.camera.oz = t.z - R.state.player.z;
-        return { step: R.state.tut.step, t };
+        return { step: R.state.tut.step, t, tg: R.state.tut.tg };
       });
       await pg.waitForTimeout(300);
-      await pg.tap('#tutChip');
+      await pg.tap('#tgBtn');
+      await pg.waitForTimeout(300);
+      await pg.tap('#inboxBody .tg[data-id="' + at.tg + '"]');
       await pg.evaluate(() => window.__railhead.step(1));
       await pg.waitForTimeout(500);
       const c = await pg.evaluate(() => {
         const R = window.__railhead;
         const open = document.querySelector('#inboxBody .tg[data-id="' + R.state.tut.tg + '"] b');
-        return { title: open ? open.textContent : '', card: !document.getElementById('inbox').hidden, btns: [...document.querySelectorAll('#inboxBody button[data-b]')].map(b => b.textContent), dc: R.drawCalls };
+        return { title: open ? open.textContent : '', card: !document.getElementById('inbox').hidden, btns: [...document.querySelectorAll('#inboxBody .tg[data-id="' + R.state.tut.tg + '"] button[data-b]')].map(b => b.textContent), dc: R.drawCalls };
       });
       await pg.screenshot({ path: screenshotPath(`tutorial-later-${orient}`) });
       if (at.step !== 6 || !c.card || c.title !== 'Sort it in the freight shed' || JSON.stringify(c.btns) !== '[]') problems.push(`${orient}: the later telegram card: ${JSON.stringify({ at, c })}`);
@@ -240,7 +244,7 @@ module.exports = async function checkTutorial() {
       await pg.screenshot({ path: screenshotPath(`tutorial-marker-${orient}`) });
       if (!mk.card) problems.push(`${orient}: Close should close the card`);
       if (!mk.t || !mk.s || mk.s.x < 0 || mk.s.y < 0 || mk.s.x > a.vw || mk.s.y > a.vh) problems.push(`${orient}: the marker is not on the screen: ${JSON.stringify(mk)}`);
-      console.log(`  ${orient}: chip ${Math.round(a.chip.w)}x${Math.round(a.chip.h)}, card ${Math.round(a.card.w)}x${Math.round(a.card.h)}, buttons ${a.btns.map(b => b.t + ' ' + Math.round(b.w) + 'x' + Math.round(b.h)).join(', ')}; marker at (${Math.round(mk.s.x)}, ${Math.round(mk.s.y)}) px; later step draw calls ${c.dc}; screenshots tutorial-first-${orient}.png, tutorial-later-${orient}.png, tutorial-marker-${orient}.png`);
+      console.log(`  ${orient}: Next job line ${Math.round(a.chip.w)}x${Math.round(a.chip.h)}, card ${Math.round(a.card.w)}x${Math.round(a.card.h)}, buttons ${a.btns.map(b => b.t + ' ' + Math.round(b.w) + 'x' + Math.round(b.h)).join(', ')}; marker at (${Math.round(mk.s.x)}, ${Math.round(mk.s.y)}) px; later step draw calls ${c.dc}; screenshots tutorial-first-${orient}.png, tutorial-later-${orient}.png, tutorial-marker-${orient}.png`);
       if (errs.length) problems.push(`${orient}: console errors: ` + errs.join(' | '));
       if (orient === 'landscape') await pg.context().browser().close();
     }

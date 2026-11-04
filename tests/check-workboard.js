@@ -126,7 +126,7 @@ module.exports = async function checkWorkboard() {
       let t = await tapAt();
       const outside = await R(t => ({ hit: window.__railhead.board.workBoardHitAt(t.x, t.y), btn: !document.getElementById('workBtn').hidden }), t);
       if (outside.hit) P('the work board answers a tap from the platform (it is behind the front wall)');
-      if (outside.btn) P('the Work board button shows on the platform');
+      if (!outside.btn) P('the Work board button should show on the hub\'s platform too (D22 (3): anywhere at the hub it walks to the board)');
       // Into the booth (staff the window), then tap the board.
       await R(() => { const R = window.__railhead; R.send({ t: 'staffWindow', st: 'hub' }); R.step(90); });
       await look('hub', 2.5, 'work', null);

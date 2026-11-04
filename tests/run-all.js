@@ -43,6 +43,7 @@ const checks = {
   'tutorial (the investor\'s telegrams, days 1 and 2)': require('./check-tutorial'),
   'helper arrows (where to go next, D20 (6))': require('./check-arrows'),
   'clarity (No. 1 on both runs, contracts at the work board, train plates, not running, Next job line; D21)': require('./check-clarity'),
+  'explaining as it happens (first-time cards, warnings ahead, schedule board on posts, Work board button, one top line, switch 1 straight; D22)': require('./check-explain'),
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
 };
 

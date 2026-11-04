@@ -36,6 +36,9 @@
   #carryText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #carryPut { flex: none; }
   #centre { right: calc(env(safe-area-inset-right) + 10px); bottom: calc(env(safe-area-inset-bottom) + 10px); }
+  /* D22 (3): the Work board button, always in the bottom row at the hub: two short lines, so the row fits a phone. */
+  #workBtn { width: 66px; padding: 0 6px; font-size: 14px; line-height: 1.05; white-space: normal; border-left: 6px solid #5b6fa8; }
+  #centre.up { bottom: calc(env(safe-area-inset-bottom) + 66px); }
   #toast { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 112px); max-width: min(92vw, 420px);
     background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 15px; line-height: 1.3;
     pointer-events: none; opacity: 0; transition: opacity .25s; text-align: center; }
@@ -217,20 +220,18 @@
     #officeInfo { font-size: 13px; }
     #lookCard { left: auto; transform: none; right: calc(env(safe-area-inset-right) + 110px); bottom: calc(env(safe-area-inset-bottom) + 10px); width: 340px; max-height: calc(100vh - 76px); }
   }
-  /* The investor's tutorial (D2): the current task chip under the telegraph button (portrait) or Build (landscape). */
+  /* The tools box (D2's tutorial chip box; since D22 (5) the chip is gone and the Next job line is the only line): the
+     Arrows toggle and the Settings gear, under the telegraph button (portrait) or Build (landscape). */
   #tutTask { right: calc(env(safe-area-inset-right) + 10px); top: calc(env(safe-area-inset-top) + 122px); display: grid; justify-items: end; gap: 6px;
     max-width: min(64vw, 300px); }
-  #tutChip { max-width: 100%; text-align: left; font-size: 14px; line-height: 1.2; padding: 4px 10px; border-left: 7px solid #c69a2c;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #tutChip small { display: block; font-size: 12px; font-weight: 400; color: #5a4a3a; }
-  #tutChip.pulse { animation: tutPulse 1.2s ease-in-out 3; }
+  #nextJob.pulse { animation: tutPulse 1.2s ease-in-out 3; }
   @keyframes tutPulse { 50% { background: #f6d98a; } }
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { top: calc(env(safe-area-inset-top) + 66px); } }
   /* Helper arrows (D20 (6)): the Arrows toggle under the chip, the label over the world arrow, the arrow at the edge. */
   #hintBtn { font-size: 14px; padding: 0 10px; }
   /* Landscape: the toggle beside the chip, not under it, so the alerts below keep their room. */
   @media (orientation: landscape) and (max-height: 500px) { #tutTask { display: flex; justify-content: flex-end; align-items: stretch; max-width: min(64vw, 440px); }
-    #tutTask .tools { order: -1; flex: none; } #tutChip { min-width: 0; } }
+    #tutTask .tools { order: -1; flex: none; } }
   #hintBtn[aria-pressed="true"] { background: var(--paper); color: var(--ink); border-left: 7px solid #ff7a1a; }
   #guideLabel { left: 0; top: 0; pointer-events: none; max-width: min(70vw, 280px); box-sizing: border-box; background: var(--paper); color: var(--ink);
     border: 2px solid #b04a08; border-left: 7px solid #ff7a1a; border-radius: 8px; padding: 5px 9px; font: 600 15px/1.2 Georgia, serif; z-index: 1;
@@ -248,11 +249,25 @@
     height: 48px; box-sizing: border-box; text-align: left; padding: 3px 10px; border-left: 7px solid #ff7a1a; font: 600 14px/1.2 Georgia, serif;
     display: flex; align-items: center; }
   #nextJob span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  /* D22 (2): a long line (a warning of what an arrival brings) takes up to 3 lines in a smaller letter, in the same 48 px. */
+  #nextJob.long { font-size: 12.5px; line-height: 1.1; padding: 1px 8px; }
+  #nextJob.long span { -webkit-line-clamp: 3; }
   #nextJob[aria-pressed="true"] { background: #fff1dc; color: var(--ink); }
   body.nextOn #tutTask { top: calc(env(safe-area-inset-top) + 160px); }
   body.nextOn #toast { top: calc(env(safe-area-inset-top) + 160px); }
   body.nextOn #alerts { top: calc(env(safe-area-inset-top) + 160px); }
   #setBtn { padding: 0 10px; }
+  /* D22 (1): the first-time card, over the middle of the screen, above everything else while the game is paused. */
+  #fcard { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 222px); width: min(92vw, 380px); box-sizing: border-box; z-index: 5;
+    background: var(--paper); border: 2px solid var(--edge); border-left: 8px solid #ff7a1a; border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  #fcard h2 { margin: 0; font-size: 18px; color: var(--ink); }
+  #fcardText { font-size: 15px; line-height: 1.35; color: var(--ink); }
+  #fcard .row { display: flex; gap: 8px; align-items: center; }
+  #fcard .grow { flex: 1; min-width: 0; }
+  #fcard small { color: #5a4a3a; font-size: 12px; line-height: 1.2; }
+  #fcardShow { background: var(--edge); color: var(--paper); }
+  @media (orientation: landscape) and (max-height: 500px) { #fcard { top: calc(env(safe-area-inset-top) + 66px); width: 420px; left: auto; transform: none; right: calc(env(safe-area-inset-right) + 164px); } }
   #setBtn svg { width: 24px; height: 24px; display: block; }
   #settings .row { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); line-height: 1.3; }
   #settings .row button[aria-pressed] { min-width: 64px; }
@@ -293,7 +308,6 @@
 <div id="buildLabel" class="hud" role="status" aria-live="polite" hidden></div>
 <div id="buildConfirm" class="hud" hidden><button id="buildLay">Lay track</button><button id="buildCancel">Cancel</button></div>
 <div id="tutTask" class="hud" hidden>
-  <button id="tutChip" aria-expanded="false"><small>Current task</small><span id="tutChipText"></span></button>
   <div class="tools"><button id="hintBtn" aria-pressed="false" aria-label="Helper arrows: show the way to the next job">Arrows off</button>
   <button id="setBtn" aria-pressed="false" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></button></div>
 </div>
@@ -302,6 +316,12 @@
   <div class="row"><h2 class="grow">Settings</h2><button id="settingsClose" aria-label="Close">X</button></div>
   <div class="row"><span class="grow">The Next job line at the top of the screen: what to do next and where.</span><button id="setNext" aria-pressed="true">On</button></div>
   <div class="row"><span class="grow">Helper arrows: the way to the next job.</span><button id="setArrows" aria-pressed="false">Off</button></div>
+  <div class="row"><span class="grow">First-time cards: the game pauses to explain something the first time it happens.</span><button id="setCards" aria-pressed="true">On</button></div>
+</div>
+<div id="fcard" class="hud" role="dialog" aria-labelledby="fcardTitle" hidden>
+  <h2 id="fcardTitle"></h2>
+  <div id="fcardText"></div>
+  <div class="row"><small class="grow">Paused. Cards can be turned off in Settings.</small><button id="fcardShow">Show me</button><button id="fcardOk">OK</button></div>
 </div>
 <div id="guideLabel" class="hud" aria-live="polite" hidden></div>
 <div id="guideEdge" class="hud" hidden><div id="guideEdgeArrow"><svg viewBox="0 0 40 40"><path d="M6 13h16V5l14 15-14 15v-8H6z"/></svg></div><span id="guideEdgeText"></span></div>
@@ -916,6 +936,10 @@ function newState(seed, world) {
   // D21 (1): No. 1 starts on both Willow Ford runs (morning and afternoon) in the real start. Only a new game: saves
   // keep the services they have; the player can take her off or change runs at the office (ttAssign).
   if (world !== 'yard') for (const svc of st.tt.services) svc.train = 0;
+  // D22 (7): switch work from day 1. The platform switch (1) starts set straight, for the main track, so the player
+  // throws it to the platform track (the turn-off) before No. 1's first departure (the work board lists it). Only a
+  // new game: saves keep their switches as they lie. Willow Ford's spring switches stay as startSwitchStates set them.
+  if (world !== 'yard' && st.track.switches[1]) st.track.switches[1].state = 'N';
   return st;
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
@@ -7794,9 +7818,14 @@ BLD_LAYOUTS.start = [
   { id: 'baggagewagon1', kind: 'baggagewagon', x: 2.65, z: HUB_PB + 0.8, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'freightscale1', kind: 'freightscale', x: 4.4, z: HUB_PB + 0.62, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'waterbarrel1', kind: 'waterbarrel', x: 13.2, z: HUB_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
-  { id: 'planter1', kind: 'planter', x: 16.5, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'planter1', kind: 'planter', x: 17.0, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },   // D22: was at 16.5, moved for the schedule board
   { id: 'planter2', kind: 'planter', x: 19.0, z: HUB_PB + 0.36, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'hitchrail1', kind: 'hitchrail', x: 17.4, z: HUB_PB - 3.0, yaw: 0 },
+  // D22 (3): the public schedule boards stand on their own posts on the platforms, at the back edge east of each depot,
+  // behind the ticket line (travellers waiting there face them), clear of the depot's front. Drawn only: their posts
+  // are thin like the canopy's and are not footprints (buildingFootprints skips them), so the walk grid is unchanged.
+  { id: 'schedboard1', kind: 'schedboard', x: 15.05, z: HUB_PB + 0.3, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'wfschedboard1', kind: 'schedboard', x: WFORD.x + 20 * WS + 2.6, z: WF_PB + 0.3, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'wfcrates1', kind: 'crates', x: WFORD.x + 20 * WS - 9.5, z: WF_PB + 0.6, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'wfwaterbarrel1', kind: 'waterbarrel', x: WFORD.x + 20 * WS + 0.4, z: WF_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
 ];
@@ -7901,7 +7930,11 @@ const BLD_EXT_M1 = {
   planter: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
   waterbarrel: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
   hitchrail: [-1.4, 1.4, -0.6, 0.6].map(v => v / WS),
+  schedboard: [-1.35, 1.35, -0.12, 0.12].map(v => v / WS),   // D22 (3): drawn only, never a footprint
 };
+// D22 (3): the public schedule board on its own posts (true units, the board's local frame: x along it, +z its face
+// towards the track): the painted face w x h with its bottom edge y0 above the deck, on two posts at +-post.
+const BLD_SCHED_POST = { w: 2.4, h: 2.2, y0: 0.9, post: 1.12, face: 0.07 };
 // The station props (D19): small, human-sized things that block walking; their footprints carry prop: true.
 const BLD_PROPS = new Set(['freightpile', 'crates', 'baggagewagon', 'freightscale', 'planter', 'waterbarrel', 'hitchrail']);
 const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) => [k, e.map(v => v * WS)]));
@@ -7920,8 +7953,10 @@ const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) =
 // z0) behind the ticket counter, facing the window.
 // D21 (2): a painted "WORK BOARD" sign standing on the front of the depot's roof over the door (sign [x0, x1] x
 // [y0, y1] at z signZ, upright, facing the platform), so the board inside is found from the platform.
+// D22 (3): the public schedule board left the front wall for its own posts on the platform (BLD_SCHED_POST, layout kind
+// 'schedboard'); the roof sign grew to 2.42 x 0.8 M1 (was 1.56 x 0.52), over the window and the door.
 const BLD_BOOTH = { door: [1.32, 1.97], doorH: 1.25, win: [0.62, 1.17], winY: [0.75, 1.35], z0: 0.3, wall: 1.0, t: 0.06,
-  bay: -1.45, board: [-0.72, 0.5], boardY: [0.3, 1.42], work: [-1.0, 0.45], workY: [0.55, 1.42], sign: [0.62, 2.18], signY: [1.98, 2.5], signZ: 0.95 };
+  bay: -1.45, work: [-1.0, 0.45], workY: [0.55, 1.42], sign: [-0.3, 2.12], signY: [1.98, 2.78], signZ: 0.95 };
 const BLD_SPOTS = {
   depot: { ticket: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, (BLD_BOOTH.z0 + BLD_BOOTH.wall - BLD_BOOTH.t) / 2 * WS],
     line: [(BLD_BOOTH.win[0] + BLD_BOOTH.win[1]) / 2 * WS, 1.48 * WS + 0.85],
@@ -7998,11 +8033,7 @@ const BLD_RECIPES = {
     for (const x of [w0 - 0.03, w1 + 0.03]) b.shell(box(0.06, wy1 - wy0 + 0.12, 0.04), PAL.trim, x, (wy0 + wy1) / 2, B.wall + 0.02); // window frame
     b.shell(box(w1 - w0 + 0.12, 0.06, 0.04), PAL.trim, wc, wy1 + 0.03, B.wall + 0.02);
     b.add(box(w1 - w0 + 0.16, 0.05, 0.42), PAL.trim, wc, wy0 - 0.025, B.wall - 0.1);    // the counter, through the window
-    // The departure board's frame and its lamp (the letters are the board's own mesh, just in front of the frame).
-    const [bx0, bx1] = B.board, [by0, by1] = B.boardY, bc = (bx0 + bx1) / 2;
-    b.shell(box(bx1 - bx0 + 0.08, by1 - by0 + 0.08, 0.03), PAL.trim, bc, (by0 + by1) / 2, B.wall + 0.015);
-    b.shell(box(0.04, 0.04, 0.1), PAL.loco, bc, by1 + 0.2, B.wall + 0.05);
-    b.glow(box(0.26, 0.04, 0.05), bc, by1 + 0.17, B.wall + 0.1);
+    // D22 (3): the departure (public schedule) board left this wall for its own posts on the platform (schedboard).
     // The work board's frame on the booth's inside wall (D20 (2)); its letters are the boards' mesh. Not shell: it
     // stays solid while the front wall fades, so it is seen from the booth.
     const [kx0, kx1] = B.work, [ky0, ky1] = B.workY;
@@ -8011,7 +8042,7 @@ const BLD_RECIPES = {
     // just in front). Part of the shell, so it fades with the roof while the player is in the booth.
     const [sx0, sx1] = B.sign, [sy0, sy1] = B.signY, sz = B.signZ;
     b.shell(box(sx1 - sx0 + 0.08, sy1 - sy0 + 0.08, 0.04), PAL.trim, (sx0 + sx1) / 2, (sy0 + sy1) / 2, sz - 0.025);
-    for (const x of [sx0 + 0.15, sx1 - 0.15]) b.shell(box(0.06, 0.4, 0.06), PAL.trim, x, sy0 - 0.12, sz - 0.07);
+    for (const x of [sx0 + 0.2, (sx0 + sx1) / 2, sx1 - 0.2]) b.shell(box(0.06, 0.4, 0.06), PAL.trim, x, sy0 - 0.12, sz - 0.07);
     // The agent's office bay, windows on three sides so the agent can see up and down the line.
     const bay = B.bay;
     b.add(box(1.2, 1.25, 0.42), PAL.wall, bay, 0.875, 1.2);
@@ -8163,6 +8194,17 @@ const BLD_RECIPES = {
     for (const x of [-0.725, 0.725]) r.add(box(0.05, 0.06, 0.48), C.crateDark, x, 0.39, -0.25);
     r.add(box(1.4, 0.02, 0.38), C.water, 0, 0.37, -0.25);
     return BLD_EXTENTS.hitchrail;
+  },
+  // D22 (3): the public schedule board on two posts, with a small roof over it and a lamp for the night. Its letters
+  // are the boards' own mesh (see "departure boards"), just in front of the frame's face.
+  schedboard(b) {
+    const r = b.raw(), P = BLD_SCHED_POST, C = BLD_PROP_COL, top = P.y0 + P.h;
+    for (const x of [-P.post, P.post]) r.add(box(0.12, top + 0.25, 0.12), PAL.trim, x, (top + 0.25) / 2, -0.02);
+    r.add(box(P.w + 0.16, P.h + 0.16, 0.06), PAL.trim, 0, P.y0 + P.h / 2, P.face - 0.03);   // the frame (its face at z = P.face)
+    r.add(box(P.w + 0.5, 0.06, 0.42), PAL.roof, 0, top + 0.28, 0.05, 0.18);                  // a little roof, sloping forward
+    r.add(box(0.05, 0.04, 0.16), C.iron, 0, top + 0.22, P.face + 0.06);                      // the lamp's arm, under the roof
+    r.glow(box(0.3, 0.04, 0.05), 0, top + 0.2, P.face + 0.13);
+    return BLD_EXTENTS.schedboard;
   },
   // Lamp post (style test page): iron post, glowing lamp, cone cap.
   lamp(b) {
@@ -8393,6 +8435,7 @@ function buildingFootprints() {
       if (BLD_PROPS.has(kind)) f.prop = true;
       out.push(f);
     };
+    if (kind === 'schedboard') continue;   // D22 (3): the schedule board's thin posts do not block walking
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
     else rect(at.id, ext, bldIsPlatform(kind));
   }
@@ -8741,7 +8784,7 @@ function wbRows(S, stId) {
 // Two painted boards at each station's depot, both in ONE mesh (a quad each, 1 draw call, no shadow) on ONE canvas
 // texture (1024 x 1024: the schedule boards stacked in the left half, the work boards in the right), each repainted
 // only when what it shows changes (boardUpdate compares a signature, at most once a sim tick).
-// - The PUBLIC SCHEDULE board (kind 'sched') on the depot's front wall beside the ticket window (BLD_BOOTH.board),
+// - The PUBLIC SCHEDULE board (kind 'sched'), since D22 (3) on its own posts on the platform (BLD_SCHED_POST),
 //   facing the platform, for travellers: from schedRows, each train's short name, from, to, arrival, departure,
 //   platform and On time / Late / Cancelled (TT_NO_ENGINE, "Not running: needs an engine", while no train is on the service, D21). Two layouts: below zoom
 //   BOARD.FULL_ZOOM (the start zoom 1.5 among them) the BIG one, the next 3 trains in big letters (time, where to or
@@ -8757,16 +8800,26 @@ const BOARD = { CW: 1024, LIFT: 0.012, NIGHT: 0.55, FULL_ZOOM: 2.5, BG: '#1d2620
   OK: '#bfe3a0', WORK_BG: '#2a2219', CHALK: '#f2ead8', TICK: '#9fd98a' };
 const boards = { list: [], mesh: null, canvas: null, tex: null, redraws: 0 };
 // The stations' boards: [{ kind, st, depot, name, x, y, z, yaw, w, h }] (the board's centre and size, u).
+// D22 (3): the schedule board ('sched') stands on its own posts on the platform (the layout's 'schedboard' nearest the
+// station's depot); a world without one (the M0 test yard) has no schedule board. The work board and the roof sign
+// stay on the depot.
 function boardPlaces() {
-  const out = [], B = BLD_BOOTH;
+  const out = [], B = BLD_BOOTH, P = BLD_SCHED_POST;
   for (const kind of ['sched', 'work', 'sign']) for (const K of paxStations(S.track)) {
     const at = K.depot && BLD_LAYOUT.find(a => a.id === K.depot.id);
     if (!at || bldKindOf(at) !== 'depot') continue;
+    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null, name = tt ? tt.name : paxName(K.id);
+    if (kind === 'sched') {
+      const sb = BLD_LAYOUT.filter(a => bldKindOf(a) === 'schedboard').map(a => ({ a, d: Math.hypot(a.x - at.x, a.z - at.z) })).sort((p, q) => p.d - q.d)[0];
+      if (!sb || sb.d > 20 * WS) continue;
+      const a = sb.a, yaw = a.yaw || 0, lz = P.face + BOARD.LIFT;
+      out.push({ kind, st: K.id, depot: at.id, post: a.id, name, x: a.x + lz * Math.sin(yaw), y: (a.y || 0) + P.y0 + P.h / 2, z: a.z + lz * Math.cos(yaw), yaw, w: P.w, h: P.h });
+      continue;
+    }
     const yaw = at.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
-    const [x0, x1] = kind === 'sched' ? B.board : kind === 'sign' ? B.sign : B.work, [y0, y1] = kind === 'sched' ? B.boardY : kind === 'sign' ? B.signY : B.workY;
-    const lx = (x0 + x1) / 2 * WS, lz = (kind === 'sign' ? B.signZ : (kind === 'sched' ? B.wall : B.z0) + 0.03) * WS + BOARD.LIFT;
-    const tt = typeof ttStation === 'function' ? ttStation(S, K.id) : null;
-    out.push({ kind, st: K.id, depot: at.id, name: tt ? tt.name : paxName(K.id), x: at.x + lx * c + lz * s, y: (y0 + y1) / 2 * WS, z: at.z - lx * s + lz * c,
+    const [x0, x1] = kind === 'sign' ? B.sign : B.work, [y0, y1] = kind === 'sign' ? B.signY : B.workY;
+    const lx = (x0 + x1) / 2 * WS, lz = (kind === 'sign' ? B.signZ : B.z0 + 0.03) * WS + BOARD.LIFT;
+    out.push({ kind, st: K.id, depot: at.id, name, x: at.x + lx * c + lz * s, y: (y0 + y1) / 2 * WS, z: at.z - lx * s + lz * c,
       yaw, w: (x1 - x0) * WS, h: (y1 - y0) * WS });
   }
   return out;
@@ -8975,6 +9028,12 @@ function boardHitOf(px, py, kind) {
   raycaster.setFromCamera(ndc(px, py), camera);
   for (const h of raycaster.intersectObject(boards.mesh, false)) { const b = boards.list[Math.floor(h.faceIndex / 2)]; if (b.kind === kind) return b; }
   return null;
+}
+// D22 (3): a board's box on the screen ({ left, top, right, bottom } in CSS pixels), from its quad's 4 corners.
+function boardScreenRect(b) {
+  const c = Math.cos(b.yaw) * b.w / 2, s = -Math.sin(b.yaw) * b.w / 2, pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => toScreen(b.x + u * c, b.y + v * b.h / 2, b.z + u * s));
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
 }
 // Which schedule board (its station id) is at screen point (px, py), or null.
 function boardHitAt(px, py) { const b = boardHitOf(px, py, 'sched'); return b ? b.st : null; }
@@ -10665,6 +10724,8 @@ function doTick() {
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
+  cardsTick(ev);                           // D22 (1): the first-time cards (page side only; may pause the game)
+  warnTick();                              // D22 (2): the warnings ahead of arrivals (page side only)
   if (ev.some(e => /^item(Created|Moved|Consumed)$|^bayTagSet$/.test(e.t))) cargoView.dirty = true; // redraw the item props (and wrong-bay marks)
   if (changed) saveSoon();                 // the world changed: save a couple of seconds later
   if (S.time % 600 === 0) saveGame();      // and every 10 game minutes
@@ -10675,7 +10736,7 @@ function send(cmd) { const no = buildIntakeRefusal(cmd); if (no) { handleEvent(n
 // ==== Section: HUD and panels ====
 const $ = id => document.getElementById(id);
 let toastTimer = 0;
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
+function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
 function handleEvent(e) {
   if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
@@ -11153,12 +11214,22 @@ $('rideBoard').addEventListener('click', () => { if (rideUi.stock !== null) send
 function closePanel() { ui.panelTrain = null; $('panel').hidden = true; setSendMode(false); }
 function setSendMode(on) { ui.sendMode = on; $('panel').classList.toggle('sending', on); $('banner').hidden = !on; $('toast').classList.toggle('below', on); if (on) $('bannerText').textContent = `Tap a track to send ${S.trains[ui.panelTrain].name} there`; }
 function setSpeed(n) { if (n > 0) lastSpeed = n; speed = n; document.querySelectorAll('#speeds button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === n))); }
+// The Centre button (bottom right) shows while the view is panned away from the player. D22 (3): where the bottom
+// row (with the Office and Work board buttons) reaches it, it stands one row up instead.
+function centreHud() {
+  const c = $('centre'), hide = Math.hypot(cam.ox, cam.oz) < 0.5;
+  if (c.hidden !== hide) c.hidden = hide;
+  if (hide) return;
+  c.classList.remove('up');
+  const r = c.getBoundingClientRect(), bl = $('bottomleft').getBoundingClientRect();
+  if (bl.right + 6 > r.left && bl.top < r.bottom) c.classList.add('up');
+}
 function updateHud() {
   $('clock').textContent = clockText(S);
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
   ttPanelUpdate();
   ttCardHud();
-  $('centre').hidden = Math.hypot(cam.ox, cam.oz) < 0.5;
+  centreHud();
   carPanelUpdate();
   telPanelUpdate();
   cashHud();
@@ -11178,6 +11249,7 @@ function updateHud() {
   tgSlideHud();
   alertsHud();
   lookUpdate();
+  cardShowNext();      // D22 (1): a first-time card that waited for a panel or a telegram to go
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -11282,22 +11354,31 @@ function ttCardHud() {
   // Below the Next job line (D21), or the telegram sliding in in its place.
   const yMin = Math.max(64, ...['nextJob', 'tgSlide'].map(id => $(id)).filter(e => !e.hidden && (e.id !== 'tgSlide' || e.classList.contains('show'))).map(e => Math.round(e.getBoundingClientRect().bottom + 6)));
   let y = Math.max(yMin, p.y - ttCardUi.h - 6);
-  // D21 (2): above the depot's WORK BOARD roof sign too, never over it.
-  const sg = near.high && boards.list.find(b => b.kind === 'sign' && b.st === near.st.id && b.shown !== false);
-  if (sg) {
-    const c = Math.cos(sg.yaw) * sg.w / 2, s = -Math.sin(sg.yaw) * sg.w / 2, q = [toScreen(sg.x - c, sg.y + sg.h / 2, sg.z - s), toScreen(sg.x + c, sg.y + sg.h / 2, sg.z + s)];
-    const top = Math.min(q[0].y, q[1].y), l = Math.min(q[0].x, q[1].x), r = Math.max(q[0].x, q[1].x);
-    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = Math.max(yMin, top - ttCardUi.h - 6);
-    // No room above it (landscape): below the depot's front instead, on the platform.
-    if (x < r && x + ttCardUi.w > l && y + ttCardUi.h > top - 4) y = toScreen(near.at.x, 0, near.at.z).y + 10;
+  // D21 (2): above the depot's WORK BOARD roof sign too, never over it; D22 (3): nor over the schedule board on its
+  // posts. Tried in turn: above the sign; below the depot's front (on the platform); then each of those moved left or
+  // right clear of the boards. The first clear of both boards wins.
+  const obs = boards.list.filter(b => b.st === near.st.id && (b.kind === 'sched' || (b.kind === 'sign' && b.shown !== false))).map(boardScreenRect);
+  const hitsObs = (x, y) => obs.some(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
+  if (obs.length && hitsObs(x, y)) {
+    const sg = obs[obs.length - 1], below = toScreen(near.at.x, 0, near.at.z).y + 10, ys = [Math.max(yMin, sg.top - ttCardUi.h - 6), below];
+    const xs = [x].concat(...obs.map(q => [q.left - 6 - ttCardUi.w, q.right + 6])).filter(v => v >= 6 && v + ttCardUi.w <= W - 6);
+    const c = [].concat(...ys.map(yy => xs.map(xx => [xx, yy]))).find(([xx, yy]) => !hitsObs(xx, yy) && yy >= yMin && yy + ttCardUi.h < window.innerHeight);
+    if (c) [x, y] = c; else y = Math.max(yMin, sg.top - ttCardUi.h - 6);
   }
   // D21: the card grew (a row with no engine is a button). Where it would meet a button or panel: moved left of a
   // right-hand one when there is room, else below the depot's front (on the platform); hidden only when neither fits.
   const boxes = TT_CARD_AVOID.map(id => $(id)).filter(e => e && !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect());
   const hits = (x, y) => boxes.filter(q => x < q.right + 4 && x + ttCardUi.w > q.left - 4 && y < q.bottom + 4 && y + ttCardUi.h > q.top - 4);
-  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0]; };
+  const place = (x, y) => { for (const q of hits(x, y)) if (q.left > W / 2 && q.left - 5 - ttCardUi.w >= 6) x = Math.min(x, q.left - 5 - ttCardUi.w); return [x, y, hits(x, y).length === 0 && !hitsObs(x, y)]; };
   let spot = place(x, y);
   if (!spot[2]) { const b2 = place(x, toScreen(near.at.x, 0, near.at.z).y + 10); if (b2[2] && b2[1] + ttCardUi.h < window.innerHeight) spot = b2; }
+  // D22 (3): still on a button or a board: any other spot beside the boards, above the sign or below the depot front.
+  if (!spot[2]) {
+    const below = toScreen(near.at.x, 0, near.at.z).y + 10, ys = [y, below].concat(obs.map(q => q.top - ttCardUi.h - 6), obs.map(q => q.bottom + 6)).filter(v => v >= yMin && v + ttCardUi.h < window.innerHeight);
+    const xs = [x].concat(...obs.map(q => [q.left - 6 - ttCardUi.w, q.right + 6]), ...boxes.map(q => [q.left - 5 - ttCardUi.w])).filter(v => v >= 6 && v + ttCardUi.w <= W - 6);
+    const c = [].concat(...ys.map(yy => xs.map(xx => [xx, yy]))).find(([xx, yy]) => !hits(xx, yy).length && !hitsObs(xx, yy));
+    if (c) spot = [c[0], c[1], true];
+  }
   [x, y] = spot;
   card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   // Hidden where it would cover a button or panel (as the job signs are).
@@ -11584,14 +11665,23 @@ $('workBody').addEventListener('click', e => {
 });
 $('workClose').addEventListener('click', closeWorkCard);
 $('ttCardLines').addEventListener('click', e => { const b = e.target.closest('.ttNeed'); if (b) ttNeedEngineGo(Number(b.dataset.svc)); });
-// The Work board button: shown while the player stands in a station's booth.
+// The Work board button: shown while the player stands in a station's booth, and (D22 (3)) anywhere on the hub's
+// station area (its tracks, platform, depot and freight shed: ttStation's area). In a booth it opens that board's card
+// at once; elsewhere at the hub it walks the player to the hub's work board and opens the card there (workBoardGo).
 let workBtnSig = '';
+function wbAtHub(x, z) { const st = S.tt ? ttStation(S, 'hub') : null, a = st && st.area; return !!a && x >= a[0] && x <= a[1] && z >= a[2] && z <= a[3]; }
 function workBtnHud() {
-  const st = wbBoothStation(S.player.x, S.player.z), show = !!st && !!S.tt && !(typeof bt !== 'undefined' && bt.on), sig = show + '|' + st + '|' + wbUi.open;
+  const P = S.player, booth = wbBoothStation(P.x, P.z), st = booth || (!P.ride && wbAtHub(P.x, P.z) && wbBoardSpot('hub') ? 'hub' : null);
+  const show = !!st && !!S.tt && !(typeof bt !== 'undefined' && bt.on), sig = show + '|' + st + '|' + !!booth + '|' + wbUi.open;
   if (sig === workBtnSig) return;
-  workBtnSig = sig; $('workBtn').hidden = !show; $('workBtn').setAttribute('aria-pressed', String(wbUi.open)); $('workBtn').dataset.st = st || '';
+  workBtnSig = sig; $('workBtn').hidden = !show; $('workBtn').setAttribute('aria-pressed', String(wbUi.open)); $('workBtn').dataset.st = st || ''; $('workBtn').dataset.booth = booth ? '1' : '';
 }
-$('workBtn').addEventListener('click', () => { if (wbUi.open) closeWorkCard(); else if ($('workBtn').dataset.st) openWorkCard($('workBtn').dataset.st, true); });
+$('workBtn').addEventListener('click', () => {
+  const b = $('workBtn'), st = b.dataset.st;
+  if (wbUi.open) closeWorkCard();
+  else if (st && b.dataset.booth) openWorkCard(st, true);
+  else if (st) workBoardGo(st);
+});
 // ---- The inbox ----
 function openInbox(id) {
   closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeLook(); closeWorkCard(); closeSettings();
@@ -11862,27 +11952,27 @@ function lookUpdate() {
 // marks it read. The chip hides while the office, the inbox or a Look card is open (they use that part of the
 // screen in landscape). The helper arrows (guideDraw, below) point at the place the step needs. D20 (6): the box
 // also holds the Arrows toggle, which stays after the tutorial, so the box shows without a chip then.
-const tutUi = { step: -2, hide: null, chip: null };
+// D22 (5): the Current task chip is gone: the Next job line at the top is the only line (it names the tutorial's step,
+// and pulses 3 times when a new step's telegram comes); the box keeps the Arrows toggle and the Settings gear.
+const tutUi = { step: -2, hide: null };
 function tutHud() {
   // Landscape: the train panel reaches up beside the box (the Arrows toggle widened it), so it hides then.
   const c = tutCurrent(S), box = $('tutTask'), hide = bigPanelOpen() || lookUi.open || (landscapeUi() && ui.panelTrain !== null);
   if (hide !== tutUi.hide) { tutUi.hide = hide; box.hidden = hide; }
-  if (!c !== tutUi.chip) { tutUi.chip = !c; $('tutChip').hidden = !c; }
   guideHud();
   if (!c) { tutUi.step = -2; return; }
   if (c.step !== tutUi.step) {
-    tutUi.step = c.step; $('tutChipText').textContent = c.title;
-    const ch = $('tutChip'); ch.classList.remove('pulse'); void ch.offsetWidth; ch.classList.add('pulse');
+    tutUi.step = c.step;
+    const ch = $('nextJob'); ch.classList.remove('pulse'); void ch.offsetWidth; ch.classList.add('pulse');
   }
 }
-$('tutChip').addEventListener('click', () => { const c = tutCurrent(S); if (c) openInbox(c.tg); });
 // ---- Helper arrows (D20 (6)): where to go next and what to do there ----
 // From the start of a new game a big arrow bobs over the next place the work needs, with a short label ("Office desk:
 // take a contract"), a dotted path on the ground from the player to it, and, when the place is off screen, an arrow at
 // the screen's edge pointing towards it with the place's name. During the tutorial the places follow its steps in
 // the flow of work (office desk, ticket window, work board, the switches the next train needs, the Overland's car,
 // the freight shed bay, the business's door). After the tutorial (or once skipped) the arrows are off unless the
-// Arrows toggle (under the Current task chip) is on; then they point at the most pressing job (hintTarget). The
+// Arrows toggle (beside the Settings gear, under the telegraph button) is on; then they point at the most pressing job (hintTarget). The
 // toggle is a viewer preference kept in localStorage (not in the save). Drawing and page only: the sim never reads
 // any of this. Draw calls: the arrow 1 and the dots 1 (one InstancedMesh), only while shown; no shadows.
 const GUIDE = { DOTS: 140, GAP: 0.75, NEAR: 1.6, REPATH_S: 0.5, OFF: 2.5, PREF: 'railhead-arrows', PX: 86, PEEK_S: 60, NEXT_PREF: 'railhead-nextjob' };
@@ -11978,6 +12068,9 @@ function guideNeedNext(need) {
 function hintTarget() {
   const need = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.sw]) : null;
   if (need) { const W = S.track.switches[need.sw]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: guideNeedLabel(need), next: guideNeedNext(need) }; }
+  // D22 (2): an arrival due within 30 game minutes (the Overland, or one of our trains): what it brings, and where to meet it.
+  const warn = typeof warnUi !== 'undefined' && warnUi.S === S && warnUi.now;
+  if (warn && warn.t) return warn.t;
   const K = paxStation(S.track, 'hub'), D = S.pax && S.pax.desk;
   const queue = K && S.pax ? S.pax.list.filter(p => p.st === 'hub' && p.s === 'queue').length : 0;
   if (queue && !(D && D.st === 'hub')) return { x: K.staff.x, z: K.staff.z, k: 'window', label: `Ticket window: ${queue} waiting for tickets`, next: `sell tickets, ${queue} waiting at the hub` };
@@ -12057,6 +12150,10 @@ function guideTarget() {
   const pk = guideUi.peek, peek = !!pk && pk.key === job.key && animT < pk.until;
   if (pk && !peek) guideUi.peek = null;
   guideUi.t = (!guideOn() && !peek) || S.player.ride ? null : job.t;
+  // D22 (1): a first-time card's Show me: the arrow on its place until the player gets there or GUIDE.PEEK_S pass.
+  const cd = guideUi.card;
+  if (cd && (animT >= cd.until || Math.hypot(cd.t.x - S.player.x, cd.t.z - S.player.z) < GUIDE.NEAR * 1.5)) guideUi.card = null;
+  else if (cd && !S.player.ride) guideUi.t = cd.t;
   // D21 (4): a run with no engine was tapped: the arrow at the open panel's Timetable button, while a run lacks one.
   const ef = guideUi.engineFor;
   if (ef && animT < ef.until && ui.panelTrain === ef.tr && !$('panelTt').hidden && S.tt && S.tt.services.some(v => v.train === null))
@@ -12137,8 +12234,16 @@ function guideDrawDots(t) {
   D.visible = D.count > 0;
 }
 // Each frame (from render): the arrow over the place, the dots, the label above the arrow or the arrow at the edge.
+// D22 (3): where the arrow is drawn for a place. The work board hangs inside the booth, right under the WORK BOARD roof
+// sign: from outside the booth the arrow stands at the depot's door instead (the way in, where the dots lead), so it
+// never covers the sign; inside, over the board. (The place itself, guideTarget's, stays the board.)
+function guideDrawAt(t) {
+  if (!t || t.k !== 'workboard' || wbBoothStation(S.player.x, S.player.z)) return t;
+  const d = econDeskSpot();
+  return d ? { ...t, x: d.x, z: d.z } : t;
+}
 function guideDraw() {
-  const t = guideTarget();
+  const t0 = guideTarget(), t = t0 && t0.k !== 'button' ? guideDrawAt(t0) : t0;
   if (!guideUi.arrow) { guideUi.arrow = guideArrowMesh(); guideUi.dots = guideDotsMesh(); scene.add(guideUi.arrow, guideUi.dots); }
   const A = guideUi.arrow, lab = $('guideLabel'), edge = $('guideEdge');
   edge.style.zIndex = t && t.k === 'button' ? '3' : '';   // over the panel that holds the button
@@ -12153,7 +12258,7 @@ function guideDraw() {
     }
     return;
   }
-  guideDrawDots(t);
+  guideDrawDots(t0);
   if (!t) { A.visible = false; lab.hidden = edge.hidden = true; return; }
   // A steady size on screen (about GUIDE.PX tall) whatever the zoom.
   const upp = (camera.top - camera.bottom) / window.innerHeight, sc = Math.min(4, Math.max(0.6, GUIDE.PX * upp / 1.95));
@@ -12181,7 +12286,9 @@ function guideDraw() {
     // D21: none of those clear (the top of the screen is busy): further down beside the way, centred or to either side.
     const by = (flip ? top.y : foot.y) + 12;
     for (const dy of [0, 36, 72, 108, 144]) for (const x of [foot.x - w / 2, foot.x - w + 24, foot.x - 24]) spots.push(fit([x, by + dy]));
-    const clear = ([x, y]) => !guideUi.hud.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
+    // D22 (3): clear of the painted boards in the world too (the roof sign, the schedule board on its posts).
+    const avoid = guideUi.hud.concat(boards.list.filter(b => b.kind !== 'work' && b.shown !== false).map(boardScreenRect));
+    const clear = ([x, y]) => !avoid.some(r => x < r.right + 4 && x + w > r.left - 4 && y < r.bottom + 4 && y + h > r.top - 4);
     const [lx, ly] = spots.find(clear) || spots[0];
     lab.style.left = Math.round(lx) + 'px'; lab.style.top = Math.round(ly) + 'px';
   } else {
@@ -12200,7 +12307,7 @@ function guideDraw() {
     edge.dataset.ang = ang.toFixed(3);
   }
 }
-// The Arrows toggle (under the Current task chip): its words follow guideOn().
+// The Arrows toggle (beside the Settings gear): its words follow guideOn().
 function guideHud() {
   const b = $('hintBtn'), on = guideOn();
   if (b.getAttribute('aria-pressed') !== String(on)) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Arrows on' : 'Arrows off'; }
@@ -12230,7 +12337,7 @@ function nextJobHud() {
   if (!show) return;
   guideTarget();
   const job = guideUi.job, text = job ? job.text : '';
-  if (text !== nextUi.text) { nextUi.text = text; $('nextJobText').textContent = text; }
+  if (text !== nextUi.text) { nextUi.text = text; $('nextJobText').textContent = text; el.classList.toggle('long', text.length > 72); }
   const pk = !!guideUi.peek;
   if (el.getAttribute('aria-pressed') !== String(pk)) el.setAttribute('aria-pressed', String(pk));
   // Landscape: from the clock's and the cash's right edge to the telegraph button's left edge.
@@ -12266,11 +12373,228 @@ function settingsUpdate() {
   const n = nextJobOn(), a = guideOn();
   $('setNext').setAttribute('aria-pressed', String(n)); $('setNext').textContent = n ? 'On' : 'Off';
   $('setArrows').setAttribute('aria-pressed', String(a)); $('setArrows').textContent = a ? 'On' : 'Off';
+  const k = cardsOn();
+  $('setCards').setAttribute('aria-pressed', String(k)); $('setCards').textContent = k ? 'On' : 'Off';
 }
 $('setBtn').addEventListener('click', () => { if (setUi.open) closeSettings(); else openSettings(); });
 $('settingsClose').addEventListener('click', closeSettings);
 $('setNext').addEventListener('click', () => nextJobSetPref(!nextJobOn()));
 $('setArrows').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); settingsUpdate(); });
+$('setCards').addEventListener('click', () => cardsSetPref(!cardsOn()));
+// ---- First-time cards (D22 (1)) ----
+// The first time each of these happens in a game, the game pauses (the speed control, as II does) and a short card
+// says what happened, why, and what to do: "Show me" puts the helper arrow on the place (guideUi.card, read by
+// guideTarget; it goes when the player gets there or after GUIDE.PEEK_S) and closes the card, "OK" just closes it;
+// either way the game runs on at the speed it had. Each card shows once per game: the ids shown are kept in the save
+// beside the state (save.ui.cards, like the camera's turn and zoom: not part of S, so the sim, its hash and the old
+// saves are untouched; a save without the list has shown none). Settings turns the cards off (kept in this browser,
+// like the Arrows toggle). Page side only: nothing here sends a command or changes S, so the game's results are the
+// same with cards on or off (the pause only stops the clock, as II does).
+// During the investor's tutorial a card whose moment a tutorial telegram covers (tut: that step's goal bit) waits:
+// once the tutorial has taught it (the goal met) it is dropped, and if the tutorial is skipped it shows the next time
+// it happens. No card shows during the welcome, over a big panel, a Look card or the build tool, or while a telegram
+// slides in; it waits for them (an event card waits for the next time instead, so it is never stale).
+// Each card: title, text (2 to 4 short sentences; v: what the trigger found), place (Show me's arrow), and either ev
+// (looks at one tick's events, returns v or null) or state (looked at every CARD.STATE_TICKS ticks, returns v or null).
+const CARD = { PREF: 'railhead-cards', STATE_TICKS: 4, GAP_MS: 1200, NEED_S: 90 * 60 };
+const cardPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+function cardEngine(S, tr) { const ps = trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.k === 'loco'), p = ps[Math.max(0, i)]; return p ? { x: p.x, z: p.z } : null; }
+function cardHubWindow(S) { const K = paxStation(S.track, 'hub'); return K ? { x: K.staff.x, z: K.staff.z, k: 'window', label: 'Ticket window: sell tickets' } : null; }
+const CARDS = {
+  overlandIn: { tut: TUT_GOT.unload, title: 'The Overland is in',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'overlandSetOut' && e.cars > 0); return e ? { n: e.cars } : null; },
+    text: v => `The Overland, the big railroad's train from the East, has left ${cardPlural(v.n, 'car')} of your goods on the interchange track. It brings what you order at the work board, at 06:00 and 18:00 each day. Take the goods out of the cars and sort them into the freight shed's bays.`,
+    place: S => { const c = tutSetOutCars(S)[0], m = c || guideMeetSpot(); return m && { x: m.x, z: m.z, k: c ? 'car' : 'meet', label: 'Overland car: take the goods out' }; } },
+  travellersOff: { title: 'Travellers off the Overland', tutNow: 'tickets',   // not while the tutorial's ticket step is up
+    ev: (S, ev) => { const n = ev.filter(e => e.t === 'paxArrived' && e.from === 'outside').length; return n ? { n } : null; },
+    text: v => `${v.n === 1 ? 'A traveller' : v.n + ' travellers'} stepped off the Overland at the interchange. They are going on to Willow Ford, so they walk to the hub's ticket window and wait in line. Sell them tickets, and No. 1 takes them on her next run.`,
+    place: S => cardHubWindow(S) },
+  ticketLine: { tut: TUT_GOT.tickets, title: 'Someone wants a ticket',
+    state: S => { const D = S.pax && S.pax.desk, n = S.pax ? S.pax.list.filter(p => p.st === 'hub' && p.s === 'queue').length : 0; return n && !(D && D.st === 'hub') ? { n } : null; },
+    text: v => `${v.n === 1 ? 'A traveller is' : v.n + ' travellers are'} waiting at the hub's ticket window. Nobody gets a ticket unless you sell it: go into the depot by its door and stand behind the counter. A ticket to Willow Ford is 40 cents, and they wait in line as long as it takes.`,
+    place: S => cardHubWindow(S) },
+  trainIn: { title: 'Your train is in',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'ttArrived' && e.st === 'hub' && e.i > 0 && S.trains[e.tr] && !S.trains[e.tr].owner);
+      if (!e) return null;
+      const nx = schedStops(S, 'hub').find(r => r.dep && S.tt.services[r.svc] && S.tt.services[r.svc].train === e.tr && r.state !== 'Cancelled');
+      return { tr: e.tr, name: S.trains[e.tr].name, dep: nx ? nx.dep : '' }; },
+    text: v => `${v.name}, your train, has come in at the hub's platform from Willow Ford. Travellers step off and new ones board, goods come off her cars, and her tender wants wood and water${v.dep ? ` before she leaves at ${v.dep}` : ''}. The work board behind the ticket counter lists what she needs.`,
+    place: (S, v) => { const tr = S.trains[v.tr], p = tr && cardEngine(S, tr); return p && { x: p.x, z: p.z, k: 'car', label: `${v.name}: your train` }; } },
+  switchWait: { title: 'A train waits at a switch',
+    // The tutorial's switch step covers this while it is the step in hand (its arrow is already on the switch).
+    tutNow: 'switch',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'trainSwitchWait' && S.trains[e.tr] && !S.trains[e.tr].owner); return e ? { tr: e.tr, name: S.trains[e.tr].name, sw: e.sw } : null; },
+    text: v => `${v.name} has stopped short of switch ${v.sw}: it is set the wrong way for her. Trains never throw switches; you do, at the stand beside the track. Walk to the stand and tap it, and she goes on.`,
+    place: (S, v) => { const W = S.track.switches[v.sw]; return W && { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: `Switch ${v.sw}: tap the stand to throw it` }; } },
+  switchNeed: { tut: TUT_GOT.sw, title: 'Switches to set',
+    state: S => { const n = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.sw] && typeof n.byTime === 'number' && n.byTime - S.time <= CARD.NEED_S) : null;
+      return n ? { sw: n.sw, want: n.want, by: n.by || econWhen(n.byTime).slice(4), name: guideTrainName(n) } : null; },
+    text: v => `${v.name} needs switch ${v.sw} set ${v.want === 'reverse' ? 'to the turn-off (red)' : 'straight (green)'} by ${v.by}. The work board behind the ticket counter lists every switch each train needs, with the time to set it by. Walk to the switch stand and tap it before the train gets there.`,
+    place: (S, v) => { const W = S.track.switches[v.sw]; return W && { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: `Switch ${v.sw}: set it by ${v.by}` }; } },
+  lowTender: { title: 'Low on wood or water',
+    state: S => {
+      for (const tr of S.trains) {
+        if (tr.owner || trainOff(tr)) continue;
+        const L = trainLocos(tr)[0], run = S.tt ? ttRunOf(S, tr.id) : null;
+        if (L && typeof L.fuel === 'number' && L.fuel < CFG.CORD_U) return { tr: tr.id, name: tr.name, what: 'wood' };
+        if (run && run.why && /take water|low on water/.test(run.why)) return { tr: tr.id, name: tr.name, what: 'water' };
+      }
+      return null; },
+    text: v => `${v.name}'s tender is low on ${v.what}. An engine burns wood and boils away water as she runs; without enough she cannot leave. ` +
+      (v.what === 'wood' ? 'Carry cords of wood from the wood stage to her tender: tap a cord, then tap the engine.' : 'Take water at the water tower: walk to the spout while she stands under it.'),
+    place: (S, v) => { const tr = S.trains[v.tr], L = tr && trainLocos(tr)[0], p = L ? ttTenderAt(S, tr, L.id) : null; return p && { x: p.x, z: p.z, k: 'tender', label: `${v.name}: ${v.what === 'wood' ? 'put wood on the tender' : 'take water'}` }; } },
+  offer: { tut: TUT_GOT.accept, title: 'A contract offer',
+    state: S => { const k = S.econ ? S.econ.contracts.find(k => k.status === 'OFFERED') : null, b = k && econBiz(k.counterparty);
+      return k && b ? { who: b.name, what: `${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}`, due: econWhen(k.due) } : null; },
+    text: v => `The ${v.who} has pinned an offer on the work board: ${v.what}, delivered by ${v.due}. A contract pays when the goods reach the business's door. Take it at the work board behind the ticket counter, then order the goods there; the Overland brings them.`,
+    place: S => { const w = econWorkBoardSpot(); return w && { x: w.x, z: w.z, k: 'workboard', label: 'Work board: take a contract' }; } },
+  shedGoods: { tut: TUT_GOT.deliver, title: 'Goods waiting in the freight shed',
+    state: S => { const I = S.items;
+      for (const id of itemsAt(S, { kind: 'BAY' })) { const wb = I.waybill[id], w = I.where[id]; if (wb && wb.consignee && wb.consignee.kind === 'BUSINESS') return { bay: w.bay, shed: w.buildingId, biz: wb.consignee.id }; }
+      return null; },
+    text: v => { const b = econBiz(v.biz); return `Goods sorted into the freight shed's bays wait there until you deliver them${b ? `, like these for the ${b.name}` : ''}. Each business pays when its goods reach its door. Carry them from the bay to the door, by hand or on the hand truck.`; },
+    place: (S, v) => { const B = BLD_BAYS[v.shed], p = B && B.bays[v.bay]; return p && { x: p.x, z: p.z, k: 'bay', label: 'Freight shed: goods to deliver' }; } },
+  delivered: { tut: TUT_GOT.deliver, title: 'Paid for a delivery',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'bizDelivered' && e.paid > 0); if (!e) return null;
+      const b = econBiz(e.biz), wb = S.items.waybill[e.id]; return { biz: e.biz, who: b ? b.name : 'business', paid: e.paid, what: wb ? COMMODITIES[wb.commodity].name.toLowerCase() : 'goods' }; },
+    text: v => `The ${v.who} paid ${econMoney(v.paid)} for the ${v.what} you brought to its door. That is how the railroad earns: goods off the Overland, carried to the businesses that want them. Take more contracts at the work board.`,
+    place: (S, v) => { const d = townDoor(v.biz); return d && { x: d.x, z: d.z, k: 'door', label: `${v.who}: its door` }; } },
+  saturdayPay: { title: 'Saturday pay',
+    ev: (S, ev) => { const p = ev.filter(e => e.t === 'contractPaid'); return p.length ? { paid: p.reduce((a, e) => a + e.amount, 0) } : null; },
+    text: v => `It is Saturday evening: your standing contracts paid what they owed for the week, ${econMoney(v.paid)} in all. A standing contract wants goods every week and pays once a week. The ledger in the office lists every payment.`,
+    place: S => { const d = econDeskSpot(); return d && { x: d.x, z: d.z, k: 'desk', label: 'Office desk: the ledger' }; } },
+  overlandAway: { title: 'The Overland took cars away',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'overlandPickedUp' && e.cars > 0); return e ? { n: e.cars, sold: e.sold, paid: e.paid } : null; },
+    text: v => `The Overland took ${cardPlural(v.n, 'car')} away from the interchange${v.sold ? ` and sold your ${cardPlural(v.sold, 'item')} for Outside for ${econMoney(v.paid)}` : ''}. On every visit it takes the empty cars, and cars holding only goods for Outside; cars with goods for here stay until you unload them.`,
+    place: S => { const m = guideMeetSpot(); return m && { x: m.x, z: m.z, k: 'meet', label: 'Interchange track' }; } },
+};
+const cardUi = { pref: null, shown: {}, open: null, queue: [], prevSpeed: null, closedAt: -1e9, S: null };
+try { const v = localStorage.getItem(CARD.PREF); if (v === 'on' || v === 'off') cardUi.pref = v; } catch (e) { /* no storage: the default */ }
+function cardsOn() { return cardUi.pref !== 'off'; }
+function cardsSetPref(on) {
+  cardUi.pref = on ? 'on' : 'off';
+  try { localStorage.setItem(CARD.PREF, cardUi.pref); } catch (e) { /* no storage: this visit only */ }
+  if (!on) cardUi.queue = [];
+  settingsUpdate();
+}
+// The cards shown in this game (for the save), and setting them from a loaded save (none for a new game).
+function cardsShownList() { return Object.keys(cardUi.shown).filter(id => CARDS[id]).sort(); }
+function cardsLoad(list) { cardUi.shown = {}; cardUi.queue = []; if (Array.isArray(list)) for (const id of list) if (CARDS[id]) cardUi.shown[id] = true; }
+// What the tutorial says about a card now: 'show', 'defer' (it will teach it, or is teaching it) or 'drop' (taught).
+function cardTut(c) {
+  const U = S.tut;
+  if (!U || U.skipped) return 'show';
+  if (c.tutNow) { const t = tutCurrent(S); return t && t.key === c.tutNow ? 'defer' : 'show'; }
+  if (!c.tut) return 'show';
+  if (U.got & c.tut) return 'drop';
+  return U.done ? 'show' : 'defer';
+}
+// Called from doTick with the tick's events: each card not shown yet whose moment came is put in the queue.
+function cardsTick(ev) {
+  if (!cardsOn() || !S.tg) return;
+  if (cardUi.S !== S) { cardUi.S = S; cardUi.queue = []; }
+  const look = S.tick % CARD.STATE_TICKS === 0;
+  for (const [id, c] of Object.entries(CARDS)) {
+    if (cardUi.shown[id] || cardUi.queue.some(q => q.id === id) || (cardUi.open && cardUi.open.id === id)) continue;
+    if (!(c.ev || look)) continue;
+    const v = c.ev ? c.ev(S, ev) : c.state(S);
+    if (!v) continue;
+    const tut = cardTut(c);
+    if (tut === 'drop') { cardUi.shown[id] = true; continue; }
+    if (tut === 'defer') continue;
+    cardUi.queue.push({ id, v, ev: !!c.ev });
+  }
+  cardShowNext();
+}
+// Can a card show now? Not during the welcome, a big panel, a Look card, the build tool or a telegram sliding in.
+function cardCanShow() {
+  const t = S.tut && tutCurrent(S);
+  return cardsOn() && !cardUi.open && !(t && t.key === 'welcome') && !bigPanelOpen() && !lookUi.open && !(typeof bt !== 'undefined' && bt.on) && tgSlide.id === null && !ui.sendMode;
+}
+function cardShowNext() {
+  if (!cardUi.queue.length || !cardCanShow() || performance.now() - cardUi.closedAt < CARD.GAP_MS) return;
+  const q = cardUi.queue.shift(), c = CARDS[q.id];
+  if (cardUi.shown[q.id]) return;
+  // A state card is looked at again (its moment may have passed while it waited); an event card shows as it was.
+  const v = q.ev ? q.v : c.state(S);
+  if (!v) return;
+  cardUi.shown[q.id] = true; cardUi.open = { id: q.id, v };
+  cardUi.prevSpeed = speed; setSpeed(0);
+  $('fcardTitle').textContent = c.title; $('fcardText').textContent = c.text(v);
+  $('fcardShow').hidden = !c.place(S, v);
+  $('fcard').hidden = false;
+  saveSoon();
+}
+function cardClose(showMe) {
+  const o = cardUi.open;
+  if (!o) return;
+  const c = CARDS[o.id], t = showMe ? c.place(S, o.v) : null;
+  cardUi.open = null; cardUi.closedAt = performance.now(); $('fcard').hidden = true;
+  if (t) { guideUi.card = { t, until: animT + GUIDE.PEEK_S }; guideUi.nextT = 0; }
+  if (speed === 0 && cardUi.prevSpeed) setSpeed(cardUi.prevSpeed);   // the game runs on as it was (paused stays paused)
+  cardUi.prevSpeed = null;
+}
+$('fcardShow').addEventListener('click', () => cardClose(true));
+$('fcardOk').addEventListener('click', () => cardClose(false));
+// ---- Warnings ahead (D22 (2)) ----
+// About WARN.AHEAD_S (30 game minutes) before the Overland comes in at the interchange, and before each of our
+// timetabled trains arrives at a station, a message (the toast, held a little longer) says what it brings, from the
+// work board's own rows (wbRows: the orders packed into the Overland's cars, the travellers and goods aboard ours),
+// and the Next job line says the same while it is due (hintTarget, after a switch the train needs). Each arrival
+// warns once (page memory, per arrival and day). Page side only: nothing here changes the state.
+const WARN = { AHEAD_S: 30 * 60, MS: 6500, EVERY: 4 };
+const warnUi = { done: {}, now: null, S: null };
+// The arrivals due within WARN.AHEAD_S: [{ key, d (seconds to go), text, t (the place: x, z, k, label, next) }], soonest first.
+function warnRows(S) {
+  if (!S.tt) return [];
+  const abs = S.time + CFG.DAY_START_S, sod = abs % 86400, day = Math.floor(abs / 86400), out = [];
+  const secs = hm => { const m = /^(\d\d):(\d\d)$/.exec(hm || ''); return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null; };
+  for (const st of ttStations(S)) for (const r of wbRows(S, st.id)) {
+    const a = secs(r.arr);
+    // Only a train running to time: a late one's time is not known, and a warning with the wrong time would mislead.
+    if (r.at || a === null || r.state !== 'On time' || (!r.overland && !r.engine)) continue;
+    const d = (a - sod + 86400) % 86400;
+    if (d <= 0 || d > WARN.AHEAD_S) continue;
+    // A train still held at an earlier stop past its departure is late too, though its row says on time.
+    const run = r.overland ? null : S.tt.runs.find(q => q.svc === r.svc && q.ph !== 'done'), held = run && run.ph === 'at' ? S.tt.services[r.svc].stops[run.i] : null;
+    if (held && held.dep !== null && held.dep !== undefined && sod > held.dep + SCHED.LATE_S) continue;
+    const tr = r.overland ? null : S.trains[S.tt.services[r.svc].train];   // so is one waiting on the line (a switch set against it)
+    if (tr && (tr.swWait !== undefined || (run && run.ph !== 'at' && run.why))) continue;
+    if (r.overland) {
+      const pax = Math.round((PAX.OVERLAND_MIN + PAX.OVERLAND_MAX) / 2), m = guideMeetSpot();
+      const brings = r.cars.n ? `${cardPlural(r.cars.n, 'car')} of your goods` : 'no goods of yours';
+      const text = `The Overland is due at ${r.arr} with ${brings} and about ${cardPlural(pax, 'traveller')}.` + (r.outCars ? ` It takes away the ${cardPlural(r.outCars, 'car')} on the interchange if they are empty.` : '') + ' Meet it at the interchange.';
+      // (The Next job line has room for 3 short lines: it leaves out what the Overland takes away.)
+      const line = `the Overland is due at ${r.arr} with ${brings} and about ${cardPlural(pax, 'traveller')}. Meet it at the interchange.`;
+      out.push({ key: `ov:${day}:${r.arr}`, d, text, t: m && { x: m.x, z: m.z, k: 'meet', label: `Interchange: the Overland at ${r.arr}`, next: line } });
+      continue;
+    }
+    const K = paxStation(S.track, st.id), bits = [];
+    if (r.paxOff) bits.push(`${cardPlural(r.paxOff, 'traveller')} getting off`);
+    if (r.unload.n) bits.push(`${r.unload.n} goods to unload`);
+    if (r.load.n) bits.push(`${r.load.n} to load`);
+    if (r.paxOn) bits.push(`${r.paxOn} waiting to board`);
+    const eng = [r.wood ? `${cardPlural(r.wood, 'cord')} of wood` : '', r.water ? 'water' : ''].filter(Boolean);
+    const list = bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0];
+    const text = `${r.engine} is due at ${st.id === 'hub' ? 'the hub' : st.name} at ${r.arr}` + (list ? ` with ${list}` : '') + '.' + (eng.length ? ` She wants ${eng.join(' and ')}.` : '') + ' Meet her at the platform.';
+    const p = K ? { x: K.line.x, z: K.line.z } : { x: (st.track.x0 + st.track.x1) / 2, z: (st.track.z0 + st.track.z1) / 2 };
+    // The Next job line's shorter words (it has room for 3 short lines): "No. 1 is due at Willow Ford at 09:30 with 12 off,
+    // 13 to board, wood and water. Meet her at the platform."
+    const short = [r.paxOff ? `${r.paxOff} off` : '', r.unload.n ? `${r.unload.n} goods off` : '', r.load.n ? `${r.load.n} goods on` : '', r.paxOn ? `${r.paxOn} to board` : '', r.wood ? 'wood' : '', r.water ? 'water' : ''].filter(Boolean);
+    const sl = short.length > 1 ? short.slice(0, -1).join(', ') + ' and ' + short[short.length - 1] : short[0];
+    const line = `${r.engine} is due at ${st.id === 'hub' ? 'the hub' : st.name} at ${r.arr}` + (sl ? ` with ${sl}` : '') + '. Meet her at the platform.';
+    out.push({ key: `s${r.svc}:${day}:${st.id}:${r.arr}`, d, text, t: { x: p.x, z: p.z, k: 'platform', label: `${st.name} platform: ${r.engine} at ${r.arr}`, next: line } });
+  }
+  return out.sort((a, b) => a.d - b.d);
+}
+// From doTick: every WARN.EVERY ticks, the arrivals due; a message for each one not warned of yet.
+function warnTick() {
+  if (warnUi.S !== S) { warnUi.S = S; warnUi.done = {}; warnUi.now = null; }
+  if (!S.tg || S.tick % WARN.EVERY !== 0) return;
+  const rows = warnRows(S);
+  warnUi.now = rows[0] || null;
+  for (const w of rows) if (!warnUi.done[w.key]) { warnUi.done[w.key] = true; toast(w.text, WARN.MS); }
+}
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -12747,14 +13071,16 @@ function frame(now) {
     acc += dt * speed * CFG.TICKS_PER_REAL_S;
     let n = Math.floor(acc); acc -= n;
     if (DBG.on && speed > 4) debugRunTicks(n); // debug time warp (8x to 32x), time-boxed
-    else { n = Math.min(n, 40); for (let i = 0; i < n; i++) doTick(); }
+    else { n = Math.min(n, 40); for (let i = 0; i < n && speed > 0; i++) doTick(); }   // a first-time card pauses at once (D22)
   }
   render(speed > 0 ? acc : 1, dt);
   updateHud();
   window.__railhead.drawCalls = renderer.info.render.calls;
   requestAnimationFrame(frame);
 }
-function saveJson() { return JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }); }
+// ui: the view and (D22 (1)) the first-time cards already shown in this game; not part of the state (not hashed).
+function saveUiPart() { return { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed, cards: cardsShownList() }; }
+function saveJson() { return JSON.stringify({ state: S, ui: saveUiPart() }); }
 // Saves run one after another; if several are asked for while one is writing, only the newest is written next.
 // The returned promise resolves (true or false) once the newest state asked for is written.
 // savingOff is set by the debug tools' test scenarios, so a scenario never overwrites the player's save.
@@ -12793,9 +13119,13 @@ window.__railhead = {
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
-  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
+  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, drawAt: t => guideDrawAt(t), on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
     job: () => { guideUi.nextT = 0; guideTarget(); return guideUi.job; }, next: nextUi, nextSetPref: nextJobSetPref, nextOn: nextJobOn, openSettings, closeSettings, settings: setUi,
     get plates() { return plates; }, econWorkBoardSpot, trainStockOurs, OUR_STRIPE, PLATE, TT_NO_ENGINE, workBoardOffers, workBoardGo, ttNeedEngineGo, get ttCardUi() { return ttCardUi; }, ttCardPin }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
+  // D22: the first-time cards and the warnings ahead (page side).
+  cards: { CARD, CARDS, get ui() { return cardUi; }, on: cardsOn, setPref: cardsSetPref, close: cardClose, shown: cardsShownList, load: cardsLoad, tut: id => cardTut(CARDS[id]),
+    WARN, warnRows: () => warnRows(S), get warn() { return warnUi; },
+    tick: ev => { cardsTick(ev); warnTick(); } },   // what doTick does after a tick, for a check that runs simTick itself
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,
@@ -12854,8 +13184,8 @@ window.__railhead = {
     openWorkCard, closeWorkCard, get workUi() { return wbUi; }, get list() { return boards.list; }, get mesh() { return boards.mesh; },
     get redraws() { return boards.redraws; }, get canvas() { return boards.canvas; }, get card() { return ttCardUi; },
     booths: () => buildingBooths(), walkInBooth, get shell() { return bldShell; } },
-  exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
-  importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
+  exportSave: () => JSON.stringify({ state: S, ui: saveUiPart() }),
+  importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; cardsLoad(sv.ui && sv.ui.cards); buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
   world: { WORLDS, HUB, WFORD, STATIONS, TURN_OFF, worldOf, worldId, stationsOf, buildingSpots, buildStartWorld, BLD_LAYOUTS, BLD_EXTENTS,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
@@ -12895,6 +13225,7 @@ window.__railhead = {
   if (loaded) {
     const u = loaded.sv.ui;
     if (u) { cam.yawIdx = u.yawIdx || 0; cam.yaw = camYawTarget(); cam.zoom = u.zoom || 1; lastSpeed = u.speed || 1; }
+    cardsLoad(u && u.cards);   // D22 (1): the first-time cards this game has shown (none in a save from before)
   } else {
     S = newState(CFG.SEED, PAGE_WORLD);
     buildWorld(S); buildActors(S); resetViewsFromState();

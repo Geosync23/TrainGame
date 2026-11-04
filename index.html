@@ -916,6 +916,10 @@ function newState(seed, world) {
   // D21 (1): No. 1 starts on both Willow Ford runs (morning and afternoon) in the real start. Only a new game: saves
   // keep the services they have; the player can take her off or change runs at the office (ttAssign).
   if (world !== 'yard') for (const svc of st.tt.services) svc.train = 0;
+  // D22 (7): switch work from day 1. The platform switch (1) starts set straight, for the main track, so the player
+  // throws it to the platform track (the turn-off) before No. 1's first departure (the work board lists it). Only a
+  // new game: saves keep their switches as they lie. Willow Ford's spring switches stay as startSwitchStates set them.
+  if (world !== 'yard' && st.track.switches[1]) st.track.switches[1].state = 'N';
   return st;
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }

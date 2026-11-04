@@ -17,6 +17,7 @@ const { openGame, waitReady, screenshotPath } = require('./browser');
 // platform (waiting for its time); returns the state.
 const READY = `(() => {
   const R = window.__railhead, S = R.newState(1866);
+  S.track.switches[1].state = 'R';   // D22 (7): a new game's switch 1 lies straight; set for the platform, as a player who threw it
   R.simTick(S, [{ t: 'ttAssign', tr: 0, on: true }]);
   for (let n = 0; n < 5000; n++) { const r = R.tt.ttRunOf(S, 0); if (r && r.ph === 'at' && /its time/.test(r.why || '')) break; R.simTick(S, []); }
   return S;

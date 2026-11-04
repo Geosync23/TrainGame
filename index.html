@@ -12564,7 +12564,9 @@ function warnRows(S) {
       const pax = Math.round((PAX.OVERLAND_MIN + PAX.OVERLAND_MAX) / 2), m = guideMeetSpot();
       const brings = r.cars.n ? `${cardPlural(r.cars.n, 'car')} of your goods` : 'no goods of yours';
       const text = `The Overland is due at ${r.arr} with ${brings} and about ${cardPlural(pax, 'traveller')}.` + (r.outCars ? ` It takes away the ${cardPlural(r.outCars, 'car')} on the interchange if they are empty.` : '') + ' Meet it at the interchange.';
-      out.push({ key: `ov:${day}:${r.arr}`, d, text, t: m && { x: m.x, z: m.z, k: 'meet', label: `Interchange: the Overland at ${r.arr}`, next: text.charAt(0).toLowerCase() + text.slice(1) } });
+      // (The Next job line has room for 3 short lines: it leaves out what the Overland takes away.)
+      const line = `the Overland is due at ${r.arr} with ${brings} and about ${cardPlural(pax, 'traveller')}. Meet it at the interchange.`;
+      out.push({ key: `ov:${day}:${r.arr}`, d, text, t: m && { x: m.x, z: m.z, k: 'meet', label: `Interchange: the Overland at ${r.arr}`, next: line } });
       continue;
     }
     const K = paxStation(S.track, st.id), bits = [];
@@ -12576,7 +12578,12 @@ function warnRows(S) {
     const list = bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0];
     const text = `${r.engine} is due at ${st.id === 'hub' ? 'the hub' : st.name} at ${r.arr}` + (list ? ` with ${list}` : '') + '.' + (eng.length ? ` She wants ${eng.join(' and ')}.` : '') + ' Meet her at the platform.';
     const p = K ? { x: K.line.x, z: K.line.z } : { x: (st.track.x0 + st.track.x1) / 2, z: (st.track.z0 + st.track.z1) / 2 };
-    out.push({ key: `s${r.svc}:${day}:${st.id}:${r.arr}`, d, text, t: { x: p.x, z: p.z, k: 'platform', label: `${st.name} platform: ${r.engine} at ${r.arr}`, next: text.charAt(0).toLowerCase() + text.slice(1) } });
+    // The Next job line's shorter words (it has room for 3 short lines): "No. 1 is due at Willow Ford at 09:30 with 12 off,
+    // 13 to board, wood and water. Meet her at the platform."
+    const short = [r.paxOff ? `${r.paxOff} off` : '', r.unload.n ? `${r.unload.n} goods off` : '', r.load.n ? `${r.load.n} goods on` : '', r.paxOn ? `${r.paxOn} to board` : '', r.wood ? 'wood' : '', r.water ? 'water' : ''].filter(Boolean);
+    const sl = short.length > 1 ? short.slice(0, -1).join(', ') + ' and ' + short[short.length - 1] : short[0];
+    const line = `${r.engine} is due at ${st.id === 'hub' ? 'the hub' : st.name} at ${r.arr}` + (sl ? ` with ${sl}` : '') + '. Meet her at the platform.';
+    out.push({ key: `s${r.svc}:${day}:${st.id}:${r.arr}`, d, text, t: { x: p.x, z: p.z, k: 'platform', label: `${st.name} platform: ${r.engine} at ${r.arr}`, next: line } });
   }
   return out.sort((a, b) => a.d - b.d);
 }

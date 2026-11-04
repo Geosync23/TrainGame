@@ -59,7 +59,7 @@ const BOT_RUN = `window.__explainRun = (mode, ticks) => {
     if (w && !seen[w.key]) {
       seen[w.key] = true;
       const row = C.warnRows().find(q => q.key === w.key), ov = /^ov:/.test(w.key) ? R.board.wbRows('hub').find(r => r.overland) : null;
-      warns.push({ key: w.key, at: hm(), d: row ? row.d : null, text: w.text, cars: ov ? ov.cars.n : null, toast: document.getElementById('toast').textContent, line: R.guide.job().text });
+      warns.push({ key: w.key, at: hm(), d: row ? row.d : null, text: w.text, next: w.t && w.t.next, cars: ov ? ov.cars.n : null, toast: document.getElementById('toast').textContent, line: R.guide.job().text });
     }
   }
   return { cards, warns, welcomeCards, shown: C.shown(), tutDone: S.tut.done };
@@ -120,7 +120,9 @@ module.exports = async function checkExplain() {
         else if ((m[3] ? Number(m[3]) : 0) !== w.cars) P(`2: the Overland's warning says ${m[3] || 0} cars, the work board's row ${w.cars}: ${w.text}`);
       }
       for (const w of ours) if (!/^No\. 1 is due at (the hub|Willow Ford) at \d\d:\d\d( with [^.]+)?\.( She wants [^.]+\.)? Meet her at the platform\.$/.test(w.text)) P(`2: our train's warning reads "${w.text}"`);
-      const lineOk = A.warns.filter(w => w.line === 'Next: ' + w.text.charAt(0).toLowerCase() + w.text.slice(1)).length;
+      // The line says it in shorter words (3 short lines at most): the same arrival, time and figures.
+      for (const w of A.warns) if (!w.next || !w.next.includes(w.text.match(/due at .+? at \d\d:\d\d|due at \d\d:\d\d/)[0]) || w.next.length > 120) P(`2: the Next job line's words for "${w.text}": "${w.next}"`);
+      const lineOk = A.warns.filter(w => w.line === 'Next: ' + w.next).length;
       if (lineOk < A.warns.length * 0.5) P(`2: the Next job line said the warning only ${lineOk} times of ${A.warns.length}: ${JSON.stringify(A.warns.slice(0, 3).map(w => w.line))}`);
       console.log(`  2: ${ov.length} Overland and ${ours.length} train warnings, first seen ${Math.min(...A.warns.map(w => w.d))} to ${Math.max(...A.warns.map(w => w.d))} s ahead; the Next job line said ${lineOk} of them (else a switch came first)`);
       console.log(`    e.g. "${(ov.find(w => w.cars) || ov[0]).text}" / "${ours[0].text}"`);
@@ -345,7 +347,7 @@ module.exports = async function checkExplain() {
       // (A telegram sliding in takes the line's place for a few seconds: wait for it to go.)
       for (let k = 0; k < 30 && await R(() => document.getElementById('nextJob').hidden); k++) await frames(250);
       Object.assign(msg, await R(() => ({ long: document.getElementById('nextJob').classList.contains('long'), clipped: (() => { const s = document.getElementById('nextJobText'); return s.scrollHeight > s.clientHeight + 1; })() })));
-      if (!line || !/^Next: the Overland is due at 18:00 with/.test(line)) P(`${orient} 2: the Next job line should warn of the Overland: ${line}`);
+      if (!line || !/^Next: the Overland is due at 18:00 with .+ about 2 travellers\. Meet it at the interchange\.$/.test(line)) P(`${orient} 2: the Next job line should warn of the Overland: ${line}`);
       if (!msg.shown || !/^The Overland is due at 18:00/.test(msg.toast)) P(`${orient} 2: a message should warn of the Overland: ${JSON.stringify(msg)}`);
       if (msg.clipped) P(`${orient} 2: the warning should fit the Next job line (3 lines at most)`);
       await page.screenshot({ path: screenshotPath(`explain-warning-${orient}`) });

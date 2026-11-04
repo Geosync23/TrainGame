@@ -1,8 +1,9 @@
 // Check: the painted departure boards on the depots (D15, "Departure board: make it both") and the ticket booth
 // (2026-11-03, "when selling tickets you should be inside the booth").
 // Boards:
-// - There is a board at both stations (the hub and Willow Ford, which is unstaffed), on its depot's front wall (the
-//   platform side), beside the ticket window, facing the platform, lifted off the wall (not on top of it).
+// - There is a board at both stations (the hub and Willow Ford, which is unstaffed). Since D22 (3) it stands on its own
+//   posts on the platform (the layout's 'schedboard'), clear of the depot's front (beyond its end along the platform),
+//   facing the platform, its letters lifted off its frame (not on top of it).
 // - All boards are one mesh with no shadow (1 draw call) on one canvas texture.
 // - Since D20 (2) the board is the public schedule board: each row has the columns train, from, to, arrival,
 //   departure, platform and state; arrivals (a run's last stop) are listed too; its departures are the station card's
@@ -72,9 +73,11 @@ module.exports = async function checkBoard() {
       const geo = await R(() => {
         const R = window.__railhead, B = R.board, out = [];
         for (const b of B.list.filter(b => b.kind === 'sched')) {
-          const K = R.pax.paxStation(b.st), at = R.world.layout.find(a => a.id === K.depot.id), wall = B.BLD_BOOTH.wall * R.CFG.SCALE;
-          const ox = b.x - at.x, oz = b.z - at.z, out_ = ox * K.out[0] + oz * K.out[1], along = (b.x - K.window.x) * K.along[0] + (b.z - K.window.z) * K.along[1];
-          out.push({ st: b.st, depot: K.depot.id, staffed: !R.pax.paxUnstaffed(R.state.track, b.st), lift: out_ - wall, along, w: b.w, h: b.h, y: b.y,
+          const K = R.pax.paxStation(b.st), at = R.world.layout.find(a => a.id === K.depot.id), post = R.world.layout.find(a => a.id === b.post);
+          const fp = R.buildings.footprints(), dep = fp.find(f => f.id === K.depot.id), plat = fp.find(f => f.id === K.plat.id);
+          const face = post ? (b.x - post.x) * K.out[0] + (b.z - post.z) * K.out[1] : null, along = (b.x - at.x) * K.along[0] + (b.z - at.z) * K.along[1];
+          const onPlat = !!plat && Math.abs(b.x - plat.x) < plat.w / 2 && Math.abs(b.z - plat.z) < plat.d / 2;
+          out.push({ st: b.st, depot: K.depot.id, staffed: !R.pax.paxUnstaffed(R.state.track, b.st), post: post && post.kind, lift: post ? face - 0.07 : null, onPlat, clear: Math.abs(along) - b.w / 2 - dep.w / 2, w: b.w, h: b.h, y: b.y,
             facing: Math.sin(b.yaw) * K.out[0] + Math.cos(b.yaw) * K.out[1], winY: B.BLD_BOOTH.winY.map(v => v * R.CFG.SCALE) });
         }
         const m = B.mesh;
@@ -83,10 +86,10 @@ module.exports = async function checkBoard() {
       for (const st of ['hub', 'willow']) {
         const g = geo.out.find(o => o.st === st);
         if (!g) { P(`${orientation}: no departure board at ${st}`); continue; }
-        if (!(g.lift > 0.03 && g.lift < 0.15)) P(`${orientation}: ${st}'s board is ${g.lift.toFixed(3)}u in front of its depot's front wall (want lifted a little off it)`);
+        if (g.post !== 'schedboard' || !g.onPlat) P(`${orientation}: ${st}'s board should stand on its own posts on the platform (D22): ${JSON.stringify(g)}`);
+        else if (!(g.lift > 0.005 && g.lift < 0.05)) P(`${orientation}: ${st}'s board letters are ${g.lift.toFixed(3)}u in front of its frame (want lifted a little off it)`);
         if (!(g.facing > 0.99)) P(`${orientation}: ${st}'s board does not face the platform (${g.facing.toFixed(2)})`);
-        const gap = Math.abs(g.along) - g.w / 2;
-        if (!(gap > 0 && gap < 0.8)) P(`${orientation}: ${st}'s board is not beside the ticket window (edge ${gap.toFixed(2)}u from the window's middle)`);
+        if (!(g.clear > 0.3)) P(`${orientation}: ${st}'s board should be clear of the depot's front (${g.clear.toFixed(2)}u beyond its end)`);
         if (!(g.w > 1.8 && g.h > 1.4)) P(`${orientation}: ${st}'s board is small: ${g.w.toFixed(2)} x ${g.h.toFixed(2)}u`);
       }
       if (!geo.out.some(o => o.st === 'willow' && !o.staffed)) P(`${orientation}: Willow Ford should be unstaffed and still have its board`);

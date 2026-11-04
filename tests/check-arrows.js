@@ -218,8 +218,9 @@ module.exports = async function checkArrows() {
       const s = await page.evaluate(READ);
       if (s.t || s.arrow || s.label || s.edge || s.dots) problems.push(`${orient}: after Skip tutorial the arrows should be gone: ${JSON.stringify(s)}`);
       if (!s.toggle || s.toggle.on || s.toggle.h < 48) problems.push(`${orient}: after Skip tutorial the Arrows toggle should show, off: ${JSON.stringify(s.toggle)}`);
-      // Travellers come from 06:00: play to 07:30, then the toggle on.
-      const h0 = await page.evaluate(() => { const R = window.__railhead; R.step(2 * 3600 / 8 + 120); return R.stateHash(R.state); });
+      // Travellers come from 06:00: play to 07:30, then the toggle on. (D22 (7): a new game's switch 1 lies straight;
+      // thrown for the platform first, so the most pressing job is the ticket line, not the switch.)
+      const h0 = await page.evaluate(() => { const R = window.__railhead; R.send({ t: 'throwSwitch', sw: 1 }); R.step(2 * 3600 / 8 + 120); return R.stateHash(R.state); });
       await page.tap('#hintBtn');
       await frames();
       const h = await page.evaluate(READ);

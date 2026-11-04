@@ -1,6 +1,8 @@
 // Check: manual switches (D20). Run in the game's own simulation, in the real start.
-// - A new game: the platform switch (1) lies for the platform track; Willow Ford's run-around switches (2, 3) are
-//   spring switches, 2 lying for the main track and 3 for the loop.
+// - A new game (D22 (7)): the platform switch (1) lies straight, for the main track, so the first departure needs it
+//   thrown (its needs are not done); Willow Ford's run-around switches (2, 3) are spring switches, 2 lying for the
+//   main track and 3 for the loop. The parts below that were written for D20's start (switch 1 lying for the
+//   platform track) set it so first, as a player who threw it would have it.
 // - No train ever throws a switch: a timetabled day played by the M1 bot (which throws switches only by walking to the
 //   stand) changes a switch's lever only with a switchThrown event; a spring switch pushed over by a trailing train
 //   springs back to its lever.
@@ -37,10 +39,13 @@ module.exports = async function checkSwitches() {
       const lead = (S, tr) => tr.m > 0 ? tr.front : R.trackWalk(S.track, { e: tr.front.e, s: tr.front.s, d: -tr.front.d }, R.trainLength(tr)).pos;
       const spot = (S, name, f) => { const k = R.world.STATIONS.start.find(s => s.id === name.split('.')[0]).tracks[name.split('.')[1]]; const x = k.x0 + (k.x1 - k.x0) * f, z = k.z0 + (k.z1 - k.z0) * f; const n = R.trackNearest(S.track, x, z); return { t: 'trainSendTo', tr: 0, e: n.e, s: Math.round(n.s * 1000) }; };
 
-      // 1. A new game's switches.
+      // 1. A new game's switches; then D20's start (switch 1 for the platform track) for the parts below.
       let S = R.newState(1866);
       const W = S.track.switches;
       out.start = W.map(w => ({ state: w.state, spring: !!w.spring, lever: w.lever || null }));
+      out.startNeeds = R.tt.ttSwitchNeeds(S).filter(n => n.sw === 1).map(n => n.done);
+      const fresh = () => { const T = R.newState(1866); T.track.switches[1].state = 'R'; return T; };
+      S = fresh();
 
       // 2. A facing switch (2, a spring switch's lever) set against the route to Willow Ford: No. 1 waits short of it.
       R.simTick(S, [{ t: 'throwSwitch', sw: 2 }]);
@@ -72,7 +77,7 @@ module.exports = async function checkSwitches() {
       // 3. Trailing through a switch set against it: switch 1 thrown to the main track, No. 1 sent from the platform to
       //    the spur, and then run Forward: it stops short, never on the switch; the switch is unchanged.
       for (const how of ['send', 'run']) {
-        const T = R.newState(1866), t3 = T.trains[0];
+        const T = fresh(), t3 = T.trains[0];
         R.simTick(T, [{ t: 'throwSwitch', sw: 1 }]);
         const before = JSON.stringify(T.track.switches.map(w => [w.state, w.lever]));
         R.simTick(T, [how === 'send' ? { t: 'trainSendTo', tr: 0, e: T.track.switches[1].trunk, s: Math.round(T.track.edges[T.track.switches[1].trunk].len / 2 * 1000) } : { t: 'trainRun', tr: 0, dir: 1 }]);
@@ -88,7 +93,7 @@ module.exports = async function checkSwitches() {
       // 4. A switch a moving train could not stop for is locked; one under it too. A facing non-spring switch (1)
       //    against a route from the spur back to the platform: it waits short of the switch node.
       {
-        const T = R.newState(1866), t4 = T.trains[0];
+        const T = fresh(), t4 = T.trains[0];
         R.simTick(T, [spot(T, 'willow.main', 0.5)]);
         let near = null, occ = null;
         run(T, 3000, st => {
@@ -111,7 +116,7 @@ module.exports = async function checkSwitches() {
       // 5. The needs data for a timetabled day, and a day played by the M1 bot with switch 1 set wrong at the start:
       //    the bot throws it (walking to the stand); no train throws a switch; spring switches spring back.
       {
-        const T = R.newState(1866);
+        const T = fresh();
         R.simTick(T, [{ t: 'ttAssign', tr: 0, on: true }]);
         const N = R.tt.ttSwitchNeeds(T);
         out.needs = N.map(n => ({ svc: n.svc, sw: n.sw, want: n.want, move: n.move, by: n.by, byTime: n.byTime, st: n.station, done: n.done, set: n.set, spring: n.spring }));
@@ -150,8 +155,9 @@ module.exports = async function checkSwitches() {
     }, [BOT_SRC, v15]);
 
     const problems = [];
-    const want = [{ state: 'N', spring: false, lever: null }, { state: 'R', spring: false, lever: null }, { state: 'N', spring: true, lever: 'N' }, { state: 'R', spring: true, lever: 'R' }];
-    if (JSON.stringify(r.start) !== JSON.stringify(want)) problems.push('a new game\'s switches: ' + JSON.stringify(r.start));
+    const want = [{ state: 'N', spring: false, lever: null }, { state: 'N', spring: false, lever: null }, { state: 'N', spring: true, lever: 'N' }, { state: 'R', spring: true, lever: 'R' }];
+    if (JSON.stringify(r.start) !== JSON.stringify(want)) problems.push('a new game\'s switches (D22: switch 1 straight): ' + JSON.stringify(r.start));
+    if (!r.startNeeds.length || r.startNeeds.some(d => d)) problems.push('a new game\'s switch 1 needs should all be still to do (D22): ' + JSON.stringify(r.startNeeds));
     // Facing.
     if (!r.sendThrows || !r.sendThrows.some(w => w.sw === 2 && w.want === 'normal')) problems.push('Send to did not list switch 2 to throw to normal: ' + JSON.stringify(r.sendThrows));
     if (r.faceWait !== 2) problems.push('No. 1 did not wait at switch 2 set against it: ' + r.faceStatus);

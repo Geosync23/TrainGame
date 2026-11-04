@@ -172,7 +172,10 @@ module.exports = async function checkClarity() {
         const face = first && first.object === R.board.mesh ? R.board.list[Math.floor(first.faceIndex / 2)] : null;
         // Nothing of the page over it either.
         const el = document.elementFromPoint(c.x, c.y);
-        return { c, h: bot.y - top.y, first: first && first.object.name, kind: face && face.kind, st: face && face.st, el: el && el.tagName, onScreen: c.x > 0 && c.x < innerWidth && c.y > 0 && c.y < innerHeight };
+        // (Tapped a quarter of the way up from its foot: since D22 the sign is bigger and in landscape its middle comes
+        // within a finger's reach of the Next job line, which a phone's touch adjustment would give the tap to.)
+        const tap = R.toScreen(b.x, b.z, b.y - b.h / 4);
+        return { c, tap, h: bot.y - top.y, first: first && first.object.name, kind: face && face.kind, st: face && face.st, el: el && el.tagName, onScreen: c.x > 0 && c.x < innerWidth && c.y > 0 && c.y < innerHeight };
       });
       if (!seen.onScreen || seen.kind !== 'sign' || seen.st !== 'hub' || seen.el !== 'CANVAS') P(`${orient} 2: the WORK BOARD sign should be seen first from the platform at zoom 1.5: ${JSON.stringify(seen)}`);
       if (!(seen.h >= 24)) P(`${orient} 2: the WORK BOARD sign should be at least 24 px tall at zoom 1.5: ${seen.h}`);
@@ -180,7 +183,7 @@ module.exports = async function checkClarity() {
       const pin = await R(() => { const R = window.__railhead, w = R.board.list.find(b => b.kind === 'work' && b.st === 'hub'); return { drawn: (w.offers || []).map(o => o.id), offers: R.state.econ.contracts.filter(k => k.status === 'OFFERED').map(k => k.id) }; });
       if (!pin.offers.length || pin.drawn.join() !== pin.offers.join()) P(`${orient} 2: the offers should be pinned on the work board in the world: ${JSON.stringify(pin)}`);
       // A real tap on the sign: the player walks in and the card opens with the offers.
-      await page.touchscreen.tap(seen.c.x, seen.c.y);
+      await page.touchscreen.tap(seen.tap.x, seen.tap.y);
       await frames(200);
       await R(() => { const R = window.__railhead; for (let i = 0; i < 300 && (R.state.player.mode === 'to' || i < 2); i++) R.step(1); });
       await frames(600);

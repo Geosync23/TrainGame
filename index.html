@@ -249,11 +249,25 @@
     height: 48px; box-sizing: border-box; text-align: left; padding: 3px 10px; border-left: 7px solid #ff7a1a; font: 600 14px/1.2 Georgia, serif;
     display: flex; align-items: center; }
   #nextJob span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  /* D22 (2): a long line (a warning of what an arrival brings) takes up to 3 lines in a smaller letter, clear of the tools below. */
+  #nextJob.long { height: auto; min-height: 48px; font-size: 13px; line-height: 1.12; padding: 2px 8px; }
+  #nextJob.long span { -webkit-line-clamp: 3; }
   #nextJob[aria-pressed="true"] { background: #fff1dc; color: var(--ink); }
   body.nextOn #tutTask { top: calc(env(safe-area-inset-top) + 160px); }
   body.nextOn #toast { top: calc(env(safe-area-inset-top) + 160px); }
   body.nextOn #alerts { top: calc(env(safe-area-inset-top) + 160px); }
   #setBtn { padding: 0 10px; }
+  /* D22 (1): the first-time card, over the middle of the screen, above everything else while the game is paused. */
+  #fcard { left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 222px); width: min(92vw, 380px); box-sizing: border-box; z-index: 5;
+    background: var(--paper); border: 2px solid var(--edge); border-left: 8px solid #ff7a1a; border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  #fcard h2 { margin: 0; font-size: 18px; color: var(--ink); }
+  #fcardText { font-size: 15px; line-height: 1.35; color: var(--ink); }
+  #fcard .row { display: flex; gap: 8px; align-items: center; }
+  #fcard .grow { flex: 1; min-width: 0; }
+  #fcard small { color: #5a4a3a; font-size: 12px; line-height: 1.2; }
+  #fcardShow { background: var(--edge); color: var(--paper); }
+  @media (orientation: landscape) and (max-height: 500px) { #fcard { top: calc(env(safe-area-inset-top) + 66px); width: 420px; } }
   #setBtn svg { width: 24px; height: 24px; display: block; }
   #settings .row { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); line-height: 1.3; }
   #settings .row button[aria-pressed] { min-width: 64px; }
@@ -302,6 +316,12 @@
   <div class="row"><h2 class="grow">Settings</h2><button id="settingsClose" aria-label="Close">X</button></div>
   <div class="row"><span class="grow">The Next job line at the top of the screen: what to do next and where.</span><button id="setNext" aria-pressed="true">On</button></div>
   <div class="row"><span class="grow">Helper arrows: the way to the next job.</span><button id="setArrows" aria-pressed="false">Off</button></div>
+  <div class="row"><span class="grow">First-time cards: the game pauses to explain something the first time it happens.</span><button id="setCards" aria-pressed="true">On</button></div>
+</div>
+<div id="fcard" class="hud" role="dialog" aria-labelledby="fcardTitle" hidden>
+  <h2 id="fcardTitle"></h2>
+  <div id="fcardText"></div>
+  <div class="row"><small class="grow">Paused. Cards can be turned off in Settings.</small><button id="fcardShow">Show me</button><button id="fcardOk">OK</button></div>
 </div>
 <div id="guideLabel" class="hud" aria-live="polite" hidden></div>
 <div id="guideEdge" class="hud" hidden><div id="guideEdgeArrow"><svg viewBox="0 0 40 40"><path d="M6 13h16V5l14 15-14 15v-8H6z"/></svg></div><span id="guideEdgeText"></span></div>
@@ -10704,6 +10724,8 @@ function doTick() {
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
+  cardsTick(ev);                           // D22 (1): the first-time cards (page side only; may pause the game)
+  warnTick();                              // D22 (2): the warnings ahead of arrivals (page side only)
   if (ev.some(e => /^item(Created|Moved|Consumed)$|^bayTagSet$/.test(e.t))) cargoView.dirty = true; // redraw the item props (and wrong-bay marks)
   if (changed) saveSoon();                 // the world changed: save a couple of seconds later
   if (S.time % 600 === 0) saveGame();      // and every 10 game minutes
@@ -10714,7 +10736,7 @@ function send(cmd) { const no = buildIntakeRefusal(cmd); if (no) { handleEvent(n
 // ==== Section: HUD and panels ====
 const $ = id => document.getElementById(id);
 let toastTimer = 0;
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
+function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
 function handleEvent(e) {
   if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
@@ -11227,6 +11249,7 @@ function updateHud() {
   tgSlideHud();
   alertsHud();
   lookUpdate();
+  cardShowNext();      // D22 (1): a first-time card that waited for a panel or a telegram to go
 }
 document.querySelectorAll('#speeds button').forEach(b => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
 $('rotL').addEventListener('click', () => { cam.yawIdx -= 1; });
@@ -12045,6 +12068,9 @@ function guideNeedNext(need) {
 function hintTarget() {
   const need = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.sw]) : null;
   if (need) { const W = S.track.switches[need.sw]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: guideNeedLabel(need), next: guideNeedNext(need) }; }
+  // D22 (2): an arrival due within 30 game minutes (the Overland, or one of our trains): what it brings, and where to meet it.
+  const warn = typeof warnUi !== 'undefined' && warnUi.S === S && warnUi.now;
+  if (warn && warn.t) return warn.t;
   const K = paxStation(S.track, 'hub'), D = S.pax && S.pax.desk;
   const queue = K && S.pax ? S.pax.list.filter(p => p.st === 'hub' && p.s === 'queue').length : 0;
   if (queue && !(D && D.st === 'hub')) return { x: K.staff.x, z: K.staff.z, k: 'window', label: `Ticket window: ${queue} waiting for tickets`, next: `sell tickets, ${queue} waiting at the hub` };
@@ -12124,6 +12150,10 @@ function guideTarget() {
   const pk = guideUi.peek, peek = !!pk && pk.key === job.key && animT < pk.until;
   if (pk && !peek) guideUi.peek = null;
   guideUi.t = (!guideOn() && !peek) || S.player.ride ? null : job.t;
+  // D22 (1): a first-time card's Show me: the arrow on its place until the player gets there or GUIDE.PEEK_S pass.
+  const cd = guideUi.card;
+  if (cd && (animT >= cd.until || Math.hypot(cd.t.x - S.player.x, cd.t.z - S.player.z) < GUIDE.NEAR * 1.5)) guideUi.card = null;
+  else if (cd && !S.player.ride) guideUi.t = cd.t;
   // D21 (4): a run with no engine was tapped: the arrow at the open panel's Timetable button, while a run lacks one.
   const ef = guideUi.engineFor;
   if (ef && animT < ef.until && ui.panelTrain === ef.tr && !$('panelTt').hidden && S.tt && S.tt.services.some(v => v.train === null))
@@ -12299,7 +12329,7 @@ function nextJobHud() {
   if (!show) return;
   guideTarget();
   const job = guideUi.job, text = job ? job.text : '';
-  if (text !== nextUi.text) { nextUi.text = text; $('nextJobText').textContent = text; }
+  if (text !== nextUi.text) { nextUi.text = text; $('nextJobText').textContent = text; el.classList.toggle('long', text.length > 72); }
   const pk = !!guideUi.peek;
   if (el.getAttribute('aria-pressed') !== String(pk)) el.setAttribute('aria-pressed', String(pk));
   // Landscape: from the clock's and the cash's right edge to the telegraph button's left edge.
@@ -12335,11 +12365,221 @@ function settingsUpdate() {
   const n = nextJobOn(), a = guideOn();
   $('setNext').setAttribute('aria-pressed', String(n)); $('setNext').textContent = n ? 'On' : 'Off';
   $('setArrows').setAttribute('aria-pressed', String(a)); $('setArrows').textContent = a ? 'On' : 'Off';
+  const k = cardsOn();
+  $('setCards').setAttribute('aria-pressed', String(k)); $('setCards').textContent = k ? 'On' : 'Off';
 }
 $('setBtn').addEventListener('click', () => { if (setUi.open) closeSettings(); else openSettings(); });
 $('settingsClose').addEventListener('click', closeSettings);
 $('setNext').addEventListener('click', () => nextJobSetPref(!nextJobOn()));
 $('setArrows').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); settingsUpdate(); });
+$('setCards').addEventListener('click', () => cardsSetPref(!cardsOn()));
+// ---- First-time cards (D22 (1)) ----
+// The first time each of these happens in a game, the game pauses (the speed control, as II does) and a short card
+// says what happened, why, and what to do: "Show me" puts the helper arrow on the place (guideUi.card, read by
+// guideTarget; it goes when the player gets there or after GUIDE.PEEK_S) and closes the card, "OK" just closes it;
+// either way the game runs on at the speed it had. Each card shows once per game: the ids shown are kept in the save
+// beside the state (save.ui.cards, like the camera's turn and zoom: not part of S, so the sim, its hash and the old
+// saves are untouched; a save without the list has shown none). Settings turns the cards off (kept in this browser,
+// like the Arrows toggle). Page side only: nothing here sends a command or changes S, so the game's results are the
+// same with cards on or off (the pause only stops the clock, as II does).
+// During the investor's tutorial a card whose moment a tutorial telegram covers (tut: that step's goal bit) waits:
+// once the tutorial has taught it (the goal met) it is dropped, and if the tutorial is skipped it shows the next time
+// it happens. No card shows during the welcome, over a big panel, a Look card or the build tool, or while a telegram
+// slides in; it waits for them (an event card waits for the next time instead, so it is never stale).
+// Each card: title, text (2 to 4 short sentences; v: what the trigger found), place (Show me's arrow), and either ev
+// (looks at one tick's events, returns v or null) or state (looked at every CARD.STATE_TICKS ticks, returns v or null).
+const CARD = { PREF: 'railhead-cards', STATE_TICKS: 4, GAP_MS: 1200, NEED_S: 90 * 60 };
+const cardPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+function cardEngine(S, tr) { const ps = trainPoses(S.track, tr), i = tr.consist.findIndex(c => c.k === 'loco'), p = ps[Math.max(0, i)]; return p ? { x: p.x, z: p.z } : null; }
+function cardHubWindow(S) { const K = paxStation(S.track, 'hub'); return K ? { x: K.staff.x, z: K.staff.z, k: 'window', label: 'Ticket window: sell tickets' } : null; }
+const CARDS = {
+  overlandIn: { tut: TUT_GOT.unload, title: 'The Overland is in',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'overlandSetOut' && e.cars > 0); return e ? { n: e.cars } : null; },
+    text: v => `The Overland, the big railroad's train from the East, has left ${cardPlural(v.n, 'car')} of your goods on the interchange track. It brings what you order at the work board, at 06:00 and 18:00 each day. Take the goods out of the cars and sort them into the freight shed's bays.`,
+    place: S => { const c = tutSetOutCars(S)[0], m = c || guideMeetSpot(); return m && { x: m.x, z: m.z, k: c ? 'car' : 'meet', label: 'Overland car: take the goods out' }; } },
+  travellersOff: { title: 'Travellers off the Overland', tutNow: 'tickets',   // not while the tutorial's ticket step is up
+    ev: (S, ev) => { const n = ev.filter(e => e.t === 'paxArrived' && e.from === 'outside').length; return n ? { n } : null; },
+    text: v => `${v.n === 1 ? 'A traveller' : v.n + ' travellers'} stepped off the Overland at the interchange. They are going on to Willow Ford, so they walk to the hub's ticket window and wait in line. Sell them tickets, and No. 1 takes them on her next run.`,
+    place: S => cardHubWindow(S) },
+  ticketLine: { tut: TUT_GOT.tickets, title: 'Someone wants a ticket',
+    state: S => { const D = S.pax && S.pax.desk, n = S.pax ? S.pax.list.filter(p => p.st === 'hub' && p.s === 'queue').length : 0; return n && !(D && D.st === 'hub') ? { n } : null; },
+    text: v => `${v.n === 1 ? 'A traveller is' : v.n + ' travellers are'} waiting at the hub's ticket window. Nobody gets a ticket unless you sell it: go into the depot by its door and stand behind the counter. A ticket to Willow Ford is 40 cents, and they wait in line as long as it takes.`,
+    place: S => cardHubWindow(S) },
+  trainIn: { title: 'Your train is in',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'ttArrived' && e.st === 'hub' && e.i > 0 && S.trains[e.tr] && !S.trains[e.tr].owner);
+      if (!e) return null;
+      const nx = schedStops(S, 'hub').find(r => r.dep && S.tt.services[r.svc] && S.tt.services[r.svc].train === e.tr && r.state !== 'Cancelled');
+      return { tr: e.tr, name: S.trains[e.tr].name, dep: nx ? nx.dep : '' }; },
+    text: v => `${v.name}, your train, has come in at the hub's platform from Willow Ford. Travellers step off and new ones board, goods come off her cars, and her tender wants wood and water${v.dep ? ` before she leaves at ${v.dep}` : ''}. The work board behind the ticket counter lists what she needs.`,
+    place: (S, v) => { const tr = S.trains[v.tr], p = tr && cardEngine(S, tr); return p && { x: p.x, z: p.z, k: 'car', label: `${v.name}: your train` }; } },
+  switchWait: { title: 'A train waits at a switch',
+    // The tutorial's switch step covers this while it is the step in hand (its arrow is already on the switch).
+    tutNow: 'switch',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'trainSwitchWait' && S.trains[e.tr] && !S.trains[e.tr].owner); return e ? { tr: e.tr, name: S.trains[e.tr].name, sw: e.sw } : null; },
+    text: v => `${v.name} has stopped short of switch ${v.sw}: it is set the wrong way for her. Trains never throw switches; you do, at the stand beside the track. Walk to the stand and tap it, and she goes on.`,
+    place: (S, v) => { const W = S.track.switches[v.sw]; return W && { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: `Switch ${v.sw}: tap the stand to throw it` }; } },
+  switchNeed: { tut: TUT_GOT.sw, title: 'Switches to set',
+    state: S => { const n = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.sw] && typeof n.byTime === 'number' && n.byTime - S.time <= CARD.NEED_S) : null;
+      return n ? { sw: n.sw, want: n.want, by: n.by || econWhen(n.byTime).slice(4), name: guideTrainName(n) } : null; },
+    text: v => `${v.name} needs switch ${v.sw} set ${v.want === 'reverse' ? 'to the turn-off (red)' : 'straight (green)'} by ${v.by}. The work board behind the ticket counter lists every switch each train needs, with the time to set it by. Walk to the switch stand and tap it before the train gets there.`,
+    place: (S, v) => { const W = S.track.switches[v.sw]; return W && { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: `Switch ${v.sw}: set it by ${v.by}` }; } },
+  lowTender: { title: 'Low on wood or water',
+    state: S => {
+      for (const tr of S.trains) {
+        if (tr.owner || trainOff(tr)) continue;
+        const L = trainLocos(tr)[0], run = S.tt ? ttRunOf(S, tr.id) : null;
+        if (L && typeof L.fuel === 'number' && L.fuel < CFG.CORD_U) return { tr: tr.id, name: tr.name, what: 'wood' };
+        if (run && run.why && /take water|low on water/.test(run.why)) return { tr: tr.id, name: tr.name, what: 'water' };
+      }
+      return null; },
+    text: v => `${v.name}'s tender is low on ${v.what}. An engine burns wood and boils away water as she runs; without enough she cannot leave. ` +
+      (v.what === 'wood' ? 'Carry cords of wood from the wood stage to her tender: tap a cord, then tap the engine.' : 'Take water at the water tower: walk to the spout while she stands under it.'),
+    place: (S, v) => { const tr = S.trains[v.tr], L = tr && trainLocos(tr)[0], p = L ? ttTenderAt(S, tr, L.id) : null; return p && { x: p.x, z: p.z, k: 'tender', label: `${v.name}: ${v.what === 'wood' ? 'put wood on the tender' : 'take water'}` }; } },
+  offer: { tut: TUT_GOT.accept, title: 'A contract offer',
+    state: S => { const k = S.econ ? S.econ.contracts.find(k => k.status === 'OFFERED') : null, b = k && econBiz(k.counterparty);
+      return k && b ? { who: b.name, what: `${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}`, due: econWhen(k.due) } : null; },
+    text: v => `The ${v.who} has pinned an offer on the work board: ${v.what}, delivered by ${v.due}. A contract pays when the goods reach the business's door. Take it at the work board behind the ticket counter, then order the goods there; the Overland brings them.`,
+    place: S => { const w = econWorkBoardSpot(); return w && { x: w.x, z: w.z, k: 'workboard', label: 'Work board: take a contract' }; } },
+  shedGoods: { tut: TUT_GOT.deliver, title: 'Goods waiting in the freight shed',
+    state: S => { const I = S.items;
+      for (const id of itemsAt(S, { kind: 'BAY' })) { const wb = I.waybill[id], w = I.where[id]; if (wb && wb.consignee && wb.consignee.kind === 'BUSINESS') return { bay: w.bay, shed: w.buildingId, biz: wb.consignee.id }; }
+      return null; },
+    text: v => { const b = econBiz(v.biz); return `Goods sorted into the freight shed's bays wait there until you deliver them${b ? `, like these for the ${b.name}` : ''}. Each business pays when its goods reach its door. Carry them from the bay to the door, by hand or on the hand truck.`; },
+    place: (S, v) => { const B = BLD_BAYS[v.shed], p = B && B.bays[v.bay]; return p && { x: p.x, z: p.z, k: 'bay', label: 'Freight shed: goods to deliver' }; } },
+  delivered: { tut: TUT_GOT.deliver, title: 'Paid for a delivery',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'bizDelivered' && e.paid > 0); if (!e) return null;
+      const b = econBiz(e.biz), wb = S.items.waybill[e.id]; return { biz: e.biz, who: b ? b.name : 'business', paid: e.paid, what: wb ? COMMODITIES[wb.commodity].name.toLowerCase() : 'goods' }; },
+    text: v => `The ${v.who} paid ${econMoney(v.paid)} for the ${v.what} you brought to its door. That is how the railroad earns: goods off the Overland, carried to the businesses that want them. Take more contracts at the work board.`,
+    place: (S, v) => { const d = townDoor(v.biz); return d && { x: d.x, z: d.z, k: 'door', label: `${v.who}: its door` }; } },
+  saturdayPay: { title: 'Saturday pay',
+    ev: (S, ev) => { const p = ev.filter(e => e.t === 'contractPaid'); return p.length ? { paid: p.reduce((a, e) => a + e.amount, 0) } : null; },
+    text: v => `It is Saturday evening: your standing contracts paid what they owed for the week, ${econMoney(v.paid)} in all. A standing contract wants goods every week and pays once a week. The ledger in the office lists every payment.`,
+    place: S => { const d = econDeskSpot(); return d && { x: d.x, z: d.z, k: 'desk', label: 'Office desk: the ledger' }; } },
+  overlandAway: { title: 'The Overland took cars away',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'overlandPickedUp' && e.cars > 0); return e ? { n: e.cars, sold: e.sold, paid: e.paid } : null; },
+    text: v => `The Overland took ${cardPlural(v.n, 'car')} away from the interchange${v.sold ? ` and sold your ${cardPlural(v.sold, 'item')} for Outside for ${econMoney(v.paid)}` : ''}. On every visit it takes the empty cars, and cars holding only goods for Outside; cars with goods for here stay until you unload them.`,
+    place: S => { const m = guideMeetSpot(); return m && { x: m.x, z: m.z, k: 'meet', label: 'Interchange track' }; } },
+};
+const cardUi = { pref: null, shown: {}, open: null, queue: [], prevSpeed: null, closedAt: -1e9, S: null };
+try { const v = localStorage.getItem(CARD.PREF); if (v === 'on' || v === 'off') cardUi.pref = v; } catch (e) { /* no storage: the default */ }
+function cardsOn() { return cardUi.pref !== 'off'; }
+function cardsSetPref(on) {
+  cardUi.pref = on ? 'on' : 'off';
+  try { localStorage.setItem(CARD.PREF, cardUi.pref); } catch (e) { /* no storage: this visit only */ }
+  if (!on) cardUi.queue = [];
+  settingsUpdate();
+}
+// The cards shown in this game (for the save), and setting them from a loaded save (none for a new game).
+function cardsShownList() { return Object.keys(cardUi.shown).filter(id => CARDS[id]).sort(); }
+function cardsLoad(list) { cardUi.shown = {}; cardUi.queue = []; if (Array.isArray(list)) for (const id of list) if (CARDS[id]) cardUi.shown[id] = true; }
+// What the tutorial says about a card now: 'show', 'defer' (it will teach it, or is teaching it) or 'drop' (taught).
+function cardTut(c) {
+  const U = S.tut;
+  if (!U || U.skipped) return 'show';
+  if (c.tutNow) { const t = tutCurrent(S); return t && t.key === c.tutNow ? 'defer' : 'show'; }
+  if (!c.tut) return 'show';
+  if (U.got & c.tut) return 'drop';
+  return U.done ? 'show' : 'defer';
+}
+// Called from doTick with the tick's events: each card not shown yet whose moment came is put in the queue.
+function cardsTick(ev) {
+  if (!cardsOn() || !S.tg) return;
+  if (cardUi.S !== S) { cardUi.S = S; cardUi.queue = []; }
+  const look = S.tick % CARD.STATE_TICKS === 0;
+  for (const [id, c] of Object.entries(CARDS)) {
+    if (cardUi.shown[id] || cardUi.queue.some(q => q.id === id) || (cardUi.open && cardUi.open.id === id)) continue;
+    if (!(c.ev || look)) continue;
+    const v = c.ev ? c.ev(S, ev) : c.state(S);
+    if (!v) continue;
+    const tut = cardTut(c);
+    if (tut === 'drop') { cardUi.shown[id] = true; continue; }
+    if (tut === 'defer') continue;
+    cardUi.queue.push({ id, v, ev: !!c.ev });
+  }
+  cardShowNext();
+}
+// Can a card show now? Not during the welcome, a big panel, a Look card, the build tool or a telegram sliding in.
+function cardCanShow() {
+  const t = S.tut && tutCurrent(S);
+  return cardsOn() && !cardUi.open && !(t && t.key === 'welcome') && !bigPanelOpen() && !lookUi.open && !(typeof bt !== 'undefined' && bt.on) && tgSlide.id === null && !ui.sendMode;
+}
+function cardShowNext() {
+  if (!cardUi.queue.length || !cardCanShow() || performance.now() - cardUi.closedAt < CARD.GAP_MS) return;
+  const q = cardUi.queue.shift(), c = CARDS[q.id];
+  if (cardUi.shown[q.id]) return;
+  // A state card is looked at again (its moment may have passed while it waited); an event card shows as it was.
+  const v = q.ev ? q.v : c.state(S);
+  if (!v) return;
+  cardUi.shown[q.id] = true; cardUi.open = { id: q.id, v };
+  cardUi.prevSpeed = speed; setSpeed(0);
+  $('fcardTitle').textContent = c.title; $('fcardText').textContent = c.text(v);
+  $('fcardShow').hidden = !c.place(S, v);
+  $('fcard').hidden = false;
+  saveSoon();
+}
+function cardClose(showMe) {
+  const o = cardUi.open;
+  if (!o) return;
+  const c = CARDS[o.id], t = showMe ? c.place(S, o.v) : null;
+  cardUi.open = null; cardUi.closedAt = performance.now(); $('fcard').hidden = true;
+  if (t) { guideUi.card = { t, until: animT + GUIDE.PEEK_S }; guideUi.nextT = 0; }
+  if (speed === 0 && cardUi.prevSpeed) setSpeed(cardUi.prevSpeed);   // the game runs on as it was (paused stays paused)
+  cardUi.prevSpeed = null;
+}
+$('fcardShow').addEventListener('click', () => cardClose(true));
+$('fcardOk').addEventListener('click', () => cardClose(false));
+// ---- Warnings ahead (D22 (2)) ----
+// About WARN.AHEAD_S (30 game minutes) before the Overland comes in at the interchange, and before each of our
+// timetabled trains arrives at a station, a message (the toast, held a little longer) says what it brings, from the
+// work board's own rows (wbRows: the orders packed into the Overland's cars, the travellers and goods aboard ours),
+// and the Next job line says the same while it is due (hintTarget, after a switch the train needs). Each arrival
+// warns once (page memory, per arrival and day). Page side only: nothing here changes the state.
+const WARN = { AHEAD_S: 30 * 60, MS: 6500, EVERY: 4 };
+const warnUi = { done: {}, now: null, S: null };
+// The arrivals due within WARN.AHEAD_S: [{ key, d (seconds to go), text, t (the place: x, z, k, label, next) }], soonest first.
+function warnRows(S) {
+  if (!S.tt) return [];
+  const abs = S.time + CFG.DAY_START_S, sod = abs % 86400, day = Math.floor(abs / 86400), out = [];
+  const secs = hm => { const m = /^(\d\d):(\d\d)$/.exec(hm || ''); return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null; };
+  for (const st of ttStations(S)) for (const r of wbRows(S, st.id)) {
+    const a = secs(r.arr);
+    // Only a train running to time: a late one's time is not known, and a warning with the wrong time would mislead.
+    if (r.at || a === null || r.state !== 'On time' || (!r.overland && !r.engine)) continue;
+    const d = (a - sod + 86400) % 86400;
+    if (d <= 0 || d > WARN.AHEAD_S) continue;
+    // A train still held at an earlier stop past its departure is late too, though its row says on time.
+    const run = r.overland ? null : S.tt.runs.find(q => q.svc === r.svc && q.ph !== 'done'), held = run && run.ph === 'at' ? S.tt.services[r.svc].stops[run.i] : null;
+    if (held && held.dep !== null && held.dep !== undefined && sod > held.dep + SCHED.LATE_S) continue;
+    const tr = r.overland ? null : S.trains[S.tt.services[r.svc].train];   // so is one waiting on the line (a switch set against it)
+    if (tr && (tr.swWait !== undefined || (run && run.ph !== 'at' && run.why))) continue;
+    if (r.overland) {
+      const pax = Math.round((PAX.OVERLAND_MIN + PAX.OVERLAND_MAX) / 2), m = guideMeetSpot();
+      const brings = r.cars.n ? `${cardPlural(r.cars.n, 'car')} of your goods` : 'no goods of yours';
+      const text = `The Overland is due at ${r.arr} with ${brings} and about ${cardPlural(pax, 'traveller')}.` + (r.outCars ? ` It takes away the ${cardPlural(r.outCars, 'car')} on the interchange if they are empty.` : '') + ' Meet it at the interchange.';
+      out.push({ key: `ov:${day}:${r.arr}`, d, text, t: m && { x: m.x, z: m.z, k: 'meet', label: `Interchange: the Overland at ${r.arr}`, next: text.charAt(0).toLowerCase() + text.slice(1) } });
+      continue;
+    }
+    const K = paxStation(S.track, st.id), bits = [];
+    if (r.paxOff) bits.push(`${cardPlural(r.paxOff, 'traveller')} getting off`);
+    if (r.unload.n) bits.push(`${r.unload.n} goods to unload`);
+    if (r.load.n) bits.push(`${r.load.n} to load`);
+    if (r.paxOn) bits.push(`${r.paxOn} waiting to board`);
+    const eng = [r.wood ? `${cardPlural(r.wood, 'cord')} of wood` : '', r.water ? 'water' : ''].filter(Boolean);
+    const list = bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0];
+    const text = `${r.engine} is due at ${st.id === 'hub' ? 'the hub' : st.name} at ${r.arr}` + (list ? ` with ${list}` : '') + '.' + (eng.length ? ` She wants ${eng.join(' and ')}.` : '') + ' Meet her at the platform.';
+    const p = K ? { x: K.line.x, z: K.line.z } : { x: (st.track.x0 + st.track.x1) / 2, z: (st.track.z0 + st.track.z1) / 2 };
+    out.push({ key: `s${r.svc}:${day}:${st.id}:${r.arr}`, d, text, t: { x: p.x, z: p.z, k: 'platform', label: `${st.name} platform: ${r.engine} at ${r.arr}`, next: text.charAt(0).toLowerCase() + text.slice(1) } });
+  }
+  return out.sort((a, b) => a.d - b.d);
+}
+// From doTick: every WARN.EVERY ticks, the arrivals due; a message for each one not warned of yet.
+function warnTick() {
+  if (warnUi.S !== S) { warnUi.S = S; warnUi.done = {}; warnUi.now = null; }
+  if (!S.tg || S.tick % WARN.EVERY !== 0) return;
+  const rows = warnRows(S);
+  warnUi.now = rows[0] || null;
+  for (const w of rows) if (!warnUi.done[w.key]) { warnUi.done[w.key] = true; toast(w.text, WARN.MS); }
+}
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -12816,14 +13056,16 @@ function frame(now) {
     acc += dt * speed * CFG.TICKS_PER_REAL_S;
     let n = Math.floor(acc); acc -= n;
     if (DBG.on && speed > 4) debugRunTicks(n); // debug time warp (8x to 32x), time-boxed
-    else { n = Math.min(n, 40); for (let i = 0; i < n; i++) doTick(); }
+    else { n = Math.min(n, 40); for (let i = 0; i < n && speed > 0; i++) doTick(); }   // a first-time card pauses at once (D22)
   }
   render(speed > 0 ? acc : 1, dt);
   updateHud();
   window.__railhead.drawCalls = renderer.info.render.calls;
   requestAnimationFrame(frame);
 }
-function saveJson() { return JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }); }
+// ui: the view and (D22 (1)) the first-time cards already shown in this game; not part of the state (not hashed).
+function saveUiPart() { return { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed, cards: cardsShownList() }; }
+function saveJson() { return JSON.stringify({ state: S, ui: saveUiPart() }); }
 // Saves run one after another; if several are asked for while one is writing, only the newest is written next.
 // The returned promise resolves (true or false) once the newest state asked for is written.
 // savingOff is set by the debug tools' test scenarios, so a scenario never overwrites the player's save.
@@ -12865,6 +13107,10 @@ window.__railhead = {
   guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
     job: () => { guideUi.nextT = 0; guideTarget(); return guideUi.job; }, next: nextUi, nextSetPref: nextJobSetPref, nextOn: nextJobOn, openSettings, closeSettings, settings: setUi,
     get plates() { return plates; }, econWorkBoardSpot, trainStockOurs, OUR_STRIPE, PLATE, TT_NO_ENGINE, workBoardOffers, workBoardGo, ttNeedEngineGo, get ttCardUi() { return ttCardUi; }, ttCardPin }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
+  // D22: the first-time cards and the warnings ahead (page side).
+  cards: { CARD, CARDS, get ui() { return cardUi; }, on: cardsOn, setPref: cardsSetPref, close: cardClose, shown: cardsShownList, load: cardsLoad, tut: id => cardTut(CARDS[id]),
+    WARN, warnRows: () => warnRows(S), get warn() { return warnUi; },
+    tick: ev => { cardsTick(ev); warnTick(); } },   // what doTick does after a tick, for a check that runs simTick itself
   cargo: { COMMODITIES, CARGO_TAGS, CARGO_TOWNS, get BLD_BAYS() { return BLD_BAYS; }, itemCreate, itemMove, itemCanMove, itemsAt, itemConsume, itemCheckConservation, itemType, itemTag, bayTagMatches, cargoDebugItems,
     redraw() { cargoView.dirty = true; }, get view() { return cargoView; } },
   office: { TG, TG_FROM_EVENT, telegramSend, alertsOf, tgNewStore, econDeskSpot, lookCardOf: pick => lookCardOf(S, pick), lookPickAt, alertGo, openOffice, openInbox,
@@ -12923,8 +13169,8 @@ window.__railhead = {
     openWorkCard, closeWorkCard, get workUi() { return wbUi; }, get list() { return boards.list; }, get mesh() { return boards.mesh; },
     get redraws() { return boards.redraws; }, get canvas() { return boards.canvas; }, get card() { return ttCardUi; },
     booths: () => buildingBooths(), walkInBooth, get shell() { return bldShell; } },
-  exportSave: () => JSON.stringify({ state: S, ui: { yawIdx: cam.yawIdx, zoom: cam.zoom, speed: lastSpeed } }),
-  importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
+  exportSave: () => JSON.stringify({ state: S, ui: saveUiPart() }),
+  importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; cardsLoad(sv.ui && sv.ui.cards); buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
   world: { WORLDS, HUB, WFORD, STATIONS, TURN_OFF, worldOf, worldId, stationsOf, buildingSpots, buildStartWorld, BLD_LAYOUTS, BLD_EXTENTS,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
@@ -12964,6 +13210,7 @@ window.__railhead = {
   if (loaded) {
     const u = loaded.sv.ui;
     if (u) { cam.yawIdx = u.yawIdx || 0; cam.yaw = camYawTarget(); cam.zoom = u.zoom || 1; lastSpeed = u.speed || 1; }
+    cardsLoad(u && u.cards);   // D22 (1): the first-time cards this game has shown (none in a save from before)
   } else {
     S = newState(CFG.SEED, PAGE_WORLD);
     buildWorld(S); buildActors(S); resetViewsFromState();

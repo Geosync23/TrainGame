@@ -51,6 +51,10 @@ async function openGame(viewportName, options = {}) {
     hasTouch: true,
   });
   const page = await context.newPage();
+  // D22 (1): the first-time cards pause the game and stand over the middle of the screen. The checks written before
+  // them open the game with the cards off (the player's Settings choice, kept in the browser), unless options.cards;
+  // tests/check-explain.js checks the cards themselves. A choice already stored (a reload) is kept.
+  if (!options.cards) await context.addInitScript(() => { try { if (localStorage.getItem('railhead-cards') === null) localStorage.setItem('railhead-cards', 'off'); } catch (e) { /* no storage */ } });
   const errors = [];
   page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', (err) => errors.push(String(err)));

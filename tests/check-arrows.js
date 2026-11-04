@@ -28,7 +28,7 @@ const READ = () => {
   const R = window.__railhead, t = R.guide.now(), vis = id => { const e = document.getElementById(id); return !!e && !e.hidden && e.getClientRects().length > 0; };
   const box = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: b.x, y: b.y, r: b.right, b: b.bottom, w: b.width, h: b.height }; };
   const A = R.guide.ui.arrow, D = R.guide.ui.dots;
-  return { t, arrow: A && A.visible ? { x: A.position.x, z: A.position.z, y: A.position.y } : null, dots: D && D.visible ? D.count : 0,
+  return { t, at: t && t.k !== 'button' ? R.guide.drawAt(t) : t, arrow: A && A.visible ? { x: A.position.x, z: A.position.z, y: A.position.y } : null, dots: D && D.visible ? D.count : 0,
     label: vis('guideLabel') ? document.getElementById('guideLabel').textContent : null, labelBox: vis('guideLabel') ? box('guideLabel') : null,
     edge: vis('guideEdge') ? { text: document.getElementById('guideEdgeText').textContent, ang: Number(document.getElementById('guideEdge').dataset.ang), box: box('guideEdgeArrow') } : null,
     train: vis('guideTrain') ? { text: document.getElementById('guideTrain').textContent, ...box('guideTrain') } : null,
@@ -45,7 +45,8 @@ module.exports = async function checkArrows() {
         await page.waitForTimeout(500);
         // Under a loaded machine a frame can be slow: wait until the arrow stands where the arrows point now.
         await page.waitForFunction(() => { const R = window.__railhead, t = R.guide.now(), A = R.guide.ui.arrow;
-          return !t || t.k === 'button' || (A && A.visible && Math.hypot(A.position.x - t.x, A.position.z - t.z) < 0.05); }, null, { timeout: 8000 }).catch(() => {});
+          const d = t && t.k === 'workboard' && !R.board.wbBoothStation(R.state.player.x, R.state.player.z) ? R.office.econDeskSpot() : t;   // (D22: drawn at the door from outside)
+          return !t || t.k === 'button' || (A && A.visible && Math.hypot(A.position.x - d.x, A.position.z - d.z) < 0.05); }, null, { timeout: 8000 }).catch(() => {});
         await page.waitForTimeout(200);
       };
       // ---- 1. The first step: the arrow over the office desk; panned away: the edge arrow ----
@@ -57,7 +58,10 @@ module.exports = async function checkArrows() {
       const a = await page.evaluate(READ);
       const desk = await page.evaluate(() => { const w = window.__railhead.guide.econWorkBoardSpot(); return { x: w.x, z: w.z, k: 'workboard', name: 'Work board' }; });
       await page.screenshot({ path: screenshotPath(`arrows-first-${orient}`) });
-      if (!a.t || a.t.k !== desk.k || !near(a.t, desk) || !near(a.arrow, desk)) problems.push(`${orient}: the first step's arrow should stand over the work board: ${JSON.stringify({ t: a.t, arrow: a.arrow, desk })}`);
+      // D22 (3): from outside the booth the arrow is drawn at the depot's door (the way in, in front of it), not over the
+      // board under the roof sign; the place (and the dots' end) is still the work board.
+      const door = await page.evaluate(() => { const d = window.__railhead.office.econDeskSpot(); return { x: d.x, z: d.z }; });
+      if (!a.t || a.t.k !== desk.k || !near(a.t, desk) || !near(a.arrow, door)) problems.push(`${orient}: the first step's arrow should point at the work board (drawn at the depot's door from outside): ${JSON.stringify({ t: a.t, arrow: a.arrow, desk, door })}`);
       // The integrator's note (landscape): the arrow is never cut off at the top of the screen, nor under the top buttons.
       const cut = await page.evaluate(() => { const R = window.__railhead, A = R.guide.ui.arrow; if (!A || !A.visible) return null;
         A.geometry.computeBoundingBox(); A.updateMatrixWorld();
@@ -138,7 +142,7 @@ module.exports = async function checkArrows() {
         got[k] = { k: r.t && r.t.k, label: r.label || (r.edge && r.edge.text), arrow: r.arrow, dots: r.dots };
         const base = k.replace('+car', '');
         if (!r.t || !r.arrow) { problems.push(`${orient}: no arrow at the ${k} step`); continue; }
-        if (!near(r.arrow, r.t)) problems.push(`${orient}: the arrow is not over its place at the ${k} step`);
+        if (!near(r.arrow, r.at)) problems.push(`${orient}: the arrow is not over its place at the ${k} step (D22: the work board's at the depot door from outside)`);
         if (base === 'accept' || base === 'order') {
           // D21 (2): the work board behind the counter (its use spot in the hub's booth), not the telegraph key.
           const ok = await page.evaluate(t => { const R = window.__railhead, w = R.guide.econWorkBoardSpot(); return !!w && Math.hypot(t.x - w.x, t.z - w.z) < 0.05 && R.board.wbBoothStation(w.x, w.z) === 'hub'; }, r.t);

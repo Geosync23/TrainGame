@@ -334,14 +334,17 @@ module.exports = async function checkExplain() {
         while (S.time < end) { const ev = R.simTick(S, bot.decide(S)); bot.observe(S, ev); }
         const sw = R.tt.ttSwitchNeeds(S).filter(n => !n.done);
         for (const n of sw) { const W = S.track.switches[n.sw]; if (W && !W.spring) W.state = n.want === 'reverse' ? 'R' : 'N'; }   // (screenshot only: no switch job in front of it)
-        R.camera.zoom = 1.5;
+        const K = R.pax.paxStation('hub'), P = S.player; if (!P.ride) { P.x = K.line.x; P.z = K.line.z; P.mode = 'idle'; }   // (screenshot: at the hub)
+        R.camera.zoom = 1.5; R.camera.ox = 0; R.camera.oz = 0;
       });
       await tapSel('#speeds [data-speed="1"]');
       let line = null;
       for (let k = 0; k < 30 && !line; k++) { await frames(200); line = await R(() => { const t = document.getElementById('nextJobText').textContent; return /Overland is due/.test(t) ? t : null; }); }
       await tapSel('#speeds [data-speed="0"]');
-      const msg = await R(() => ({ toast: document.getElementById('toast').textContent, shown: document.getElementById('toast').classList.contains('show'), long: document.getElementById('nextJob').classList.contains('long'),
-        clipped: (() => { const s = document.getElementById('nextJobText'); return s.scrollHeight > s.clientHeight + 1; })() }));
+      const msg = await R(() => ({ toast: document.getElementById('toast').textContent, shown: document.getElementById('toast').classList.contains('show') }));
+      // (A telegram sliding in takes the line's place for a few seconds: wait for it to go.)
+      for (let k = 0; k < 30 && await R(() => document.getElementById('nextJob').hidden); k++) await frames(250);
+      Object.assign(msg, await R(() => ({ long: document.getElementById('nextJob').classList.contains('long'), clipped: (() => { const s = document.getElementById('nextJobText'); return s.scrollHeight > s.clientHeight + 1; })() })));
       if (!line || !/^Next: the Overland is due at 18:00 with/.test(line)) P(`${orient} 2: the Next job line should warn of the Overland: ${line}`);
       if (!msg.shown || !/^The Overland is due at 18:00/.test(msg.toast)) P(`${orient} 2: a message should warn of the Overland: ${JSON.stringify(msg)}`);
       if (msg.clipped) P(`${orient} 2: the warning should fit the Next job line (3 lines at most)`);

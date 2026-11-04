@@ -12234,8 +12234,16 @@ function guideDrawDots(t) {
   D.visible = D.count > 0;
 }
 // Each frame (from render): the arrow over the place, the dots, the label above the arrow or the arrow at the edge.
+// D22 (3): where the arrow is drawn for a place. The work board hangs inside the booth, right under the WORK BOARD roof
+// sign: from outside the booth the arrow stands at the depot's door instead (the way in, where the dots lead), so it
+// never covers the sign; inside, over the board. (The place itself, guideTarget's, stays the board.)
+function guideDrawAt(t) {
+  if (!t || t.k !== 'workboard' || wbBoothStation(S.player.x, S.player.z)) return t;
+  const d = econDeskSpot();
+  return d ? { ...t, x: d.x, z: d.z } : t;
+}
 function guideDraw() {
-  const t = guideTarget();
+  const t0 = guideTarget(), t = t0 && t0.k !== 'button' ? guideDrawAt(t0) : t0;
   if (!guideUi.arrow) { guideUi.arrow = guideArrowMesh(); guideUi.dots = guideDotsMesh(); scene.add(guideUi.arrow, guideUi.dots); }
   const A = guideUi.arrow, lab = $('guideLabel'), edge = $('guideEdge');
   edge.style.zIndex = t && t.k === 'button' ? '3' : '';   // over the panel that holds the button
@@ -12250,7 +12258,7 @@ function guideDraw() {
     }
     return;
   }
-  guideDrawDots(t);
+  guideDrawDots(t0);
   if (!t) { A.visible = false; lab.hidden = edge.hidden = true; return; }
   // A steady size on screen (about GUIDE.PX tall) whatever the zoom.
   const upp = (camera.top - camera.bottom) / window.innerHeight, sc = Math.min(4, Math.max(0.6, GUIDE.PX * upp / 1.95));
@@ -13104,7 +13112,7 @@ window.__railhead = {
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
   tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
-  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
+  guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, drawAt: t => guideDrawAt(t), on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
     job: () => { guideUi.nextT = 0; guideTarget(); return guideUi.job; }, next: nextUi, nextSetPref: nextJobSetPref, nextOn: nextJobOn, openSettings, closeSettings, settings: setUi,
     get plates() { return plates; }, econWorkBoardSpot, trainStockOurs, OUR_STRIPE, PLATE, TT_NO_ENGINE, workBoardOffers, workBoardGo, ttNeedEngineGo, get ttCardUi() { return ttCardUi; }, ttCardPin }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
   // D22: the first-time cards and the warnings ahead (page side).

@@ -1,5 +1,12 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
+## Latest (2026-11-04)
+- D20 and D21 built, merged and pushed (fc66b95); full npm test passed (all checks). check-m1: worst lateness 0, none cancelled, 215 tickets, siding day 3 20:37. Busiest draw calls 84.
+- NEW playable link (published by the lead from index.html, no read needed for a new artifact): https://claude.ai/artifact/215immEY4Skh13fN9fN2db. Republish from the lead by publishing /home/user/traingame/index.html again (same path keeps the URL in this session). The old link HhqBH3hg3z1LwSS6MzxE8s is frozen at the fix-round build: updating it needs reading the live copy and index.html in full, too big for a helper now.
+- Review survey: https://claude.ai/artifact/A11agKBsDAyLdFViBAYHEn (plans/d21-review.html, answers in answers/d21-review): clarity, Willow Ford spring switches, day-1 switch work, the Overland's switches, plate/sign look, next step (M2 plan suggested).
+- Clarity survey answered (D21): https://claude.ai/artifact/JeWrFM5D3Nnoukd7f1FgAy.
+
+
 ## Start here (latest, 2026-11-03)
 The whole fix round is built and pushed (commit 5012289 and after; 36 checks pass): D15 crossings (schema 15, check-crossings), cutaway (check-cutaway), departure boards and the ticket booth inside the depot (check-board), D19 plank platforms and station detail (check-station; the M1 bot's boardLead sets off earlier when the combine is far). Playable link being updated to this build. End-of-round review page: https://claude.ai/artifact/KQQ2FMUHSBNGEkYEGy6djw (source plans/fix-round-review.html, pictures put in at publish; answers in `answers/fix-round-review`: keys `<group>.<item>` and `q.walk`, `q.feel`, `q.next`, `q.else`). The walking follow-up page https://claude.ai/artifact/E7Uqbtnynk4pbFVttfSohn (`answers/walk-speed-2`) asks the same walk question; read both. Measure memory with `python3 tools/context-usage.py`.
 

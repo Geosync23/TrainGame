@@ -269,6 +269,14 @@
   #fcardShow { background: var(--edge); color: var(--paper); }
   @media (orientation: landscape) and (max-height: 500px) { #fcard { top: calc(env(safe-area-inset-top) + 66px); width: 420px; left: auto; transform: none; right: calc(env(safe-area-inset-right) + 164px); } }
   #setBtn svg { width: 24px; height: 24px; display: block; }
+  /* D24 (UI): Check tickets over a passenger car and Send off over the engine of the railroad's standing trains, near
+     the player (two short lines, so neighbouring cars' buttons fit side by side); the train panel's railroad part. */
+  .rrBtn { left: 0; top: 0; z-index: 1; width: 92px; padding: 2px 6px; font-size: 14px; line-height: 1.1; white-space: normal; border-left-width: 6px; }
+  .rrBtn.rrCheck { border-left-color: #5b6fa8; }
+  .rrBtn.rrSend { border-left-color: #c69a2c; }
+  .rrBtn.rrSend.ready, #rrPanelSend.ready { background: var(--green); border-color: #2c5a27; color: #fff; }
+  #panelRrInfo { font-size: 14px; color: #4a3a28; line-height: 1.3; margin-bottom: 6px; }
+  #panelRr .row { display: flex; gap: 6px; }
   #settings .row { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); line-height: 1.3; }
   #settings .row button[aria-pressed] { min-width: 64px; }
   #tutTask .tools { display: flex; gap: 6px; justify-content: flex-end; }
@@ -317,6 +325,7 @@
   <div class="row"><span class="grow">The Next job line at the top of the screen: what to do next and where.</span><button id="setNext" aria-pressed="true">On</button></div>
   <div class="row"><span class="grow">Helper arrows: the way to the next job.</span><button id="setArrows" aria-pressed="false">Off</button></div>
   <div class="row"><span class="grow">First-time cards: the game pauses to explain something the first time it happens.</span><button id="setCards" aria-pressed="true">On</button></div>
+  <div class="row"><span class="grow">Train messages: a short note when a train is due, comes in, is ready or leaves. Refusals always show.</span><button id="setTrainMsgs" aria-pressed="true">On</button></div>
 </div>
 <div id="fcard" class="hud" role="dialog" aria-labelledby="fcardTitle" hidden>
   <h2 id="fcardTitle"></h2>
@@ -335,10 +344,11 @@
   <div class="row"><h2 class="grow" id="panelTitle">No. 1</h2><button id="panelClose" aria-label="Close">X</button></div>
   <div id="panelStatus"></div>
   <div id="panelLoco"></div>
-  <div class="acts">
+  <div class="acts" id="panelActs">
     <button id="actFwd">Forward</button><button id="actBack">Back</button><button id="actStop">Stop</button><button id="actSend">Send to</button>
   </div>
   <div class="acts" id="panelTt"><button id="ttToggle">Timetable: off</button><button id="ttHighball" hidden>Highball</button></div>
+  <div id="panelRr" hidden><div id="panelRrInfo"></div><div class="row"><button id="rrPanelSend" class="grow">Send off</button><button id="rrPanelNext" class="grow" hidden>Check tickets</button></div></div>
 </div>
 <div id="ttCard" class="hud" hidden><b id="ttCardTitle"></b><div id="ttCardLines"></div></div>
 <div id="telPanel" class="hud" hidden>
@@ -1034,7 +1044,7 @@ function newState(seed, world) {
     town: townNewState(),            // the placeholder towns' businesses: stock and use (section "town")
     pax: paxNewStore(seed),          // travellers at the stations and aboard (section "passengers")
     tg: tgNewStore(),                // the telegram inbox (section "telegrams and alerts")
-    tut: tutNewState(wid !== 'start'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard; D24: parked in the hub world until its rewrite (UI)
+    tut: tutNewState(wid === 'yard'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard; D24: the hub world has its own steps (TUT_HUB_STEPS)
     rr: rrNewStore(wid),             // D24: the railroad's trains and their daily schedule (section "railroad trains"); switched on in the hub world only
   };
   if (hub) {
@@ -6869,8 +6879,141 @@ const TUT_STEPS = [
       : 'Contracts, orders, tickets, switches and freight: well done. Put No. 1 back on the timetable (tap her, then Timetable) and keep her tender in wood and water. ')
       + 'The Next job line at the top says what wants doing. I will wire when there is news. HARTWELL' },
 ];
+// D24 (builder UI): the tutorial of the hub world (the station rework). It walks a new player through the first
+// passenger train (throw switch 2 for it, check tickets aboard, send it off) and the first freight train with goods of
+// theirs (take a contract, order its goods, unload a car at the cargo track, sort, deliver, send the train off). Same
+// telegrams, goals in any order, Skip and S.tut as the real start's; its own steps and goals (TUT_GOT.check, waved,
+// fwaved: a car's tickets checked, a passenger train and a freight train sent off). tutSteps(S) picks the list by world.
+// Times and names are read from the railroad's runs (RR_SCHEDULE when none is planned yet).
+const TUT_GOT_HUB = { check: 256, waved: 512, fwaved: 1024 };
+Object.assign(TUT_GOT, TUT_GOT_HUB);
+// The first run of a kind still to come or standing at the hub: { name, at ('hh:mm', its time at its track), from }.
+function tutRrNext(S, kind) {
+  const R = S.rr, r = R && R.runs.find(r => r.kind === kind && /^(due|in|stand)$/.test(r.ph));
+  if (r) return { name: r.name, at: ttClock(((r.arr + CFG.DAY_START_S) % 86400 + 86400) % 86400), from: r.from };
+  const sv = RR_SCHEDULE.find(v => v.kind === kind && v.arr > (S.time + CFG.DAY_START_S) % 86400);
+  return sv ? { name: (kind === 'pax' ? 'Passenger ' : 'Freight ') + sv.id.slice(1), at: ttClock(sv.arr), from: sv.from } : null;
+}
+const tutEnd = e => (e === 'W' ? 'the west' : 'the east');
+const TUT_HUB_STEPS = [
+  { key: 'welcome', got: TUT_GOT.read, title: 'Welcome to the Hub',
+    body: S => `You are the station agent at the Hub, with ${econMoney(S.econ.cash)} of my money. The railroad's trains come in from both ends of the line: passenger trains to the platform, freight trains to the cargo track by the freight shed. You set their switches, check tickets aboard and send each train on its way. Tap OK to begin, or Skip tutorial. HARTWELL`,
+    buttons: [{ label: 'OK', cmd: null }, { label: 'Skip tutorial', cmd: { t: 'tutorialSkip' } }] },
+  { key: 'throw', got: TUT_GOT.sw, title: 'Throw switch 2',
+    body: S => { const n = tutRrNext(S, 'pax');
+      return `${n ? n.name + ' comes in from ' + tutEnd(n.from) + ' at ' + n.at : 'The first passenger train comes in soon'}. Switch 2, at the platform's west end, is set for the bypass, so the train would stop short of it. Walk to its stand and tap it: green is straight, into the platform. HARTWELL`; } },
+  { key: 'check', got: TUT_GOT.check, title: 'Check tickets aboard',
+    body: () => 'When the train stands at the platform, travellers step off into town and the waiting ones board, without tickets. Walk along the train and tap Check tickets at each car: everyone you check pays the fare. Anyone you miss rides free. HARTWELL' },
+  { key: 'sendoff', got: TUT_GOT.waved, title: 'Send the train off',
+    body: () => 'When everyone aboard is checked, stand by the engine and tap Send off. Its switches out must be set too: the work board lists them. A train sent off after its time leaves late. HARTWELL' },
+  { key: 'accept', got: TUT_GOT.accept, title: 'Take a contract',
+    body: () => 'Contracts pay. Follow the arrow to the work board: go in by the depot door, it hangs behind the ticket counter. Offers are pinned on it: tap the board and accept one from a Hub business. HARTWELL' },
+  { key: 'order', got: TUT_GOT.order, title: 'Order the goods',
+    body: S => `Now buy what the contract needs: on the work board, tap the contract's order button. The goods ride a freight train, about ${econWhen(econNextVisit(S.time))}. Passenger trains keep coming meanwhile. HARTWELL` },
+  { key: 'unload', got: TUT_GOT.unload, title: 'Unload the freight train',
+    body: S => { const n = tutRrNext(S, 'freight');
+      return `Your goods come on a freight train${n ? ', like ' + n.name + ' at ' + n.at : ''}, to the cargo track beside the freight shed. Set its switches (the work board lists them), then walk to its car, tap it and take one item out. HARTWELL`; } },
+  { key: 'sort', got: TUT_GOT.sort, title: 'Sort it in the freight shed', body: S => TUT_STEPS.find(s => s.key === 'sort').body(S) },
+  { key: 'deliver', got: TUT_GOT.deliver, title: 'Deliver to the business', body: S => TUT_STEPS.find(s => s.key === 'deliver').body(S) },
+  { key: 'fsend', got: TUT_GOT.fwaved, title: 'Send the freight train off',
+    body: () => 'Take the rest of its goods for the Hub off the freight train; it cannot leave with them. Then stand by its engine and tap Send off. Empty cars go back with it. HARTWELL' },
+  { key: 'done', got: null, title: 'You have the way of it',
+    body: () => 'Switches, tickets, freight and contracts: well done. Six passenger trains and three freight trains come each day; the schedule board and the work board list them. The Next job line at the top says what wants doing. I will wire when there is news. HARTWELL' },
+];
+const tutSteps = S => (S && S.track && worldId(S.track) === 'hub' ? TUT_HUB_STEPS : TUT_STEPS);
+// The railroad's reads the hub's tutorial, the Next job line and the helper arrows share (pure; builder UI). PX's
+// pxCarStatus and CG's cgCarStatus when they exist, else plain reads of the state, so the page works before them.
+// A run from an event's run field (its id, or the run itself).
+function rrUiRun(S, r) { return r && typeof r === 'object' ? r : S.rr ? S.rr.runs.find(q => q.id === r) || null : null; }
+// Travellers aboard a car: { aboard, unchecked, checking }.
+function rrUiCarPax(S, stock) {
+  if (typeof pxCarStatus === 'function') {
+    try { const s = pxCarStatus(S, stock); if (s) return { aboard: s.aboard | 0, unchecked: s.unchecked | 0, checking: !!s.checking }; } catch (e) { /* PX's read failed: the plain one */ }
+  }
+  let aboard = 0, unchecked = 0;
+  if (S.pax) for (const p of S.pax.list) if (p.car === stock && p.s === 'aboard') { aboard++; if (!p.chk) unchecked++; }
+  return { aboard, unchecked, checking: false };
+}
+// Goods for the hub still in a car (a count): CG's cgCarStatus (a number, or its forHub / hub / unload / n field), else
+// the items in the car not tagged for Outside.
+function rrUiCarGoods(S, stock) {
+  if (typeof cgCarStatus === 'function') {
+    try {
+      const s = cgCarStatus(S, stock);
+      if (typeof s === 'number') return s;
+      if (s && typeof s === 'object') for (const k of ['forHub', 'hub', 'unload', 'n']) if (typeof s[k] === 'number') return s[k];
+    } catch (e) { /* CG's read failed: the plain one */ }
+  }
+  return itemsAt(S, { kind: 'CAR', stockId: stock }).filter(id => itemTag(S.items.waybill[id]) !== 'OUTSIDE').length;
+}
+// The railroad's trains standing at their tracks: [{ run, tr }].
+function rrUiStanding(S) {
+  if (!S.rr || !S.rr.on) return [];
+  return S.rr.runs.filter(r => r.ph === 'stand' && r.slot !== null && S.trains[r.slot] && !trainOff(S.trains[r.slot])).map(run => ({ run, tr: S.trains[run.slot] }));
+}
+// Is a standing run's work done (travellers off and on and checked, goods for the hub off)? TR's own readiness (a
+// run.ready flag) when it sets one; else PX's and CG's checks and the cars.
+function rrUiReady(S, run, tr) {
+  if (run.ph !== 'stand') return false;
+  if (typeof run.ready === 'boolean') return run.ready;
+  const cars = tr.consist.filter(c => c.k !== 'loco');
+  if (run.kind === 'pax') return pxReady(S, run, tr) && cars.every(c => rrUiCarPax(S, c.id).unchecked === 0);
+  return cgReady(S, run, tr) && cars.every(c => rrUiCarGoods(S, c.id) === 0);
+}
+// The switches still to set for the railroad's trains (TR's rrSwitchNeeds rows, not done), soonest first.
+function rrUiNeeds(S) {
+  let rows = [];
+  try { rows = (S.rr && S.rr.on ? rrSwitchNeeds(S) : []) || []; } catch (e) { rows = []; }
+  return rows.filter(n => n && !n.done && S.track.switches[n.sw]).sort((a, b) => (a.byTime || 0) - (b.byTime || 0));
+}
+// A spot beside a vehicle of a train (on the side the player can walk to), from the car door finder.
+function rrUiBeside(S, stock) { const P = S.player, d = carryCarDoor(S, stock, P.x, P.z); return d ? { x: d.x + d.ox * CARRY_DOOR.WALK, z: d.z + d.oz * CARRY_DOOR.WALK } : null; }
+// The engine of a train (its stock id), or null.
+const rrUiLoco = tr => { const c = tr && tr.consist.find(c => c.k === 'loco'); return c ? c.id : null; };
+// The car to work next on a standing train: a passenger car with travellers unchecked, or a freight car with goods for
+// the hub, the one nearest the player: { stock, n, x, z } (x, z: where to stand), or null.
+function rrUiNextCar(S, run, tr) {
+  const P = S.player;
+  let best = null;
+  for (const c of tr.consist) {
+    if (c.k === 'loco') continue;
+    const n = run.kind === 'pax' ? rrUiCarPax(S, c.id).unchecked : rrUiCarGoods(S, c.id);
+    if (!n) continue;
+    const at = rrUiBeside(S, c.id);
+    if (!at) continue;
+    const d = Math.hypot(at.x - P.x, at.z - P.z);
+    if (!best || d < best.d) best = { stock: c.id, n, x: at.x, z: at.z, d };
+  }
+  return best;
+}
+// Where a run's train stands at the hub (its track's middle, on the station side).
+function rrUiTrackSpot(track) {
+  const s = track === 'cargo' ? HUBW.CARGO : HUBW.PLATFORM;
+  return { x: (s.x0 + s.x1) / 2, z: -3.12 };
+}
+// The hub tutorial's place for the step in hand: { x, z, k, ... }, null (no place now), or undefined (not a hub step:
+// the real start's code finds it).
+function tutHubTarget(S, c) {
+  const kind = c.key === 'check' || c.key === 'sendoff' ? 'pax' : c.key === 'unload' || c.key === 'fsend' ? 'freight' : null;
+  if (c.key === 'throw') {
+    const need = rrUiNeeds(S)[0], sws = S.track.switches;
+    if (need) { const W = sws[need.sw]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', sw: need.sw, need }; }
+    const W = sws[HUB_SW.PW];
+    return W && W.state !== 'N' ? { x: W.stand.ux, z: W.stand.uz, k: 'switch', sw: HUB_SW.PW } : null;
+  }
+  if (!kind) return undefined;
+  const st = rrUiStanding(S).find(o => o.run.kind === kind);
+  if (c.key === 'sendoff' || c.key === 'fsend') {
+    if (!st) return null;
+    const at = rrUiBeside(S, rrUiLoco(st.tr));
+    return at && { x: at.x, z: at.z, k: 'engine', tr: st.tr.id, run: st.run.id };
+  }
+  if (!st) { const p = rrUiTrackSpot(kind === 'pax' ? 'platform' : 'cargo'); return { x: p.x, z: p.z, k: kind === 'pax' ? 'platform' : 'cargo' }; }
+  const car = rrUiNextCar(S, st.run, st.tr);
+  return car ? { x: car.x, z: car.z, k: 'car', stock: car.stock, tr: st.tr.id, n: car.n } : null;
+}
 function tutSend(S, i, ev) {
-  const U = S.tut, st = TUT_STEPS[i];
+  const U = S.tut, st = tutSteps(S)[i];
   const r = telegramSend(S, { from: TUT.FROM, title: st.title, body: st.body(S), buttons: st.buttons || null, kind: 'tutorial', ref: { kind: 'tutorial', step: i } }, ev);
   U.step = i; U.tg = r.ok ? r.id : -1;
   ev.push({ t: 'tutStep', step: i, key: st.key });
@@ -6880,7 +7023,12 @@ function tutSend(S, i, ev) {
 function tutTick(S, ev) {
   const U = S.tut;
   if (!U || U.done || !S.tg) return;
+  const steps = tutSteps(S), hub = steps === TUT_HUB_STEPS;
   for (const e of ev) {
+    // D24 (hub): switch 2 thrown for the platform; a car's tickets checked; a passenger or freight train sent off.
+    if (hub && e.t === 'switchThrown') { if (e.sw === HUB_SW.PW && e.state === 'N') U.got |= TUT_GOT.sw; continue; }
+    if (hub && e.t === 'carChecked') { U.got |= TUT_GOT.check; continue; }
+    if (hub && e.t === 'rrWavedOff') { const r = rrUiRun(S, e.run); U.got |= r && r.kind === 'freight' ? TUT_GOT.fwaved : TUT_GOT.waved; continue; }
     if (e.t === 'contractAccepted') { const k = S.econ.contracts[e.id]; if (k && tutHubBiz(k.counterparty)) U.got |= TUT_GOT.accept; }
     else if (e.t === 'orderPlaced') { const o = S.econ.orders.find(o => o.id === e.id); if (o && o.lines.some(l => l.contract !== null && tutHubBiz(S.econ.contracts[l.contract].counterparty))) U.got |= TUT_GOT.order; }
     else if (e.t === 'switchThrown') U.got |= TUT_GOT.sw;
@@ -6891,9 +7039,10 @@ function tutTick(S, ev) {
   }
   if (U.step < 0) { tutSend(S, 0, ev); return; }
   if (U.step === 0) { const g = tgGet(S, U.tg); if (!g || g.answered !== null) U.got |= TUT_GOT.read; }   // the welcome: OK tapped
-  if (!(U.got & TUT_STEPS[U.step].got)) return;
+  if (hub && S.track.switches[HUB_SW.PW] && S.track.switches[HUB_SW.PW].state === 'N') U.got |= TUT_GOT.sw;   // already straight
+  if (!(U.got & steps[U.step].got)) return;
   let i = U.step + 1;
-  while (TUT_STEPS[i].got !== null && (U.got & TUT_STEPS[i].got)) i++;
+  while (steps[i].got !== null && (U.got & steps[i].got)) i++;
   tutSend(S, i, ev);
 }
 function tutSkipCmd(S, ev) {
@@ -6906,13 +7055,15 @@ function tutSkipCmd(S, ev) {
 function tutCurrent(S) {
   const U = S.tut;
   if (!U || U.done || U.step < 0) return null;
-  return { step: U.step, key: TUT_STEPS[U.step].key, title: TUT_STEPS[U.step].title, tg: U.tg };
+  const st = tutSteps(S)[U.step];
+  return st ? { step: U.step, key: st.key, title: st.title, tg: U.tg } : null;
 }
 // Where the hint marker stands for the step in hand: { x, z, k } or null (none for the welcome, or while a car is awaited).
 function tutTarget(S) {
   const c = tutCurrent(S);
   if (!c || c.step < 1) return null;
   const P = S.player;
+  if (worldId(S.track) === 'hub') { const t = tutHubTarget(S, c); if (t !== undefined) return t; }   // D24: the hub's own steps
   // D21 (2): contracts are taken (and their goods ordered) at the hub's work board; the office desk where there is none.
   if (c.key === 'accept' || c.key === 'order') { const w = econWorkBoardSpot(); if (w) return { x: w.x, z: w.z, k: 'workboard' }; const k = econDeskSpot(); return { x: k.x, z: k.z, k: 'desk' }; }
   if (c.key === 'switch') {
@@ -6944,13 +7095,13 @@ function tutTarget(S) {
 function tutRealign(st) {
   const U = st.tut;
   if (!U || U.done || U.step < 1 || !st.tg || !Array.isArray(st.tg.list)) return;
-  const g = st.tg.list.find(g => g && g.id === U.tg), i = g ? TUT_STEPS.findIndex(s => s.title === g.title) : -1;
+  const g = st.tg.list.find(g => g && g.id === U.tg), i = g ? tutSteps(st).findIndex(s => s.title === g.title) : -1;
   if (i >= 1 && i !== U.step) U.step = i;
 }
 // Shape check for the saved tutorial (when a save is loaded). Throws on damage.
 function tutCheckSaveShape(st) {
   const U = st.tut, int = Number.isInteger;
-  if (!U || typeof U !== 'object' || typeof U.done !== 'boolean' || typeof U.skipped !== 'boolean' || !int(U.step) || U.step < -1 || U.step >= TUT_STEPS.length
+  if (!U || typeof U !== 'object' || typeof U.done !== 'boolean' || typeof U.skipped !== 'boolean' || !int(U.step) || U.step < -1 || U.step >= tutSteps(st).length
     || !int(U.tg) || !int(U.got) || !int(U.tickets) || !int(U.item)) throw new Error('damaged save: the tutorial');
 }
 
@@ -10102,7 +10253,8 @@ function boardState(l, sod) {
   return late ? 'Late' : 'Boarding';   // the train stands at this stop (Departing, or Waiting: ...)
 }
 // The rows the public schedule board shows now (schedRows): [{ train, from, to, arr, dep, plat, state }].
-function boardRows(stId) { return S.tt ? schedRows(S, stId) : []; }
+// D24 (UI): in the hub world, the railroad's trains (rrSchedRows, from TR's rrBoardRows).
+function boardRows(stId) { return rrHubOn() ? (stId === 'hub' ? rrSchedRows() : []) : S.tt ? schedRows(S, stId) : []; }
 // D21 (2): the contract offers pinned on a station's work board: the hub's (where contracts are taken), soonest due
 // first: [{ id, what ('5 flour'), who (the business), due }]. Willow Ford's board has none.
 function workBoardOffers(stId) {
@@ -10111,6 +10263,7 @@ function workBoardOffers(stId) {
 }
 // The work board's short lines in the world: the next 3 trains, [{ time, train, cars, marks: [[text, done]] }].
 function workBoardLines(stId) {
+  if (rrHubOn()) return stId === 'hub' ? rrWorkLines() : [];   // D24 (UI): the railroad's trains
   if (!S.tt) return [];
   return wbRows(S, stId).slice(0, 3).map(r => {
     const m = [];
@@ -10165,7 +10318,7 @@ function boardText(ctx, t, x, y, px, col, align, maxW, font) {
     ctx.fillText(t, 0, 0); ctx.restore();
   } else ctx.fillText(t, x, y);
 }
-const boardStateCol = st => st === 'Cancelled' ? BOARD.CXL : st === 'Late' ? BOARD.LATE : st === TT_NO_ENGINE ? BOARD.LATE : BOARD.OK;
+const boardStateCol = st => st === 'Cancelled' ? BOARD.CXL : /^Late/.test(st) ? BOARD.LATE : st === TT_NO_ENGINE ? BOARD.LATE : st === 'Ready' ? BOARD.TICK : st === 'Coming in' ? BOARD.INK : BOARD.OK;
 // Paints board b into its region of the canvas.
 function boardPaint(b) {
   const ctx = boards.canvas.getContext('2d'), [x0, y0, W, H] = b.region;
@@ -12606,9 +12759,18 @@ function ttCardHud() {
   const card = $('ttCard');
   const hide = !near || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || (typeof bt !== 'undefined' && bt.on);
   if (hide) { if (!card.hidden) card.hidden = true; ttCardUi.sig = ''; return; }
-  const b = ttBoard(S, near.st.id);
+  // D24 (UI): in the hub world the card at the platform's west end shows the railroad's next trains (rrTtCard).
+  const b = rrHubOn() ? rrTtCard() : ttBoard(S, near.st.id);
   const sig = near.st.id + b.signal + b.lines.map(l => l.time + l.name + l.state).join('|');
-  if (sig !== ttCardUi.sig) {
+  if (sig !== ttCardUi.sig && b.title) {
+    ttCardUi.sig = sig;
+    $('ttCardTitle').innerHTML = `<span class="sig" style="background:${b.signal === 'green' ? '#3fbf4a' : '#d6402a'}"></span>`;
+    $('ttCardTitle').appendChild(document.createTextNode(b.title));
+    const box = $('ttCardLines'); box.textContent = '';
+    if (!b.lines.length) { const d = document.createElement('div'); d.textContent = 'No more trains today'; box.appendChild(d); }
+    for (const l of b.lines) { const d = document.createElement('div'); d.textContent = l.text; box.appendChild(d); }
+    card.hidden = false; ttCardUi.w = card.offsetWidth; ttCardUi.h = card.offsetHeight;
+  } else if (sig !== ttCardUi.sig) {
     ttCardUi.sig = sig;
     $('ttCardTitle').innerHTML = `<span class="sig" style="background:${b.signal === 'green' ? '#3fbf4a' : '#d6402a'}"></span>`;
     $('ttCardTitle').appendChild(document.createTextNode(`${near.st.name}: train orders`));
@@ -12884,14 +13046,14 @@ function workCardUpdate() {
   }
   if (!wbUi.open) return;
   if (wbUi.booth && wbBoothStation(S.player.x, S.player.z) !== wbUi.st) { closeWorkCard(); return; }
-  const E = S.econ, rows = S.tt ? wbRows(S, wbUi.st) : [];
-  const sig = wbUi.st + JSON.stringify(rows) + (wbUi.st === 'hub' && E ? JSON.stringify([econAtKey(S), E.cash, E.orders.map(o => o.id), E.contracts.map(k => k.status + k.delivered + ':' + k.period)]) : '');
+  const E = S.econ, hubRr = rrHubOn(), rows = hubRr ? (wbUi.st === 'hub' ? rrRowsUi() : []) : S.tt ? wbRows(S, wbUi.st) : [];   // D24 (UI): the railroad's trains
+  const sig = wbUi.st + JSON.stringify(hubRr ? rows.map(r => [r.id, r.state, r.late, r.aboard, r.unchecked, r.goods, r.off, r.on, r.unload, r.switches, r.standing]) : rows) + (wbUi.st === 'hub' && E ? JSON.stringify([econAtKey(S), E.cash, E.orders.map(o => o.id), E.contracts.map(k => k.status + k.delivered + ':' + k.period)]) : '');
   if (sig === wbUi.sig) return;
   wbUi.sig = sig;
   const st = ttStation(S, wbUi.st);
   $('workTitle').textContent = `Work board: ${st ? st.name : paxPlaceName(wbUi.st)}`;
   const body = $('workBody'), top = body.scrollTop;
-  body.innerHTML = workCardContractsHtml() + (rows.length ? rows.map(workCardRowHtml).join('') : '<div>No trains in the next hours.</div>');
+  body.innerHTML = workCardContractsHtml() + (rows.length ? rows.map(hubRr ? rrWorkCardRowHtml : workCardRowHtml).join('') : '<div>No trains in the next hours.</div>');
   body.scrollTop = top;
 }
 // Where the player stands to read station stId's work board (its depot's 'workboard' use spot), or null.
@@ -12935,6 +13097,7 @@ $('workBody').addEventListener('click', e => {
   if (!b || b.disabled) return;
   if (b.dataset.act === 'engine') { ttNeedEngineGo(Number(b.dataset.svc)); return; }
   if (b.dataset.act === 'wbGo') { workBoardGo(wbUi.st); return; }
+  if (b.dataset.act === 'rrShow') { rrShowTrain(Number(b.dataset.tr)); return; }   // D24 (UI): the arrow to a standing train
   econActClick(b);
   wbUi.sig = ''; workCardUpdate();
 });
@@ -13295,6 +13458,7 @@ function guideNeedLabel(need) {
 }
 // The tutorial step's place and label: { x, z, label, k } or null.
 function guideTutTarget(c) {
+  if (rrHubOn()) { const r = rrGuideTut(c); if (r !== undefined) return r; }   // D24 (UI): the hub tutorial's own steps
   const t = tutTarget(S);
   if (c.key === 'accept' || c.key === 'order') {
     const what = c.key === 'accept' ? 'take a contract' : 'order the goods';
@@ -13341,6 +13505,7 @@ function guideNeedNext(need) {
 // Overland due within 3 game hours with goods we ordered, contract offers on the work board, and an open contract
 // whose goods are not ordered yet.
 function hintTarget() {
+  if (rrHubOn()) { const r = rrHintTarget(); if (r) return r; }   // D24 (UI): the railroad's trains first
   const need = typeof ttSwitchNeeds === 'function' ? (ttSwitchNeeds(S) || []).find(n => !n.done && S.track.switches[n.sw]) : null;
   if (need) { const W = S.track.switches[need.sw]; return { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: guideNeedLabel(need), next: guideNeedNext(need) }; }
   // D22 (2): an arrival due within 30 game minutes (the Overland, or one of our trains): what it brings, and where to meet it.
@@ -13403,6 +13568,7 @@ function guideJob() {
   const c = tutCurrent(S);
   let t = null, text;
   if (c && c.key === 'welcome') text = 'Tutorial: read the welcome telegram (tap here)';
+  else if (c && c.key !== 'throw' && rrHubOn() && rrUrgent()) { t = rrUrgent(); text = 'Next: ' + t.next; }   // D24 (UI): a train waiting at a switch comes first
   else if (c) { t = guideTutTarget(c); text = 'Tutorial: ' + (t && t.next ? t.next : c.title.charAt(0).toLowerCase() + c.title.slice(1)); }
   else if (guideStage() === 'tt') { t = guideTtTarget(); text = 'Next: ' + (t ? t.next : 'put No. 1 on the timetable'); }
   else { t = hintTarget(); text = 'Next: ' + (t ? t.next : guideIdleText()); }
@@ -13410,6 +13576,7 @@ function guideJob() {
 }
 // Nothing pressing: the next departure of ours from the hub.
 function guideIdleText() {
+  if (rrHubOn()) return rrIdleText();   // D24 (UI)
   const r = S.tt ? schedStops(S, 'hub').find(r => r.dep && r.state !== 'Cancelled') : null;
   if (r && r.state === TT_NO_ENGINE) return `the ${r.dep} to ${r.to || 'Willow Ford'} needs an engine (tap it on the schedule board)`;
   return r ? `nothing pressing; the next train leaves the hub at ${r.dep}` : 'nothing pressing just now';
@@ -13650,12 +13817,15 @@ function settingsUpdate() {
   $('setArrows').setAttribute('aria-pressed', String(a)); $('setArrows').textContent = a ? 'On' : 'Off';
   const k = cardsOn();
   $('setCards').setAttribute('aria-pressed', String(k)); $('setCards').textContent = k ? 'On' : 'Off';
+  const m = rrMsgOn();   // D24 (UI): the railroad's train messages
+  $('setTrainMsgs').setAttribute('aria-pressed', String(m)); $('setTrainMsgs').textContent = m ? 'On' : 'Off';
 }
 $('setBtn').addEventListener('click', () => { if (setUi.open) closeSettings(); else openSettings(); });
 $('settingsClose').addEventListener('click', closeSettings);
 $('setNext').addEventListener('click', () => nextJobSetPref(!nextJobOn()));
 $('setArrows').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); settingsUpdate(); });
 $('setCards').addEventListener('click', () => cardsSetPref(!cardsOn()));
+$('setTrainMsgs').addEventListener('click', () => rrMsgSetPref(!rrMsgOn()));
 // ---- First-time cards (D22 (1)) ----
 // The first time each of these happens in a game, the game pauses (the speed control, as II does) and a short card
 // says what happened, why, and what to do: "Show me" puts the helper arrow on the place (guideUi.card, read by
@@ -13720,8 +13890,8 @@ const CARDS = {
     place: (S, v) => { const tr = S.trains[v.tr], L = tr && trainLocos(tr)[0], p = L ? ttTenderAt(S, tr, L.id) : null; return p && { x: p.x, z: p.z, k: 'tender', label: `${v.name}: ${v.what === 'wood' ? 'put wood on the tender' : 'take water'}` }; } },
   offer: { tut: TUT_GOT.accept, title: 'A contract offer',
     state: S => { const k = S.econ ? S.econ.contracts.find(k => k.status === 'OFFERED') : null, b = k && econBiz(k.counterparty);
-      return k && b ? { who: b.name, what: `${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}`, due: econWhen(k.due) } : null; },
-    text: v => `The ${v.who} has pinned an offer on the work board: ${v.what}, delivered by ${v.due}. A contract pays when the goods reach the business's door. Take it at the work board behind the ticket counter, then order the goods there; the Overland brings them.`,
+      return k && b ? { who: b.name, what: `${k.quantity} ${COMMODITIES[k.commodity].name.toLowerCase()}`, due: econWhen(k.due), hub: worldId(S.track) === 'hub' } : null; },
+    text: v => `The ${v.who} has pinned an offer on the work board: ${v.what}, delivered by ${v.due}. A contract pays when the goods reach the business's door. Take it at the work board behind the ticket counter, then order the goods there; ${v.hub ? 'a freight train brings them' : 'the Overland brings them'}.`,
     place: S => { const w = econWorkBoardSpot(); return w && { x: w.x, z: w.z, k: 'workboard', label: 'Work board: take a contract' }; } },
   shedGoods: { tut: TUT_GOT.deliver, title: 'Goods waiting in the freight shed',
     state: S => { const I = S.items;
@@ -13731,8 +13901,8 @@ const CARDS = {
     place: (S, v) => { const B = BLD_BAYS[v.shed], p = B && B.bays[v.bay]; return p && { x: p.x, z: p.z, k: 'bay', label: 'Freight shed: goods to deliver' }; } },
   delivered: { tut: TUT_GOT.deliver, title: 'Paid for a delivery',
     ev: (S, ev) => { const e = ev.find(e => e.t === 'bizDelivered' && e.paid > 0); if (!e) return null;
-      const b = econBiz(e.biz), wb = S.items.waybill[e.id]; return { biz: e.biz, who: b ? b.name : 'business', paid: e.paid, what: wb ? COMMODITIES[wb.commodity].name.toLowerCase() : 'goods' }; },
-    text: v => `The ${v.who} paid ${econMoney(v.paid)} for the ${v.what} you brought to its door. That is how the railroad earns: goods off the Overland, carried to the businesses that want them. Take more contracts at the work board.`,
+      const b = econBiz(e.biz), wb = S.items.waybill[e.id]; return { biz: e.biz, who: b ? b.name : 'business', paid: e.paid, what: wb ? COMMODITIES[wb.commodity].name.toLowerCase() : 'goods', hub: worldId(S.track) === 'hub' }; },
+    text: v => `The ${v.who} paid ${econMoney(v.paid)} for the ${v.what} you brought to its door. That is how the railroad earns: goods off the ${v.hub ? 'freight trains' : 'Overland'}, carried to the businesses that want them. Take more contracts at the work board.`,
     place: (S, v) => { const d = townDoor(v.biz); return d && { x: d.x, z: d.z, k: 'door', label: `${v.who}: its door` }; } },
   saturdayPay: { title: 'Saturday pay',
     ev: (S, ev) => { const p = ev.filter(e => e.t === 'contractPaid'); return p.length ? { paid: p.reduce((a, e) => a + e.amount, 0) } : null; },
@@ -13875,10 +14045,416 @@ function warnTick() {
 // Owner: builder UI (plans/rework-tech.md): the Send off button and the Check tickets button over a car door (both
 // 48 px or more), the work board's and the schedule board's rows from rrBoardRows, the Next job line and the helper
 // arrows from rrSwitchNeeds and the runs, first-time cards for the new events (rrDue, rrArrived, trainSwitchWait,
-// carChecked, fareMissed, cgUnloaded), the tutorial's rewrite for the hub world, and Settings. Stubs for now.
-const rrUi = { el: null };
-function rrHud() {}                 // UI: called every frame from the HUD update, after the Work board button
-function rrOnEvent(e) {}            // UI: messages for the railroad's events (rrDue, rrEntered, rrArrived, rrWavedOff, rrLeft, rrRefused, pxRefused)
+// carChecked, fareMissed, cgUnloaded), the tutorial's rewrite for the hub world, and Settings.
+// Page side only: nothing here changes S except through commands (checkTickets, rrWaveOff, useCar, walkTo).
+// The sim's reads it shares with the hub tutorial are in section "tutorial" (rrUiRun, rrUiCarPax, rrUiCarGoods,
+// rrUiStanding, rrUiReady, rrUiNeeds, rrUiBeside, rrUiNextCar). The rows of both boards come from TR's rrBoardRows;
+// until it returns any, from the runs themselves (rrRowsUi), so the page works with the foundation's stubs.
+const RRUI = { NEAR: 9, WAVE_REACH: 3, MSG_PREF: 'railhead-trainmsgs', SHOW_LEFT_S: 20 * 60, DUE_S: 30 * 60, NEED_S: 60 * 60 };
+const rrUi = { el: null, btns: {}, wave: null, panelSig: '', msgPref: null, ready: {} };
+try { const v = localStorage.getItem(RRUI.MSG_PREF); if (v === 'on' || v === 'off') rrUi.msgPref = v; } catch (e) { /* no storage: the default */ }
+const rrHubOn = () => !!(S && S.rr && S.rr.on);
+const rrClock = t => wbClockOf(t);
+const rrEndName = e => (e === 'W' ? 'the west' : e === 'E' ? 'the east' : 'the line');
+const rrEndWord = e => (e === 'W' ? 'West' : e === 'E' ? 'East' : '');
+const rrTrackName = t => (t === 'cargo' ? 'the cargo track' : 'the platform');
+const rrName = r => (r && r.name) || 'The train';
+const rrMins = s => Math.max(1, Math.round(s / 60));
+// One row for both boards, the Next job line and the cards, whatever its source (TR's rrBoardRows or the runs):
+// { id, run, name, kind, from, to, track, arr, dep (S.time), state ('Due' | 'Coming in' | 'At the platform' | 'At the
+//   cargo track' | 'Ready' | 'Left' | 'Cancelled'), late (s), cars, off, on, unload, load (counts), switches: [{ sw, want,
+//   by, done }], standing, aboard, unchecked (travellers aboard and not checked, live), goods (for the hub, live) }.
+function rrRowsUi() {
+  if (!rrHubOn()) return [];
+  let rows = [];
+  try { rows = rrBoardRows(S) || []; } catch (e) { rows = []; }
+  const num = v => (typeof v === 'number' ? v : Array.isArray(v) ? v.length : v && typeof v === 'object' && typeof v.n === 'number' ? v.n : 0);
+  const needs = rrUiNeeds(S), allNeeds = (() => { try { return rrSwitchNeeds(S) || []; } catch (e) { return []; } })();
+  const out = rows.length ? rows.map(r => {
+    const run = rrUiRun(S, r.run !== undefined ? r.run : r.id);
+    return { id: run ? run.id : r.id, run, name: r.name || rrName(run), kind: r.kind || (run && run.kind), from: r.from || (run && run.from), to: r.to || (run && run.to),
+      track: r.track || (run && run.track), arr: typeof r.arr === 'number' ? r.arr : run ? run.arr : null, dep: typeof r.dep === 'number' ? r.dep : run ? run.dep : null,
+      state: r.state || 'Due', late: num(r.late), cars: num(r.cars), off: num(r.off), on: num(r.on), unload: num(r.unload), load: num(r.load),
+      switches: (Array.isArray(r.switches) ? r.switches : null) };
+  }) : rrRowsFromRuns();
+  const sod = (S.time + CFG.DAY_START_S) % 86400;
+  for (const r of out) {
+    // The switches each run still needs (TR's rows say so; else rrSwitchNeeds by run), as { sw, want, by, done }.
+    const sw = r.switches || allNeeds.filter(n => n && r.run && n.run === r.run.id);
+    r.switches = sw.map(n => ({ sw: n.sw, want: n.want, by: typeof n.byTime === 'number' ? n.byTime : n.by, done: !!n.done }));
+    r.open = needs.filter(n => r.run && n.run === r.run.id);
+    const tr = r.run && r.run.slot !== null && r.run.slot !== undefined ? S.trains[r.run.slot] : null;
+    r.standing = !!(r.run && r.run.ph === 'stand' && tr && !trainOff(tr));
+    r.aboard = 0; r.unchecked = 0; r.goods = 0;
+    if (tr && !trainOff(tr)) for (const c of tr.consist) if (c.k !== 'loco') {
+      if (r.kind === 'pax') { const p = rrUiCarPax(S, c.id); r.aboard += p.aboard; r.unchecked += p.unchecked; } else r.goods += rrUiCarGoods(S, c.id);
+    }
+    if (r.standing && r.state !== 'Ready' && rrUiReady(S, r.run, tr)) r.state = 'Ready';
+    r.tr = tr;
+  }
+  void sod;
+  return out.filter(r => r.state !== 'Left' || (r.run && r.run.tGone !== null && r.run.tGone !== undefined && S.time - r.run.tGone < RRUI.SHOW_LEFT_S))
+    .sort((a, b) => (a.standing === b.standing ? 0 : a.standing ? -1 : 1) || (a.arr || 0) - (b.arr || 0));
+}
+// The rows from S.rr.runs (and today's schedule still to come, while TR plans nothing): the foundation's stubs.
+function rrRowsFromRuns() {
+  const R = S.rr, out = [], day = Math.floor((S.time + CFG.DAY_START_S) / 86400);
+  const ph2state = r => r.ph === 'due' ? 'Due' : r.ph === 'in' ? 'Coming in' : r.ph === 'stand' ? (r.track === 'cargo' ? 'At the cargo track' : 'At the platform') : r.ph === 'cxl' ? 'Cancelled' : 'Left';
+  for (const r of R.runs) {
+    const late = r.ph === 'due' || r.ph === 'in' ? Math.max(0, S.time - r.arr) : r.ph === 'stand' ? Math.max(0, S.time - r.dep, r.tArr !== null ? r.tArr - r.arr : 0) : r.tWave !== null && r.tWave !== undefined ? Math.max(0, r.tWave - r.dep) : 0;
+    out.push({ id: r.id, run: r, name: r.name, kind: r.kind, from: r.from, to: r.to, track: r.track, arr: r.arr, dep: r.dep, state: ph2state(r), late,
+      cars: r.cars ? r.cars.length : 0, off: 0, on: 0, unload: 0, load: 0, switches: null });
+  }
+  if (!R.runs.some(r => r.day === day)) {
+    const base = day * 86400 - CFG.DAY_START_S;
+    for (const sv of RR_SCHEDULE) {
+      const arr = base + sv.arr, dep = base + sv.dep;
+      if (dep < S.time) continue;
+      out.push({ id: 'p' + sv.id, run: null, name: (sv.kind === 'pax' ? 'Passenger ' : 'Freight ') + sv.id.slice(1), kind: sv.kind, from: sv.from, to: sv.to, track: sv.track,
+        arr, dep, state: 'Due', late: Math.max(0, S.time - arr), cars: sv.cars, off: 0, on: 0, unload: 0, load: 0, switches: null });
+    }
+  }
+  return out;
+}
+// Words for a row's state: the work board's and the card's (long) and the painted schedule board's (short).
+function rrStateText(r, short) {
+  const late = r.late >= SCHED.LATE_S ? rrMins(r.late) : 0;
+  if (r.state === 'Cancelled') return 'Cancelled';
+  if (r.state === 'Left') return late ? `Left, ${late} min late` : 'Left';
+  if (r.state === 'Ready' && short && S.time > r.dep + SCHED.LATE_S) return `Late ${rrMins(S.time - r.dep)} min`;
+  if (r.state === 'Ready') return short ? 'Ready' : 'Ready: send it off' + (S.time > r.dep + SCHED.LATE_S ? ` (${rrMins(S.time - r.dep)} min late)` : '');
+  if (r.standing || /^At the/.test(r.state)) {
+    const what = r.kind === 'pax' ? (short ? 'Boarding' : 'At the platform') : (short ? 'Unloading' : 'At the cargo track');
+    return late && S.time > r.dep ? (short ? `Late ${late} min` : `${what}, ${late} min late`) : what;
+  }
+  if (r.state === 'Coming in') return late ? (short ? `Late ${late} min` : `Coming in, ${late} min late`) : 'Coming in';
+  return late ? `Late ${late} min` : short ? 'On time' : 'Due';
+}
+// The painted schedule board's rows in the hub world (boardRows): { train, from, to, arr, dep, plat, state }.
+function rrSchedRows() {
+  return rrRowsUi().filter(r => r.state !== 'Left').slice(0, SCHED.ROWS).map(r => ({ train: r.name, from: rrEndWord(r.from), to: rrEndWord(r.to),
+    arr: r.arr !== null ? rrClock(r.arr) : '', dep: r.dep !== null ? rrClock(r.dep) : '', plat: r.track === 'cargo' ? 'C' : '1', state: rrStateText(r, true) }));
+}
+// The work board's short lines in the world (workBoardLines): the next 3 trains with what they want doing.
+function rrWorkLines() {
+  return rrRowsUi().filter(r => r.state !== 'Left' && r.state !== 'Cancelled').slice(0, 3).map(r => {
+    const m = [];
+    if (r.switches.length) m.push([`Sw ${r.switches.filter(w => w.done).length}/${r.switches.length}`, r.switches.every(w => w.done)]);
+    if (r.kind === 'pax' && r.standing) m.push([`Tickets ${r.aboard - r.unchecked}/${r.aboard}`, r.unchecked === 0]);
+    else if (r.kind === 'pax' && (r.off || r.on)) m.push([`Pax ${r.off}/${r.on}`, false]);
+    if (r.kind !== 'pax' && (r.standing ? r.goods : r.unload)) m.push([`Unload ${r.standing ? r.goods : r.unload}`, false]);
+    if (r.state === 'Ready') m.push(['Send off', true]);
+    if (!m.length) m.push([rrStateText(r, true), false]);
+    return { time: r.standing ? rrClock(r.dep) : rrClock(r.arr), train: r.name, cars: r.cars, state: rrStateText(r, true), marks: m };
+  });
+}
+// The work board's card in the hub world: one block per train.
+function rrWorkCardRowHtml(r) {
+  const L = [], st = rrStateText(r, false);
+  const col = r.state === 'Cancelled' ? '#b8432c' : /late/i.test(st) ? '#b5651d' : r.state === 'Ready' ? '#3d7a36' : '#3b4f7a';
+  L.push(`<div class="wbHead"><b>${esc(rrClock(r.arr))} to ${esc(rrClock(r.dep))}</b><span class="wbState" style="color:${col}">${esc(st)}</span></div>`);
+  L.push(`<div><b>${esc(r.name)}</b>: ${r.kind === 'pax' ? 'passengers' : 'freight'}, from ${esc(rrEndName(r.from))} to ${esc(rrEndName(r.to))}, at ${esc(rrTrackName(r.track))}</div>`);
+  L.push(`<div>Cars: ${r.cars}</div>`);
+  if (r.kind === 'pax') L.push(r.standing ? `<div>Tickets: ${r.aboard - r.unchecked} of ${r.aboard} aboard checked${r.unchecked ? ` (<b>${r.unchecked} to check</b>)` : ''}</div>`
+    : `<div>Passengers: ${r.off} getting off, ${r.on} waiting to board</div>`);
+  else L.push(`<div>Unload here: ${r.standing ? r.goods : r.unload}${r.load ? `; load here: ${r.load}` : ''}</div>`);
+  if (!r.switches.length) L.push('<div class="wbSw">Switches: none to set</div>');
+  else {
+    L.push('<div class="wbSw">Switches to set:</div>');
+    for (const w of r.switches) {
+      const late = !w.done && typeof w.by === 'number' && S.time > w.by;
+      const want = w.want === 'normal' ? 'straight (green)' : w.want === 'reverse' ? 'to the turn-off (red)' : String(w.want);
+      L.push(`<div class="wbSwRow"${w.done ? ' data-done' : ''}><span class="wbBox">${w.done ? 'Set' : ''}</span>Switch ${esc(w.sw)}: ${esc(want)}${typeof w.by === 'number' ? `, by ${rrClock(w.by)}` : ''}${late ? ' <b class="wbLate">late</b>' : ''}</div>`);
+    }
+  }
+  if (r.standing && r.tr) L.push(`<div class="row"><button data-act="rrShow" data-tr="${r.tr.id}">Show me</button></div>`);
+  return `<div class="wbTrain" data-key="rr${esc(r.id)}">${L.join('')}</div>`;
+}
+// ---- What the player does next with the railroad's trains: the Next job line and the arrows (hintTarget) ----
+const rrNeedPlace = n => { const W = S.track.switches[n.sw]; return { x: W.stand.ux, z: W.stand.uz }; };
+// A train of the railroad stopped short of a switch set against it: { ...place, k: 'switch', label, next }, or null.
+function rrUrgent() {
+  for (const tr of S.trains) {
+    if (tr.owner !== 'rr' || trainOff(tr) || tr.swWait === undefined || tr.swWait === null) continue;
+    const W = S.track.switches[tr.swWait];
+    if (!W) continue;
+    const want = W.state === 'N' ? 'to the turn-off' : 'straight';
+    return { x: W.stand.ux, z: W.stand.uz, k: 'switch', sw: tr.swWait, label: `Switch ${tr.swWait}: ${tr.name} is waiting`, next: `${tr.name} waits at switch ${tr.swWait}: throw it ${want}` };
+  }
+  return null;
+}
+// The most pressing job with the railroad's trains, or null: a train waiting at a switch; a switch a train needs within
+// the hour; tickets to check on a standing passenger train; goods to unload from a standing freight train; a train
+// ready to send off; a train due within 30 minutes (meet it).
+function rrHintTarget() {
+  if (!rrHubOn()) return null;
+  const u = rrUrgent();
+  if (u) return u;
+  const need = rrUiNeeds(S).find(n => typeof n.byTime !== 'number' || n.byTime - S.time <= RRUI.NEED_S);
+  if (need) {
+    const p = rrNeedPlace(need), by = need.by || (typeof need.byTime === 'number' ? rrClock(need.byTime) : '');
+    return { ...p, k: 'switch', sw: need.sw, label: guideNeedLabel(need), next: `set switch ${need.sw} ${guideSwitchWord(need)} for ${guideTrainName(need)}${by ? ' by ' + by : ''}` };
+  }
+  const st = rrUiStanding(S);
+  for (const kind of ['pax', 'freight']) for (const { run, tr } of st) {
+    if (run.kind !== kind) continue;
+    const car = rrUiNextCar(S, run, tr);
+    if (!car) continue;
+    const i = tr.consist.findIndex(c => c.id === car.stock);
+    if (kind === 'pax') return { x: car.x, z: car.z, k: 'car', stock: car.stock, label: `${tr.name}, car ${i}: check ${car.n} ticket${car.n === 1 ? '' : 's'}`, next: `check tickets on ${tr.name}, car ${i} (${car.n} unchecked)` };
+    return { x: car.x, z: car.z, k: 'car', stock: car.stock, label: `${tr.name}, car ${i}: unload ${car.n}`, next: `unload ${tr.name}'s car ${i} at the cargo track (${car.n} goods for the Hub)` };
+  }
+  for (const { run, tr } of st) if (rrUiReady(S, run, tr)) {
+    const at = rrUiBeside(S, rrUiLoco(tr)), late = S.time > run.dep + SCHED.LATE_S;
+    if (at) return { x: at.x, z: at.z, k: 'engine', tr: tr.id, label: `${tr.name}: tap Send off`, next: `send ${tr.name} off at its engine` + (late ? ` (due out ${rrClock(run.dep)}: it is late)` : `, due out ${rrClock(run.dep)}`) };
+  }
+  const due = rrRowsUi().find(r => !r.standing && (r.state === 'Due' || r.state === 'Coming in') && r.arr - S.time <= RRUI.DUE_S);
+  if (due) {
+    const p = rrUiTrackSpot(due.track);
+    return { ...p, k: due.track === 'cargo' ? 'cargo' : 'platform', label: `${due.name}: ${due.state === 'Coming in' ? 'coming in' : 'due ' + rrClock(due.arr)}`,
+      next: `${due.name} is ${due.state === 'Coming in' ? 'coming in' : 'due at ' + rrClock(due.arr)} from ${rrEndName(due.from)}, to ${rrTrackName(due.track)}: meet it there` };
+  }
+  return null;
+}
+// Nothing pressing in the hub world: the next train due.
+function rrIdleText() {
+  const r = rrRowsUi().find(r => !r.standing && r.state !== 'Left' && r.state !== 'Cancelled');
+  return r ? `nothing pressing; ${r.name} is due at ${rrClock(r.arr)} from ${rrEndName(r.from)}` : 'nothing pressing just now';
+}
+// The hub tutorial's place and words (guideTutTarget for the hub's own steps), or undefined for the shared steps.
+function rrGuideTut(c) {
+  const t = tutTarget(S);
+  if (c.key === 'throw') {
+    if (!t) return null;
+    return { x: t.x, z: t.z, k: 'switch', label: t.need ? guideNeedLabel(t.need) : `Switch ${t.sw}: tap it to set it straight (green)`, next: t.need ? guideNeedNext(t.need) : `throw switch ${t.sw} straight, for the platform` };
+  }
+  if (c.key === 'check' || c.key === 'unload') {
+    const kind = c.key === 'check' ? 'pax' : 'freight', n = tutRrNext(S, kind);
+    if (!t) return null;
+    if (t.k !== 'car') return { x: t.x, z: t.z, k: t.k, label: (kind === 'pax' ? 'Platform: ' : 'Cargo track: ') + (n ? `${n.name} at ${n.at}` : 'wait for the train'),
+      next: n ? `wait for ${n.name} at ${kind === 'pax' ? 'the platform' : 'the cargo track'}, due ${n.at}` : 'wait for the train' };
+    const tr = S.trains[t.tr], i = tr ? tr.consist.findIndex(cc => cc.id === t.stock) : 0;
+    return kind === 'pax' ? { x: t.x, z: t.z, k: 'car', stock: t.stock, label: `Car ${i}: tap Check tickets (${t.n})`, next: `check tickets on car ${i} of ${tr ? tr.name : 'the train'} (${t.n} unchecked)` }
+      : { x: t.x, z: t.z, k: 'car', stock: t.stock, label: `Car ${i}: tap it, take the goods out`, next: `take the goods out of car ${i} of ${tr ? tr.name : 'the freight train'}` };
+  }
+  if (c.key === 'sendoff' || c.key === 'fsend') {
+    if (!t) return null;
+    const tr = S.trains[t.tr];
+    return { x: t.x, z: t.z, k: 'engine', tr: t.tr, label: `${tr.name}: tap Send off`, next: `send ${tr.name} off: stand by its engine and tap Send off` };
+  }
+  return undefined;
+}
+// ---- The Check tickets and Send off buttons (over each car and the engine, near the player) and the train panel ----
+const RR_AVOID = PAX_AVOID.concat(['tutTask', 'workBtn', 'fcard', 'rideBoard', 'guideLabel', 'settings', 'workCard', 'inbox', 'office']);
+function rrClear(r, taken) {
+  if (r.l < 0 || r.r > window.innerWidth || r.t < 0 || r.b > window.innerHeight) return false;
+  for (const id of RR_AVOID) {
+    const e = $(id);
+    if (!e || e.hidden || !e.getClientRects().length) continue;
+    const q = e.getBoundingClientRect();
+    if (r.l < q.right + 4 && r.r > q.left - 4 && r.t < q.bottom + 4 && r.b > q.top - 4) return false;
+  }
+  return !taken.some(q => r.l < q.r + 4 && r.r > q.l - 4 && r.t < q.b + 4 && r.b > q.t - 4);
+}
+function rrBtn(key, cls) {
+  let b = rrUi.btns[key];
+  if (!b) {
+    b = document.createElement('button'); b.className = 'hud rrBtn ' + cls; b.hidden = true; b.dataset.key = key;
+    document.body.appendChild(b);
+    b.addEventListener('click', () => rrBtnTap(b));
+    rrUi.btns[key] = b;
+  }
+  return b;
+}
+function rrBtnTap(b) {
+  const tr = Number(b.dataset.tr), car = Number(b.dataset.car);
+  if (b.dataset.act === 'check') send({ t: 'checkTickets', tr, car });
+  else if (b.dataset.act === 'send') rrSendOff(tr);
+  else if (b.dataset.act === 'unload') send({ t: 'useCar', stock: car });
+}
+// Send off: at the engine (within RRUI.WAVE_REACH) at once; else walk there first, then send it off on arrival.
+function rrSendOff(trId) {
+  const tr = S.trains[trId], loco = rrUiLoco(tr);
+  if (!tr || loco === null) return;
+  const P = S.player, p = trainPoses(S.track, tr)[tr.consist.findIndex(c => c.id === loco)];
+  if (p && Math.hypot(p.x - P.x, p.z - P.z) <= RRUI.WAVE_REACH) { send({ t: 'rrWaveOff', tr: trId }); rrUi.wave = null; return; }
+  const at = rrUiBeside(S, loco);
+  if (!at) return;
+  send({ t: 'walkTo', x: Math.round(at.x * 100), z: Math.round(at.z * 100) });
+  rrUi.wave = { tr: trId, at: performance.now(), walking: false };
+  toast(`To ${tr.name}'s engine: it is sent off when you get there.`);
+}
+function rrWaveTick() {
+  const w = rrUi.wave;
+  if (!w) return;
+  const P = S.player, tr = S.trains[w.tr], loco = rrUiLoco(tr), run = tr ? rrRunOf(S, tr.id) : null;
+  if (!tr || trainOff(tr) || !run || run.ph !== 'stand') { rrUi.wave = null; return; }
+  if (P.mode === 'to') { w.walking = true; return; }
+  const p = trainPoses(S.track, tr)[tr.consist.findIndex(c => c.id === loco)];
+  if (p && Math.hypot(p.x - P.x, p.z - P.z) <= RRUI.WAVE_REACH) { rrUi.wave = null; send({ t: 'rrWaveOff', tr: w.tr }); return; }
+  if (w.walking || performance.now() - w.at > 3000) rrUi.wave = null;   // stopped short (the player walked elsewhere)
+}
+// Every frame from updateHud: the buttons over the cars and the engines, the train panel's railroad part, the walk
+// to an engine for a Send off.
+function rrHud() {
+  rrWaveTick();
+  rrPanelHud();
+  const P = S.player, used = {}, taken = [];
+  const hide = !rrHubOn() || !curPoses || ui.panelTrain !== null || carUi.stock !== null || telUi.open || bigPanelOpen() || lookUi.open || !!P.ride || !!cardUi.open || (typeof bt !== 'undefined' && bt.on);
+  if (!hide) for (const { run, tr } of rrUiStanding(S)) {
+    const ps = trainPoses(S.track, tr);
+    tr.consist.forEach((c, i) => {
+      const p = ps[i];
+      if (!p || Math.hypot(p.x - P.x, p.z - P.z) > RRUI.NEAR) return;
+      let key, text, act, cls;
+      if (c.k === 'loco') { key = 'e' + tr.id; act = 'send'; text = 'Send off'; cls = rrUiReady(S, run, tr) ? 'rrSend ready' : 'rrSend'; }
+      else if (run.kind === 'pax') {
+        const x = rrUiCarPax(S, c.id);
+        if (!x.unchecked && !x.checking) return;
+        key = 'c' + c.id; act = 'check'; cls = 'rrCheck'; text = x.checking ? `Checking, ${x.unchecked} left` : `Check tickets (${x.unchecked})`;
+      } else return;   // freight cars: a tap on the car opens it (as the Overland's), the arrow shows which
+      const b = rrBtn(key, cls);
+      if (b.textContent !== text) { b.textContent = text; b._w = 0; }
+      if (b.className !== 'hud rrBtn ' + cls) b.className = 'hud rrBtn ' + cls;
+      b.dataset.act = act; b.dataset.tr = tr.id; b.dataset.car = c.id;
+      if (!b._w) { b.style.visibility = 'hidden'; b.hidden = false; b._w = b.offsetWidth; b._h = b.offsetHeight; }
+      // Over the vehicle; where a neighbour's button (or the HUD) is there already, a row higher, else a row lower.
+      const s = toScreen(p.x, (c.k === 'loco' ? 2.4 : 2.0) * WS, p.z);
+      const r = [0, -(b._h + 6), b._h + 6].map(dy => ({ l: s.x - b._w / 2, r: s.x + b._w / 2, t: s.y - b._h + dy, b: s.y + dy })).find(q => rrClear(q, taken));
+      if (!r) return;
+      taken.push(r); used[key] = true;
+      b.hidden = false; b.style.visibility = 'visible';
+      b.style.transform = `translate(${Math.round(r.l)}px, ${Math.round(r.t)}px)`;
+    });
+  }
+  for (const [k, b] of Object.entries(rrUi.btns)) if (!used[k] && !b.hidden) b.hidden = true;
+}
+// The train panel for a railroad train (a tap on its engine): what it is, its tickets or goods, Send off and the next
+// car to work. The driving buttons (Forward, Back, Stop, Send to) are not the player's for these trains: hidden.
+function rrPanelHud() {
+  const id = ui.panelTrain, tr = id !== null ? S.trains[id] : null, rr = !!tr && tr.owner === 'rr';
+  if ($('panelActs').hidden !== rr) $('panelActs').hidden = rr;
+  if ($('panelRr').hidden !== !rr) $('panelRr').hidden = !rr;
+  if (!rr) { rrUi.panelSig = ''; return; }
+  const run = rrRunOf(S, id);
+  if (trainOff(tr) || !run) { closePanel(); return; }
+  const row = rrRowsUi().find(r => r.run && r.run.id === run.id);
+  const ready = run.ph === 'stand' && rrUiReady(S, run, tr), next = run.ph === 'stand' ? rrUiNextCar(S, run, tr) : null;
+  const info = `${run.kind === 'pax' ? 'Passenger train' : 'Freight train'} from ${rrEndName(run.from)} to ${rrEndName(run.to)}. At ${rrTrackName(run.track)} ${rrClock(run.arr)}, leaves ${rrClock(run.dep)}. ` +
+    (row ? (run.kind === 'pax' ? `Tickets checked: ${row.aboard - row.unchecked} of ${row.aboard}.` : `Goods for the Hub aboard: ${row.goods}.`) : '') + (row ? ` ${rrStateText(row, false)}.` : '');
+  const sig = info + '|' + ready + '|' + (next ? next.stock : '') + '|' + run.ph;
+  if (sig === rrUi.panelSig) return;
+  rrUi.panelSig = sig;
+  $('panelRrInfo').textContent = info;
+  const so = $('rrPanelSend'), nx = $('rrPanelNext');
+  so.hidden = run.ph !== 'stand'; so.classList.toggle('ready', ready);
+  nx.hidden = !next;
+  if (next) { nx.textContent = run.kind === 'pax' ? `Check car ${tr.consist.findIndex(c => c.id === next.stock)}` : `Unload car ${tr.consist.findIndex(c => c.id === next.stock)}`; nx.dataset.car = next.stock; }
+}
+$('rrPanelSend').addEventListener('click', () => { const id = ui.panelTrain; if (id !== null) { closePanel(); rrSendOff(id); } });
+$('rrPanelNext').addEventListener('click', () => {
+  const id = ui.panelTrain, car = Number($('rrPanelNext').dataset.car), run = id !== null ? rrRunOf(S, id) : null;
+  if (!run) return;
+  closePanel();
+  send(run.kind === 'pax' ? { t: 'checkTickets', tr: id, car } : { t: 'useCar', stock: car });
+});
+// A tap on a railroad train (input): the engine opens its panel; a passenger car checks its tickets; a freight car
+// opens it (walk to its door, the car panel).
+function rrTap(hit) {
+  const tr = S.trains[hit.id], c = tr && tr.consist.find(c => c.id === hit.stock), run = tr ? rrRunOf(S, tr.id) : null;
+  if (!tr || !c) return;
+  if (c.k === 'loco') { openPanel(tr.id); return; }
+  if (!run || run.ph !== 'stand') { toast(`${tr.name} is not standing at its track yet.`); return; }
+  if (run.kind === 'pax') send({ t: 'checkTickets', tr: tr.id, car: c.id });
+  else send({ t: 'useCar', stock: c.id });
+}
+// The train orders card in the hub world (the timetable's post at the platform's west end): the next 3 trains and
+// what each is doing; its lamp green while a train is ready to send off. { title, signal, lines: [{ time, name, state, text }] }.
+function rrTtCard() {
+  const rows = rrRowsUi().filter(r => r.state !== 'Left').slice(0, 3);
+  return { title: 'Hub: next trains', signal: rows.some(r => r.state === 'Ready') ? 'green' : 'red',
+    lines: rows.map(r => { const time = rrClock(r.standing ? r.dep : r.arr), state = rrStateText(r, false);
+      return { time, name: r.name, state, text: `${time} ${r.name}${r.standing ? ' leaves' : ' from ' + rrEndName(r.from)}: ${state}` }; }) };
+}
+// The work board card's Show me: the arrow to the standing train's next car to work, else its engine.
+function rrShowTrain(trId) {
+  const tr = S.trains[trId], run = tr && rrRunOf(S, trId);
+  if (!run) return;
+  closeWorkCard();
+  const c = rrUiNextCar(S, run, tr), p = c || rrUiBeside(S, rrUiLoco(tr));
+  if (!p) return;
+  const label = c ? (run.kind === 'pax' ? `${tr.name}: check tickets here` : `${tr.name}: unload this car`) : `${tr.name}: tap Send off`;
+  guideUi.card = { t: { x: p.x, z: p.z, k: c ? 'car' : 'engine', label }, until: animT + GUIDE.PEEK_S };
+  guideUi.nextT = 0;
+}
+// ---- Messages for the railroad's events (toasts; Settings can turn the plain news off, never a refusal) ----
+function rrMsgOn() { return rrUi.msgPref !== 'off'; }
+function rrMsgSetPref(on) {
+  rrUi.msgPref = on ? 'on' : 'off';
+  try { localStorage.setItem(RRUI.MSG_PREF, rrUi.msgPref); } catch (e) { /* no storage: this visit only */ }
+  settingsUpdate();
+}
+function rrOnEvent(e) {
+  const run = e.run !== undefined ? rrUiRun(S, e.run) : e.tr !== undefined ? rrRunOf(S, e.tr) : null, nm = rrName(run);
+  const news = msg => { if (rrMsgOn()) toast(msg, 4200); };
+  if (e.t === 'rrRefused' || e.t === 'pxRefused' || e.t === 'cgRefused') toast((e.why || 'Not now') + '.');
+  else if (e.t === 'rrDue' && run) {
+    const sw = rrUiNeeds(S).filter(n => n.run === run.id);
+    news(`${nm} is due at ${rrTrackName(run.track)} at ${rrClock(run.arr)}, from ${rrEndName(run.from)}.` + (sw.length ? ` Set switch ${sw.map(n => n.sw).join(' and ')} for it.` : ''));
+  }
+  else if (e.t === 'rrEntered' && run) news(`${nm} is coming in from ${rrEndName(run.from)}.`);
+  else if (e.t === 'rrArrived' && run) news(run.kind === 'pax' ? `${nm} is in at the platform: check the tickets aboard.` : `${nm} is in at the cargo track: unload its goods for the Hub.`);
+  else if (e.t === 'rrReady' && run) news(`${nm} is ready: send it off at its engine.`);
+  else if (e.t === 'rrWavedOff') news(`${nm} is on its way` + (e.late >= SCHED.LATE_S ? `, ${rrMins(e.late)} minutes late.` : '.'));
+  else if (e.t === 'rrLeft' && run && !run.tWave) news(`${nm} left by itself` + (e.late >= SCHED.LATE_S ? `, ${rrMins(e.late)} minutes late.` : '.'));
+  else if (e.t === 'rrCancelled') toast(`${nm} is cancelled` + (e.why ? `: ${e.why}.` : '.'), 4200);
+  else if (e.t === 'carChecked') news(e.n ? `Tickets checked: ${cardPlural(e.n, 'traveller')}, ${econMoney(e.n * PX.FARE)} in fares.` : 'Everyone in that car has a ticket.');
+  else if (e.t === 'fareMissed' && e.n) toast(`${cardPlural(e.n, 'traveller')} rode free on ${nm}: ${econMoney(e.cents || e.n * PX.FARE)} of fares lost.`, 4200);
+  else if (e.t === 'cgUnloaded' && run) news(`${nm}'s goods for the Hub are all off: it can be sent off.`);
+  else if (e.t === 'cgSold' && e.paid) news(`Goods sold Outside: ${econMoney(e.paid)}.`);
+}
+// ---- First-time cards for the railroad's trains (D22's card system; shown once per game, kept in the save) ----
+const rrCardRun = (S, ev, t, f) => { const e = ev.find(e => e.t === t && (!f || f(e))); return e ? rrUiRun(S, e.run !== undefined ? e.run : null) || (e.tr !== undefined ? rrRunOf(S, e.tr) : null) : null; };
+const rrCardTrain = (S, run) => (run && run.slot !== null && run.slot !== undefined ? S.trains[run.slot] : null);
+Object.assign(CARDS, {
+  rrDue: { title: 'A train is coming', tutNow: 'throw',
+    ev: (S, ev) => { const r = rrCardRun(S, ev, 'rrDue'); return r ? { run: r.id, name: r.name, at: rrClock(r.arr), from: r.from, track: r.track } : null; },
+    text: v => `${v.name} comes in from ${rrEndName(v.from)} at ${v.at}, to ${rrTrackName(v.track)}. Every train belongs to the railroad; you are the station agent who brings it in, works it and sends it off. Set the switches on its way first: a train stops short of a switch set against it.`,
+    place: (S, v) => { const n = rrUiNeeds(S).find(n => n.run === v.run), p = n ? rrNeedPlace(n) : rrUiTrackSpot(v.track); return { ...p, k: n ? 'switch' : 'platform', label: n ? `Switch ${n.sw}: set it for ${v.name}` : `${v.name}: meet it here` }; } },
+  rrSwitchWait: { title: 'A train waits at a switch', tutNow: 'throw',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'trainSwitchWait' && S.trains[e.tr] && S.trains[e.tr].owner === 'rr'); return e ? { tr: e.tr, name: S.trains[e.tr].name, sw: e.sw } : null; },
+    text: v => `${v.name} has stopped short of switch ${v.sw}: it is set the wrong way for it. Trains never throw switches; you do, at the stand beside the track. Walk to the stand and tap it, and the train comes on.`,
+    place: (S, v) => { const W = S.track.switches[v.sw]; return W && { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: `Switch ${v.sw}: tap the stand to throw it` }; } },
+  rrSwitchNeed: { tut: TUT_GOT.sw, title: 'Switches to set',
+    state: S => { const n = rrUiNeeds(S).find(n => typeof n.byTime === 'number' && n.byTime - S.time <= CARD.NEED_S);
+      return n ? { sw: n.sw, want: n.want, by: n.by || rrClock(n.byTime), name: guideTrainName(n) } : null; },
+    text: v => `${v.name} needs switch ${v.sw} set ${v.want === 'reverse' ? 'to the turn-off (red)' : 'straight (green)'} by ${v.by}. The work board lists every switch each train needs, with the time to set it by. Walk to the switch stand and tap it before the train gets there.`,
+    place: (S, v) => { const W = S.track.switches[v.sw]; return W && { x: W.stand.ux, z: W.stand.uz, k: 'switch', label: `Switch ${v.sw}: set it by ${v.by}` }; } },
+  rrPaxIn: { tut: TUT_GOT.check, title: 'Check tickets aboard',
+    ev: (S, ev) => { const r = rrCardRun(S, ev, 'rrArrived'); return r && r.kind === 'pax' ? { run: r.id, name: r.name, dep: rrClock(r.dep) } : null; },
+    text: v => `${v.name} stands at the platform. Travellers step off into town and the waiting ones board, without tickets. Walk along the train and tap Check tickets over each car: each traveller pays ${econMoney(PX.FARE)}. Anyone you miss rides free when it leaves at ${v.dep}.`,
+    place: (S, v) => { const r = rrUiRun(S, v.run), tr = rrCardTrain(S, r), c = tr && rrUiNextCar(S, r, tr), p = c || rrUiTrackSpot('platform'); return { x: p.x, z: p.z, k: c ? 'car' : 'platform', label: c ? 'Check tickets here' : `${v.name}: the platform` }; } },
+  rrCarChecked: { tut: TUT_GOT.check, title: 'Tickets checked',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'carChecked' && e.n > 0); return e ? { n: e.n } : null; },
+    text: v => `You checked ${cardPlural(v.n, 'traveller')} in that car: ${econMoney(v.n * PX.FARE)} in fares. A traveller who boards after the car was checked is unchecked again: the button over the car shows how many are left. Check every car before you send the train off.`,
+    place: () => null },
+  rrFreightIn: { tut: TUT_GOT.unload, title: 'A freight train at the cargo track',
+    ev: (S, ev) => { const r = rrCardRun(S, ev, 'rrArrived'); return r && r.kind === 'freight' ? { run: r.id, name: r.name } : null; },
+    text: v => `${v.name} stands at the cargo track beside the freight shed. Tap a car to take its goods out; set them on the cargo dock, in the freight shed's bays or in the cargo yard behind the dock. It cannot leave until its goods for the Hub are off. Passenger trains keep coming to the platform meanwhile.`,
+    place: (S, v) => { const r = rrUiRun(S, v.run), tr = rrCardTrain(S, r), c = tr && rrUiNextCar(S, r, tr), p = c || rrUiTrackSpot('cargo'); return { x: p.x, z: p.z, k: c ? 'car' : 'cargo', label: c ? 'Freight car: take the goods out' : `${v.name}: the cargo track` }; } },
+  rrUnloaded: { tut: TUT_GOT.fwaved, title: 'Freight unloaded',
+    ev: (S, ev) => { const r = rrCardRun(S, ev, 'cgUnloaded'); return r ? { run: r.id, name: r.name } : null; },
+    text: v => `${v.name}'s goods for the Hub are all off. Sort them into the freight shed's bays by their tags and deliver them to the businesses' doors. The train can be sent off now: its empty cars go back down the line.`,
+    place: (S, v) => { const r = rrUiRun(S, v.run), tr = rrCardTrain(S, r), at = tr && rrUiBeside(S, rrUiLoco(tr)); return at && { x: at.x, z: at.z, k: 'engine', label: `${v.name}: Send off` }; } },
+  rrReady: { tut: TUT_GOT.waved, title: 'Ready to send off',
+    ev: (S, ev) => { const r = rrCardRun(S, ev, 'rrReady'); return r ? { run: r.id, name: r.name, dep: rrClock(r.dep) } : null; },
+    text: v => `${v.name}'s work is done. Stand by its engine and tap Send off; set its switches out first. Sent off after ${v.dep} it leaves late, and the next train for its track waits for it.`,
+    place: (S, v) => { const r = rrUiRun(S, v.run), tr = rrCardTrain(S, r), at = tr && rrUiBeside(S, rrUiLoco(tr)); return at && { x: at.x, z: at.z, k: 'engine', label: `${v.name}: tap Send off` }; } },
+  rrFareMissed: { title: 'Fares missed',
+    ev: (S, ev) => { const e = ev.find(e => e.t === 'fareMissed' && e.n > 0); if (!e) return null; const r = rrUiRun(S, e.run); return { n: e.n, cents: e.cents || e.n * PX.FARE, name: rrName(r) }; },
+    text: v => `${cardPlural(v.n, 'traveller')} on ${v.name} rode free: ${econMoney(v.cents)} of fares lost. Check every car before you send a train off: the Check tickets button over each car shows how many are still unchecked.`,
+    place: () => null },
+});
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -13928,6 +14504,7 @@ function onTap(px, py) {
   if (rideTap(px, py, hit)) return;
   if (hit && hit.k === 'sw') { send({ t: 'useSwitch', sw: hit.id }); return; }
   if (ttTap(px, py, hit)) return;
+  if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner === 'rr') { rrTap(hit); return; }   // D24: the railroad's trains (UI)
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner) {
     // The Overland's set-out cars (and any cut of cars): walk to the car's door and see what is in it. The Overland itself: a message.
     if (S.trains[hit.id].owner === 'interchange' || S.trains[hit.id].owner === 'cut') send({ t: 'useCar', stock: hit.stock });
@@ -14403,7 +14980,7 @@ window.__railhead = {
   // A new game in the page's world: ?world=yard (the M0 test yard, for the checks written for it) or the real start.
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,
-  tut: { TUT, TUT_GOT, TUT_STEPS, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
+  tut: { TUT, TUT_GOT, TUT_STEPS, TUT_HUB_STEPS, tutSteps, tutNewState, tutCurrent, tutTarget },   // the investor's tutorial (section "tutorial")
   guide: { now: () => { guideUi.nextT = 0; return guideTarget(); }, drawAt: t => guideDrawAt(t), on: guideOn, stage: guideStage, ourTrain: guideOurTrain, openPanel, setPref: guideSetPref, hintTarget, path: guidePath, ui: guideUi,
     job: () => { guideUi.nextT = 0; guideTarget(); return guideUi.job; }, next: nextUi, nextSetPref: nextJobSetPref, nextOn: nextJobOn, openSettings, closeSettings, settings: setUi,
     get plates() { return plates; }, econWorkBoardSpot, trainStockOurs, OUR_STRIPE, PLATE, TT_NO_ENGINE, workBoardOffers, workBoardGo, ttNeedEngineGo, get ttCardUi() { return ttCardUi; }, ttCardPin }, // helper arrows, D20 (6); the Next job line, settings and plates, D21
@@ -14477,6 +15054,10 @@ window.__railhead = {
     rrDebugJump, rrStopPos, rrExitPos, rrEngineDist, rrWaveSpot, rrRunTime, rrTrainOf,   // TR
     CG_GOODS, cgLoad, cgOnDepart, cgTick, cgCarStatus, cgPlan, cgBook, cgNextFreight, cgFreightAfter, cgHubAboard, cgYardSpot },   // CG
   px: { PX, pxTk, pxCars: (st, pc) => pxCars(st || S, paxStation((st || S).track, 'hub'), pc || ridePoses(st || S)), pxCarStatus, pxRunStatus, pxReady, pxOnArrive, pxOnDepart, pxNearCar },   // D24: tickets on board (PX)
+  // D24 (UI): the page side of the station rework (boards, Next job, buttons, cards, tutorial).
+  hubui: { rows: () => rrRowsUi(), schedRows: () => rrSchedRows(), workLines: () => rrWorkLines(), hint: () => rrHintTarget(), urgent: () => rrUrgent(), ttCard: () => rrTtCard(),
+    get ui() { return rrUi; }, sendOff: rrSendOff, tap: rrTap, onEvent: rrOnEvent, msgOn: rrMsgOn, msgSetPref: rrMsgSetPref, RRUI,
+    carPax: stock => rrUiCarPax(S, stock), carGoods: stock => rrUiCarGoods(S, stock), standing: () => rrUiStanding(S), ready: (run, tr) => rrUiReady(S, run, tr), tutHubTarget: c => tutHubTarget(S, c) },
   world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };

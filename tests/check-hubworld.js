@@ -1,6 +1,6 @@
 // Check: the hub world (D24, the station rework's foundation; plans/rework-tech.md).
 // - A new game (?world=hub, the page's default since D24) is in the hub world, schema 17, with the railroad's store on,
-//   No. 1 parked (away), the Overland away, the railroad's two train slots empty, no timetable services, no tutorial.
+//   No. 1 parked (away), the Overland away, the railroad's two train slots empty, no timetable services, the hub's own tutorial (D24 UI).
 // - The track passes the validator; the through line runs straight along z = 0 from past the map's west edge to past
 //   its east edge (the railroad's trains stand off the map there); with every switch straight a train walks the whole
 //   line; 4 switches (ids 0 to 3 west to east: cargo west, cargo east, platform west, platform east), each diverging
@@ -49,7 +49,8 @@ module.exports = async function checkHubWorld() {
           if (!S.trains[1].away || S.trains[2].consist.length) P('the Overland is not away or its cut not empty');
           for (const id of R.rr.RR.SLOTS) { const t = S.trains[id]; if (!t || t.owner !== 'rr' || !t.away || t.consist.length) P(`railroad slot ${id} is not an empty, away train of owner rr`); }
           if (S.tt.services.length) P('the hub world has timetable services (No. 1\'s runs are parked)');
-          if (!S.tut.done) P('the tutorial runs in the hub world (parked until its rewrite)');
+          // D24 (UI): the hub world has its own tutorial (TUT_HUB_STEPS), which a new game starts (tests/check-hubui.js checks it).
+          if (S.tut.done || R.tut.tutSteps(S) !== R.tut.TUT_HUB_STEPS) P('a new hub game does not start the hub world\'s own tutorial');
           if (!Wd.worldParked(T, 'overland') || !Wd.worldParked(T, 'counter') || !Wd.worldParked(T, 'willow') || !Wd.worldParked(T, 'no1') || !Wd.worldParked(T, 'interchange')) P('a parked flag is off in the hub world');
           // Track.
           const errs = R.trackValidate(T);

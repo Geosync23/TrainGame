@@ -178,7 +178,10 @@ module.exports = async function checkHubWorld() {
           if (!evs.some(e => e.t === 'deskLeft' && /closed/.test(e.why || ''))) P('staffWindow is not refused in the hub world');
           for (let i = 0; i < 24 * 450; i++) evs.push(...R.simTick(s, []));
           if (evs.some(e => /^overland/.test(e.t))) P('the Overland came in the hub world');
-          if (s.pax.list.length) P(`${s.pax.list.length} M1 travellers came in the hub world`);
+          // Integrator: PX's travellers ride the railroad's trains (to the line's ends 'W' and 'E', or riders for the hub);
+          // none of the M1 counter's (for Willow Ford, or in line at the ticket window).
+          const m1pax = s.pax.list.filter(p => !['W', 'E', 'hub'].includes(p.to) || p.s === 'queue').length;
+          if (m1pax) P(`${m1pax} M1 travellers came in the hub world`);
           if (s.tt.runs.length) P('a timetable run started in the hub world');
           if (s.econ.contracts.filter(k => k.counterparty === 1).length > S.econ.contracts.filter(k => k.counterparty === 1).length) P('Willow Ford\'s store offered a contract in the hub world');
           if (s.trains.some(t => t.owner !== 'rr' && !t.away && t.consist.length)) P('a train other than the railroad\'s came onto the map (No. 1 and the Overland are parked)');   // TR: the railroad's trains run now (check-rrtrains.js)

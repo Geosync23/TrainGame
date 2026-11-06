@@ -29,7 +29,9 @@ function botSource() {
     // The next train to wave off: standing, soonest time first.
     const stand = S.rr.runs.filter(r => r.ph === 'stand').sort((a, b) => a.dep - b.dep)[0];
     const tr = stand && S.trains[stand.slot], near = tr && R.rr.rrEngineDist(S, tr) <= R.rr.RR.REACH;
-    if (near && S.time >= stand.dep) return [{ t: 'rrWaveOff', tr: tr.id }];
+    // At its time once its work is done (rrReady: with PX merged, a late traveller may still be walking up), and at
+    // the latest 5 minutes after its time.
+    if (near && S.time >= stand.dep && (stand.ready || S.time >= stand.dep + 300)) return [{ t: 'rrWaveOff', tr: tr.id }];
     const urgent = todo.find(n => n.byTime - S.time < 15 * 60);
     if (urgent) return [{ t: 'useSwitch', sw: urgent.sw }];
     if (tr && stand.dep - S.time < 25 * 60) {

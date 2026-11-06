@@ -2483,6 +2483,7 @@ function ttUncoupleCmd(S, c, ev) {
   const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null;
   if (!tr || trainOff(tr)) return ttRefuse(ev, 'There is no such train here');
   if (tr.owner === 'overland' || tr.owner === 'interchange') return ttRefuse(ev, tr.owner === 'overland' ? 'The Overland\'s crew works its own couplings' : 'Those are the Overland\'s cars: couple an engine to them first');
+  if (tr.owner === 'rr') return ttRefuse(ev, 'That is the railroad\'s train: its crew works its couplings');   // D24
   if (!Number.isInteger(c.at) || c.at < 1 || c.at >= tr.consist.length) return ttRefuse(ev, 'There is no coupling there');
   if (!ttStanding(tr)) return ttRefuse(ev, 'Wait until the train has stopped');
   ttWalkBeside(S, ttJointAt(S, tr, c.at), { k: 'cut', tr: tr.id, a: tr.consist[c.at - 1].id, b: tr.consist[c.at].id });
@@ -2803,17 +2804,24 @@ function hubLineAt(T, x, dirX) {
 function rrDebugScenario(S) {
   const T = S.track, R = S.rr, day = 0;
   S.time = RR_H(6, 50) - CFG.DAY_START_S;
+  // Integrator: the rest of today's runs are planned as rrTick would (so p2 onwards come in), and p1 and f1, standing
+  // here, replace their planned runs (a state already ticked has them planned: never twice).
+  if (R.day < day) rrPlanDay(S, day);
+  const ids = {};
+  for (const r of R.runs) if (r.day === day && (r.svc === 'p1' || r.svc === 'f1')) ids[r.svc] = r.id;
+  R.runs = R.runs.filter(r => !(r.day === day && (r.svc === 'p1' || r.svc === 'f1')));
   const stand = (svcId, slot, x, dirX) => {
     const sv = RR_SCHEDULE.find(v => v.id === svcId), tr = S.trains[slot], p = rrStopPos(T, sv);   // TR: the stopping places rrTick uses
     const cars = sv.kind === 'pax' ? Array.from({ length: sv.cars }, () => ({ ...RR.CARS.coach })) : cgConsist(S, sv);
     const consist = [{ ...RR.LOCO }].concat(cars).map(c => ({ id: R.nextStock++, ...c }));
     Object.assign(tr, { away: false, front: { e: p.e, s: p.s, d: p.d }, v: 0, mode: 'idle', m: 1, route: null, status: 'Standing', consist, name: sv.kind === 'pax' ? 'Passenger ' + svcId.slice(1) : 'Freight ' + svcId.slice(1) });
-    R.runs.push({ id: R.next++, svc: sv.id, day, kind: sv.kind, name: tr.name, from: sv.from, to: sv.to, track: sv.track,
+    R.runs.push({ id: ids[svcId] !== undefined ? ids[svcId] : R.next++, svc: sv.id, day, kind: sv.kind, name: tr.name, from: sv.from, to: sv.to, track: sv.track,
       arr: day * 86400 + sv.arr - CFG.DAY_START_S, dep: day * 86400 + sv.dep - CFG.DAY_START_S, slot, ph: 'stand',
       tIn: S.time - 900, tArr: S.time - 300, tWave: null, tGone: null, cars: consist.slice(1).map(c => c.id), lead: 0, warned: true });
   };
   stand('p1', RR.SLOTS[0], HUBW.PLATFORM.x1 - 1, 1);
   stand('f1', RR.SLOTS[1], HUBW.CARGO.x0 + 1, -1);
+  R.runs.sort((a, b) => a.arr - b.arr || a.id - b.id);
   R.day = day;
   S.track.switches[HUB_SW.PW].state = 'N';
   return S;
@@ -2979,7 +2987,7 @@ function rrRunTick(S, run, ev) {
   if (run.ph === 'due') {
     const at = rrEnterAt(run);
     if (!run.warned && S.time >= at - RR.WARN_S) { run.warned = true; ev.push({ t: 'rrDue', run: run.id, mins: Math.max(0, Math.round((at - S.time) / 60)) }); }
-    if (S.time >= run.arr + RR.CANCEL_S) { run.ph = 'cxl'; ev.push({ t: 'rrCancelled', run: run.id, why: `${run.name} could not come in for 6 hours` }); return; }
+    if (S.time >= run.arr + RR.CANCEL_S) { run.ph = 'cxl'; ev.push({ t: 'rrCancelled', run: run.id, why: `${run.name} could not come in for 6 hours` }); cgOnCancel(S, run, ev); return; }
     if (S.time >= at - 1200) rrTryEnter(S, run, ev);   // from 20 minutes early: a route round a standing train is slower
     return;
   }
@@ -3127,9 +3135,9 @@ function rrSwitchNeeds(S) {
 // The rows of the public schedule board and the work board (UI reads them), one per run of today (and any of
 // yesterday's still at the hub): { run, svc, name, kind, from, to, track, arr, dep (S.time), state ('Due' | 'Coming in' |
 // 'At the platform' | 'At the cargo track' | 'Ready' | 'Left' | 'Cancelled'), late (s: the arrival's until it stands, then
-// the departure's), arrLate, depLate, cars (how many), tr (slot or null), ready, waved, off, on, unload, load (null: PX's
-// and CG's counts, for the integrator to fill from pxCarStatus / cgCarStatus), carStatus ([{ stock, k, px, cg }] from
-// pxCarStatus / cgCarStatus when they exist), switches (rrSwitchNeeds rows of this run) }.
+// the departure's), arrLate, depLate, cars (how many), tr (slot or null), ready, waved, off, on, unload, load (counts
+// from PX's pxRunStatus and CG's cgCarStatus / cgPlan, below), carStatus ([{ stock, k, px, cg }]: pxCarStatus and
+// cgCarStatus per car), switches (rrSwitchNeeds rows of this run) }.
 function rrBoardRows(S) {
   const R = S.rr;
   if (!R || !R.on) return [];
@@ -3141,10 +3149,19 @@ function rrBoardRows(S) {
     const arrLate = run.tArr !== null ? Math.max(0, run.tArr - run.arr)
       : run.ph === 'due' ? Math.max(0, Math.max(S.time, rrEnterAt(run)) + (run.lead || 0) + RR.EARLY_S - run.arr) : run.ph === 'in' ? Math.max(0, S.time - run.arr) : 0;
     const depLate = run.tWave !== null ? rrDepLate(run) : Math.max(0, S.time - run.dep);
-    const carStatus = on ? tr.consist.slice(1).map(c => ({ stock: c.id, k: c.k, px: typeof pxCarStatus === 'function' ? pxCarStatus(S, c.id) : null, cg: typeof cgCarStatus === 'function' ? cgCarStatus(S, c.id) : null })) : [];
+    const carStatus = on ? tr.consist.slice(1).map(c => ({ stock: c.id, k: c.k, px: pxCarStatus(S, c.id), cg: cgCarStatus(S, c.id) })) : [];
+    // Integrator: the counts. Passengers (pxRunStatus): off, riders still to step off; on, travellers aboard who
+    // boarded here, or before it stands those waiting for its way. Freight (cgCarStatus, or cgPlan before it is made
+    // up): unload, goods for the Hub aboard (or booked on it); load, goods for Outside put into its cars.
+    let off = 0, onN = 0, unload = 0, load = 0;
+    if (run.kind === 'pax') {
+      const px = pxRunStatus(S, run);
+      off = px.off; onN = run.ph === 'stand' || run.ph === 'out' ? px.on : run.ph === 'due' || run.ph === 'in' ? px.waiting : 0;
+    } else if (on) for (const c of carStatus) { if (c.cg) { unload += c.cg.hub; load += c.cg.out; } }
+    else if (run.ph === 'due') unload = cgPlan(S, run).units.length;
     return { run: run.id, svc: run.svc, name: run.name, kind: run.kind, from: run.from, to: run.to, track: run.track, arr: run.arr, dep: run.dep, state,
       late: run.tArr === null && run.ph !== 'cxl' ? arrLate : depLate, arrLate, depLate, cars: on ? tr.consist.length - 1 : rrNcars(run), tr: run.slot,
-      ready: !!run.ready, waved: run.tWave !== null, off: null, on: null, unload: null, load: null, carStatus, switches: needs.filter(n => n.run === run.id) };
+      ready: !!run.ready, waved: run.tWave !== null, off, on: onN, unload, load, carStatus, switches: needs.filter(n => n.run === run.id) };
   });
 }
 // Debug and checks only: jump the clock forward to a minute before today's run svcId ('p1' .. 'f3') is to come in.
@@ -4490,7 +4507,7 @@ function econSoldOutside(S, id, ev) {
   if (!p) return 0;
   const M = typeof JOB_MAT !== 'undefined' && JOB_MAT[wb.commodity];
   const amount = wb.pieces !== undefined && M ? Math.round(p * wb.pieces / M.per) : p;
-  econPost(S, amount, 'exports', 'Overland market', { kind: 'item', id }, ev);
+  econPost(S, amount, 'exports', worldId(S.track) === 'hub' ? 'Sold down the line' : 'Overland market', { kind: 'item', id }, ev);   // D24: no Overland in the hub
   return amount;
 }
 
@@ -4585,7 +4602,7 @@ function econOrderCmd(S, c, ev) {
   if (!hub && econPack(econLineUnits(booked.concat(lines))).length > ECON.ORDER_MAX_CARS) return econRefuse(ev, `Too much for one train: the Overland brings at most ${ECON.ORDER_MAX_CARS} cars of orders a visit`);
   const id = E.nextOrder++;
   E.orders.push({ id, t: S.time, due, lines, cost });
-  econPost(S, -cost, 'imports', 'Overland market', { kind: 'order', id }, ev);
+  econPost(S, -cost, 'imports', hub ? 'Ordered down the line' : 'Overland market', { kind: 'order', id }, ev);   // D24: no Overland in the hub
   if (ev) ev.push({ t: 'orderPlaced', id, due, cost, items: lines.reduce((s, l) => s + l.n, 0) });
   return { ok: true, id };
 }
@@ -4788,8 +4805,9 @@ function cgFreightAfter(time, n) {
 // The freight train an order placed at `time` rides (its arrival, S.time).
 function cgNextFreight(time) { return cgFreightAfter(time + CG_GOODS.LEAD_S, 1)[0].arr; }
 // The train (arrival time) these checked order lines are booked on, or null when the next trains have no room for them.
-function cgBook(S, lines) {
-  for (const f of cgFreightAfter(S.time + CG_GOODS.LEAD_S, 1 + CG_GOODS.SPILL)) {
+// from: the earliest arrival to book on (default: CG_GOODS.LEAD_S from now).
+function cgBook(S, lines, from) {
+  for (const f of cgFreightAfter(from === undefined ? S.time + CG_GOODS.LEAD_S : from, 1 + CG_GOODS.SPILL)) {
     const booked = S.econ.orders.filter(o => o.due === f.arr).reduce((a, o) => a.concat(o.lines), []);
     if (econPack(econLineUnits(booked.concat(lines))).length <= f.cars) return f.arr;
   }
@@ -4902,6 +4920,20 @@ function cgCarStatus(S, stock) {
   const out = ids.filter(id => itemTag(S.items.waybill[id]) === 'OUTSIDE').length;
   return { stock, k: f.car.k, run: run ? run.id : null, items: ids.length, hub: ids.length - out, out,
     used: R ? ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0) : 0, cap: R ? R.cap : 0, why: carryCarWhy(S, stock) };
+}
+// Integrator: a freight run cancelled (rrCancelled: it could not come in) brought nothing; the orders booked on it
+// (or still waiting from before it) move to the next freight train with room (cgBook from now, no lead: the goods
+// are on their way), else the next freight train (it brings them as room allows). Events cgRebooked { run, order, due }.
+function cgOnCancel(S, run, ev) {
+  if (!S.econ || run.kind !== 'freight') return 0;
+  const moved = S.econ.orders.filter(o => o.due <= run.arr).sort((a, b) => a.due - b.due || a.id - b.id);
+  for (const o of moved) {
+    o.due = Number.MAX_SAFE_INTEGER;   // (not counted on any train while its new one is found)
+    const due = cgBook(S, o.lines, S.time);
+    o.due = due !== null ? due : cgFreightAfter(S.time, 1)[0].arr;
+    if (ev) ev.push({ t: 'cgRebooked', run: run.id, order: o.id, due: o.due });
+  }
+  return moved.length;
 }
 // After the economy, each tick: cgUnloaded once per standing freight run with no goods for the hub left aboard.
 function cgTick(S, ev) {
@@ -6921,44 +6953,31 @@ const TUT_HUB_STEPS = [
     body: () => 'Switches, tickets, freight and contracts: well done. Six passenger trains and three freight trains come each day; the schedule board and the work board list them. The Next job line at the top says what wants doing. I will wire when there is news. HARTWELL' },
 ];
 const tutSteps = S => (S && S.track && worldId(S.track) === 'hub' ? TUT_HUB_STEPS : TUT_STEPS);
-// The railroad's reads the hub's tutorial, the Next job line and the helper arrows share (pure; builder UI). PX's
-// pxCarStatus and CG's cgCarStatus when they exist, else plain reads of the state, so the page works before them.
+// The railroad's reads the hub's tutorial, the Next job line and the helper arrows share (pure; builder UI), on PX's
+// pxCarStatus and CG's cgCarStatus (integrator: their real fields).
 // A run from an event's run field (its id, or the run itself).
 function rrUiRun(S, r) { return r && typeof r === 'object' ? r : S.rr ? S.rr.runs.find(q => q.id === r) || null : null; }
-// Travellers aboard a car: { aboard, unchecked, checking }.
+// Travellers aboard a car (pxCarStatus): { aboard (boarded here), unchecked, checking, spot ([x, z] where the player
+// checks it, or null) }.
 function rrUiCarPax(S, stock) {
-  if (typeof pxCarStatus === 'function') {
-    try { const s = pxCarStatus(S, stock); if (s) return { aboard: s.aboard | 0, unchecked: s.unchecked | 0, checking: !!s.checking }; } catch (e) { /* PX's read failed: the plain one */ }
-  }
-  let aboard = 0, unchecked = 0;
-  if (S.pax) for (const p of S.pax.list) if (p.car === stock && p.s === 'aboard') { aboard++; if (!p.chk) unchecked++; }
-  return { aboard, unchecked, checking: false };
+  const s = pxCarStatus(S, stock);
+  return s ? { aboard: s.aboard, unchecked: s.unchecked, checking: s.checking, spot: s.spot } : { aboard: 0, unchecked: 0, checking: false, spot: null };
 }
-// Goods for the hub still in a car (a count): CG's cgCarStatus (a number, or its forHub / hub / unload / n field), else
-// the items in the car not tagged for Outside.
-function rrUiCarGoods(S, stock) {
-  if (typeof cgCarStatus === 'function') {
-    try {
-      const s = cgCarStatus(S, stock);
-      if (typeof s === 'number') return s;
-      if (s && typeof s === 'object') for (const k of ['forHub', 'hub', 'unload', 'n']) if (typeof s[k] === 'number') return s[k];
-    } catch (e) { /* CG's read failed: the plain one */ }
-  }
-  return itemsAt(S, { kind: 'CAR', stockId: stock }).filter(id => itemTag(S.items.waybill[id]) !== 'OUTSIDE').length;
-}
+// Goods for the hub still in a car (cgCarStatus's hub: the items not tagged for Outside).
+function rrUiCarGoods(S, stock) { const s = cgCarStatus(S, stock); return s ? s.hub : 0; }
 // The railroad's trains standing at their tracks: [{ run, tr }].
 function rrUiStanding(S) {
   if (!S.rr || !S.rr.on) return [];
   return S.rr.runs.filter(r => r.ph === 'stand' && r.slot !== null && S.trains[r.slot] && !trainOff(S.trains[r.slot])).map(run => ({ run, tr: S.trains[run.slot] }));
 }
-// Is a standing run's work done (travellers off and on and checked, goods for the hub off)? TR's own readiness (a
-// run.ready flag) when it sets one; else PX's and CG's checks and the cars.
+// Is a standing run's work done (travellers off and on and checked, goods for the hub off)? TR's readiness (run.ready:
+// its shortest stand passed, pxReady / cgReady) and, integrator, every car checked or unloaded now (a traveller who
+// boards after a car was checked makes it unready again).
 function rrUiReady(S, run, tr) {
-  if (run.ph !== 'stand') return false;
-  if (typeof run.ready === 'boolean') return run.ready;
+  if (run.ph !== 'stand' || !run.ready) return false;
   const cars = tr.consist.filter(c => c.k !== 'loco');
-  if (run.kind === 'pax') return pxReady(S, run, tr) && cars.every(c => rrUiCarPax(S, c.id).unchecked === 0);
-  return cgReady(S, run, tr) && cars.every(c => rrUiCarGoods(S, c.id) === 0);
+  if (run.kind === 'pax') return cars.every(c => rrUiCarPax(S, c.id).unchecked === 0);
+  return cars.every(c => rrUiCarGoods(S, c.id) === 0);
 }
 // The switches still to set for the railroad's trains (TR's rrSwitchNeeds rows, not done), soonest first.
 function rrUiNeeds(S) {
@@ -6977,9 +6996,9 @@ function rrUiNextCar(S, run, tr) {
   let best = null;
   for (const c of tr.consist) {
     if (c.k === 'loco') continue;
-    const n = run.kind === 'pax' ? rrUiCarPax(S, c.id).unchecked : rrUiCarGoods(S, c.id);
+    const px = run.kind === 'pax' ? rrUiCarPax(S, c.id) : null, n = px ? px.unchecked : rrUiCarGoods(S, c.id);
     if (!n) continue;
-    const at = rrUiBeside(S, c.id);
+    const at = px ? (px.spot && { x: px.spot[0], z: px.spot[1] }) : rrUiBeside(S, c.id);   // a coach: PX's checking spot on the platform
     if (!at) continue;
     const d = Math.hypot(at.x - P.x, at.z - P.z);
     if (!best || d < best.d) best = { stock: c.id, n, x: at.x, z: at.z, d };
@@ -12218,7 +12237,7 @@ $('carryPut').addEventListener('click', () => {
 // Each item is a button: tap it to take it (0.2 game minutes). Put in loads the top item the player carries.
 // It closes when the player walks more than 3u from the door, or the car is taken or moves off.
 const carUi = { stock: null, sig: '' };
-const CAR_NAMES = { boxcar: 'Boxcar', flatcar: 'Flatcar', combine: 'Combine' };
+const CAR_NAMES = { boxcar: 'Boxcar', flatcar: 'Flatcar', combine: 'Combine', coach: 'Coach' };   // coach: the railroad's (D24)
 function openCarPanel(stock) { closePanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeSettings(); carUi.stock = stock; carUi.sig = ''; $('carPanel').hidden = false; carPanelUpdate(); }
 function closeCarPanel() { carUi.stock = null; carUi.sig = ''; $('carPanel').hidden = true; }
 function carPanelUpdate() {
@@ -12241,6 +12260,14 @@ function carPanelUpdate() {
 $('carItems').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.id !== undefined) send({ t: 'carryPick', id: Number(b.dataset.id) }); });
 $('carPutIn').addEventListener('click', () => { if (carUi.stock !== null) send({ t: 'carryPut', stock: carUi.stock }); });
 $('carClose').addEventListener('click', closeCarPanel);
+// D24 (integrator): who brings an order due at `due` (S.time): in the hub world the freight train of the schedule
+// (cgFreightAfter: 'Freight 2'), in the old worlds the Overland. hubWorld(): the page's game is in the hub world.
+const hubWorld = () => !!(S && S.track && worldId(S.track) === 'hub');
+function econCarrierAt(due) {
+  if (!hubWorld()) return 'the Overland';
+  const f = typeof due === 'number' ? cgFreightAfter(due, 1)[0] : null;
+  return f && f.arr === due ? 'Freight ' + f.svc.slice(1) : 'a freight train';
+}
 // The telegraph panel (economy, builder C1): opened when the player reaches the telegraph key in the depot
 // ('reachedTelegraph'). Three tabs: Order (choose how many of each good, Send order pays and books it for the
 // next Overland), Contracts (offers to accept or decline; open contracts with a button to order what they
@@ -12279,7 +12306,7 @@ function econSpark(hist) {
 function econOrderHtml(E, draft, market, sendId) {
   const lines = ECON_ORDERABLE.filter(c => draft[c] > 0).map(c => ({ c, n: draft[c] })), cost = lines.reduce((s, l) => s + l.n * E.market.buy[l.c], 0), n = lines.reduce((s, l) => s + l.n, 0);
   let h = `<div class="row"><span class="grow">${n ? `${n} item${n > 1 ? 's' : ''}, <span class="money">${econMoney(cost)}</span>` : 'Choose goods below.'}</span><button id="${sendId}" data-act="send"${n ? '' : ' disabled'}>Send order</button></div>`;
-  for (const o of E.orders) h += `<div><small>Waiting for the Overland (${econWhen(o.due)}): ` + o.lines.map(l => `${l.n} ${COMMODITIES[l.c].name.toLowerCase()}`).join(', ') + '.</small></div>';
+  for (const o of E.orders) h += `<div><small>Waiting for ${econCarrierAt(o.due)} (${econWhen(o.due)}): ` + o.lines.map(l => `${l.n} ${COMMODITIES[l.c].name.toLowerCase()}`).join(', ') + '.</small></div>';
   for (const c of ECON_ORDERABLE) {
     const q = draft[c] || 0, sell = E.market.sell[c];
     const label = market ? `${COMMODITIES[c].name}<br><small class="money">buy ${econMoney(E.market.buy[c])}${sell ? ', sell ' + econMoney(sell) : ''}</small></span>${econSpark(E.market.history[c])}`
@@ -12338,7 +12365,7 @@ function telPanelUpdate() {
   const info = $('telInfo'), body = $('telBody');
   let h = '';
   if (telUi.tab === 'order') {
-    info.textContent = `Cash ${econMoney(E.cash)}. Pay on order; an order sent now comes on the Overland, ${econWhen(econNextVisit(S.time))}.`;
+    info.textContent = `Cash ${econMoney(E.cash)}. Pay on order; an order sent now comes on ${econCarrierAt(econNextVisit(S.time))}, ${econWhen(econNextVisit(S.time))}.`;
     h = econOrderHtml(E, telUi.draft, false, 'telSend');
   } else if (telUi.tab === 'contracts') {
     info.textContent = 'Reputation: ' + CARGO_TOWNS.map(t => `${t.name} ${E.reputation[t.id]}`).join(', ') + '. Late deliveries pay 10% less a day.';
@@ -12361,8 +12388,8 @@ $('telClose').addEventListener('click', closeTelPanel);
 function econOnEvent(e) {
   if (e.t === 'reachedTelegraph') openTelPanel();
   else if (e.t === 'econRefused') toast(e.why + '.');
-  else if (e.t === 'orderPlaced') { telUi.draft = {}; toast(`Order sent: ${e.items} item${e.items > 1 ? 's' : ''}, ${econMoney(e.cost)}. It comes on the Overland, ${econWhen(e.due)}.`); }
-  else if (e.t === 'orderDelivered') toast(`Your order came on the Overland: ${e.items.length} item${e.items.length === 1 ? '' : 's'}.`);
+  else if (e.t === 'orderPlaced') { telUi.draft = {}; toast(`Order sent: ${e.items} item${e.items > 1 ? 's' : ''}, ${econMoney(e.cost)}. It comes on ${econCarrierAt(e.due)}, ${econWhen(e.due)}.`); }
+  else if (e.t === 'orderDelivered') toast(hubWorld() ? `Your order is aboard the freight train coming in: ${e.items.length} item${e.items.length === 1 ? '' : 's'}.` : `Your order came on the Overland: ${e.items.length} item${e.items.length === 1 ? '' : 's'}.`);
   else if (e.t === 'contractAccepted') toast('Contract accepted.');
   else if (e.t === 'contractDelivered') toast(`Delivered for a contract: ${econMoney(e.amount)}` + (e.late ? ' (late)' : '') + (e.done ? '. The contract is done.' : '.'));
   else if (e.t === 'contractLate') toast(`A contract is late: ${econBiz(S.econ.contracts[e.id].counterparty).name}.`);
@@ -12895,7 +12922,7 @@ function officeHtml() {
     info.textContent = 'Reputation: ' + CARGO_TOWNS.map(t => `${t.name} ${E.reputation[t.id]}`).join(', ') + '. Late deliveries pay 10% less a day.';
     h = econContractsHtml(E, 20);
   } else if (officeUi.tab === 'market') {
-    info.textContent = `Cash ${econMoney(E.cash)}. Buy and sell prices of the Overland market, with the last 8 weeks. Pay on order; it comes on the Overland, ${econWhen(econNextVisit(S.time))}.`;
+    info.textContent = `Cash ${econMoney(E.cash)}. Buy and sell prices ${hubWorld() ? 'down the line' : 'of the Overland market'}, with the last 8 weeks. Pay on order; it comes on ${econCarrierAt(econNextVisit(S.time))}, ${econWhen(econNextVisit(S.time))}.`;
     h = econOrderHtml(E, telUi.draft, true, 'officeSend');
   } else if (officeUi.tab === 'ledger') {
     const d = officeTotals(E, day0), w = officeTotals(E, week0), cats = ECON_CATEGORIES.filter(c => d.by[c] || w.by[c]);
@@ -13296,7 +13323,7 @@ function lookTap(px, py) {
   lookUi.pick = pick; lookUi.open = true; lookUi.sig = ''; $('lookCard').hidden = false; lookUpdate();
 }
 const placeConsignee = c => !c ? '?' : c.kind === 'BUSINESS' ? (econBiz(c.id) || { name: 'a business' }).name : c.kind === 'WAREHOUSE' ? 'The hub warehouse (our own goods)'
-  : c.kind === 'CONSTRUCTION' ? 'Our own track work' : c.kind === 'CAMP' ? 'The construction camp' : c.kind === 'OUTSIDE' ? 'Outside (the Overland market)' : c.kind;
+  : c.kind === 'CONSTRUCTION' ? 'Our own track work' : c.kind === 'CAMP' ? 'The construction camp' : c.kind === 'OUTSIDE' ? (hubWorld() ? 'Outside (sold down the line)' : 'Outside (the Overland market)') : c.kind;
 function placeText(S, w) {
   if (!w) return 'Used up';
   if (w.kind === 'GROUND') return 'On the ground';
@@ -13318,7 +13345,7 @@ function lookCardOf(S, pick) {
       `Item ${id}, a ${cargoName(C ? C.type : '')}` + (wb.pieces !== undefined ? ` (${wb.pieces} pieces left)` : ''),
       `Tag: ${T ? T.letter + ', ' + T.name : '?'}`,
       `To: ${placeConsignee(wb.consignee)}` + (wb.destTownId !== 'OUTSIDE' && wb.consignee.kind !== 'OUTSIDE' ? `, ${econTownName(wb.destTownId)}` : ''),
-      `From: ${wb.originTownId === 'OUTSIDE' ? 'Outside, by the Overland' : econTownName(wb.originTownId)}`,
+      `From: ${wb.originTownId === 'OUTSIDE' ? (hubWorld() ? 'Outside, by freight train' : 'Outside, by the Overland') : econTownName(wb.originTownId)}`,
       k ? `Contract: ${(econBiz(k.counterparty) || {}).name}, ${k.quantity} ${tgGood(k.commodity)}, due ${econWhen(k.due)}` : 'Contract: none',
       `Now: ${placeText(S, I.where[id])}`] };
   }
@@ -14089,7 +14116,8 @@ function rrRowsUi() {
     if (tr && !trainOff(tr)) for (const c of tr.consist) if (c.k !== 'loco') {
       if (r.kind === 'pax') { const p = rrUiCarPax(S, c.id); r.aboard += p.aboard; r.unchecked += p.unchecked; } else r.goods += rrUiCarGoods(S, c.id);
     }
-    if (r.standing && r.state !== 'Ready' && rrUiReady(S, r.run, tr)) r.state = 'Ready';
+    // Ready only with the work done (TR's ready, and every ticket checked or the goods for the Hub off).
+    if (r.standing) r.state = rrUiReady(S, r.run, tr) ? 'Ready' : r.track === 'cargo' ? 'At the cargo track' : 'At the platform';
     r.tr = tr;
   }
   void sod;
@@ -14411,7 +14439,8 @@ function rrOnEvent(e) {
   else if (e.t === 'carChecked') news(e.n ? `Tickets checked: ${cardPlural(e.n, 'traveller')}, ${econMoney(e.n * PX.FARE)} in fares.` : 'Everyone in that car has a ticket.');
   else if (e.t === 'fareMissed' && e.n) toast(`${cardPlural(e.n, 'traveller')} rode free on ${nm}: ${econMoney(e.cents || e.n * PX.FARE)} of fares lost.`, 4200);
   else if (e.t === 'cgUnloaded' && run) news(`${nm}'s goods for the Hub are all off: it can be sent off.`);
-  else if (e.t === 'cgSold' && e.paid) news(`Goods sold Outside: ${econMoney(e.paid)}.`);
+  else if (e.t === 'cgSold' && e.paid) news(`Goods sold down the line: ${econMoney(e.paid)}.`);
+  else if (e.t === 'cgRebooked') toast(`${nm} did not come, so your order now comes on ${econCarrierAt(e.due)}, ${econWhen(e.due)}.`, 4200);
 }
 // ---- First-time cards for the railroad's trains (D22's card system; shown once per game, kept in the save) ----
 const rrCardRun = (S, ev, t, f) => { const e = ev.find(e => e.t === t && (!f || f(e))); return e ? rrUiRun(S, e.run !== undefined ? e.run : null) || (e.tr !== undefined ? rrRunOf(S, e.tr) : null) : null; };
@@ -14658,7 +14687,7 @@ function townHitAt(px, py) {
 function ttJointHit(px, py) {
   let best = null;
   S.trains.forEach(tr => {
-    if (trainOff(tr) || tr.owner === 'overland' || tr.owner === 'interchange' || tr.consist.length < 2) return;
+    if (trainOff(tr) || tr.owner === 'overland' || tr.owner === 'interchange' || tr.owner === 'rr' || tr.consist.length < 2) return;   // D24: the railroad's trains are not ours to uncouple
     for (let k = 1; k < tr.consist.length; k++) {
       const j = ttJointAt(S, tr, k), p = toScreen(j.x, 0.7 * WS, j.z), d = Math.hypot(p.x - px, p.y - py);
       if (d < 24 && (!best || d < best.d)) best = { tr: tr.id, at: k, d };
@@ -15052,7 +15081,7 @@ window.__railhead = {
   // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
   rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady,
     rrDebugJump, rrStopPos, rrExitPos, rrEngineDist, rrWaveSpot, rrRunTime, rrTrainOf,   // TR
-    CG_GOODS, cgLoad, cgOnDepart, cgTick, cgCarStatus, cgPlan, cgBook, cgNextFreight, cgFreightAfter, cgHubAboard, cgYardSpot },   // CG
+    CG_GOODS, cgLoad, cgOnDepart, cgTick, cgCarStatus, cgPlan, cgBook, cgOnCancel, cgNextFreight, cgFreightAfter, cgHubAboard, cgYardSpot },   // CG
   px: { PX, pxTk, pxCars: (st, pc) => pxCars(st || S, paxStation((st || S).track, 'hub'), pc || ridePoses(st || S)), pxCarStatus, pxRunStatus, pxReady, pxOnArrive, pxOnDepart, pxNearCar },   // D24: tickets on board (PX)
   // D24 (UI): the page side of the station rework (boards, Next job, buttons, cards, tutorial).
   hubui: { rows: () => rrRowsUi(), schedRows: () => rrSchedRows(), workLines: () => rrWorkLines(), hint: () => rrHintTarget(), urgent: () => rrUrgent(), ttCard: () => rrTtCard(),

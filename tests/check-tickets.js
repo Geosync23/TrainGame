@@ -95,7 +95,9 @@ module.exports = async function checkTickets() {
             if (car2) {
               tick([{ t: 'checkTickets', tr: tr.id, car: car2.stock }]);
               for (let i = 0; i < 200 && !(st.rr.tk.job && st.rr.tk.job.on); i++) tick();
-              tick();   // one ticket (8 game seconds: one checked)
+              // The tick the player reaches the car checks one; with 3 or more aboard, one tick more checks a second
+              // (8 game seconds: one each), still part-way. (Integrator: with TR's shorter coaches a car may hold just 2.)
+              if (byCar[car2.stock] >= 3) tick();
               from = evs.length;
               tick([{ t: 'walkTo', x: Math.round(st.player.x * 100), z: Math.round((st.player.z - 4) * 100) }]);
               const s2 = R.px.pxCarStatus(st, car2.stock);

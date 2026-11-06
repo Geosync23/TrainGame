@@ -22,9 +22,14 @@ const HUD_IDS = ['clock', 'speeds', 'cash', 'buildBtn', 'tgBtn', 'rotL', 'rotR',
 
 // The fakes (see the top): installed in the page, kept in window.__fx.
 function installFakes() {
+  // Integrator: the fakes keep the real pieces' shapes (pxCarStatus: aboard, checked, unchecked, off, boarding, seats,
+  // checking, at, spot; cgCarStatus: stock, k, run, items, hub, out, used, cap, why), from the real ones with the
+  // counts replaced; the real ones are kept in window.__real (part 8 runs on them).
+  if (!window.__real) window.__real = { pxCarStatus: window.pxCarStatus, cgCarStatus: window.cgCarStatus, pxCheckCmd: window.pxCheckCmd, rrWaveOffCmd: window.rrWaveOffCmd };
   window.__fx = { pax: {}, goods: {}, refuse: null };
-  window.pxCarStatus = (S, stock) => { const p = window.__fx.pax[stock]; return { aboard: p ? p.aboard : 0, unchecked: p ? p.unchecked : 0, checking: false }; };
-  window.cgCarStatus = (S, stock) => ({ forHub: window.__fx.goods[stock] || 0 });
+  window.pxCarStatus = (S, stock) => { const r = window.__real.pxCarStatus(S, stock), p = window.__fx.pax[stock]; if (!r) return null;
+    const aboard = p ? p.aboard : 0, unchecked = p ? p.unchecked : 0; return { ...r, aboard, checked: aboard - unchecked, unchecked, off: 0, boarding: 0, checking: false }; };
+  window.cgCarStatus = (S, stock) => { const r = window.__real.cgCarStatus(S, stock), n = window.__fx.goods[stock] || 0; return r && { ...r, items: n, hub: n, out: 0, used: n }; };
   window.pxCheckCmd = (S, c, ev) => { const p = window.__fx.pax[c.car], n = p ? p.unchecked : 0; if (p) p.unchecked = 0; ev.push({ t: 'carChecked', tr: c.tr, car: c.car, n }); };
   window.rrWaveOffCmd = (S, c, ev) => {
     const R = window.__railhead, tr = S.trains[c.tr], run = S.rr.runs.find(r => r.slot === c.tr && r.ph === 'stand');
@@ -43,6 +48,8 @@ function loadTrains(opts) {
   if (opts && opts.tutDone) Object.assign(st.tut, { done: true, skipped: true });
   R.importSave(JSON.stringify({ state: st }));
   const S = R.state, pt = S.trains[3], ft = S.trains[4];
+  for (const r of S.rr.runs) if (r.ph === 'stand') r.ready = true;   // (TR's readiness: their shortest stand is over, everyone off and on)
+  S.rr.cg.unloaded = S.rr.runs.filter(r => r.ph === 'stand' && r.kind === 'freight').map(r => r.id);   // (the fake goods: CG's own cgUnloaded is not said)
   window.__fx.pax = {}; window.__fx.goods = {};
   pt.consist.filter(c => c.k !== 'loco').forEach((c, i) => { window.__fx.pax[c.id] = { aboard: [5, 4, 0][i], unchecked: [3, 2, 0][i] }; });
   ft.consist.filter(c => c.k !== 'loco').forEach((c, i) => { window.__fx.goods[c.id] = [0, 2, 1, 0][i]; });
@@ -58,7 +65,18 @@ module.exports = async function checkHubUi() {
     const R = (f, a) => page.evaluate(f, a);
     const frames = ms => page.waitForTimeout(ms || 450);
     const shot = name => page.screenshot({ path: screenshotPath(`hubui-${name}-${orient}`) });
-    const tapEl = async el => { const r = await el.boundingBox(); if (!r) return false; await page.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await frames(250); return true; };
+    // (Integrator: the railroad's buttons are placed again every frame and step a row up or down when a toast or a
+    // label comes or goes, so the tap waits until the button stands still and is the topmost thing at its middle.)
+    const tapEl = async el => {
+      for (let i = 0; i < 12; i++) {
+        const a = await el.boundingBox(); await frames(120); const r = await el.boundingBox();
+        if (!a || !r) return false;
+        const same = Math.abs(a.x - r.x) < 0.5 && Math.abs(a.y - r.y) < 0.5;
+        const top = await el.evaluate((e, p) => { const t = document.elementFromPoint(p[0], p[1]); return !!t && (t === e || e.contains(t)); }, [r.x + r.width / 2, r.y + r.height / 2]);
+        if (same && top) { await page.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await frames(250); return true; }
+      }
+      return false;
+    };
     // Overlaps among the HUD and the railroad's buttons, and with the top-right column.
     const overlaps = () => R(ids => {
       const vis = e => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
@@ -144,8 +162,10 @@ module.exports = async function checkHubUi() {
       if (!sb || sb.h < 48) P(`${orient} 2: by the engine a Send off button of 48 px or more should show: ${JSON.stringify(bs)}`);
       await shot('tut-3-sendoff');
       for (const e of await page.$$('.rrBtn')) if (await e.evaluate(e => !e.hidden && e.dataset.act === 'send')) { await tapEl(e); break; }
-      await R(() => window.__railhead.step(2)); await frames(200);
-      const refused = await R(() => document.getElementById('toast').textContent);
+      // (The tap's click can land a moment after the tap returns under load, and the paused game only takes the
+      // command at its next step: step until the toast changes, up to 2 seconds.)
+      const waitToast = async re => { let t = ''; for (let i = 0; i < 10; i++) { await R(() => window.__railhead.step(1)); await frames(200); t = await R(() => document.getElementById('toast').textContent); if (re.test(t)) break; } return t; };
+      const refused = await waitToast(/Not everyone aboard has been checked/);
       if (!/Not everyone aboard has been checked/.test(refused)) P(`${orient} 2: a refused Send off should show its reason: "${refused}"`);
       // From 6u away: the walk to the engine, then sent off.
       await R(e => { window.__fx.refuse = null; const S = window.__railhead.state; S.player.x = e.x - 6; S.player.z = -3.3; S.player.mode = 'idle'; window.__railhead.camera.fx = S.player.x; window.__railhead.camera.fz = S.player.z; }, eng);
@@ -303,6 +323,59 @@ module.exports = async function checkHubUi() {
       if (dc > 100) P(`${orient} 7: ${dc} draw calls (budget 100)`);
       await shot('platform');
       console.log(`  ${orient} 7: ${dc} draw calls at the platform with both trains standing; HUD ${ov.shown.join(', ')}`);
+      // ---- 8. The real pieces (integrator): PX's travellers and ticket check, CG's goods, TR's wave-off ----
+      await R(() => { for (const [k, f] of Object.entries(window.__real)) window[k] = f; });
+      const real = await R(() => {
+        const R = window.__railhead, st = R.rr.rrDebugScenario(R.newState(R.CFG.SEED, 'hub'));
+        Object.assign(st.tut, { done: true, skipped: true });
+        R.importSave(JSON.stringify({ state: st }));
+        R.cards.setPref(false); R.guide.setPref(true);
+        const S = R.state, pt = S.trains[3], ft = S.trains[4], run = S.rr.runs.find(r => r.slot === 3);
+        // Travellers step off and board (the train stands; PX).
+        for (let i = 0; i < 300 && !R.rr.pxReady(S, run, pt); i++) R.step(1);
+        // A crate for the Hub in the freight train's second car (CG's cgCarStatus counts it).
+        const crate = R.cargo.itemCreate(S, { commodity: 'flour', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'WAREHOUSE', id: 0 }, contractId: null, due: null }, { kind: 'CAR', stockId: ft.consist[2].id }, null).id;
+        const cars = pt.consist.slice(1).map(c => ({ stock: c.id, ...R.px.pxCarStatus(S, c.id) }));
+        const rows = R.hubui.rows(), pr = rows.find(r => r.name === 'Passenger 1'), fr = rows.find(r => r.name === 'Freight 1');
+        const tr = R.rr.rrBoardRows(S), tp = tr.find(r => r.svc === 'p1'), tf = tr.find(r => r.svc === 'f1');
+        const j = R.guide.job();
+        return { cars, crate, aboard: pr && pr.aboard, unchecked: pr && pr.unchecked, goods: fr && fr.goods, pState: pr && pr.state, fState: fr && fr.state,
+          tr: { pOn: tp && tp.on, pOff: tp && tp.off, fUnload: tf && tf.unload, fLoad: tf && tf.load, pSw: tp && tp.switches.length },
+          job: { text: j.text, t: j.t && { x: j.t.x, z: j.t.z, k: j.t.k, stock: j.t.stock } }, needs: R.rr.rrSwitchNeeds(S).filter(n => !n.done).map(n => n.svc + ':' + n.sw) };
+      });
+      const sum = real.cars.reduce((a, c) => a + c.unchecked, 0), board = real.cars.reduce((a, c) => a + c.aboard, 0);
+      if (!(sum > 0) || real.unchecked !== sum || real.aboard !== board) P(`${orient} 8: the rows should count PX's travellers aboard and unchecked: ${JSON.stringify(real)}`);
+      if (real.tr.pOn !== board || real.tr.pOff !== 0 || real.tr.fUnload !== 1 || real.tr.fLoad !== 0) P(`${orient} 8: rrBoardRows' off / on / unload / load: ${JSON.stringify(real.tr)} (aboard ${board})`);
+      if (real.goods !== 1 || real.pState !== 'At the platform' || real.fState !== 'At the cargo track') P(`${orient} 8: the rows' goods and states with work to do: ${JSON.stringify(real)}`);
+      const target = real.cars.filter(c => c.unchecked).sort((a, b) => Math.hypot(a.spot[0] - 8, a.spot[1] + 4) - Math.hypot(b.spot[0] - 8, b.spot[1] + 4));
+      if (!real.job.t || real.job.t.k !== 'car' || !real.cars.some(c => c.stock === real.job.t.stock && c.unchecked && Math.hypot(c.spot[0] - real.job.t.x, c.spot[1] - real.job.t.z) < 0.05) || !/check tickets on Passenger 1, car \d \(\d+ unchecked\)/.test(real.job.text))
+        P(`${orient} 8: the Next job should point at PX's checking spot of a car with travellers unchecked: ${JSON.stringify(real.job)} ${JSON.stringify(real.cars.map(c => [c.stock, c.unchecked, c.spot]))}`);
+      // The Check tickets button over the car with the real count; a tap walks to PX's spot and checks the car.
+      const c1 = target[0];
+      await R(c => { const S = window.__railhead.state; S.player.x = c.spot[0] + 1; S.player.z = c.spot[1] - 1.2; S.player.mode = 'idle'; window.__railhead.camera.fx = S.player.x; window.__railhead.camera.fz = S.player.z; window.__railhead.camera.ox = 0; window.__railhead.camera.oz = 0; }, c1);
+      await frames(700);
+      bs = await rrBtns();
+      const rb = bs.find(b => b.car === c1.stock);
+      if (!rb || rb.text !== `Check tickets (${c1.unchecked})` || rb.act !== 'check') P(`${orient} 8: the Check tickets button should show PX's count (${c1.unchecked}): ${JSON.stringify(bs)}`);
+      let tappedReal = false;
+      for (const e of await page.$$('.rrBtn')) if (await e.evaluate((e, car) => !e.hidden && e.dataset.act === 'check' && Number(e.dataset.car) === car, c1.stock)) { tappedReal = await tapEl(e); break; }
+      const chk = await R(c => { const R = window.__railhead, S = R.state; let ok = false;
+        for (let i = 0; i < 200 && !ok; i++) { R.step(1); ok = R.px.pxCarStatus(S, c.stock).unchecked === 0 && !S.rr.tk.job; }
+        return { ok, at: Math.hypot(S.player.x - c.spot[0], S.player.z - c.spot[1]), st: R.px.pxCarStatus(S, c.stock), checked: S.rr.tk.checked, toast: document.getElementById('toast').textContent }; }, c1);
+      if (!tappedReal || !chk.ok || !(chk.at < 0.8) || chk.checked < c1.unchecked) P(`${orient} 8: a tap on Check tickets should walk to PX's spot and check the car: tapped ${tappedReal}, ${JSON.stringify(chk)}`);
+      // Send off at the freight train's engine: refused by TR while the crate for the Hub is aboard, the reason shown.
+      const fEng = await R(() => { const R = window.__railhead, S = R.state, sp = R.rr.rrWaveSpot(S, 4); S.player.x = sp.x; S.player.z = sp.z; S.player.mode = 'idle'; window.__railhead.camera.fx = sp.x; window.__railhead.camera.fz = sp.z; return sp; });
+      await frames(700);
+      for (const e of await page.$$('.rrBtn')) if (await e.evaluate(e => !e.hidden && e.dataset.act === 'send' && Number(e.dataset.tr) === 4)) { await tapEl(e); break; }
+      await waitToast(/Goods for the hub are still aboard/);
+      const refusedReal = await R(() => ({ toast: document.getElementById('toast').textContent, ph: window.__railhead.state.rr.runs.find(r => r.slot === 4).ph }));
+      if (!/Goods for the hub are still aboard/.test(refusedReal.toast) || refusedReal.ph !== 'stand') P(`${orient} 8: Send off with goods aboard should be refused by the crew with its reason: ${JSON.stringify(refusedReal)} (at ${JSON.stringify(fEng)})`);
+      // A tap on the joint between two of the railroad's cars does not uncouple them (they are the railroad's).
+      const joint = await R(() => { const R = window.__railhead, S = R.state, tr = S.trains[4], j = R.tt.ttJointAt(S, tr, 2), p = R.toScreen(j.x, j.z, 0.7 * R.CFG.SCALE); return { x: p.x, y: p.y, n: tr.consist.length }; });
+      await page.touchscreen.tap(joint.x, joint.y); await frames(200);
+      const afterJoint = await R(() => { const R = window.__railhead; R.step(40); const S = R.state; return { n: S.trains[4].consist.length, cut: S.trains.filter(t => t.owner === 'cut' && t.consist.length).length, use: S.player.use }; });
+      if (afterJoint.n !== joint.n || afterJoint.cut) P(`${orient} 8: a tap on the joint between two railroad cars uncoupled them: ${JSON.stringify(afterJoint)}`);
+      console.log(`  ${orient} 8 (real pieces): ${board} aboard, ${sum} unchecked; "${real.job.text}"; button "${rb && rb.text}", checked at ${chk.at.toFixed(2)}u from PX's spot; refusal "${refusedReal.toast}"; joint tap kept ${afterJoint.n} vehicles`);
       if (errors.length) P(`${orient}: console errors: ${errors.slice(0, 3).join(' | ')}`);
     } catch (e) {
       P(`${orient}: ${e && e.stack || e}`);

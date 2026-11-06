@@ -35,6 +35,7 @@ const checks = {
   'the hub world (D24: the through line, switches close together, all reachable, clear of the track, parked systems off)': require('./check-hubworld'),
   'the railroad\'s trains (D24: a day of 9 runs in and out, stopping short of a wrong switch, wave-off, lateness)': require('./check-rrtrains'),
   'tickets on board (D24: travellers off and on the railroad\'s trains, checking a car, fares missed)': require('./check-tickets'),
+  'freight trains\' goods (D24: orders ride freight trains, unloading at the cargo dock, cgReady, leaving)': require('./check-freight'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
   'departure boards on the depots and the ticket booth': require('./check-board'),

@@ -2758,16 +2758,40 @@ function rrEntry(T, end) {
   const E = T.edges.find(E => T.nodes[E.b].x === HUBW.LINE.x1 || T.nodes[E.a].x === HUBW.LINE.x1);
   return T.nodes[E.b].x === HUBW.LINE.x1 ? { e: E.id, s: E.len - 34, d: -1 } : { e: E.id, s: 34, d: 1 };
 }
-// A point on the through line (z = 0) at x, as a track position {e, s} (the line's own edges only, not a bypass).
-function hubLineAt(T, x) {
+// A point on the through line (z = 0) at x, as a track position {e, s, d} (the line's own edges only, not a bypass);
+// d faces east (dirX +1, the default) or west (dirX -1) whichever way the edge was built.
+function hubLineAt(T, x, dirX) {
   for (const E of T.edges) {
     if (E.k !== 'S') continue;
     const A = T.nodes[E.a], B = T.nodes[E.b];
     if (A.z !== 0 || B.z !== 0) continue;
     const lo = Math.min(A.x, B.x), hi = Math.max(A.x, B.x);
-    if (x >= lo - 1e-9 && x <= hi + 1e-9) return { e: E.id, s: Math.abs(x - A.x) };
+    if (x >= lo - 1e-9 && x <= hi + 1e-9) return { e: E.id, s: Math.abs(x - A.x), d: (B.x > A.x ? 1 : -1) * (dirX === -1 ? -1 : 1) };
   }
   return null;
+}
+// Debug scenario 'hubtrains' (foundation, so PX, CG and UI can work before TR's trains run): a new hub game at 06:50 on
+// day 1 with two of the railroad's trains standing at their tracks: passenger run p1 (from the west, an engine and 3
+// cars, its engine at the platform's east end) and freight run f1 (from the east, an engine and 4 boxcars, its engine at
+// the cargo dock's west end), each in its slot with a run entry (ph 'stand'). The cars are drawn with today's models
+// (an unknown kind, such as 'coach', is drawn as a boxcar until TR adds its model). TR keeps the name working.
+function rrDebugScenario(S) {
+  const T = S.track, R = S.rr, day = 0;
+  S.time = RR_H(6, 50) - CFG.DAY_START_S;
+  const stand = (svcId, slot, x, dirX) => {
+    const sv = RR_SCHEDULE.find(v => v.id === svcId), tr = S.trains[slot], p = hubLineAt(T, x, dirX);
+    const cars = sv.kind === 'pax' ? Array.from({ length: sv.cars }, () => ({ ...RR.CARS.coach })) : cgConsist(S, sv);
+    const consist = [{ ...RR.LOCO }].concat(cars).map(c => ({ id: R.nextStock++, ...c }));
+    Object.assign(tr, { away: false, front: { e: p.e, s: p.s, d: p.d }, v: 0, mode: 'idle', m: 1, route: null, status: 'Standing', consist, name: sv.kind === 'pax' ? 'Passenger ' + svcId.slice(1) : 'Freight ' + svcId.slice(1) });
+    R.runs.push({ id: R.next++, svc: sv.id, day, kind: sv.kind, name: tr.name, from: sv.from, to: sv.to, track: sv.track,
+      arr: day * 86400 + sv.arr - CFG.DAY_START_S, dep: day * 86400 + sv.dep - CFG.DAY_START_S, slot, ph: 'stand',
+      tIn: S.time - 900, tArr: S.time - 300, tWave: null, tGone: null, cars: consist.slice(1).map(c => c.id) });
+  };
+  stand('p1', RR.SLOTS[0], HUBW.PLATFORM.x1 - 1, 1);
+  stand('f1', RR.SLOTS[1], HUBW.CARGO.x0 + 1, -1);
+  R.day = day;
+  S.track.switches[HUB_SW.PW].state = 'N';
+  return S;
 }
 const rrTrainOf = (S, run) => (run && run.slot !== null ? S.trains[run.slot] : null);
 function rrRunOf(S, trId) { return S.rr ? S.rr.runs.find(r => r.slot === trId && r.ph !== 'gone') || null : null; }
@@ -10892,6 +10916,7 @@ const DBG_SCENARIOS = {
   // The real start (a new game), and the same at Willow Ford: the player on its platform.
   start: () => newState(CFG.SEED, 'start'),
   hub: () => newState(CFG.SEED, 'hub'),   // D24: a new game in the hub world
+  hubtrains: () => rrDebugScenario(newState(CFG.SEED, 'hub')),   // D24: two railroad trains standing at the platform and the cargo track
   willow: () => { const st = newState(CFG.SEED, 'start'); st.player.x = WFORD.x + 18 * SC; st.player.z = WFORD.z - 1.7 * SC; return st; },
   // The train stands on the passing siding, facing west, with switch 1 set to the siding.
   siding: () => {
@@ -13530,7 +13555,7 @@ window.__railhead = {
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; cardsLoad(sv.ui && sv.ui.cards); buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
   // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
-  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady },
+  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady },
   world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };

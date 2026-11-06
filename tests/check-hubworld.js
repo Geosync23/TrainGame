@@ -212,19 +212,18 @@ module.exports = async function checkHubWorld() {
       // As the busiest view will be: two trains standing at the platform (an engine and 4 cars) and the cargo track (an
       // engine and 5 cars) with 200 walkers, zoomed out. Drawn only (the slots are filled in the page's state copy and
       // put back afterwards), with the models that exist now (TR makes the small cars).
+      // As the busiest view will be: the railroad's two trains standing at the platform and the cargo track (the debug
+      // scenario 'hubtrains', foundation) with 200 walkers, zoomed out; the scenario's state loads, draws and runs.
       dc.trains = await page.evaluate(async () => {
-        const R = window.__railhead, S = R.state, T = S.track, keep = JSON.stringify(S.trains);
-        const fill = (id, x, n, car) => {
-          const tr = S.trains[id], p = R.rr.hubLineAt(T, x);
-          Object.assign(tr, { away: false, front: { e: p.e, s: p.s, d: 1 }, consist: [{ id: 1000 + id * 10, k: 'loco', len: 4.4 * 1.6, mass: 2.5, power: 8 }]
-            .concat(Array.from({ length: n }, (_, i) => ({ id: 1001 + id * 10 + i, k: car, len: 2.2 * 1.6, mass: 0.5 }))) });
-        };
-        fill(3, 27, 4, 'combine'); fill(4, -16, 5, 'boxcar');
-        R.importSave(JSON.stringify({ state: S }));
+        const R = window.__railhead;
+        R.importSave(JSON.stringify({ state: R.rr.rrDebugScenario(R.newState(1866, 'hub')) }));
+        R.camera.zoom = 0.4; R.camera.ox = -10 - R.state.player.x; R.camera.oz = -10 - R.state.player.z;
+        R.step(5);
         await new Promise(r => setTimeout(r, 600));
-        const d = R.drawCalls;
-        return d;
+        return R.drawCalls;
       });
+      const sc = await page.evaluate(() => { const S = window.__railhead.state; return { stand: S.trains.filter(t => t.owner === 'rr' && !t.away && t.v === 0 && t.consist.length).length, runs: S.rr.runs.length }; });
+      if (sc.stand !== 2 || sc.runs !== 2) problems.push(`${orient}: the hubtrains scenario has ${sc.stand} trains standing and ${sc.runs} runs (expected 2 and 2)`);
       await page.screenshot({ path: screenshotPath(`hubworld-trains-${orient}`) });
       await page.evaluate(() => { const R = window.__railhead, S = R.state; R.setCrowd && R.setCrowd(0); });
       console.log(`  ${orient}: draw calls start ${dc.start}, inner throat ${dc.throat}, zoomed out 0.6 ${dc.out06}, 0.4 ${dc.out04}, with 200 walkers ${dc.crowd}, with two standing trains and 200 walkers ${dc.trains}`);

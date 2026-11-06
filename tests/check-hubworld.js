@@ -180,7 +180,7 @@ module.exports = async function checkHubWorld() {
           if (s.pax.list.length) P(`${s.pax.list.length} M1 travellers came in the hub world`);
           if (s.tt.runs.length) P('a timetable run started in the hub world');
           if (s.econ.contracts.filter(k => k.counterparty === 1).length > S.econ.contracts.filter(k => k.counterparty === 1).length) P('Willow Ford\'s store offered a contract in the hub world');
-          if (s.trains.some(t => !t.away && t.consist.length)) P('a train came onto the map before the railroad\'s trains are built');
+          if (s.trains.some(t => t.owner !== 'rr' && !t.away && t.consist.length)) P('a train other than the railroad\'s came onto the map (No. 1 and the Overland are parked)');   // TR: the railroad's trains run now (check-rrtrains.js)
           out.hash = R.stateHash(s);
           return out;
         }, PROMISE);

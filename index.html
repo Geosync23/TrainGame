@@ -2716,27 +2716,42 @@ const RR = {
   FIRST_STOCK: 1000,          // their stock ids count up from here (ours are below 100, the Overland's from 100)
   WARN_S: 1800,               // rrDue: 30 game minutes before a train comes in (D22's warnings ahead)
   LATE_S: 60,                 // more than a minute past its time is late (as the schedule board, SCHED.LATE_S)
-  // D24 (8): longer trains, still small. Provisional sizes (M1 units x SC; TR makes the models): a small engine with
-  // its tender and short cars, so a 4-car passenger train (about 22u) fits the 32u platform and a 5-car freight train
-  // (about 25u) the 35u cargo track with the freight shed's dock.
-  LOCO: { k: 'loco', len: 4.4 * SC, mass: 2.5, power: 8, look: 'rr' },
-  CARS: { coach: { k: 'coach', len: 2.2 * SC, mass: 0.5 }, boxcar: { k: 'boxcar', len: 2.2 * SC, mass: 0.5 }, flatcar: { k: 'flatcar', len: 2.2 * SC, mass: 0.5 } },
+  // D24 (8): longer trains, still small. Provisional sizes (M1 units x SC): a small engine with its tender and short
+  // cars. TR (2026-11-06): a little shorter than the foundation's 4.4 and 2.2, so that a standing train is clear of
+  // both switches of its section (each switch's legs run 8u into it): between the legs the platform track has 20.8u
+  // and the cargo track 24u, less RR.CLEAR at the engine's end. A 4-car passenger train is 19.5u, a 5-car freight
+  // train 22.7u. A train standing on a switch's leg would lock that switch, and the other train could not pass round it
+  // by the bypass.
+  LOCO: { k: 'loco', len: 4.2 * SC, mass: 2.5, power: 8, look: 'rr' },
+  CARS: { coach: { k: 'coach', len: 1.9 * SC, mass: 0.5 }, boxcar: { k: 'boxcar', len: 1.9 * SC, mass: 0.5 }, flatcar: { k: 'flatcar', len: 1.9 * SC, mass: 0.5 } },
+  CLEAR: 0.9,                 // a standing train's engine stops this far (u) inside its section: past CFG.STOP_GAP, where a train stops short of a switch set against it
+  EARLY_S: 120,               // a train comes in this much earlier than its run time says (the time estimate's margin)
+  DWELL_S: 300,               // the shortest stand before a train is ready (passenger and freight: 5 game minutes)
+  REACH: 3,                   // the player waves a train off within this of the engine's side (provisional)
+  AUTO_S: 3600,               // an unattended train's crew leaves by itself this long after its time (provisional)
+  CANCEL_S: 6 * 3600,         // a run that cannot come in for this long is cancelled
+  GONE_U: 8,                  // a leaving train is gone when its tail is this far past the map's edge
 };
 // The daily schedule (D24 (5): about 6 passenger and 3 freight trains a day, never more than 2 at the hub at once).
 // Provisional, for the designer. arr, dep: seconds of the day; cars: how many cars behind the engine. While a freight
 // train stands at the cargo track, the passenger trains come in from the east end and leave by the west end (round
 // the cargo section by its bypass, through switch 1 and the spring switch 0), so the player throws the switches at
 // the inner throat, a few steps from the platform, not the far one.
+// TR (2026-11-06): each end of the line is single track, so a train leaving towards an end and one coming in from it
+// cannot both be on it: a train needs about 30 game minutes from leaving its track to being off the map, and about
+// 50 from appearing off the map to stopping at its track. The foundation's f1 (in from the east at 08:00) met p1
+// leaving east at 07:00, and f3 (in from the east at 17:00) met p5 leaving east at 16:20; so f1 now comes in from the
+// west (and leaves east), and f3 comes in at 18:00 and leaves at 19:30 (provisional, for the designer).
 const RR_H = (h, m) => h * 3600 + m * 60;
 const RR_SCHEDULE = [
   { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 'platform', arr: RR_H(6, 40), dep: RR_H(7, 0), cars: 3 },
-  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 'cargo', arr: RR_H(8, 0), dep: RR_H(9, 45), cars: 4 },
+  { id: 'f1', kind: 'freight', from: 'W', to: 'E', track: 'cargo', arr: RR_H(8, 0), dep: RR_H(9, 45), cars: 4 },
   { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(9, 0), dep: RR_H(9, 20), cars: 4 },
   { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 'platform', arr: RR_H(11, 0), dep: RR_H(11, 20), cars: 3 },
   { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 'cargo', arr: RR_H(12, 30), dep: RR_H(14, 15), cars: 5 },
   { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(13, 30), dep: RR_H(13, 50), cars: 4 },
   { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 'platform', arr: RR_H(16, 0), dep: RR_H(16, 20), cars: 3 },
-  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 'cargo', arr: RR_H(17, 0), dep: RR_H(18, 45), cars: 4 },
+  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 'cargo', arr: RR_H(18, 0), dep: RR_H(19, 30), cars: 4 },
   { id: 'p6', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(19, 30), dep: RR_H(19, 50), cars: 4 },
 ];
 // The hub's switches by name (switch ids, buildHubWorld): CW cargo west (a spring switch lying for the cargo track,
@@ -2772,20 +2787,20 @@ function hubLineAt(T, x, dirX) {
 }
 // Debug scenario 'hubtrains' (foundation, so PX, CG and UI can work before TR's trains run): a new hub game at 06:50 on
 // day 1 with two of the railroad's trains standing at their tracks: passenger run p1 (from the west, an engine and 3
-// cars, its engine at the platform's east end) and freight run f1 (from the east, an engine and 4 boxcars, its engine at
-// the cargo dock's west end), each in its slot with a run entry (ph 'stand'). The cars are drawn with today's models
+// cars, its engine at the platform's east end) and freight run f1 (TR: now from the west, an engine and 4 boxcars, its engine at
+// the cargo track's east end), each in its slot with a run entry (ph 'stand'). The cars are drawn with today's models
 // (an unknown kind, such as 'coach', is drawn as a boxcar until TR adds its model). TR keeps the name working.
 function rrDebugScenario(S) {
   const T = S.track, R = S.rr, day = 0;
   S.time = RR_H(6, 50) - CFG.DAY_START_S;
   const stand = (svcId, slot, x, dirX) => {
-    const sv = RR_SCHEDULE.find(v => v.id === svcId), tr = S.trains[slot], p = hubLineAt(T, x, dirX);
+    const sv = RR_SCHEDULE.find(v => v.id === svcId), tr = S.trains[slot], p = rrStopPos(T, sv);   // TR: the stopping places rrTick uses
     const cars = sv.kind === 'pax' ? Array.from({ length: sv.cars }, () => ({ ...RR.CARS.coach })) : cgConsist(S, sv);
     const consist = [{ ...RR.LOCO }].concat(cars).map(c => ({ id: R.nextStock++, ...c }));
     Object.assign(tr, { away: false, front: { e: p.e, s: p.s, d: p.d }, v: 0, mode: 'idle', m: 1, route: null, status: 'Standing', consist, name: sv.kind === 'pax' ? 'Passenger ' + svcId.slice(1) : 'Freight ' + svcId.slice(1) });
     R.runs.push({ id: R.next++, svc: sv.id, day, kind: sv.kind, name: tr.name, from: sv.from, to: sv.to, track: sv.track,
       arr: day * 86400 + sv.arr - CFG.DAY_START_S, dep: day * 86400 + sv.dep - CFG.DAY_START_S, slot, ph: 'stand',
-      tIn: S.time - 900, tArr: S.time - 300, tWave: null, tGone: null, cars: consist.slice(1).map(c => c.id) });
+      tIn: S.time - 900, tArr: S.time - 300, tWave: null, tGone: null, cars: consist.slice(1).map(c => c.id), lead: 0, warned: true });
   };
   stand('p1', RR.SLOTS[0], HUBW.PLATFORM.x1 - 1, 1);
   stand('f1', RR.SLOTS[1], HUBW.CARGO.x0 + 1, -1);
@@ -2793,24 +2808,349 @@ function rrDebugScenario(S) {
   S.track.switches[HUB_SW.PW].state = 'N';
   return S;
 }
-const rrTrainOf = (S, run) => (run && run.slot !== null ? S.trains[run.slot] : null);
-function rrRunOf(S, trId) { return S.rr ? S.rr.runs.find(r => r.slot === trId && r.ph !== 'gone') || null : null; }
+const rrTrainOf = (S, run) => (run && run.slot !== null && run.slot !== undefined ? S.trains[run.slot] : null);
+function rrRunOf(S, trId) { return S.rr ? S.rr.runs.find(r => r.slot === trId && r.ph !== 'gone' && r.ph !== 'cxl') || null : null; }
+// TR (2026-11-06). How a run goes (plans/rework-tech.md section 2):
+//   'due'    planned (rrPlanDay at the day's first tick). rrDue RR.WARN_S before it is to come in. It comes in at
+//            arr minus the time its route takes (run.lead, worked out as trainTick drives it, rrRunTime) minus
+//            RR.EARLY_S, once a slot is free, its track is free (no other run on it that has not left it) and the
+//            line is clear (no train coming the other way on the track it needs). Otherwise it waits off the map
+//            (and becomes late); after RR.CANCEL_S past arr it is cancelled.
+//   'in'     made up (passenger: coaches; freight: cgConsist, then cgLoad), its front at rrEntry off the map, on a
+//            route (findRoute, avoiding the other trains and the tracks the others are coming in to, so it takes the
+//            bypass round a standing train) to rrStopPos. It stops short of a switch set against it (D20, trainTick).
+//   'stand'  at its track (rrArrived; pxOnArrive for a passenger train). rrReady once pxReady / cgReady say so and
+//            RR.DWELL_S has passed. Waved off by the player (rrWaveOffCmd) or, unattended, by its own crew
+//            RR.AUTO_S after dep (only with no goods for the hub aboard).
+//   'out'    waved off (pxOnDepart / cgOnDepart, rrWavedOff): a route to rrExitPos off the map at its far end, once
+//            the line is clear (run.go); it stops short of a switch set against it like on the way in.
+//   'gone'   its tail RR.GONE_U past the map's edge: the cars are dropped and the slot is free (rrLeft).
+//   'cxl'    cancelled (rrCancelled).
+// TR's optional fields on a run (a save without them loads): ncars (how many cars; before the train is made up,
+// cars holds this number, as the schedule's entry, so cgConsist can read run.cars), lead (s), warned, ready, go,
+// path (the route's edge ids, for the line-clear test), auto (the crew left by itself), skipped (rrDebugJump).
+const rrDayOf = S => Math.floor((S.time + CFG.DAY_START_S) / 86400);
+const rrSod = t => (((t + CFG.DAY_START_S) % 86400) + 86400) % 86400;
+// Where a run's engine stops at its track: the far end of the section's straight between its two switches' legs
+// (each leg runs 5 x SC into the section), RR.CLEAR inside it, facing the way it travels. A whole train fits there.
+function rrStopPos(T, run) {
+  const X = HUBW.SW, east = run.to === 'E', leg = 5 * SC + RR.CLEAR;
+  const x = run.track === 'platform' ? (east ? X.PE - leg : X.PW + leg) : (east ? X.CE - leg : X.CW + leg);
+  return hubLineAt(T, x, east ? 1 : -1);
+}
+// Where a leaving train runs to: 2u short of the far end of the line, off the map (it is gone long before).
+function rrExitPos(T, to) { return to === 'E' ? hubLineAt(T, HUBW.LINE.x1 - 2, 1) : hubLineAt(T, HUBW.LINE.x0 + 2, -1); }
+const rrNcars = run => (Number.isInteger(run.ncars) ? run.ncars : Array.isArray(run.cars) ? run.cars.length : run.cars || 0);
+const rrLenOf = run => RR.LOCO.len + rrNcars(run) * (RR.CARS.coach.len + COUPLER_GAP);
+const rrAccelOf = run => CFG.ACCEL_K * RR.LOCO.power / (RR.LOCO.mass + rrNcars(run) * RR.CARS.coach.mass);
+const rrTrainAccel = tr => CFG.ACCEL_K * trainPower(tr) / tr.consist.reduce((s, c) => s + c.mass, 0);
+// The time (s, whole ticks) a train of length L takes along route r (from findRoute) from a standstill at start to a
+// stop at its end, driven as trainTick drives it: speed limits under the whole train and ahead, braking to the end.
+// Stops at switches set against it are not in it.
+function rrRunTime(T, start, r, L, accel) {
+  const segs = [];
+  let at = 0;
+  r.path.forEach((e, i) => {
+    const E = T.edges[e];
+    let len = i === 0 ? (start.d > 0 ? E.len - start.s : start.s) : E.len;
+    if (at + len > r.dist) len = r.dist - at;
+    if (len > 1e-9) segs.push([at, at + len, E.lim]);
+    at += Math.max(0, len);
+  });
+  const dt = CFG.TICK_GAME_S / 60, D = r.dist;
+  let x = 0, v = 0, n = 0;
+  while (D - x > 1e-3 && n < 50000) {
+    let vT = CFG.LOCO_MAX;
+    if (x - L < 0 && segs.length) vT = Math.min(vT, segs[0][2]);   // the tail still on the track it started on
+    for (const [a, b, lim] of segs) {
+      if (a <= x && b > x - L) vT = Math.min(vT, lim);
+      else if (a > x) vT = Math.min(vT, Math.sqrt(lim * lim + 2 * CFG.BRAKE * (a - x)));
+    }
+    vT = Math.min(vT, Math.sqrt(2 * CFG.BRAKE * (D - x)));
+    v = v < vT ? Math.min(vT, v + accel * dt) : vT;
+    x += Math.min(v * dt, D - x); n++;
+  }
+  return n * CFG.TICK_GAME_S;
+}
+// A route for a railroad train (findRoute, arriving facing target.d) and its time, cached per track: { r, time } or null.
+// The result is shared: callers copy what they keep (routeNew copies the needs).
+const rrRouteCache = new WeakMap();
+function rrRoute(S, start, target, avoid, L, accel) {
+  const T = S.track;
+  if (!start || !target) return null;
+  let c = rrRouteCache.get(T);
+  if (!c || c.n > 500) { c = { n: 0, m: new Map() }; rrRouteCache.set(T, c); }
+  const key = [T.edges.length, start.e, start.s.toFixed(3), start.d, target.e, target.s.toFixed(3), target.d, L.toFixed(2), accel.toFixed(3),
+    [...avoid].sort((a, b) => a - b).join(',')].join('|');
+  if (c.m.has(key)) return c.m.get(key);
+  let r = findRoute(T, start, target, avoid.size ? avoid : undefined);
+  if (r && r.dEnd !== target.d) r = null;
+  const out = r ? { r, time: rrRunTime(T, start, r, L, accel) } : null;
+  c.m.set(key, out); c.n++;
+  return out;
+}
+// The edges a run's route may not use. Now (planT undefined): the track under the railroad's other trains, and the
+// stopping track of each other one coming in. Planning ahead for time planT (rrSwitchNeeds): the stopping tracks of
+// the others expected to stand then.
+function rrAvoid(S, run, planT) {
+  const T = S.track, out = new Set();
+  for (const o of S.rr.runs) {
+    if (o === run || o.ph === 'gone' || o.ph === 'cxl') continue;
+    const tr = rrTrainOf(S, o), stopE = () => { const p = rrStopPos(T, o); if (p) out.add(p.e); };
+    if (planT === undefined) {
+      if (tr && !trainOff(tr)) for (const [e, a, b] of trainSegs(T, tr)) if (b - a > 1e-6) out.add(e);
+      if (o.ph === 'in') stopE();
+    } else if (o.ph === 'due') { if (o.arr <= planT && planT <= o.dep) stopE(); }
+    else if (o.ph === 'in' || o.ph === 'stand' || (o.ph === 'out' && !o.go)) { if (planT <= Math.max(o.dep, S.time)) stopE(); }
+  }
+  return out;
+}
+// The edges a moving railroad train still needs: the track under it and its route ahead.
+function rrRemaining(S, o) {
+  const tr = rrTrainOf(S, o), out = new Set();
+  if (!tr || trainOff(tr)) return out;
+  for (const [e] of trainSegs(S.track, tr)) out.add(e);
+  if (tr.mode === 'route' && o.path) { const i = o.path.indexOf(tr.front.e); if (i >= 0) for (const e of o.path.slice(i)) out.add(e); }
+  return out;
+}
+// Is the line clear for this path? No railroad train moving the other way (coming in or leaving) still needs any
+// of its track (two trains meeting head on would wait for each other for ever). One going the same way may be on it:
+// trainTick keeps the gap behind it.
+function rrLineClear(S, run, path) {
+  const east = run.from === 'W';
+  for (const o of S.rr.runs) {
+    if (o === run || !(o.ph === 'in' || (o.ph === 'out' && o.go)) || (o.from === 'W') === east) continue;
+    const rem = rrRemaining(S, o);
+    if (path.some(e => rem.has(e))) return false;
+  }
+  return true;
+}
+// Is a run's track free to come in to? No other run on it that has not left it yet.
+function rrTrackFree(S, run) {
+  const T = S.track, p = rrStopPos(T, run);
+  for (const o of S.rr.runs) {
+    if (o === run || o.track !== run.track) continue;
+    if (o.ph === 'in' || o.ph === 'stand') return false;
+    if (o.ph === 'out') { const tr = rrTrainOf(S, o); if (!o.go || (tr && trainSegs(T, tr).some(([e]) => e === p.e))) return false; }
+  }
+  return true;
+}
+// Today's runs from RR_SCHEDULE, appended to S.rr.runs (none twice), in due order. Returns the new ones.
+function rrPlanDay(S, day) {
+  const R = S.rr, T = S.track, out = [];
+  for (const sv of RR_SCHEDULE) {
+    if (R.runs.some(r => r.day === day && r.svc === sv.id)) continue;
+    const run = { id: R.next++, svc: sv.id, day, kind: sv.kind, name: (sv.kind === 'pax' ? 'Passenger ' : 'Freight ') + sv.id.slice(1), from: sv.from, to: sv.to,
+      track: sv.track, arr: day * 86400 + sv.arr - CFG.DAY_START_S, dep: day * 86400 + sv.dep - CFG.DAY_START_S, slot: null, ph: 'due',
+      tIn: null, tArr: null, tWave: null, tGone: null, cars: sv.cars, ncars: sv.cars, lead: 0, warned: false };
+    const go = rrRoute(S, rrEntry(T, run.from), rrStopPos(T, run), new Set(), rrLenOf(run), rrAccelOf(run));
+    run.lead = go ? go.time : 3600;
+    R.runs.push(run); out.push(run);
+  }
+  return out;
+}
+// A new game day: yesterday's finished runs are dropped (any still at the hub stay) and today's are planned.
+function rrNewDay(S, day) {
+  const R = S.rr;
+  R.runs = R.runs.filter(r => r.day >= day || !(r.ph === 'gone' || r.ph === 'cxl'));
+  rrPlanDay(S, day); R.day = day;
+}
+const rrEnterAt = run => run.arr - (run.lead || 0) - RR.EARLY_S;
+const rrDepLate = run => (run.tWave === null || run.tWave === undefined ? null : Math.max(0, run.tWave - run.dep));
 // Step 3 of the sim tick (after the Overland, before the timetable): plan the day, bring trains in, stand, leave (TR).
 function rrTick(S, ev) {
   if (!S.rr || !S.rr.on) return;
-  // TR: rrPlanDay at the day's start; per run: hold it off the map while its track or the line is taken (never more
-  // than 2 at the hub), rrEnter at (arr - the time it takes from rrEntry), route it to its track (it stops short of a
-  // switch set against it), stand (pxOnArrive / cgOnArrive), wait for the wave-off, route it out, rrGone off the map.
+  const R = S.rr, day = rrDayOf(S);
+  if (R.day < day) rrNewDay(S, day);
+  for (const run of R.runs.slice()) rrRunTick(S, run, ev);
 }
-function rrPlanDay(S, day) { return []; }                  // TR: today's runs from RR_SCHEDULE
-// Switches each run needs, for the work board, the Next job line and the arrows: the same row shape as ttSwitchNeeds
-// (D20): [{ run, train, trainName, sw, want ('normal' | 'reverse'), byTime, by, station: 'hub', spring, set, passed, done }].
-function rrSwitchNeeds(S) { return []; }                   // TR
-// The rows of the public schedule board and the work board (UI reads them): [{ run, name, kind, from, to, track, arr,
-// dep (S.time), state ('Due' | 'Coming in' | 'At the platform' | 'At the cargo track' | 'Ready' | 'Left' | 'Cancelled'),
-// late (s), cars, off, on (travellers), unload, load (goods), switches: rrSwitchNeeds rows }].
-function rrBoardRows(S) { return []; }                     // TR (with PX's and CG's counts)
-function rrWaveOffCmd(S, c, ev) { ev.push({ t: 'rrRefused', why: 'Sending trains off is not built yet' }); } // TR
+function rrRunTick(S, run, ev) {
+  const T = S.track;
+  if (run.ph === 'due') {
+    const at = rrEnterAt(run);
+    if (!run.warned && S.time >= at - RR.WARN_S) { run.warned = true; ev.push({ t: 'rrDue', run: run.id, mins: Math.max(0, Math.round((at - S.time) / 60)) }); }
+    if (S.time >= run.arr + RR.CANCEL_S) { run.ph = 'cxl'; ev.push({ t: 'rrCancelled', run: run.id, why: `${run.name} could not come in for 6 hours` }); return; }
+    if (S.time >= at - 1200) rrTryEnter(S, run, ev);   // from 20 minutes early: a route round a standing train is slower
+    return;
+  }
+  const tr = rrTrainOf(S, run);
+  if (!tr) return;
+  if (run.ph === 'in') {
+    if (tr.mode === 'idle' && !tr.route) {
+      run.ph = 'stand'; run.tArr = S.time;
+      ev.push({ t: 'rrArrived', run: run.id, tr: tr.id, track: run.track, late: Math.max(0, run.tArr - run.arr) });
+      if (run.kind === 'pax') pxOnArrive(S, run, tr, ev);
+    }
+  } else if (run.ph === 'stand') {
+    const ok = S.time - run.tArr >= RR.DWELL_S && (run.kind === 'pax' ? pxReady(S, run, tr) : cgReady(S, run, tr));
+    if (ok && !run.ready) { run.ready = true; ev.push({ t: 'rrReady', run: run.id, tr: tr.id }); }
+    if (S.time >= run.dep + RR.AUTO_S && cgReady(S, run, tr)) rrDepart(S, run, tr, ev, true);
+  } else if (run.ph === 'out') {
+    if (!run.go) { rrStartOut(S, run, tr); return; }
+    const rear = leadPos(T, tr, -1), x = edgeAt(T, T.edges[rear.e], rear.s).x, B = HUBW.BOUNDS;
+    if ((run.to === 'E' ? x > B.x1 + RR.GONE_U : x < B.x0 - RR.GONE_U) || (tr.mode === 'idle' && !tr.route)) rrGone(S, run, tr, ev);
+  }
+}
+// Bring a due run in, when it is time and its slot, track and line are free. Returns true if it came in.
+function rrTryEnter(S, run, ev) {
+  const T = S.track, R = S.rr;
+  const slot = RR.SLOTS.find(id => S.trains[id] && S.trains[id].owner === 'rr' && trainOff(S.trains[id]) && !R.runs.some(o => o.slot === id && o.ph !== 'gone' && o.ph !== 'cxl'));
+  if (slot === undefined || !rrTrackFree(S, run)) return false;
+  const start = rrEntry(T, run.from), go = rrRoute(S, start, rrStopPos(T, run), rrAvoid(S, run), rrLenOf(run), rrAccelOf(run));
+  if (!go || S.time < run.arr - go.time - RR.EARLY_S || !rrLineClear(S, run, go.r.path)) return false;
+  const tr = S.trains[slot];
+  const cars = run.kind === 'pax' ? Array.from({ length: rrNcars(run) }, () => ({ ...RR.CARS.coach })) : cgConsist(S, run);
+  tr.consist = [{ ...RR.LOCO }].concat(cars).map(c => ({ ...c, id: R.nextStock++ }));
+  Object.assign(tr, { away: false, front: { ...start }, v: 0, m: 1, mode: 'route', route: routeNew(go.r), status: 'Coming in', name: run.name });
+  delete tr.swWait;
+  run.slot = slot; run.ncars = tr.consist.length - 1; run.cars = tr.consist.slice(1).map(c => c.id); run.ph = 'in'; run.tIn = S.time; run.path = go.r.path.slice();
+  if (run.kind === 'freight') cgLoad(S, run, tr, ev);
+  ev.push({ t: 'rrEntered', run: run.id, tr: slot });
+  return true;
+}
+// Waved off (or the crew leaving by itself): fares and goods are settled, then it runs out when the line is clear.
+function rrDepart(S, run, tr, ev, auto) {
+  if (run.kind === 'pax') pxOnDepart(S, run, tr, ev); else cgOnDepart(S, run, tr, ev);
+  run.tWave = S.time; run.ph = 'out'; run.go = false;
+  if (auto) run.auto = true;
+  ev.push({ t: 'rrWavedOff', run: run.id, tr: tr.id, late: rrDepLate(run), auto: !!auto });
+  rrStartOut(S, run, tr);
+}
+function rrStartOut(S, run, tr) {
+  const T = S.track, go = rrRoute(S, { ...tr.front }, rrExitPos(T, run.to), rrAvoid(S, run), trainLength(tr), rrTrainAccel(tr));
+  if (!go || !rrLineClear(S, run, go.r.path)) return false;
+  tr.mode = 'route'; tr.m = 1; tr.route = routeNew(go.r); tr.status = 'Leaving';
+  run.path = go.r.path.slice(); run.go = true;
+  return true;
+}
+// Past the map's edge: the cars are dropped and the slot is free. CG leaves no goods in them (it refuses the wave-off
+// while goods for the hub are aboard and sells the ones for Outside); any left anyway are used up so none is lost.
+function rrGone(S, run, tr, ev) {
+  for (const c of tr.consist) for (const id of itemsAt(S, { kind: 'CAR', stockId: c.id })) itemConsume(S, id, 'soldOutside', ev);
+  const i = Math.max(0, RR.SLOTS.indexOf(tr.id));
+  Object.assign(tr, { away: true, consist: [], v: 0, mode: 'idle', m: 1, route: null, status: 'Away', name: 'Railroad train', front: { e: HUBW.EDGE_W, s: 4 + 40 * i, d: 1 } });
+  delete tr.swWait;
+  run.ph = 'gone'; run.tGone = S.time; run.slot = null;
+  ev.push({ t: 'rrLeft', run: run.id, late: rrDepLate(run) });
+}
+// After the trains move (simTick, after ttStatus): what a standing railroad train shows in its panel.
+function rrStatus(S) {
+  if (!S.rr || !S.rr.on) return;
+  for (const run of S.rr.runs) {
+    const tr = rrTrainOf(S, run);
+    if (!tr || trainOff(tr)) continue;
+    if (run.ph === 'stand') tr.status = run.ready ? 'Ready to leave: wave it off' : run.track === 'platform' ? 'Standing at the platform' : 'Standing at the cargo track';
+    else if (run.ph === 'out' && !run.go) tr.status = 'Waiting for the line to clear';
+  }
+}
+// How far the player is from the engine's side (u, 0 when touching it); Infinity off the map.
+function rrEngineDist(S, tr) {
+  const p = trainPoses(S.track, tr)[0];
+  if (!p) return Infinity;
+  const ux = Math.cos(p.yaw), uz = -Math.sin(p.yaw), dx = S.player.x - p.x, dz = S.player.z - p.z;
+  const t = Math.max(-p.len / 2, Math.min(p.len / 2, dx * ux + dz * uz));
+  return Math.max(0, Math.hypot(dx - t * ux, dz - t * uz) - 0.5 * SC);
+}
+// Where the player stands to wave a train off: beside the middle of its engine on the north (station) side. { x, z } in u.
+function rrWaveSpot(S, trId) {
+  const tr = S.trains[trId], p = tr && trainPoses(S.track, tr)[0];
+  return p ? { x: p.x, z: p.z - 0.5 * SC - 1.6 } : null;
+}
+// Command { t: 'rrWaveOff', tr }: the player sends a standing railroad train on its way (D24 (4)). Provisional rules:
+// within RR.REACH of the engine, and not while goods for the hub are still aboard (cgReady). Before its time is fine
+// (it leaves early); after it, it leaves late.
+function rrWaveOffCmd(S, c, ev) {
+  const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null, run = tr && tr.owner === 'rr' ? rrRunOf(S, tr.id) : null;
+  const no = why => { ev.push({ t: 'rrRefused', why, tr: tr ? tr.id : null, run: run ? run.id : null }); };
+  if (!run) return no('That is not one of the railroad\'s trains at the station');
+  if (run.ph === 'in') return no(`${run.name} has not stopped at the ${run.track === 'platform' ? 'platform' : 'cargo track'} yet`);
+  if (run.ph !== 'stand') return no(`${run.name} is already on its way`);
+  if (!(rrEngineDist(S, tr) <= RR.REACH)) return no(`Walk up to ${run.name}'s engine to wave it off`);
+  if (!cgReady(S, run, tr)) return no('Goods for the hub are still aboard: unload them first');
+  rrDepart(S, run, tr, ev, false);
+}
+// Switches each run needs, for the work board, the Next job line and the arrows, in the row shape of ttSwitchNeeds
+// (D20): [{ run, svc (the schedule's id, 'p1'), service, train (slot or null), trainName, stop: 0, move ('in' | 'out'),
+// station: 'hub', stationName, sw, want ('normal' | 'reverse'), byTime (S.time), by ('HH:MM'), spring, set, passed,
+// done }] in byTime order. A move under way lists its route's switches (passed once the whole train is over one); a
+// move to come is planned from the entry or the stopping place, round the trains expected to stand then. byTime: when
+// the train should reach the switch (its time in proportion to the distance). A spring switch trailed is not listed.
+function rrSwitchNeeds(S) {
+  const R = S.rr;
+  if (!R || !R.on) return [];
+  const T = S.track, out = [], today = rrDayOf(S);
+  const add = (run, move, needs, dist, t0, time, done, L) => {
+    for (const n of needs) {
+      const W = T.switches[n.sw];
+      if (!W || (W.spring && !n.face)) continue;
+      const byTime = Math.floor((t0 + time * (dist > 0 ? Math.max(0, Math.min(1, n.stopAt / dist)) : 0)) / 60) * 60;
+      out.push({ run: run.id, svc: run.svc, service: run.name, train: run.slot, trainName: run.name, stop: 0, move, station: 'hub', stationName: 'Hub',
+        sw: n.sw, want: swWant(n.state), byTime, by: ttClock(rrSod(byTime)), spring: !!W.spring, set: (W.spring ? W.lever : W.state) === n.state,
+        passed: done !== null && done > n.stopAt + L + 1 * SC, done: false });
+    }
+  };
+  for (const run of R.runs) {
+    if (run.ph === 'gone' || run.ph === 'cxl' || (run.day !== today && run.ph === 'due')) continue;
+    const tr = rrTrainOf(S, run), L = tr && !trainOff(tr) ? trainLength(tr) : rrLenOf(run), acc = tr && !trainOff(tr) ? rrTrainAccel(tr) : rrAccelOf(run);
+    const stop = rrStopPos(T, run);
+    if (run.ph === 'due') {
+      const go = rrRoute(S, rrEntry(T, run.from), stop, rrAvoid(S, run, run.arr), L, acc);
+      if (go) add(run, 'in', go.r.needs, go.r.dist, run.arr - go.time, go.time, null, L);
+    } else if (run.ph === 'in' && tr && tr.route && tr.route.needs) add(run, 'in', tr.route.needs, tr.route.total, run.tIn, run.lead || 0, tr.route.total - tr.route.left, L);
+    if (run.ph === 'out' && run.go && tr && tr.route && tr.route.needs) {
+      const go = rrRoute(S, stop, rrExitPos(T, run.to), new Set(), L, acc);
+      add(run, 'out', tr.route.needs, tr.route.total, run.tWave, go ? go.time : 0, tr.route.total - tr.route.left, L);
+    } else if (run.ph !== 'out' || !run.go) {
+      const go = rrRoute(S, stop, rrExitPos(T, run.to), rrAvoid(S, run, run.dep), L, acc);
+      if (go) add(run, 'out', go.r.needs, go.r.dist, Math.max(run.dep, run.ph === 'out' ? S.time : run.dep), go.time, null, L);
+    }
+  }
+  out.sort((a, b) => a.byTime - b.byTime || a.run - b.run || a.sw - b.sw);
+  const first = {};
+  for (const x of out) {
+    if (x.passed) { x.done = true; continue; }
+    if (first[x.sw] === undefined) first[x.sw] = x.want;
+    x.done = x.set && first[x.sw] === x.want;
+  }
+  return out;
+}
+// The rows of the public schedule board and the work board (UI reads them), one per run of today (and any of
+// yesterday's still at the hub): { run, svc, name, kind, from, to, track, arr, dep (S.time), state ('Due' | 'Coming in' |
+// 'At the platform' | 'At the cargo track' | 'Ready' | 'Left' | 'Cancelled'), late (s: the arrival's until it stands, then
+// the departure's), arrLate, depLate, cars (how many), tr (slot or null), ready, waved, off, on, unload, load (null: PX's
+// and CG's counts, for the integrator to fill from pxCarStatus / cgCarStatus), carStatus ([{ stock, k, px, cg }] from
+// pxCarStatus / cgCarStatus when they exist), switches (rrSwitchNeeds rows of this run) }.
+function rrBoardRows(S) {
+  const R = S.rr;
+  if (!R || !R.on) return [];
+  const needs = rrSwitchNeeds(S), today = rrDayOf(S);
+  return R.runs.filter(r => r.day === today || (r.ph !== 'gone' && r.ph !== 'cxl')).map(run => {
+    const tr = rrTrainOf(S, run), on = tr && !trainOff(tr);
+    const state = run.ph === 'due' ? 'Due' : run.ph === 'in' ? 'Coming in' : run.ph === 'stand' ? (run.ready ? 'Ready' : run.track === 'platform' ? 'At the platform' : 'At the cargo track')
+      : run.ph === 'cxl' ? 'Cancelled' : 'Left';
+    const arrLate = run.tArr !== null ? Math.max(0, run.tArr - run.arr)
+      : run.ph === 'due' ? Math.max(0, Math.max(S.time, rrEnterAt(run)) + (run.lead || 0) + RR.EARLY_S - run.arr) : run.ph === 'in' ? Math.max(0, S.time - run.arr) : 0;
+    const depLate = run.tWave !== null ? rrDepLate(run) : Math.max(0, S.time - run.dep);
+    const carStatus = on ? tr.consist.slice(1).map(c => ({ stock: c.id, k: c.k, px: typeof pxCarStatus === 'function' ? pxCarStatus(S, c.id) : null, cg: typeof cgCarStatus === 'function' ? cgCarStatus(S, c.id) : null })) : [];
+    return { run: run.id, svc: run.svc, name: run.name, kind: run.kind, from: run.from, to: run.to, track: run.track, arr: run.arr, dep: run.dep, state,
+      late: run.tArr === null && run.ph !== 'cxl' ? arrLate : depLate, arrLate, depLate, cars: on ? tr.consist.length - 1 : rrNcars(run), tr: run.slot,
+      ready: !!run.ready, waved: run.tWave !== null, off: null, on: null, unload: null, load: null, carStatus, switches: needs.filter(n => n.run === run.id) };
+  });
+}
+// Debug and checks only: jump the clock forward to a minute before today's run svcId ('p1' .. 'f3') is to come in.
+// Earlier runs of today not yet in are skipped (marked gone, skipped: true); trains already at the hub carry on.
+// Returns the run, or null.
+function rrDebugJump(S, svcId) {
+  const R = S.rr;
+  if (!R || !R.on) return null;
+  const day = rrDayOf(S);
+  if (R.day < day) rrNewDay(S, day);
+  const run = R.runs.find(r => r.svc === svcId && r.day === day && r.ph === 'due');
+  if (!run) return null;
+  for (const o of R.runs) if (o !== run && o.ph === 'due' && o.arr <= run.arr) { o.ph = 'gone'; o.skipped = true; }
+  S.time = Math.max(S.time, Math.floor((rrEnterAt(run) - 60) / CFG.TICK_GAME_S) * CFG.TICK_GAME_S);
+  return run;
+}
 function rrCheckSaveShape(st) {
   const R = st.rr, bad = why => { throw new Error('damaged save: the railroad\'s trains' + (why ? ' (' + why + ')' : '')); };
   if (!R || typeof R !== 'object' || typeof R.on !== 'boolean' || !Number.isInteger(R.day) || !Array.isArray(R.runs) || !Number.isInteger(R.next) || !Number.isInteger(R.nextStock)) bad();
@@ -6167,6 +6507,7 @@ function simTick(S, cmds) {
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   springTick(S);                                        // spring switches pushed over by a train spring back (D20)
   ttStatus(S);
+  rrStatus(S);                                          // D24: what a standing railroad train shows (section "railroad trains")
   const poseCache = {};
   for (const tr of S.trains) poseCache[tr.id] = trainPoses(S.track, tr);
   const tel = econTelBefore(S, ev);
@@ -6553,6 +6894,120 @@ function modelBoxcar(ours) {
   k.add(box(2.6, 0.08, 1.05), PAL.roof, 0, B + 1.62, 0);
   k.add(box(0.7, 0.8, 0.97), PAL.trim, 0, B + 1.05, 0);
   for (const x of [-0.8, 0.8]) for (const dz of [-0.45, 0.45]) k.add(cyl(0.22, 0.22, 0.1), PAL.loco, x, B + 0.22, dz, H);
+  return growMesh(k.mesh());
+}
+// ---- The railroad's trains (D24, builder TR): a small engine and short cars ----
+// Smaller than ours and in the railroad's own colours (green and cream, an ochre boxcar), with no yellow stripe: a
+// little engine with a big balloon stack and red wheels (RR.LOCO, 4.2 M1 units long with its tender), and short
+// coaches, boxcars and flatcars (RR.CARS, 1.9 long). Draw calls: the vehicles of every railroad train are drawn as one
+// InstancedMesh per kind (engine, coach, boxcar, flatcar: at most 4 meshes, 8 draw calls with their shadows, however
+// many cars; two trains of 5 and 6 vehicles would be 22 drawn one by one). Each vehicle still has its own mesh in
+// view.train and view.byStock (positions, picking, plates, flatcar loads), with an invisible material, so it costs no
+// draw call; rrInstDraw copies their places into the instances each frame. The geometry of each kind is built once
+// and shared (geometry.userData.shared: buildActors does not dispose it). The flatcar's deck top is at FLAT_DECK, as
+// ours, so the cargo drawing lays loads on it.
+const RR_PAL = { green: '#3d6a4c', cream: '#e6d6a8', ochre: '#a8662f', dark: '#26302a' };
+const RR_KINDS = ['loco', 'coach', 'boxcar', 'flatcar'], RR_INST_MAX = 16;
+const rrGeo = {}, rrInst = {};
+const RR_PROXY_MAT = new THREE.MeshBasicMaterial({ visible: false });
+function rrGeoOf(k) {
+  if (!rrGeo[k]) {
+    const m = k === 'loco' ? modelRrLoco() : k === 'coach' ? modelRrCoach() : k === 'flatcar' ? modelRrFlatcar() : modelRrBoxcar();
+    m.geometry.userData.shared = true; m.geometry.computeBoundingSphere();
+    rrGeo[k] = m.geometry;
+  }
+  return rrGeo[k];
+}
+// A railroad vehicle's own mesh: placed, picked and read like any car's, drawn by the instances (rrInstDraw).
+function modelRr(k) {
+  const kind = RR_KINDS.includes(k) ? k : 'boxcar';
+  const m = new THREE.Mesh(rrGeoOf(kind), RR_PROXY_MAT);
+  m.castShadow = false; m.receiveShadow = false; m.userData.rrKind = kind;
+  return m;
+}
+// Each frame, after the trains are placed (render): every railroad vehicle on the map into its kind's instances.
+function rrInstDraw() {
+  const n = {};
+  for (const k of RR_KINDS) n[k] = 0;
+  for (const list of view.train || []) for (const m of list) {
+    const k = m.userData.rrKind;
+    if (!k || !m.visible) continue;
+    let I = rrInst[k];
+    if (!I) {
+      I = rrInst[k] = new THREE.InstancedMesh(rrGeoOf(k), KIT_MAT, RR_INST_MAX);
+      I.name = 'rrCars-' + k; I.castShadow = true; I.receiveShadow = true; I.frustumCulled = false; I.count = 0;
+      scene.add(I);
+    }
+    if (n[k] >= RR_INST_MAX) continue;
+    m.updateMatrixWorld();
+    I.setMatrixAt(n[k]++, m.matrixWorld);
+  }
+  for (const k of RR_KINDS) {
+    const I = rrInst[k];
+    if (!I) continue;
+    I.count = n[k]; I.visible = n[k] > 0; I.instanceMatrix.needsUpdate = true;
+  }
+}
+function modelRrLoco() {
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2, P = RR_PAL;
+  k.add(box(2.5, 0.18, 0.82), PAL.loco, 0.65, B + 0.45, 0);                    // frame
+  k.add(cyl(0.34, 0.34, 1.45), PAL.loco, 1.05, B + 0.9, 0, 0, 0, H);           // boiler
+  k.add(cyl(0.36, 0.36, 0.14), PAL.loco, 1.78, B + 0.9, 0, 0, 0, H);           // smokebox front
+  k.add(cyl(0.24, 0.24, 0.04), P.dark, 1.865, B + 0.9, 0, 0, 0, H);            // smokebox door
+  for (const x of [0.6, 1.3]) k.add(cyl(0.355, 0.355, 0.06), PAL.brass, x, B + 0.9, 0, 0, 0, H);
+  k.add(cyl(0.3, 0.12, 0.5), PAL.loco, 1.55, B + 1.45, 0);                     // the balloon stack
+  k.add(cyl(0.33, 0.3, 0.07), P.dark, 1.55, B + 1.735, 0);
+  k.add(new THREE.SphereGeometry(0.16, SEG, 4), PAL.brass, 1.0, B + 1.25, 0);  // steam dome
+  k.add(new THREE.SphereGeometry(0.12, SEG, 4), PAL.loco, 0.55, B + 1.21, 0);  // sand dome
+  k.add(box(0.22, 0.24, 0.26), PAL.brass, 1.72, B + 1.37, 0);                  // headlamp
+  k.add(box(0.03, 0.16, 0.18), PAL.win, 1.835, B + 1.37, 0);
+  k.add(box(0.8, 1.0, 0.9), P.green, -0.05, B + 1.05, 0);                      // cab
+  k.add(box(0.34, 0.28, 0.92), PAL.glass, -0.05, B + 1.27, 0);                 // cab windows (both sides)
+  k.add(box(0.98, 0.08, 1.04), PAL.loco, -0.05, B + 1.6, 0);                   // cab roof
+  k.add(box(0.08, 0.14, 0.86), PAL.red, 1.92, B + 0.45, 0);                    // buffer beam
+  k.add(box(0.38, 0.3, 0.8), PAL.red, 2.0, B + 0.24, 0, 0, 0, -0.6);           // cowcatcher
+  const wheel = (x, r) => { for (const dz of [-0.44, 0.44]) k.add(cyl(r, r, 0.1), PAL.red, x, B + r, dz, H); };
+  wheel(0.45, 0.28); wheel(1.05, 0.28); wheel(1.6, 0.15);
+  k.add(box(1.35, 0.12, 0.8), PAL.loco, -1.3, B + 0.44, 0);                    // tender
+  k.add(box(1.3, 0.72, 0.88), P.green, -1.3, B + 0.86, 0);
+  k.add(box(1.0, 0.06, 0.9), P.cream, -1.3, B + 1.0, 0);                       // a cream band along its sides
+  for (const zz of [-0.24, 0, 0.24]) k.add(box(1.1, 0.14, 0.2), PAL.trunk, -1.3, B + 1.29, zz); // cordwood
+  wheel(-0.95, 0.17); wheel(-1.65, 0.17);
+  return growMesh(k.mesh());
+}
+const rrTrucks = (k, B, H) => { for (const x of [-0.58, 0.58]) for (const dz of [-0.42, 0.42]) k.add(cyl(0.18, 0.18, 0.1), PAL.loco, x, B + 0.18, dz, H); };
+function modelRrCoach() {
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2, P = RR_PAL;
+  k.add(box(1.8, 0.12, 0.8), PAL.loco, 0, B + 0.47, 0);                        // underframe
+  k.add(box(1.76, 0.78, 0.86), P.green, 0, B + 0.93, 0);                       // body
+  k.add(box(1.66, 0.3, 0.87), P.cream, 0, B + 1.08, 0);                        // the cream window band
+  for (const x of [-0.6, -0.2, 0.2, 0.6]) k.add(box(0.22, 0.2, 0.88), PAL.glass, x, B + 1.09, 0);   // windows, both sides
+  k.add(box(1.88, 0.07, 0.96), P.dark, 0, B + 1.36, 0);                        // roof
+  k.add(box(1.3, 0.09, 0.5), P.dark, 0, B + 1.43, 0);                          // clerestory
+  for (const s of [-1, 1]) {
+    k.add(box(0.1, 0.04, 0.72), PAL.trim, s * 0.92, B + 0.55, 0);              // end platforms
+    k.add(box(0.03, 0.3, 0.03), PAL.brass, s * 0.95, B + 0.72, 0.33);          // railing posts
+    k.add(box(0.03, 0.3, 0.03), PAL.brass, s * 0.95, B + 0.72, -0.33);
+  }
+  rrTrucks(k, B, H);
+  return growMesh(k.mesh());
+}
+function modelRrBoxcar() {
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2, P = RR_PAL;
+  k.add(box(1.84, 0.12, 0.82), PAL.loco, 0, B + 0.47, 0);
+  k.add(box(1.8, 0.92, 0.9), P.ochre, 0, B + 1.0, 0);
+  k.add(box(0.55, 0.76, 0.92), PAL.trim, 0, B + 0.98, 0);                      // the sliding doors (both sides)
+  k.add(box(1.9, 0.07, 1.0), P.dark, 0, B + 1.5, 0);                           // roof
+  k.add(box(1.7, 0.04, 0.12), PAL.trim, 0, B + 1.55, 0);                       // roof walk
+  rrTrucks(k, B, H);
+  return growMesh(k.mesh());
+}
+function modelRrFlatcar() {
+  const k = new Kit(), B = RAIL_TOP_M1, H = Math.PI / 2;
+  k.add(box(1.9, 0.16, 1.0), PAL.trim, 0, B + 0.5, 0);                         // deck, top at FLAT_DECK
+  k.add(box(1.7, 0.14, 0.3), PAL.loco, 0, B + 0.35, 0);
+  for (const x of [-0.9, -0.3, 0.3, 0.9]) for (const dz of [-0.47, 0.47]) k.add(box(0.06, 0.2, 0.06), PAL.trunk, x, B + 0.68, dz);
+  rrTrucks(k, B, H);
   return growMesh(k.mesh());
 }
 // The combine (D15 cutaway, builder V): one mesh, built as named runs of vertices: the two side walls, the two end
@@ -7258,13 +7713,13 @@ function trainViewSig(S) {
 function buildActors(S) {
   if (view.trainGroup) {
     scene.remove(view.trainGroup);
-    view.trainGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); const u = o.userData.cut; if (u) { u.whole.dispose(); for (const k of Object.keys(u.geos)) u.geos[k].g.dispose(); } });
+    view.trainGroup.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); const u = o.userData.cut; if (u) { u.whole.dispose(); for (const k of Object.keys(u.geos)) u.geos[k].g.dispose(); } });
   }
   view.trainGroup = new THREE.Group(); scene.add(view.trainGroup);
   view.byStock = {};
   view.train = S.trains.map(tr => tr.consist.map(c => {
     const ours = trainStockOurs(tr, c);   // D21 (3): the player's own engines and cars carry the stripe
-    const m = c.k === 'loco' ? modelLoco(c.look, ours) : c.k === 'combine' ? modelCombine(ours) : c.k === 'flatcar' ? modelFlatcar(ours) : modelBoxcar(ours);
+    const m = tr.owner === 'rr' || c.look === 'rr' ? modelRr(c.k) : c.k === 'loco' ? modelLoco(c.look, ours) : c.k === 'combine' ? modelCombine(ours) : c.k === 'flatcar' ? modelFlatcar(ours) : modelBoxcar(ours);
     m.userData.train = tr.id; m.userData.stock = c.id; m.visible = false; view.trainGroup.add(m); view.byStock[c.id] = m; return m;
   }));
   view.trainSig = trainViewSig(S);
@@ -7529,7 +7984,7 @@ function cargoFlatPoses(S) {
       const long = itemType(S, id) === 'longBundle';
       let lx, lz, ly, yaw;
       if (long) { const r = nl++, layer = r >> 2; lx = (((r >> 1) & 1) - 0.5) * 0.96 * WS; lz = ((r & 1) - 0.5) * 0.36 * WS; ly = FLAT_DECK + 0.004 + layer * 0.176; yaw = Math.PI / 2; }
-      else { const r = nc++, layer = r >> 2; lx = ((r >> 1) & 1 ? 1 : -1) * 1.1 * WS; lz = ((r & 1) - 0.5) * 0.4 * WS; ly = FLAT_DECK + 0.004 + layer * 0.351; yaw = 0; }
+      else { const r = nc++, layer = r >> 2; lx = ((r >> 1) & 1 ? 1 : -1) * Math.min(1.1, f.car.len / SC / 2 - 0.2) * WS; lz = ((r & 1) - 0.5) * 0.4 * WS; ly = FLAT_DECK + 0.004 + layer * 0.351; yaw = 0; }   // D24: nearer the middle on a short car
       cargoFlatV.set(lx, ly, lz); m.localToWorld(cargoFlatV);
       out[id] = { x: cargoFlatV.x, y: cargoFlatV.y, z: cargoFlatV.z, yaw: m.rotation.y + yaw };
     }
@@ -11036,6 +11491,7 @@ function debugInit() {
       return { x: P.x, z: P.z };
     },
     scenario: dbgScenario,
+    rrJump: svc => { const r = rrDebugJump(S, svc); updateHud(); return r ? r.id : null; },   // D24: jump the clock to a railroad run ('p1' .. 'f3')
     get scenarios() { return Object.keys(DBG_SCENARIOS); },
     overlay: dbgOverlay,
     get overlays() { const o = {}; for (const [k, v] of Object.entries(DBG.ov)) o[k] = { on: v.on, built: !!v.mesh }; return o; },
@@ -13383,6 +13839,7 @@ function render(alpha, dt) {
     m.position.set(lerp(a.x, b.x, alpha), 0, lerp(a.z, b.z, alpha));
     m.rotation.y = lerpAngle(a.yaw, b.yaw, alpha);
   }));
+  rrInstDraw();   // D24: the railroad's trains, drawn as instances per kind (section "models")
   // Player.
   const P = S.player, pl = view.player, u = pl.userData;
   const px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
@@ -13555,7 +14012,8 @@ window.__railhead = {
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; cardsLoad(sv.ui && sv.ui.cards); buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
   // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
-  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady },
+  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady,
+    rrDebugJump, rrStopPos, rrExitPos, rrEngineDist, rrWaveSpot, rrRunTime, rrTrainOf },   // TR
   world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };

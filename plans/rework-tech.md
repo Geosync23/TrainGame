@@ -92,14 +92,16 @@ Overland's from 100).
 | Run | Kind | From > to | At its track | Leaves | Cars |
 |---|---|---|---|---|---|
 | p1 | passenger | west > east | 06:40 platform | 07:00 | 3 |
-| f1 | freight | east > west | 08:00 cargo | 09:45 | 4 |
+| f1 | freight | west > east (TR: was east > west) | 08:00 cargo | 09:45 | 4 |
 | p2 | passenger | east > west | 09:00 platform | 09:20 | 4 |
 | p3 | passenger | west > east | 11:00 platform | 11:20 | 3 |
 | f2 | freight | west > east | 12:30 cargo | 14:15 | 5 |
 | p4 | passenger | east > west | 13:30 platform | 13:50 | 4 |
 | p5 | passenger | west > east | 16:00 platform | 16:20 | 3 |
-| f3 | freight | east > west | 17:00 cargo | 18:45 | 4 |
+| f3 | freight | east > west | 18:00 cargo (TR: was 17:00) | 19:30 (TR: was 18:45) | 4 |
 | p6 | passenger | east > west | 19:30 platform | 19:50 | 4 |
+
+TR (2026-11-06): each end of the line is single track; f1 and f3 as first planned met p1 and p5 leaving the same way, so they were moved (see DEV_NOTES, "The railroad's trains"). The cars became 1.9 x SC and stand clear of the switches.
 
 While a freight train stands, the passenger trains come from the east and leave west round the cargo bypass (through
 switch 1 near the platform and the spring switch 0), so the throws stay at the inner throat.

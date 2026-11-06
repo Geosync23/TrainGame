@@ -11093,6 +11093,7 @@ function handleEvent(e) {
   else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
   else if (/^(telegram|tg|reachedDesk)/.test(e.t)) officeOnEvent(e);
   else if (e.t === 'reachedBiz' || e.t === 'bizDelivered') townOnEvent(e);
+  else if (/^(rr|px|cg|ticketChecked|carChecked|fareMissed)/.test(e.t)) rrOnEvent(e);   // D24 (UI)
   else if (/^(desk|pax)/.test(e.t)) paxOnEvent(e);
   else if (/^ride/.test(e.t)) rideOnEvent(e);
   else ttOnEvent(e);
@@ -11574,6 +11575,7 @@ function updateHud() {
   officeBtnHud();
   workCardUpdate();    // the work board's card (D20)
   workBtnHud();
+  rrHud();             // D24: the railroad's trains on screen (Send off, Check tickets): builder UI's ("HUD and panels", block "Station rework")
   inboxUpdate();
   tgBtnHud();
   nextJobHud();        // the Next job line (D21): after the telegraph button (it ends at its left edge), before the slide-in (which goes below it)
@@ -12926,6 +12928,15 @@ function warnTick() {
   warnUi.now = rows[0] || null;
   for (const w of rows) if (!warnUi.done[w.key]) { warnUi.done[w.key] = true; toast(w.text, WARN.MS); }
 }
+
+// ---- Station rework (D24): the page side of the railroad's trains, tickets on board and the cargo track ----
+// Owner: builder UI (plans/rework-tech.md): the Send off button and the Check tickets button over a car door (both
+// 48 px or more), the work board's and the schedule board's rows from rrBoardRows, the Next job line and the helper
+// arrows from rrSwitchNeeds and the runs, first-time cards for the new events (rrDue, rrArrived, trainSwitchWait,
+// carChecked, fareMissed, cgUnloaded), the tutorial's rewrite for the hub world, and Settings. Stubs for now.
+const rrUi = { el: null };
+function rrHud() {}                 // UI: called every frame from the HUD update, after the Work board button
+function rrOnEvent(e) {}            // UI: messages for the railroad's events (rrDue, rrEntered, rrArrived, rrWavedOff, rrLeft, rrRefused, pxRefused)
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);

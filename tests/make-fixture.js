@@ -3,19 +3,24 @@
 // It also loads every OLDER sample save through migrate() and records the hash it loads with under
 // "loads": { "v<N>": hash }, so check-save.js can tell that each old save still migrates to the same state.
 // Run once per new schema version:  node tests/make-fixture.js
+// From schema 17 (D24, the station rework) the new sample is a game in the hub world (a new game's world since then):
+// the same kind of session, with places that exist there (no dead end inside the hub, no Willow Ford travellers).
 const fs = require('fs');
 const path = require('path');
 const { openGame, stopServer } = require('./browser');
 (async () => {
-  const { browser, page } = await openGame('portrait', { query: '?paused' });
+  const { browser, page } = await openGame('portrait', { query: '?paused&world=hub' });
   const out = await page.evaluate(() => {
     const R = window.__railhead;
     // From schema 3: two freight items, and the player takes the hand truck and loads one.
-    const S0 = R.newState(1866), carry = S0.schemaVersion >= 3, jobs = S0.schemaVersion >= 4;
+    const S0 = R.newState(1866), hub = S0.track.world === 'hub', carry = S0.schemaVersion >= 3, jobs = S0.schemaVersion >= 4 && !hub;
     const k = R.CFG.SCALE || 1; // schema 14 (D15): the world is 1.6x, so the scripted places grow with it
+    // D24: the hub world's places (hundredths): the flour on the cargo yard, the player's walk onto the platform.
+    const flourAt = hub ? { x: -3600, z: -1000 } : { x: Math.round(-1050 * k), z: Math.round(1000 * k) };
+    const walkAt = hub ? { x: 600, z: -500 } : { x: Math.round(-500 * k), z: Math.round(800 * k) };
     if (carry) {
       const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
-      R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', x: Math.round(-1050 * k), z: Math.round(1000 * k) }, null);
+      R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', ...flourAt }, null);
       R.cargo.itemCreate(S0, wb('salt'), { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, null);
     }
     // From schema 4: a job staked 6u on from the spur's dead end, with a tie bundle lying beside it (on site).
@@ -31,18 +36,17 @@ const { openGame, stopServer } = require('./browser');
       R.cargo.itemCreate(S0, { commodity: 'flour', originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null }, { kind: 'BUSINESS', businessId: 0 }, null);
       S0.town.biz[0].shelf.flour = 2;
     }
-    const S = R.simRun(S0, [
-      { tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } },
-      { tick: 2, cmd: { t: 'useSwitch', sw: 0 } },
-    ].concat(stake).concat(carry ? [
+    const S = R.simRun(S0, (hub ? [] : [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }]).concat([   // D24: No. 1 is parked in the hub world
+      { tick: 2, cmd: { t: 'useSwitch', sw: hub ? 2 : 0 } },   // D24: the platform's west switch, set against the first train
+    ]).concat(stake).concat(carry ? [
       { tick: 100, cmd: { t: 'carryTool', tool: 0 } },
       { tick: 160, cmd: { t: 'carryPick', id: 0 } },
     ] : []).concat([
-      { tick: 300, cmd: { t: 'walkTo', x: Math.round(-500 * k), z: Math.round(800 * k) } },
+      { tick: 300, cmd: { t: 'walkTo', ...walkAt } },
     ]), 400);
     // With passengers (S.pax): one traveller in line at the hub's window and one with a ticket on the platform,
     // walking there, then 20 more ticks so their walks are saved part way.
-    if (S.pax && R.pax) {
+    if (S.pax && R.pax && !hub) {
       const K = R.pax.paxStation('hub', S.track), slot = R.pax.paxQueueSlots(S, K)[0], mk = (s, x, z, tx, tz, fare) => ({ id: S.pax.next++, from: 'hub', st: 'hub', to: 'willow', s,
         x, z, tx: null, tz: null, path: [], t0: S.time, f: 0, wait: 0, fare, car: null, door: 0 });
       S.pax.list.push(mk('queue', slot[0] + 600, slot[1], 0, 0, 0), mk('wait', Math.round(K.exits[0][0] * 100), Math.round(K.exits[0][1] * 100), 0, 0, 40));

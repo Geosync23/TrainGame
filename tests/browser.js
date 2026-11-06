@@ -75,7 +75,12 @@ async function openGame(viewportName, options = {}) {
     await page.evaluate(() => new Promise((res) => { const r = indexedDB.deleteDatabase('railhead'); r.onsuccess = r.onerror = r.onblocked = () => res(); }));
     await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* no storage */ } }); // the quick save lives here
   }
-  await page.goto(url + 'index.html' + (options.query || ''));
+  // D24 (the station rework): a new game is in the hub world. The checks written before it test the M1 real start, so
+  // they open the page in that world explicitly (?world=start) unless the query names a world itself (?world=yard for
+  // the M0 test yard's checks, ?world=hub for check-hubworld.js and the D24 builders' checks).
+  let q = options.query || '';
+  if (!/[?&]world=/.test(q)) q += (q ? '&' : '?') + 'world=start';
+  await page.goto(url + 'index.html' + q);
   await waitReady(page);
   return { browser, context, page, errors, url };
 }

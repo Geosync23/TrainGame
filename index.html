@@ -7198,8 +7198,8 @@ function plateList() {
     if (trainOff(tr) || tr.owner === 'interchange' || tr.owner === 'cut') return;
     const i = tr.consist.findIndex(c => c.k === 'loco'), m = i >= 0 && view.train[ti] ? view.train[ti][i] : null;
     if (!m || !m.visible) return;
-    const ours = tr.owner !== 'overland';
-    out.push({ text: ours ? `${tr.name}, yours` : 'Overland', ours, tr: tr.id, x: m.position.x, y: PLATE.LIFT * WS, z: m.position.z });
+    const ours = !tr.owner;   // D24: the railroad's trains (owner 'rr') are not the player's: a plain plate with their name
+    out.push({ text: ours ? `${tr.name}, yours` : tr.owner === 'overland' ? 'Overland' : tr.name, ours, tr: tr.id, x: m.position.x, y: PLATE.LIFT * WS, z: m.position.z });
   });
   return out;
 }

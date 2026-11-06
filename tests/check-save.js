@@ -78,7 +78,7 @@ async function plantAndOpen(page, url, idbJson, quickJson) {
       r.onerror = () => rej(r.error);
     });
   }, [idbJson, quickJson]);
-  await page.goto(url + 'index.html?paused');
+  await page.goto(url + 'index.html?paused&world=start');
   await waitReady(page);
 }
 async function storedKeys(page) {

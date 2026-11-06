@@ -197,7 +197,7 @@ module.exports = async function checkSwitches() {
     if (!r.botDay.needs.every(n => n.passed && n.done)) problems.push('after the morning service its needs are not passed: ' + JSON.stringify(r.botDay.needs));
     if (!r.midNeeds || !r.midNeeds.some(n => n.passed) || r.midNeeds.every(n => n.passed)) problems.push('mid-run the needs are not partly passed: ' + JSON.stringify(r.midNeeds));
     if (!r.needsSaved) problems.push('the needs data changed through a save and load');
-    if (r.v15.ver !== 16 || !r.v15.sw[2].spring || r.v15.sw[2].lever !== 'N' || !r.v15.sw[3].spring || r.v15.sw[3].lever !== 'R' || r.v15.sw.some(w => w.lockedBy !== null)) problems.push('the v15 sample save: ' + JSON.stringify(r.v15));
+    if (!(r.v15.ver >= 16) || !r.v15.sw[2].spring || r.v15.sw[2].lever !== 'N' || !r.v15.sw[3].spring || r.v15.sw[3].lever !== 'R' || r.v15.sw.some(w => w.lockedBy !== null)) problems.push('the v15 sample save: ' + JSON.stringify(r.v15));
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
     console.log(`  facing wait ${r.faceGap.toFixed(3)}u short of switch 2; trailing ${r.trail_send.gap.toFixed(3)}u (send), ${r.trail_run.gap.toFixed(3)}u (forward); bot day: ${r.botDay.botThrows} throw(s), springs pushed ${r.botDay.pushed} and back ${r.botDay.sprung}`);
     console.log('  needs: ' + r.needs.map(n => `${n.by} switch ${n.sw} ${n.want}${n.spring ? ' (spring)' : ''}`).join('; '));

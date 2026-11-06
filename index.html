@@ -6153,19 +6153,311 @@ function rideCheckSaveShape(st) {
 // Pure simulation. In the hub world paxTick hands over to pxTick at its top, so the M1 passengers code runs unchanged
 // in the 'start' and 'yard' worlds. Travellers stay in S.pax.list (same fields; `to` is the end of the line 'W' or 'E';
 // PX adds `chk` (checked) and any other optional field it needs); counts for the game are in S.rr.tk.
-// Command: { t: 'checkTickets', tr, car } (car: the car's stock id): walk to that car's door and check everyone aboard.
-// Events: ticketChecked { id, cents }, carChecked { tr, car, n }, fareMissed { run, n, cents }, plus the M1 ones
-// (paxArrived, paxBoarded, paxAlighted, paxGone, money).
+// Command: { t: 'checkTickets', tr, car } (car: the car's stock id): walk to that car's spot on the platform (beside its
+// middle) and check everyone aboard. Events: ticketChecked { id, cents, tr, car }, carChecked { tr, car, n },
+// fareMissed { run, n, cents }, checkStarted { tr, car }, checkStopped { tr, car, n, why }, pxRefused { why }, plus the
+// M1 ones (paxArrived, paxBoarded, paxAlighted, paxGone, money).
+//
+// How it goes (PX, 2026-11-06):
+// - Coming. About an hour before a passenger run's time to leave (PX.COME_S), pxPlan picks how many travellers want
+//   it (PX.MIN to PX.MAX, the travellers' own random numbers S.pax.rng) and when each sets off from a town exit
+//   (HUBW.TOWN_EXITS), between COME_S and LAST_S before the run's time. Each walks to a spot along the platform's
+//   track edge and waits there ('wait'), for any passenger train going its way (`to`: the run's end, 'W' or 'E'). A
+//   run planned late (a loaded game, the debug scenario) puts those who would have set off already on the platform.
+// - Arriving. When a passenger run stands at the platform (TR calls pxOnArrive; pxTick also calls it for a standing
+//   run it has not seen, so the debug scenario works), PX.MIN to PX.MAX riders are aboard its coaches, bound for the
+//   hub (`to` 'hub', their tickets were checked on the way). They step off first, one per door per 0.1 game minutes
+//   (PAX.BOARD_S, as M1), and walk to a town exit ('off'), where they leave the map (paxGone).
+// - Boarding. Those waiting for the train's way walk to the nearest door of a coach with a free seat (PX.SEATS)
+//   ('board') and board after the riders at that door are off ('aboard', `chk` 0: not checked).
+// - Checking. { t: 'checkTickets', tr, car }: the player walks to the car's spot on the platform, beside the car's
+//   middle (pxCars: spot), and stands there checking: every PX.CHECK_S game seconds one unchecked traveller aboard
+//   that car pays PX.FARE (econPost, 'fares'), ticketChecked. When nobody aboard is unchecked and nobody is walking up
+//   to that car, carChecked { tr, car, n } and the job ends. Any walk or action (or the train moving off) stops it:
+//   checkStopped { tr, car, n, why }; what was checked stays checked. A traveller who boards later is unchecked.
+// - Leaving. pxOnDepart (TR, at the wave-off): everyone unchecked aboard rides free (fareMissed, S.rr.tk.missed and
+//   missedCents; no ledger entry, no money moved); everyone aboard leaves with the train (paxGone); those still walking
+//   up to it go back to waiting.
+// S.rr.tk (every field optional; pxTk fills in what a save lacks): checked, cents, missed, missedCents (counts for
+// the game); job: null or { tr, car, x, z (the spot, hundredths), on (0 walking there, 1 checking), acc (seconds
+// worked on the ticket in hand), n (checked in this job) }; plan: run ids whose travellers are planned; seen: run
+// ids whose arrival is done; due: [[t, to, exit]] travellers still to set off from the town, soonest first.
+// Travellers' new fields: chk (1: ticket checked, or a rider bound for the hub), ex (the town exit an 'off' one walks to).
 const PX = {
   FARE: 40,                 // cents per traveller, to either end of the line (provisional: Willow Ford's 40 cents)
   CHECK_S: 6,               // checking one traveller's ticket: 0.1 game minutes (as boarding)
+  MIN: 4, MAX: 12,          // travellers per passenger train, boarding and stepping off (provisional)
+  COME_S: 3600, LAST_S: 1500, // they set off from the town between 60 and 25 game minutes before the train's time
+  SEATS: 16,                // seats in one of the railroad's short coaches
+  DOORS: [-0.45 * SC, 0.45 * SC], // a short coach's two doors along it from its centre (u)
+  NEAR_ALONG: 0.3, NEAR_OUT: 0.5, // the player checks a car standing within this of its length and of its platform spot
 };
-function pxTick(S, ev, poseCache) {}                       // PX: travellers in the hub world (instead of paxTick)
-function pxCheckCmd(S, c, ev) { ev.push({ t: 'pxRefused', why: 'Checking tickets on board is not built yet' }); } // PX
-function pxOnArrive(S, run, tr, ev) {}                     // PX: called by TR when a passenger train stands at the platform
-// Called by TR as a train is waved off (before it moves): everyone still unchecked aboard rides free. Returns the count.
-function pxOnDepart(S, run, tr, ev) { return { missed: 0, cents: 0 }; }   // PX
-function pxReady(S, run, tr) { return true; }              // PX: nobody is still stepping off or walking up to board
+// The parts of S.rr.tk PX keeps, filled in where a save does not have them.
+function pxTk(S) {
+  const tk = S.rr.tk;
+  for (const k of ['checked', 'cents', 'missed', 'missedCents']) if (!Number.isInteger(tk[k])) tk[k] = 0;
+  if (tk.job === undefined) tk.job = null;
+  for (const k of ['plan', 'seen', 'due']) if (!Array.isArray(tk[k])) tk[k] = [];
+  return tk;
+}
+const pxEndName = to => (to === 'W' ? 'the west' : 'the east');
+// The railroad's coaches standing at the hub's platform in a passenger run that stands ('stand'): [{ stock, tr, run,
+// seats, pose, doors: [[x, z]] (boarding spots, u), spot: [x, z] (where the player checks tickets, u) }], by stock id.
+function pxCars(S, K, poseCache) {
+  const out = [];
+  if (!S.rr || !K) return out;
+  for (const run of S.rr.runs) {
+    if (run.kind !== 'pax' || run.ph !== 'stand') continue;
+    const tr = rrTrainOf(S, run);
+    if (!tr || trainOff(tr) || tr.v > 0) continue;
+    const poses = poseCache[tr.id] || trainPoses(S.track, tr), lim = K.plat.w / 2 - 0.3;
+    const onPlat = (x, z) => { const [a, b] = paxLocal(K, x, z); return Math.abs(a) > lim + 0.8 * SC ? null : paxWorld(K, Math.max(-lim, Math.min(lim, a)), b); };
+    tr.consist.forEach((c, i) => {
+      const p = poses[i];
+      if (c.k !== 'coach' || !p) return;
+      const [lx, lz] = paxLocal(K, p.x, p.z), fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw);
+      if (Math.abs(lx) > K.plat.w / 2 || lz < K.plat.d / 2 + 0.5 * SC || lz > K.plat.d / 2 + 1.4 * SC) return;
+      if (Math.abs(fx * K.along[0] + fz * K.along[1]) < 0.97) return;   // standing along the platform
+      const at = t => onPlat(p.x + fx * t - K.out[0] * PAX.DOOR_OUT, p.z + fz * t - K.out[1] * PAX.DOOR_OUT);
+      const doors = PX.DOORS.map(at).filter(Boolean), spot = at(0);
+      if (doors.length && spot) out.push({ stock: c.id, tr, run, seats: PX.SEATS, pose: p, doors, spot });
+    });
+  }
+  return out.sort((a, b) => a.stock - b.stock);
+}
+// Is the player standing at car C (along its length, out to its spot on the platform)?
+function pxNearCar(P, C) {
+  const p = C.pose, fx = Math.cos(p.yaw), fz = -Math.sin(p.yaw), dx = P.x - p.x, dz = P.z - p.z;
+  const sx = C.spot[0] - p.x, sz = C.spot[1] - p.z, out = Math.hypot(sx, sz), nx = sx / out, nz = sz / out;
+  const along = dx * fx + dz * fz, across = dx * nx + dz * nz;
+  return Math.abs(along) <= p.len / 2 + PX.NEAR_ALONG && across >= 0 && across <= out + PX.NEAR_OUT;
+}
+const pxHub = S => paxStation(S.track, 'hub');
+const pxTickAt = t => Math.ceil(t / CFG.TICK_GAME_S) * CFG.TICK_GAME_S;
+// Plan the travellers who want this run: how many and when each sets off from the town.
+function pxPlan(S, run, K, poses, ev) {
+  const X = S.pax, tk = pxTk(S), n = PX.MIN + Math.floor(paxRand(X) * (PX.MAX - PX.MIN + 1)) % (PX.MAX - PX.MIN + 1);
+  tk.plan.push(run.id);
+  for (let i = 0; i < n; i++) {
+    const t = pxTickAt(run.dep - PX.COME_S + paxRand(X) * (PX.COME_S - PX.LAST_S)), ex = Math.floor(paxRand(X) * HUBW.TOWN_EXITS.length) % HUBW.TOWN_EXITS.length;
+    if (t <= S.time) {   // would have set off already: waiting on the platform
+      const w = paxWaitSpot(S, K), p = pxAdd(S, run.to, w[0] / 100, w[1] / 100, ev);
+      p.tx = w[0]; p.tz = w[1];
+    } else tk.due.push([t, run.to, ex]);
+  }
+  tk.due.sort((a, b) => a[0] - b[0]);
+}
+function pxAdd(S, to, x, z, ev) {
+  const p = paxAdd(S, 'town', 'hub', to, x, z, ev);
+  p.s = 'wait'; p.chk = 0;
+  return p;
+}
+// Called by TR when a passenger train stands at the platform (and by pxTick for a standing run it has not seen):
+// its riders for the hub are aboard its coaches, to step off. Returns how many.
+function pxOnArrive(S, run, tr, ev) {
+  if (!S.pax || !S.rr || !run || !tr) return 0;
+  const X = S.pax, tk = pxTk(S);
+  if (tk.seen.includes(run.id)) return 0;
+  tk.seen.push(run.id);
+  const poses = trainPoses(S.track, tr), coaches = tr.consist.map((c, i) => ({ c, p: poses[i] })).filter(o => o.c.k === 'coach' && o.p);
+  if (!coaches.length) return 0;
+  const n = PX.MIN + Math.floor(paxRand(X) * (PX.MAX - PX.MIN + 1)) % (PX.MAX - PX.MIN + 1);
+  for (let i = 0; i < n; i++) {
+    const o = coaches[Math.floor(paxRand(X) * coaches.length) % coaches.length];
+    const p = { id: X.next++, from: run.from, st: 'hub', to: 'hub', s: 'aboard', x: Math.round(o.p.x * 100), z: Math.round(o.p.z * 100), tx: null, tz: null,
+      path: [], t0: S.time, f: 0, wait: 0, fare: 0, car: o.c.id, door: Math.floor(paxRand(X) * PX.DOORS.length) % PX.DOORS.length, chk: 1 };
+    X.list.push(p);
+  }
+  return n;
+}
+// Called by TR as a train is waved off (before it moves): everyone still unchecked aboard rides free; everyone aboard
+// leaves with the train. Returns { missed, cents }.
+function pxOnDepart(S, run, tr, ev) {
+  if (!S.pax || !S.rr || !tr) return { missed: 0, cents: 0 };
+  const X = S.pax, tk = pxTk(S), stocks = new Set(tr.consist.map(c => c.id)), keep = [];
+  let n = 0;
+  for (const p of X.list) {
+    if (p.s === 'aboard' && stocks.has(p.car)) {
+      if (p.to !== 'hub' && !p.chk) n++;
+      paxCount(X.gone, 'hub'); ev.push({ t: 'paxGone', id: p.id, st: 'hub' });
+      continue;
+    }
+    if (p.s === 'board' && stocks.has(p.car)) { p.s = 'wait'; p.car = null; p.tx = null; p.tz = null; p.path = []; }
+    keep.push(p);
+  }
+  X.list = keep;
+  for (const key of Object.keys(X.door)) if (stocks.has(Number(key.split(':')[0]))) delete X.door[key];
+  if (tk.job && tk.job.tr === tr.id) { ev.push({ t: 'checkStopped', tr: tk.job.tr, car: tk.job.car, n: tk.job.n, why: 'The train left' }); tk.job = null; }
+  const cents = n * PX.FARE;
+  tk.missed += n; tk.missedCents += cents;
+  if (n) ev.push({ t: 'fareMissed', run: run ? run.id : null, n, cents });
+  return { missed: n, cents };
+}
+// Nobody is still stepping off this train, nobody is walking up to board it, and nobody waiting for its way is left
+// behind while it has a free seat. False until its arrival is done.
+function pxReady(S, run, tr) {
+  if (!S.pax || !S.rr || !run || !tr) return true;
+  const tk = pxTk(S), stocks = new Set(tr.consist.filter(c => c.k === 'coach').map(c => c.id));
+  if (!stocks.size) return true;
+  if (!tk.seen.includes(run.id)) return false;
+  const L = S.pax.list;
+  if (L.some(p => stocks.has(p.car) && ((p.s === 'aboard' && p.to === 'hub') || p.s === 'board'))) return false;
+  const seats = stocks.size * PX.SEATS - L.filter(p => p.s === 'aboard' && stocks.has(p.car)).length;
+  return !(seats > 0 && L.some(p => p.s === 'wait' && p.to === run.to));
+}
+// One car's travellers, for the car panel and the Check tickets button: { stock, tr, aboard (boarded here),
+// checked, unchecked, off (riders still to step off), boarding (walking up to it), seats, checking (the player is
+// checking it now), at (standing at the platform: it can be checked), spot: [x, z] (u) or null }. null: not one of
+// the railroad's coaches.
+function pxCarStatus(S, stock) {
+  if (!S.pax || !S.rr) return null;
+  const f = rideCarOf(S, stock);
+  if (!f || f.tr.owner !== 'rr' || f.car.k !== 'coach') return null;
+  const tk = pxTk(S), L = S.pax.list.filter(p => p.car === stock), on = L.filter(p => p.s === 'aboard' && p.to !== 'hub');
+  const pc = {}; pc[f.tr.id] = trainPoses(S.track, f.tr);
+  const C = pxCars(S, pxHub(S), pc).find(c => c.stock === stock);
+  const checked = on.filter(p => p.chk).length;
+  return { stock, tr: f.tr.id, aboard: on.length, checked, unchecked: on.length - checked, off: L.filter(p => p.s === 'aboard' && p.to === 'hub').length,
+    boarding: L.filter(p => p.s === 'board').length, seats: PX.SEATS, checking: !!(tk.job && tk.job.car === stock && tk.job.on), at: !!C, spot: C ? C.spot.slice() : null };
+}
+// A run's travellers, for the boards (TR's rrBoardRows): { off (still to step off), on (aboard, boarded here),
+// waiting (on the platform or coming, for its way), checked, unchecked }.
+function pxRunStatus(S, run) {
+  const out = { off: 0, on: 0, waiting: 0, checked: 0, unchecked: 0 };
+  if (!S.pax || !S.rr || !run) return out;
+  const tr = rrTrainOf(S, run), stocks = new Set(tr ? tr.consist.map(c => c.id) : []);
+  for (const p of S.pax.list) {
+    if (p.s === 'aboard' && stocks.has(p.car)) { if (p.to === 'hub') out.off++; else { out.on++; if (p.chk) out.checked++; else out.unchecked++; } }
+    else if ((p.s === 'wait' || p.s === 'board') && p.to === run.to) out.waiting++;
+  }
+  return out;
+}
+function pxRefuse(ev, why) { ev.push({ t: 'pxRefused', why }); }
+// { t: 'checkTickets', tr, car }: walk to the car's spot on the platform and check its travellers' tickets.
+function pxCheckCmd(S, c, ev) {
+  const P = S.player;
+  if (!S.rr || !S.rr.on || !S.pax) return pxRefuse(ev, 'Tickets are checked on board the railroad\'s trains, at the hub');
+  if (P.ride) return pxRefuse(ev, 'Step off first');
+  if (P.tool !== null && P.tool !== undefined) return pxRefuse(ev, `Leave the ${carryToolName(S)} at its spot first`);
+  const tk = pxTk(S), C = pxCars(S, pxHub(S), ridePoses(S)).find(q => q.stock === c.car && (c.tr === undefined || q.tr.id === c.tr));
+  if (!C) return pxRefuse(ev, 'Tickets are checked in a coach of a passenger train standing at the platform');
+  if (tk.job) ev.push({ t: 'checkStopped', tr: tk.job.tr, car: tk.job.car, n: tk.job.n, why: '' });
+  tk.job = { tr: C.tr.id, car: C.stock, x: Math.round(C.spot[0] * 100), z: Math.round(C.spot[1] * 100), on: 0, acc: 0, n: 0 };
+  P.use = null; P.act = null;
+  if (pxNearCar(P, C)) pxCheckStart(S, C, ev);   // already there: start at once
+  else { P.mode = 'to'; P.tx = tk.job.x / 100; P.tz = tk.job.z / 100; }
+}
+function pxCheckStart(S, C, ev) {
+  const P = S.player, J = S.rr.tk.job;
+  P.mode = 'idle'; J.on = 1; J.acc = 0;
+  P.f = Math.atan2(C.pose.x - P.x, C.pose.z - P.z);   // facing the car
+  ev.push({ t: 'checkStarted', tr: J.tr, car: J.car });
+}
+// The ticket check in hand, once a tick (after the player has moved, from pxTick).
+function pxCheckTick(S, ev, cars) {
+  const tk = S.rr.tk, J = tk.job, P = S.player;
+  if (!J) return;
+  const stop = why => { ev.push({ t: 'checkStopped', tr: J.tr, car: J.car, n: J.n, why }); tk.job = null; };
+  const C = cars.find(q => q.stock === J.car);
+  if (!C) return stop('The train moved off');
+  if (!J.on) {
+    if (P.mode === 'to' && Math.round(P.tx * 100) === J.x && Math.round(P.tz * 100) === J.z) return;   // still walking there
+    if (P.mode === 'idle' && !P.act && !P.ride && pxNearCar(P, C)) pxCheckStart(S, C, ev);
+    else return stop(P.mode === 'idle' ? 'Could not reach the car' : '');
+  }
+  if (P.mode !== 'idle' || P.act || P.ride || !pxNearCar(P, C)) return stop('');   // walked away: what was checked stays checked
+  J.acc += CFG.TICK_GAME_S;
+  const todo = S.pax.list.filter(p => p.s === 'aboard' && p.car === J.car && p.to !== 'hub' && !p.chk);
+  while (J.acc >= PX.CHECK_S && todo.length) {
+    J.acc -= PX.CHECK_S;
+    const p = todo.shift();
+    p.chk = 1; p.fare = PX.FARE; J.n++; tk.checked++; tk.cents += PX.FARE;
+    econPost(S, PX.FARE, 'fares', `Ticket checked on board, Hub to ${pxEndName(p.to)}`, { kind: 'TICKET', id: p.id }, ev);
+    ev.push({ t: 'ticketChecked', id: p.id, cents: PX.FARE, tr: J.tr, car: J.car });
+  }
+  if (todo.length) return;
+  J.acc = Math.min(J.acc, PX.CHECK_S);   // nobody to check this moment: no time saved up for the next
+  if (S.pax.list.some(p => p.car === J.car && p.s === 'board')) return;   // someone still walking up: wait for them
+  ev.push({ t: 'carChecked', tr: J.tr, car: J.car, n: J.n });
+  tk.job = null;
+}
+// Step 8 of the sim tick in the hub world (from paxTick): travellers coming, stepping off, boarding, leaving, and the
+// ticket check in hand.
+function pxTick(S, ev, poseCache) {
+  const X = S.pax, R = S.rr;
+  if (!X || !R || !R.on) return;
+  const tk = pxTk(S), K = pxHub(S);
+  if (!K) return;
+  const poses = [].concat(...S.trains.map(tr => poseCache[tr.id] || []));
+  // 1. The runs: travellers planned an hour before each passenger run's time; the arrival of one standing now.
+  const ids = new Set(R.runs.map(r => r.id));
+  tk.plan = tk.plan.filter(id => ids.has(id)); tk.seen = tk.seen.filter(id => ids.has(id));
+  for (const run of R.runs) {
+    if (run.kind !== 'pax') continue;
+    if (!tk.plan.includes(run.id) && run.ph !== 'gone' && run.ph !== 'cxl' && S.time >= run.dep - PX.COME_S) pxPlan(S, run, K, poses, ev);
+    if (run.ph === 'stand' && !tk.seen.includes(run.id)) { const tr = rrTrainOf(S, run); if (tr) pxOnArrive(S, run, tr, ev); }
+  }
+  // 2. Travellers setting off from the town, for the platform.
+  while (tk.due.length && tk.due[0][0] <= S.time) {
+    const [, to, ex] = tk.due.shift(), e = HUBW.TOWN_EXITS[ex] || HUBW.TOWN_EXITS[0], p = pxAdd(S, to, e[0], e[1], ev), w = paxWaitSpot(S, K);
+    paxGo(S, p, poses, w[0], w[1]);
+  }
+  // 3. Coaches at the platform: riders step off first, then those waiting board, one at a time per door.
+  const cars = pxCars(S, K, poseCache), byStock = new Map(cars.map(c => [c.stock, c]));
+  for (const p of X.list) if (p.s === 'board' && !byStock.has(p.car)) { p.s = 'wait'; p.car = null; const w = paxWaitSpot(S, K); paxGo(S, p, poses, w[0], w[1]); }
+  // Each one waiting for a train's way walks to the nearest door of its coaches that has a free seat (in id order;
+  // ties to the lower stock id and door).
+  const taken = new Map(cars.map(C => [C.stock, X.list.filter(p => (p.s === 'aboard' || p.s === 'board') && p.car === C.stock).length]));
+  for (const p of X.list) {
+    if (p.s !== 'wait') continue;
+    let best = null, bd = Infinity;
+    for (const C of cars) {
+      if (C.run.to !== p.to || taken.get(C.stock) >= C.seats) continue;
+      C.doors.forEach((d, j) => { const dd = Math.hypot(d[0] * 100 - p.x, d[1] * 100 - p.z); if (dd < bd) { bd = dd; best = [C, j]; } });
+    }
+    if (!best) continue;
+    const [C, di] = best;
+    p.s = 'board'; p.car = C.stock; p.door = di; taken.set(C.stock, taken.get(C.stock) + 1);
+    paxGo(S, p, poses, Math.round(C.doors[di][0] * 100), Math.round(C.doors[di][1] * 100));
+  }
+  for (const C of cars) {
+    const aboard = X.list.filter(p => p.s === 'aboard' && p.car === C.stock);
+    C.doors.forEach((d, j) => {
+      const key = C.stock + ':' + j, dx = Math.round(d[0] * 100), dz = Math.round(d[1] * 100);
+      const off = aboard.filter(p => p.to === 'hub' && p.door % C.doors.length === j);
+      const on = X.list.filter(p => p.s === 'board' && p.car === C.stock && p.door === j && paxAt(p) && Math.hypot(p.x - dx, p.z - dz) <= 30);
+      if (!off.length && !on.length) { delete X.door[key]; return; }
+      X.door[key] = (X.door[key] || 0) + CFG.TICK_GAME_S;
+      while (X.door[key] >= PAX.BOARD_S && (off.length || on.length)) {
+        X.door[key] -= PAX.BOARD_S;
+        if (off.length) {
+          const p = off.shift();
+          p.s = 'off'; p.car = null; p.x = dx; p.z = dz; p.tx = null; p.tz = null; p.path = [];
+          p.ex = Math.floor(paxRand(X) * HUBW.TOWN_EXITS.length) % HUBW.TOWN_EXITS.length;
+          paxCount(X.arrived, 'hub');
+          ev.push({ t: 'paxAlighted', id: p.id, st: 'hub', stock: C.stock });
+        } else {
+          const p = on.shift();
+          p.s = 'aboard'; p.chk = 0; p.path = []; p.tx = null; p.tz = null;
+          ev.push({ t: 'paxBoarded', id: p.id, st: 'hub', stock: C.stock });
+        }
+      }
+      if (!off.length && !on.length) delete X.door[key];
+    });
+  }
+  for (const key of Object.keys(X.door).sort()) { const sk = Number(key.split(':')[0]); if (!X.list.some(p => p.car === sk)) delete X.door[key]; }
+  // 4. The ticket check in hand (the player moved earlier this tick).
+  pxCheckTick(S, ev, cars);
+  // 5. Walking. Those who stepped off walk to their town exit and leave the map there (M2: they become townspeople).
+  for (const p of X.list) if (p.s === 'off' && p.tx === null) { const e = HUBW.TOWN_EXITS[p.ex || 0]; paxGo(S, p, poses, Math.round(e[0] * 100), Math.round(e[1] * 100)); }
+  for (const p of X.list) if (p.s !== 'aboard') paxMove(S, p, poses);
+  const keep = [];
+  for (const p of X.list) {
+    if (p.s === 'off' && paxAt(p)) { paxCount(X.gone, 'hub'); ev.push({ t: 'paxGone', id: p.id, st: 'hub' }); continue; }
+    keep.push(p);
+  }
+  X.list = keep;
+}
 
 // ==== Section: telegrams and alerts ====
 // Owner: M1 package 7 (builder D1, D13). The telegram inbox and the list of active problems (alerts).
@@ -14014,6 +14306,7 @@ window.__railhead = {
   // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
   rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady,
     rrDebugJump, rrStopPos, rrExitPos, rrEngineDist, rrWaveSpot, rrRunTime, rrTrainOf },   // TR
+  px: { PX, pxTk, pxCars: (st, pc) => pxCars(st || S, paxStation((st || S).track, 'hub'), pc || ridePoses(st || S)), pxCarStatus, pxRunStatus, pxReady, pxOnArrive, pxOnDepart, pxNearCar },   // D24: tickets on board (PX)
   world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };

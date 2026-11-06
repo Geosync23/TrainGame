@@ -134,7 +134,7 @@ switch 1 near the platform and the spring switch 0), so the throws stay at the i
   same row shape as `ttSwitchNeeds`, so the work board, the arrows and the Next job line read it as they read D20's).
 - **Models:** a small engine (`RR.LOCO`, `look: 'rr'`, 4.4 x SC = 7u with its tender) and short cars (`RR.CARS`: coach, boxcar, flatcar, 2.2 x SC = 3.5u):
   a 4-car passenger train is about 22u (fits the 32u platform), a 5-car freight train about 25u (fits the cargo span).
-  Each vehicle is 2 draw calls today; measured with two such trains and 200 walkers zoomed out: 86 portrait, 88
+  Each vehicle is 2 draw calls today; measured with two such trains and 200 walkers zoomed out: 81 portrait, 88
   landscape (budget 100). Merging a train's cars into one mesh is TR's call if the count grows.
 
 ## 3. Tickets on board (PX)

@@ -297,10 +297,13 @@ module.exports = async function checkExplain() {
         if (!fit.inside || fit.small) P(`${orient} 1: the card should fit the screen with buttons of 48 px or more: ${JSON.stringify(fit)}`);
         await tapSel('#fcardShow');
         const after = await R(() => { const R = window.__railhead, t = R.guide.now(), car = R.state.trains.find(t => t.owner === 'interchange'), ps = R.trainPoses(R.state.track, car);
-          return { hidden: document.getElementById('fcard').hidden, t, near: t ? Math.min(...ps.map(p => Math.hypot(p.x - t.x, p.z - t.z))) : null, arrow: R.guide.ui.arrow && R.guide.ui.arrow.visible }; });
+          const sp = document.querySelector('#speeds [aria-pressed="true"]');
+          return { hidden: document.getElementById('fcard').hidden, speed: sp ? sp.dataset.speed : null, t, near: t ? Math.min(...ps.map(p => Math.hypot(p.x - t.x, p.z - t.z))) : null, arrow: R.guide.ui.arrow && R.guide.ui.arrow.visible }; });
         await frames(600);
         const t2 = await R(() => window.__railhead.state.tick);
-        if (!after.hidden || (await pressed()) !== '4' || !(t2 > t1)) P(`${orient} 1: Show me should close the card and the game run on at 4x: ${JSON.stringify(after)} pressed ${await pressed()} ticks ${t1} -> ${t2}`);
+        // The speed is read straight after the tap: under load the next card (travellers off) can open and pause
+        // the game again within the wait below, which is right, so only the ticks are checked after it.
+        if (!after.hidden || after.speed !== '4' || !(t2 > t1)) P(`${orient} 1: Show me should close the card and the game run on at 4x: ${JSON.stringify(after)} pressed ${await pressed()} ticks ${t1} -> ${t2}`);
         if (!after.t || after.t.k !== 'car' || !(after.near < 0.1)) P(`${orient} 1: Show me should put the arrow on the Overland's car: ${JSON.stringify(after.t)} (${after.near})`);
         await tapSel('#speeds [data-speed="0"]');
         await frames(400);

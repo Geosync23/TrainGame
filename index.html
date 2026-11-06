@@ -388,7 +388,7 @@ function scaleDeep(o) {
   return o;
 }
 const CFG = {
-  SCHEMA_VERSION: 16,
+  SCHEMA_VERSION: 17,
   SEED: 1866,
   SCALE: SC,                 // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
@@ -811,6 +811,76 @@ function startSwitchStates(T) {
   if (T.switches[3]) switchSpring(T.switches[3], 'R');
 }
 
+// ---- D24 (station rework): the hub world ('hub'), every new game's world since 2026-11-06 ----
+// The hub is the whole game (design-doc D24): a straight through line along z = 0 crosses the map from edge to edge
+// and runs 64u on past each edge, where the railroad's trains stand out of sight before they come in and after they
+// leave. Along it, west to east: the CARGO SECTION (switch 0, the cargo track beside the cargo dock and the freight
+// shed, switch 1) and the PLATFORM SECTION (switch 2, the platform track beside the hub's platform, switch 3), 6.4u
+// apart at the inner throat. The station tracks are the straight line itself, so the platform's and the dock's ends
+// come within a few steps of their switch stands; each section has a bypass loop on the south side (z = +TURN_OFF)
+// so a train can pass another standing at the dock or the platform. Every switch's diverging leg turns south, so
+// every stand is on the north side, the station side: the player never crosses the track to throw one. The
+// buildings stand north of the line as in the real start (the hub's platform, depot and props are the real start's,
+// moved TURN_OFF south with the track: the same distances from the track), the freight shed and an open cargo dock
+// beside the cargo track, a cargo yard (open ground) behind the dock, the town behind the depot (Main Street, lots)
+// and, north of it, room for M2's town (TOWN: a staked-out area). Pure data and math: no three.js.
+// Switch ids: 0 cargo west (CW), 1 cargo east (CE), 2 platform west (PW), 3 platform east (PE).
+const HUBW = {
+  BOUNDS: { x0: -176, x1: 144, z0: -112, z1: 48 },  // the map: 320u x 160u (100 x 50 tiles of 3.2u), the player's and camera's bounds
+  LINE: { x0: -240, x1: 208 },                    // the through line's ends, 64u past the map's west and east edges
+  SW: { CW: -52, CE: -12, PW: -5.6, PE: 31.2 },   // switch nodes on the line (z = 0)
+  LIM_ST: 2.0 * SC,                               // speed limit through the two station sections (u per game minute)
+  // The stopping spans along the line (z = 0): the platform's and the cargo dock's (with the freight shed's dock).
+  PLATFORM: { x0: -3.2, x1: 28.8 }, CARGO: { x0: -49.6, x1: -14.4 },
+  YARD: { x0: -49.6, x1: -22.4, z0: -16, z1: -6.24 }, // the cargo yard: open ground behind the cargo dock (goods may be set down there)
+  TOWN: { x0: -64, x1: 64, z0: -104, z1: -50 },   // M2: room for the town's lots, north of Main Street (staked out, nothing built)
+  // Where travellers who step off walk to (and new ones come from): Main Street's two ends and the lane north into the town area.
+  TOWN_EXITS: [[-20, -26], [38, -26], [12, -48]],
+  BOUNDARY: { x0: -104, x1: 96, z0: -108, z1: 12 }, // the build tool's hub boundary (plans only inside it)
+  FLAT: { x0: -110, x1: 100, z0: -110, z1: 14 },  // held flat: the station, the yard and the town
+  PLAYER: { x: 7 * SC, z: -5.5 * SC + TURN_OFF }, // on the platform by the depot, as in the real start
+  EDGE_W: 0,                                      // the through line's westmost edge (built first): where parked trains are kept
+};
+// Builds the hub world's track (D24). Edge 0 is the line's west end (map edge side), so s = x - LINE.x0 on it.
+function buildHubWorld() {
+  const T = trackNew(), L = CFG.LIM, H = HUBW, X = H.SW, ST = H.LIM_ST, n = x => trackNode(T, x, 0);
+  T.world = 'hub';
+  // Each bypass leaves its section's switch on the south side and comes back to the line at the other switch, as the
+  // real start's turn-outs (a radius 10u diverging leg, 2u of straight, a radius 8u arc back; 5.46u from the line).
+  const turnOut = (node, hx, turn) => {
+    const d = trackArc(T, node, hx, 0, 10 * SC, turn, 30, 'switch', L.diverge);
+    const a = trackNode(T, T.nodes[d.node].x + d.hx * 2 * SC, T.nodes[d.node].z + d.hz * 2 * SC);
+    trackStraight(T, d.node, a, 'yard', L.diverge);
+    const b = trackArc(T, a, d.hx, d.hz, 8 * SC, -turn, 30, 'yard', L.diverge);
+    return { e: d.e, node: b.node };
+  };
+  const nW = n(H.LINE.x0), cw = n(X.CW), cwN = n(X.CW + 5 * SC), ceN = n(X.CE - 5 * SC), ce = n(X.CE);
+  const pw = n(X.PW), pwN = n(X.PW + 5 * SC), peN = n(X.PE - 5 * SC), pe = n(X.PE), nE = n(H.LINE.x1);
+  const eW = trackStraight(T, nW, cw, 'main', L.main);              // edge 0: in from the west edge
+  const eCWn = trackStraight(T, cw, cwN, 'switch', ST);
+  trackStraight(T, cwN, ceN, 'main', ST);                            // the cargo track (middle)
+  const eCEn = trackStraight(T, ce, ceN, 'switch', ST);
+  const eMid = trackStraight(T, ce, pw, 'main', ST);                 // the inner throat: trunk of switches 1 and 2
+  const ePWn = trackStraight(T, pw, pwN, 'switch', ST);
+  trackStraight(T, pwN, peN, 'main', ST);                            // the platform track (middle)
+  const ePEn = trackStraight(T, pe, peN, 'switch', ST);
+  const eE = trackStraight(T, pe, nE, 'main', L.main);               // out to the east edge
+  const bCW = turnOut(cw, 1, -1), bCE = turnOut(ce, -1, 1);          // the cargo section's bypass (south)
+  trackStraight(T, bCW.node, bCE.node, 'yard', L.diverge);
+  const bPW = turnOut(pw, 1, -1), bPE = turnOut(pe, -1, 1);          // the platform section's bypass (south)
+  trackStraight(T, bPW.node, bPE.node, 'yard', L.diverge);
+  trackSwitch(T, cw, eW, eCWn, bCW.e);     // 0
+  trackSwitch(T, ce, eMid, eCEn, bCE.e);   // 1
+  trackSwitch(T, pw, eMid, ePWn, bPW.e);   // 2
+  trackSwitch(T, pe, eE, ePEn, bPE.e);     // 3
+  // Provisional (D24): the far west switch is a spring switch lying for the cargo track, so a passenger train leaving
+  // west round a standing freight train pushes through it (no walk to the far end); one coming in from the west round a
+  // standing freight train needs its lever thrown.
+  switchSpring(T.switches[0], 'N');
+  T.crossings = xingFixed(T); // none: everything the player uses is on the north side of the line
+  return T;
+}
+
 // The worlds. terrain: the heightmap (tiles of `tile` u from x0, z0); walk: the player's walk grid (0.5u cells);
 // bounds: where the player, items and plans may be (and the camera looks); flat: areas held at height 0;
 // hub: the hub boundary (track may be planned only inside it), or null; crowd: where test walkers roam.
@@ -840,8 +910,25 @@ const WORLDS = {
     // No. 1 stands at the hub's platform, engine east, ready to run to Willow Ford.
     train: T => { const E = T.edges.find(E => E.cls === 'yard' && E.k === 'S' && T.nodes[E.b].x === -36 * SC); return { e: E.id, s: 12 * SC, d: -1 }; },
   },
+  // D24: the hub world, every new game's (see HUBW). parked: the systems switched off in it (design-doc D24; the code is
+  // kept and still runs in the 'start' and 'yard' worlds): the Overland and the interchange, Willow Ford and No. 1's
+  // runs there, the ticket counter as the way to sell tickets. Read with worldParked(T, what).
+  hub: {
+    id: 'hub', build: buildHubWorld,
+    terrain: { x0: HUBW.BOUNDS.x0, z0: HUBW.BOUNDS.z0, nx: 100, nz: 50, tile: 2 * SC, flat: [HUBW.FLAT] },
+    walk: { x0: HUBW.BOUNDS.x0, z0: HUBW.BOUNDS.z0, nx: 640, nz: 320 },
+    bounds: HUBW.BOUNDS,
+    hub: HUBW.BOUNDARY,
+    crowd: { x0: -50, x1: 50, z0: -48, z1: -2 },
+    player: HUBW.PLAYER,
+    train: T => ({ e: HUBW.EDGE_W, s: 8, d: 1 }),   // No. 1 is parked off the map (D24): she is kept, away
+    parked: { overland: true, interchange: true, willow: true, no1: true, counter: true },
+  },
 };
-const worldId = T => (T && T.world === 'start' ? 'start' : 'yard');
+const worldId = T => (T && (T.world === 'start' || T.world === 'hub') ? T.world : 'yard');
+// D24: is this system parked (switched off, its code kept) in the world of track T? 'overland', 'interchange',
+// 'willow', 'no1' (No. 1's Willow Ford runs), 'counter' (selling tickets at the ticket window).
+const worldParked = (T, what) => !!(WORLDS[worldId(T)].parked || {})[what];
 const worldOf = T => WORLDS[worldId(T)];
 // The world in use by the code that reads plain layout tables (buildings, bays, tool spots, map bounds,
 // crowd area). Set from a track at every entry point (newState, simTick, walkGrid, buildWorld, each frame),
@@ -878,6 +965,19 @@ const STATIONS = {
       },
       stops: ['main'], runAround: { switches: [2, 3], loop: 'loop', headshunt: 'headshunt' } },
   ],
+  // D24: the hub is the only station. Its tracks are spans of the through line (z = 0): the platform track beside the
+  // platform, the cargo track beside the cargo dock and the freight shed's dock, and the two bypasses (south).
+  // stops: the platform (passenger trains); railroad trains choose their track themselves (section "railroad trains").
+  hub: [
+    { id: 'hub', name: 'Hub', town: 0, staffed: true, depot: 'depot', platforms: ['platform'],
+      tracks: {
+        platform: { x0: HUBW.PLATFORM.x0, z0: 0, x1: HUBW.PLATFORM.x1, z1: 0 },
+        cargo: { x0: HUBW.CARGO.x0, z0: 0, x1: HUBW.CARGO.x1, z1: 0 },
+        bypassP: { x0: HUBW.SW.PW + 17.2, z0: TURN_OFF, x1: HUBW.SW.PE - 17.2, z1: TURN_OFF },
+        bypassC: { x0: HUBW.SW.CW + 17.2, z0: TURN_OFF, x1: HUBW.SW.CE - 17.2, z1: TURN_OFF },
+      },
+      stops: ['platform'] },
+  ],
 };
 const stationsOf = T => STATIONS[worldId(T)];
 // The fixed plank crossings (D15), as segments [x0, z0, x1, z1] drawn across the tracks: a pad is laid where a segment
@@ -891,6 +991,7 @@ const stationsOf = T => STATIONS[worldId(T)];
 // the buildings' use spots.
 const XING_FIXED = {
   yard: [[-6.25 * SC, 13 * SC, -6.25 * SC, 17 * SC], [6.25 * SC, 13 * SC, 6.25 * SC, 21.3 * SC]], // just clear of No. 1's place
+  hub: [],   // D24: none; the stands, platform, dock, yard and town are all on the north side of the line
   start: [
     [-5.8, -TURN_OFF - 2 * SC, -5.8, 1.6 * SC],                          // the platform's west end, between it and the freight shed
     [31, -TURN_OFF - 2 * SC, 31, 1.6 * SC],                              // the platform's east end, short of the water tower
@@ -907,16 +1008,21 @@ const CONSIST_NO1 = [
   { k: 'boxcar', len: 2.6 * SC, mass: 0.5 },
 ];
 const COUPLER_GAP = 0.1 * SC;  // D15: vehicle lengths and the coupled pitch grow with the world
-// world: 'start' (the real start, a new game's default) or 'yard' (the M0 test yard, a debug scenario).
+// world: 'hub' (D24, the page's new game: PAGE_WORLD), 'start' (the M1 real start, the default here, so the
+// checks and debug scenarios written for it keep it) or 'yard' (the M0 test yard, a debug scenario).
 function newState(seed, world) {
-  const Wd = WORLDS[world === 'yard' ? 'yard' : 'start'], T = Wd.build();
+  const wid = WORLDS[world] ? world : 'start', hub = wid === 'hub', Wd = WORLDS[wid], T = Wd.build();
   worldUse(T);
+  // D24: in the hub world No. 1 is parked (kept, away off the map: not drawn, blocking nothing); the Overland and its
+  // set-out cars keep their entries (away, empty), and the railroad's train slots follow them (section "railroad trains").
+  const no1 = { id: 0, name: 'No. 1', front: Wd.train(T), v: 0, mode: 'idle', m: 1,
+    route: null, status: hub ? 'Parked' : 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) };
+  if (hub) Object.assign(no1, { away: true, parked: true });
   const st = {
     schemaVersion: CFG.SCHEMA_VERSION,
     seed, rng: rngSeed(seed), tick: 0, time: 0,
     track: T,
-    trains: [{ id: 0, name: 'No. 1', front: Wd.train(T), v: 0, mode: 'idle', m: 1,
-      route: null, status: 'Stopped', consist: CONSIST_NO1.map((c, i) => ({ id: i, ...c })) }].concat(overlandNewTrains(T)),
+    trains: [no1].concat(overlandNewTrains(T), hub ? rrNewTrains(T, 3) : []),
     overland: overlandNewState(),    // the Overland's visits to the interchange (section "trains")
     player: { x: Wd.player.x, z: Wd.player.z, f: Math.PI, mode: 'idle', tx: 0, tz: 0, a: 0, use: null, act: null, tool: null, ride: null },
     items: cargoNewStore(),          // freight items and waybills (section "cargo")
@@ -928,18 +1034,28 @@ function newState(seed, world) {
     town: townNewState(),            // the placeholder towns' businesses: stock and use (section "town")
     pax: paxNewStore(seed),          // travellers at the stations and aboard (section "passengers")
     tg: tgNewStore(),                // the telegram inbox (section "telegrams and alerts")
-    tut: tutNewState(world === 'yard'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard
+    tut: tutNewState(wid !== 'start'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard; D24: parked in the hub world until its rewrite (UI)
+    rr: rrNewStore(wid),             // D24: the railroad's trains and their daily schedule (section "railroad trains"); switched on in the hub world only
   };
+  if (hub) {
+    // D24: No. 1's Willow Ford runs are parked (no services); Willow Ford does not exist here. The first passenger
+    // train comes in from the west, so its way into the platform track is set against it: the player throws switch 2
+    // (the platform's west switch) straight before it arrives (the designer: "it should be coming in and you need to
+    // throw the switch"). The other three lie straight, for the station tracks.
+    st.tt.services = [];
+    st.track.switches[2].state = 'R';
+    return st;
+  }
   // The real start begins with 8 cords of wood at the hub's wood stage (D13; section "timetable"). Only a new game:
   // loading a save never comes through here, so old saves get no free cords.
-  if (world !== 'yard') ttStartingWood(st);
+  if (wid !== 'yard') ttStartingWood(st);
   // D21 (1): No. 1 starts on both Willow Ford runs (morning and afternoon) in the real start. Only a new game: saves
   // keep the services they have; the player can take her off or change runs at the office (ttAssign).
-  if (world !== 'yard') for (const svc of st.tt.services) svc.train = 0;
+  if (wid !== 'yard') for (const svc of st.tt.services) svc.train = 0;
   // D22 (7): switch work from day 1. The platform switch (1) starts set straight, for the main track, so the player
   // throws it to the platform track (the turn-off) before No. 1's first departure (the work board lists it). Only a
   // new game: saves keep their switches as they lie. Willow Ford's spring switches stay as startSwitchStates set them.
-  if (world !== 'yard' && st.track.switches[1]) st.track.switches[1].state = 'N';
+  if (wid !== 'yard' && st.track.switches[1]) st.track.switches[1].state = 'N';
   return st;
 }
 function trainLength(tr) { return tr.consist.length ? tr.consist.reduce((s, c) => s + c.len, 0) + COUPLER_GAP * (tr.consist.length - 1) : 0; }
@@ -1151,7 +1267,9 @@ function applyCommand(S, c, ev) {
     case 'creditDraw': econCreditCmd(S, c, ev, true); break;
     case 'creditRepay': econCreditCmd(S, c, ev, false); break;
     case 'useBiz': townUseCmd(S, c, ev); break;          // town: walk to a business door
-    case 'staffWindow': paxStaffCmd(S, c, ev); break;   // passengers: staff a station's ticket window
+    case 'staffWindow': if (worldParked(S.track, 'counter')) ev.push({ t: 'deskLeft', why: 'The ticket counter is closed: tickets are checked on the train' }); else paxStaffCmd(S, c, ev); break;   // passengers: staff a station's ticket window (D24: parked in the hub world)
+    case 'rrWaveOff': rrWaveOffCmd(S, c, ev); break;    // D24: send a railroad train off (section "railroad trains")
+    case 'checkTickets': pxCheckCmd(S, c, ev); break;   // D24: check the tickets in one car (section "tickets on board")
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
     case 'stepOff': rideStepOffCmd(S, ev); break;
@@ -1513,7 +1631,7 @@ const OVERLAND_DELIVERY = {
 function overlandNewState() { return { phase: 'away', wait: 0, visits: 0, nextStock: OVERLAND.FIRST_STOCK + 1, took: 0 }; }
 // The Overland (away, off the map) and its set-out cars (none yet). ids follow the trains already there.
 function overlandNewTrains(T, firstId) {
-  const e = interchangeEdge(T), id = firstId === undefined ? 1 : firstId;
+  const ie = interchangeEdge(T), e = ie >= 0 ? ie : HUBW.EDGE_W, id = firstId === undefined ? 1 : firstId; // D24: the hub world has no interchange: kept away on the line's west end
   return [
     { id, name: 'The Overland', owner: 'overland', away: true, front: { e, s: ICH.ENTER_S + 6 * SC, d: 1 }, v: 0, mode: 'idle', m: 1,
       route: null, status: 'Away', consist: [{ id: OVERLAND.FIRST_STOCK, ...OVERLAND_LOCO }] },
@@ -1540,6 +1658,7 @@ function overlandGo(S, tr, m, s) {
 function overlandTick(S, ev) {
   const O = S.overland, tr = overlandTrain(S), cut = interchangeCut(S);
   if (!O || !tr || !cut || O.phase === 'off') return; // 'off': debug scenarios that test other things (never in play)
+  if (worldParked(S.track, 'overland')) return;      // D24: the Overland is parked in the hub world (kept, away)
   const sod = (S.time + CFG.DAY_START_S) % 86400;
   if (O.phase === 'away') {
     if (!OVERLAND.DUE.includes(sod)) return;
@@ -1618,6 +1737,7 @@ function overlandCheckSaveShape(st) {
   const O = st.overland, tr = st.trains.find(t => t.owner === 'overland'), cut = st.trains.find(t => t.owner === 'interchange');
   if (!O || typeof O.phase !== 'string' || !Number.isInteger(O.nextStock) || !Number.isFinite(O.wait)) throw new Error('damaged save: the Overland');
   if (!tr || !cut || !tr.consist.length || st.trains.some((t, i) => t.id !== i)) throw new Error('damaged save: the Overland\'s trains');
+  if (worldParked(st.track, 'interchange')) return; // D24: the hub world has no interchange track (the Overland is parked, away)
   if (!st.track.edges[tr.front.e] || !st.track.edges[tr.front.e].fixed) throw new Error('damaged save: the interchange track');
 }
 
@@ -2560,6 +2680,121 @@ function ttDebugScenario(st) {
   return st;
 }
 
+// ==== Section: railroad trains (D24) ====
+// Owner: builder TR (plans/rework-tech.md). The station rework's trains: every train belongs to the railroad; the
+// player, the station agent, brings them in, works them and sends them off. Pure simulation: no three.js, no page.
+// The foundation (2026-11-06) holds the data shapes, the daily schedule and empty stubs with the agreed names; TR fills
+// them in. Switched on only in the hub world (S.rr.on); the 'start' and 'yard' worlds carry an S.rr that is off.
+//
+// Trains: the railroad's trains are ordinary S.trains entries with owner 'rr', in fixed slots (RR.SLOTS: ids 3 and 4,
+// after No. 1 and the Overland's two entries; ids stay equal to the index). A slot is empty (away: true, no cars)
+// until a run takes it: the run's cars get new stock ids (S.rr.nextStock, from RR.FIRST_STOCK), the train appears
+// at its end of the line (rrEntry, off the map) and runs in. When it has left the map again its cars are dropped and
+// the slot is free. trainTick, routes (findRoute: route.needs), stopping short of a switch set against it (D20),
+// trainObstacle, the walk grid's train stamp and the drawing all work on it as on any train.
+//
+// S.rr holds:
+//   on        true in the hub world: rrTick plans and runs the schedule; false elsewhere (nothing happens).
+//   day       the last game day whose runs were planned (-1: none yet).
+//   runs      the runs of today (and any of yesterday still at the hub), in due order: { id, svc (RR_SCHEDULE id), day,
+//             kind ('pax' | 'freight'), name, from, to ('W' | 'E'), track ('platform' | 'cargo'), arr, dep (S.time when
+//             due at its track and due to leave), slot (train id, or null before it comes in or after it has gone),
+//             ph ('due' | 'in' | 'stand' | 'out' | 'gone' | 'cxl'), tIn, tArr, tWave, tGone (S.time it entered the map,
+//             stood at its track, was waved off, left the map; null until then), cars (stock ids, front to back) }.
+//   next      the next run id. nextStock: the next stock id for the railroad's vehicles.
+//   tk        PX's tickets on board: { checked, cents, missed, missedCents } (counts for the whole game).
+//   cg        CG's freight bookkeeping (plain data; fields are CG's, each optional so a save without it loads).
+// A builder may add optional fields inside its own part (runs: TR, tk: PX, cg: CG) without a schema bump: a field
+// missing in a save means its default.
+// Commands: { t: 'rrWaveOff', tr } (the player, within reach of the engine, sends a standing train off: TR).
+// Events (agreed names, for the UI): rrDue { run, mins } (30 game minutes before it comes in), rrEntered { run, tr },
+// rrArrived { run, tr, track }, rrReady { run, tr } (its work is done: travellers off and on, goods unloaded),
+// rrWavedOff { run, tr, late }, rrLeft { run, late }, rrCancelled { run, why }, rrRefused { why }. A train stopped
+// short of a switch set against it gives the usual trainSwitchWait (D20).
+const RR = {
+  SLOTS: [3, 4],              // the train ids kept for the railroad's trains: never more than 2 at the hub at once (D24 (5))
+  FIRST_STOCK: 1000,          // their stock ids count up from here (ours are below 100, the Overland's from 100)
+  WARN_S: 1800,               // rrDue: 30 game minutes before a train comes in (D22's warnings ahead)
+  LATE_S: 60,                 // more than a minute past its time is late (as the schedule board, SCHED.LATE_S)
+  // D24 (8): longer trains, still small. Provisional sizes (M1 units x SC; TR makes the models): a small engine with
+  // its tender and short cars, so a 4-car passenger train (about 22u) fits the 32u platform and a 5-car freight train
+  // (about 25u) the 35u cargo track with the freight shed's dock.
+  LOCO: { k: 'loco', len: 4.4 * SC, mass: 2.5, power: 8, look: 'rr' },
+  CARS: { coach: { k: 'coach', len: 2.2 * SC, mass: 0.5 }, boxcar: { k: 'boxcar', len: 2.2 * SC, mass: 0.5 }, flatcar: { k: 'flatcar', len: 2.2 * SC, mass: 0.5 } },
+};
+// The daily schedule (D24 (5): about 6 passenger and 3 freight trains a day, never more than 2 at the hub at once).
+// Provisional, for the designer. arr, dep: seconds of the day; cars: how many cars behind the engine. While a freight
+// train stands at the cargo track, the passenger trains come in from the east end and leave by the west end (round
+// the cargo section by its bypass, through switch 1 and the spring switch 0), so the player throws the switches at
+// the inner throat, a few steps from the platform, not the far one.
+const RR_H = (h, m) => h * 3600 + m * 60;
+const RR_SCHEDULE = [
+  { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 'platform', arr: RR_H(6, 40), dep: RR_H(7, 0), cars: 3 },
+  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 'cargo', arr: RR_H(8, 0), dep: RR_H(9, 45), cars: 4 },
+  { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(9, 0), dep: RR_H(9, 20), cars: 4 },
+  { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 'platform', arr: RR_H(11, 0), dep: RR_H(11, 20), cars: 3 },
+  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 'cargo', arr: RR_H(12, 30), dep: RR_H(14, 15), cars: 5 },
+  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(13, 30), dep: RR_H(13, 50), cars: 4 },
+  { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 'platform', arr: RR_H(16, 0), dep: RR_H(16, 20), cars: 3 },
+  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 'cargo', arr: RR_H(17, 0), dep: RR_H(18, 45), cars: 4 },
+  { id: 'p6', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(19, 30), dep: RR_H(19, 50), cars: 4 },
+];
+// The hub's switches by name (switch ids, buildHubWorld): CW cargo west (a spring switch lying for the cargo track,
+// provisional), CE cargo east, PW platform west, PE platform east.
+const HUB_SW = { CW: 0, CE: 1, PW: 2, PE: 3 };
+function rrNewStore(world) {
+  return { on: world === 'hub', day: -1, runs: [], next: 0, nextStock: RR.FIRST_STOCK,
+    tk: { checked: 0, cents: 0, missed: 0, missedCents: 0 }, cg: {} };
+}
+// The empty train slots of a new hub game (ids firstId, firstId + 1), parked on the line's west end, off the map.
+function rrNewTrains(T, firstId) {
+  return RR.SLOTS.map((id, i) => ({ id: firstId + i, name: 'Railroad train', owner: 'rr', away: true, front: { e: HUBW.EDGE_W, s: 4 + 40 * i, d: 1 },
+    v: 0, mode: 'idle', m: 1, route: null, status: 'Away', consist: [] }));
+}
+// Where a train of the railroad first appears for an end of the line: its leading end 2u from the line's end, facing in
+// (off the map: the line runs 64u past each edge).
+function rrEntry(T, end) {
+  if (end === 'W') return { e: HUBW.EDGE_W, s: 2 + 32, d: 1 };   // room behind it for the longest train
+  const E = T.edges.find(E => T.nodes[E.b].x === HUBW.LINE.x1 || T.nodes[E.a].x === HUBW.LINE.x1);
+  return T.nodes[E.b].x === HUBW.LINE.x1 ? { e: E.id, s: E.len - 34, d: -1 } : { e: E.id, s: 34, d: 1 };
+}
+// A point on the through line (z = 0) at x, as a track position {e, s} (the line's own edges only, not a bypass).
+function hubLineAt(T, x) {
+  for (const E of T.edges) {
+    if (E.k !== 'S') continue;
+    const A = T.nodes[E.a], B = T.nodes[E.b];
+    if (A.z !== 0 || B.z !== 0) continue;
+    const lo = Math.min(A.x, B.x), hi = Math.max(A.x, B.x);
+    if (x >= lo - 1e-9 && x <= hi + 1e-9) return { e: E.id, s: Math.abs(x - A.x) };
+  }
+  return null;
+}
+const rrTrainOf = (S, run) => (run && run.slot !== null ? S.trains[run.slot] : null);
+function rrRunOf(S, trId) { return S.rr ? S.rr.runs.find(r => r.slot === trId && r.ph !== 'gone') || null : null; }
+// Step 3 of the sim tick (after the Overland, before the timetable): plan the day, bring trains in, stand, leave (TR).
+function rrTick(S, ev) {
+  if (!S.rr || !S.rr.on) return;
+  // TR: rrPlanDay at the day's start; per run: hold it off the map while its track or the line is taken (never more
+  // than 2 at the hub), rrEnter at (arr - the time it takes from rrEntry), route it to its track (it stops short of a
+  // switch set against it), stand (pxOnArrive / cgOnArrive), wait for the wave-off, route it out, rrGone off the map.
+}
+function rrPlanDay(S, day) { return []; }                  // TR: today's runs from RR_SCHEDULE
+// Switches each run needs, for the work board, the Next job line and the arrows: the same row shape as ttSwitchNeeds
+// (D20): [{ run, train, trainName, sw, want ('normal' | 'reverse'), byTime, by, station: 'hub', spring, set, passed, done }].
+function rrSwitchNeeds(S) { return []; }                   // TR
+// The rows of the public schedule board and the work board (UI reads them): [{ run, name, kind, from, to, track, arr,
+// dep (S.time), state ('Due' | 'Coming in' | 'At the platform' | 'At the cargo track' | 'Ready' | 'Left' | 'Cancelled'),
+// late (s), cars, off, on (travellers), unload, load (goods), switches: rrSwitchNeeds rows }].
+function rrBoardRows(S) { return []; }                     // TR (with PX's and CG's counts)
+function rrWaveOffCmd(S, c, ev) { ev.push({ t: 'rrRefused', why: 'Sending trains off is not built yet' }); } // TR
+function rrCheckSaveShape(st) {
+  const R = st.rr, bad = why => { throw new Error('damaged save: the railroad\'s trains' + (why ? ' (' + why + ')' : '')); };
+  if (!R || typeof R !== 'object' || typeof R.on !== 'boolean' || !Number.isInteger(R.day) || !Array.isArray(R.runs) || !Number.isInteger(R.next) || !Number.isInteger(R.nextStock)) bad();
+  if (!R.tk || typeof R.tk !== 'object' || !R.cg || typeof R.cg !== 'object') bad('parts');
+  for (const r of R.runs) if (!r || !Number.isInteger(r.id) || (r.slot !== null && !(st.trains[r.slot] && st.trains[r.slot].owner === 'rr'))) bad('run');
+  if (R.on && worldId(st.track) !== 'hub') bad('switched on outside the hub world');
+}
+
 // ==== Section: cargo (items and waybills) ====
 // Owner: M1 package 2 (builder W2). Freight items, their waybills and where each one is (design-doc 9, 19, 20, 21).
 // Pure simulation: no three.js, no page elements. Whole numbers only in the state (positions in hundredths of a u).
@@ -3485,7 +3720,7 @@ const TOWN_LOTS = [
   { id: 'house2', kind: 'house', biz: null, townId: 0, dx: -4.2 * SC, dz: -14.6 * SC, yaw: 0 },
   { id: 'house3', kind: 'house', biz: null, townId: 0, dx: 8.2 * SC, dz: -14.6 * SC, yaw: 0 },
   { id: 'house4', kind: 'house', biz: null, townId: 0, dx: 12.4 * SC, dz: -14.6 * SC, yaw: 0 },
-  { id: 'wfstore', kind: 'tradingpost', biz: 1, townId: 1, dx: 0, dz: 0, yaw: 0, start: { dx: -8.1 * SC, dz: 0.4 * SC } },
+  { id: 'wfstore', kind: 'tradingpost', biz: 1, townId: 1, dx: 0, dz: 0, yaw: 0, start: { dx: -8.1 * SC, dz: 0.4 * SC }, parked: 'willow' }, // D24: not in the hub world
 ];
 // Where each town is laid out from, in the world in use (worldUse points BLD_LAYOUT at it): the hub from its
 // depot; Willow Ford from its depot in the real start, and in the M0 test yard (which has no Willow Ford) from a
@@ -3503,7 +3738,9 @@ let townLotCache = null;
 function townPlaced() {
   const w = typeof worldCur === 'string' ? worldCur : 'yard';
   if (townLotCache && townLotCache.w === w) return townLotCache.list;
-  const list = TOWN_LOTS.map(L => { const A = townAnchor(L.townId), o = L[w] || L, p = townWorld(A, o.dx, o.dz); return { ...L, x: p.x, z: p.z, yaw: A.yaw + L.yaw }; });
+  // D24: a lot marked parked (Willow Ford's store) is left out of a world where that system is parked (the hub world).
+  const off = what => !!what && !!(WORLDS[w] && WORLDS[w].parked && WORLDS[w].parked[what]);
+  const list = TOWN_LOTS.filter(L => !off(L.parked)).map(L => { const A = townAnchor(L.townId), o = L[w] || L, p = townWorld(A, o.dx, o.dz); return { ...L, x: p.x, z: p.z, yaw: A.yaw + L.yaw }; });
   townLotCache = { w, list };
   return list;
 }
@@ -3580,6 +3817,7 @@ function townTick(S, ev) {
 function townOffers(S, day, winter, ev) {
   if (!S.econ) return;
   for (const B of TOWN_BUSINESSES) {
+    if (!townLotOf(B.id)) continue;   // D24: a business not in this world (Willow Ford's store in the hub world) offers nothing
     const st = S.town.biz[B.id];
     for (const c of townGoods(B)) {
       const r = townRate(B, c, winter);
@@ -4121,6 +4359,24 @@ function econCheckSaveShape(st) {
   E.contracts.forEach((k, i) => { if (!k || k.id !== i || !int(k.due) || !int(k.delivered) || !Array.isArray(k.items) || typeof k.status !== 'string') bad(); });
   for (const o of E.orders) if (!o || !int(o.id) || !int(o.due) || !Array.isArray(o.lines)) bad();
 }
+
+// ==== Section: freight trains' goods (D24) ====
+// Owner: builder CG (plans/rework-tech.md). D24 (6): goods as now (sorted by tag in the freight shed, delivered to the
+// doors for pay; contracts and orders on the work board), but the freight trains bring what was ordered: the economy's
+// order visits move from the Overland's 06:00 and 18:00 to the freight trains' arrivals (RR_SCHEDULE). A freight train
+// stands at the cargo track beside the cargo dock and the freight shed's dock; the player unloads it by hand or hand
+// truck (the car panel, carryPick / carryPut on owner 'rr' cars), sorts and delivers as now; empty cars leave with the
+// train, and goods for Outside put into one of its cars are sold as it leaves. The Overland is parked (worldParked
+// 'overland': overlandTick does nothing in the hub world). Pure simulation; its own bookkeeping in S.rr.cg.
+// Events: cgLoaded { run, cars, items } (as the train is made up), cgUnloaded { run } (no goods for the hub left aboard),
+// cgSold { run, items, paid } (overlandPickedUp's successor), plus the economy's orderDelivered.
+// The cars of a freight run, front to back after the engine, as consist entries without ids ({ k, len, mass }) (called by
+// TR when the run's train is made up; TR gives the stock ids, then calls cgLoad).
+function cgConsist(S, run) { return Array.from({ length: run.cars || 4 }, () => ({ ...RR.CARS.boxcar })); } // CG
+function cgLoad(S, run, tr, ev) {}                         // CG: the orders due ride in the cars (as econLoadOverland)
+function cgReady(S, run, tr) { return true; }              // CG: no goods for the hub left aboard
+function cgOnDepart(S, run, tr, ev) {}                     // CG: goods for Outside aboard are sold (as econSoldOutside)
+function cgTick(S, ev) {}                                  // CG: anything that runs every tick (after econTick)
 
 // ==== Section: walk grid and path-finding ====
 // Design-doc section 11 "Pathfinding", for the player (M1). One grid of 0.5u cells over the whole map of the
@@ -4699,6 +4955,11 @@ const TOOL_PARKS = {
     { id: 0, k: 'truck', x: Math.round(-450 * SC), z: Math.round((-TURN_OFF - 5 * SC) * 100), yaw: 192 },
     { id: 1, k: 'cart', x: Math.round(-300 * SC), z: Math.round((-TURN_OFF - 5.4 * SC) * 100), yaw: 192 },
   ],
+  // D24: behind the freight shed, between it and the town, clear of the cargo yard and the inner throat's stands.
+  hub: [
+    { id: 0, k: 'truck', x: -1700, z: -1000, yaw: 192 },
+    { id: 1, k: 'cart', x: -2000, z: -1020, yaw: 192 },
+  ],
 };
 let TOOL_PARK = TOOL_PARKS.yard;
 const CARRY_APPROACH = 0.5; // the player stops this far short of the spot being used
@@ -4713,7 +4974,7 @@ function carryNoCartRects() {
   const out = [], r = 0.2;
   for (const at of BLD_LAYOUT) {
     const k = bldKindOf(at), e = BLD_EXTENTS[k];  // the platforms and the freight shed (yaw 0), straight from the layout's sizes
-    if (bldIsPlatform(k) || k === 'freightshed') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
+    if (bldIsPlatform(k) || k === 'freightshed' || k === 'cargodock') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
   }
   return (carryNoCartCache = out);
 }
@@ -5252,6 +5513,7 @@ function paxDeskTick(S, ev) {
 function paxTick(S, ev, poseCache) {
   const X = S.pax;
   if (!X) return;
+  if (worldParked(S.track, 'counter')) { pxTick(S, ev, poseCache); return; }  // D24: the hub world's travellers (section "tickets on board")
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id] || []));
   const stations = paxStations(S.track), sod = (S.time + CFG.DAY_START_S) % 86400;
   const staffed = paxDeskTick(S, ev);
@@ -5517,6 +5779,29 @@ function rideCheckSaveShape(st) {
   if (P.ride === null) return;
   if (!P.ride || typeof P.ride !== 'object' || !Number.isInteger(P.ride.stock) || P.mode !== 'ride' || !rideCarOf(st, P.ride.stock)) bad();
 }
+
+// ==== Section: tickets on board (D24) ====
+// Owner: builder PX (plans/rework-tech.md). D24 (3): travellers board without a ticket; before departure the player
+// walks along the train and checks tickets car by car, standing at the car's door: each traveller checked takes a
+// short moment and pays the fare; anyone still unchecked when the train leaves rode free (the fare is lost). The ticket
+// counter is parked (worldParked 'counter': staffWindow is refused in the hub world). Travellers who step off walk into
+// the town (HUBW.TOWN_EXITS); new ones come from the town to the platform and wait there for a train going their way.
+// Pure simulation. In the hub world paxTick hands over to pxTick at its top, so the M1 passengers code runs unchanged
+// in the 'start' and 'yard' worlds. Travellers stay in S.pax.list (same fields; `to` is the end of the line 'W' or 'E';
+// PX adds `chk` (checked) and any other optional field it needs); counts for the game are in S.rr.tk.
+// Command: { t: 'checkTickets', tr, car } (car: the car's stock id): walk to that car's door and check everyone aboard.
+// Events: ticketChecked { id, cents }, carChecked { tr, car, n }, fareMissed { run, n, cents }, plus the M1 ones
+// (paxArrived, paxBoarded, paxAlighted, paxGone, money).
+const PX = {
+  FARE: 40,                 // cents per traveller, to either end of the line (provisional: Willow Ford's 40 cents)
+  CHECK_S: 6,               // checking one traveller's ticket: 0.1 game minutes (as boarding)
+};
+function pxTick(S, ev, poseCache) {}                       // PX: travellers in the hub world (instead of paxTick)
+function pxCheckCmd(S, c, ev) { ev.push({ t: 'pxRefused', why: 'Checking tickets on board is not built yet' }); } // PX
+function pxOnArrive(S, run, tr, ev) {}                     // PX: called by TR when a passenger train stands at the platform
+// Called by TR as a train is waved off (before it moves): everyone still unchecked aboard rides free. Returns the count.
+function pxOnDepart(S, run, tr, ev) { return { missed: 0, cents: 0 }; }   // PX
+function pxReady(S, run, tr) { return true; }              // PX: nobody is still stepping off or walking up to board
 
 // ==== Section: telegrams and alerts ====
 // Owner: M1 package 7 (builder D1, D13). The telegram inbox and the list of active problems (alerts).
@@ -5852,7 +6137,8 @@ function simTick(S, cmds) {
   worldUse(S.track);                                    // the layout tables of this state's world
   for (const c of cmds) applyCommand(S, c, ev);         // 1. commands
   S.tick += 1; S.time += CFG.TICK_GAME_S;               // 2. time
-  overlandTick(S, ev);                                  // 3. dispatch: the Overland's visits (section "trains")
+  overlandTick(S, ev);                                  // 3. dispatch: the Overland's visits (section "trains"; parked in the hub world)
+  rrTick(S, ev);                                        // 3. dispatch: the railroad's trains (D24, section "railroad trains"; hub world only)
   ttTick(S, ev);                                        // 3. dispatch: timetable trains and reservations (section "timetable")
   for (const tr of S.trains) trainTick(S, tr, ev);      // 3-4. dispatch and train motion
   springTick(S);                                        // spring switches pushed over by a train spring back (D20)
@@ -5862,6 +6148,7 @@ function simTick(S, cmds) {
   const tel = econTelBefore(S, ev);
   rideActorTick(S, ev, poseCache);                      // 7. actors (the player: riding a train, else walking in playerTick; carrying, job work and train tasks around it)
   econTick(S, ev, tel);                                 // 8. economy: reaching the telegraph key, market Mondays, contracts due
+  cgTick(S, ev);                                        // 8. D24: freight trains' goods (section "freight trains' goods")
   townTick(S, ev);                                      // 8b. towns: businesses use goods each hour, offer contracts at 07:00
   paxTick(S, ev, poseCache);                            // 8. travellers: arriving, the ticket queue, boarding and stepping off (section "passengers")
   tgTick(S, ev);                                        // 9. telegrams for this tick's events and new alerts (section "telegrams and alerts")
@@ -5998,6 +6285,12 @@ function migrate(save) {
     if (Array.isArray(st.trains)) for (const tr of st.trains) if (tr && tr.route && typeof tr.route === 'object') tr.route.locks = [];
     st.schemaVersion = 16;
   }
+  if (st.schemaVersion === 16) {
+    // 16 -> 17 (the station rework, D24): an old save keeps its world ('start' or 'yard') and everything in it; it gets
+    // the railroad's store switched off (S.rr.on false: no railroad trains there). Only a new game is in the hub world.
+    st.rr = rrNewStore(st.track && typeof st.track === 'object' ? st.track.world : null);
+    st.schemaVersion = 17;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   tutRealign(st);   // D20 (6): a mid-tutorial save from before the steps' new order
@@ -6071,7 +6364,7 @@ function checkSaveShape(st) {
   if (!arr(st.rng) || st.rng.length !== 4) bad('random numbers');
   const T = st.track;
   if (!T || !arr(T.nodes) || !arr(T.edges) || !arr(T.switches)) bad('track');
-  if (T.world !== 'yard' && T.world !== 'start') bad('track world');
+  if (T.world !== 'yard' && T.world !== 'start' && T.world !== 'hub') bad('track world');
   for (const N of T.nodes) if (!N || !num(N.x) || !num(N.z)) bad('track node');
   const nodeOk = i => Number.isInteger(i) && i >= 0 && i < T.nodes.length;
   const edgeOk = i => Number.isInteger(i) && i >= 0 && i < T.edges.length;
@@ -6082,7 +6375,7 @@ function checkSaveShape(st) {
   for (const tr of st.trains) {
     if (!tr || !tr.front || !edgeOk(tr.front.e) || !num(tr.front.s) || Math.abs(tr.front.d) !== 1) bad('train position');
     if (!num(tr.v) || Math.abs(tr.m) !== 1 || typeof tr.mode !== 'string') bad('train motion');
-    if (!arr(tr.consist) || (!tr.consist.length && tr.owner !== 'interchange' && tr.owner !== 'cut') || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
+    if (!arr(tr.consist) || (!tr.consist.length && tr.owner !== 'interchange' && tr.owner !== 'cut' && tr.owner !== 'rr') || tr.consist.some(c => !c || !num(c.len) || !num(c.mass))) bad('train cars');
   }
   const P = st.player;
   if (!P || !num(P.x) || !num(P.z) || typeof P.mode !== 'string') bad('player');
@@ -6097,6 +6390,7 @@ function checkSaveShape(st) {
   rideCheckSaveShape(st);
   tgCheckSaveShape(st);
   tutCheckSaveShape(st);
+  rrCheckSaveShape(st);
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -7829,6 +8123,25 @@ BLD_LAYOUTS.start = [
   { id: 'wfcrates1', kind: 'crates', x: WFORD.x + 20 * WS - 9.5, z: WF_PB + 0.6, yaw: 0, y: BLD_PLATFORM_TOP },
   { id: 'wfwaterbarrel1', kind: 'waterbarrel', x: WFORD.x + 20 * WS + 0.4, z: WF_PB + 0.4, yaw: 0, y: BLD_PLATFORM_TOP },
 ];
+// D24: the hub world (HUBW, "starting world layout"). The platform, depot, telegraph pole, the lamps on the platform,
+// the D19 props and the schedule board are the real start's hub, moved TURN_OFF south with the track (the line at z = 0
+// is where the real start's platform track was at z = -TURN_OFF), so every distance from the track, every use spot,
+// the booth and the town behind the depot are as in the real start. New or moved: the freight shed beside the cargo
+// track (its dock flush, its east end 3u short of switch 1's stand), the open cargo dock west of it (a plank deck,
+// flush), lamps along the dock's back, the water tower and wood stage east of switch 3 (the railroad's crews use
+// them: provisional, D24, the player does not fuel or water the railroad's trains), lamp 3 clear of switch 3's stand.
+BLD_LAYOUTS.hub = BLD_LAYOUTS.start
+  .filter(a => ['platform', 'depot', 'tpole', 'lamp1', 'lamp2', 'lamp4', 'freightpile1', 'baggagewagon1', 'freightscale1', 'waterbarrel1', 'planter1', 'planter2', 'hitchrail1', 'schedboard1'].includes(a.id))
+  .map(a => ({ ...a, z: a.z + TURN_OFF }))
+  .concat([
+    { id: 'freightshed', x: HUBW.CARGO.x1 - 2.35 * WS, z: -2.6 * WS, yaw: 0 },
+    { id: 'cargodock', x: (HUBW.CARGO.x0 + HUBW.YARD.x1) / 2, z: -0.9 * WS - 1.5 * WS, yaw: 0 },
+    { id: 'watertower', x: 40.0, z: -2.2 * WS, yaw: 0 },
+    { id: 'woodstage', x: 49.6, z: -3.5 * WS, yaw: 0 },
+    { id: 'lamp3', x: 35.2, z: -1.6 * WS, yaw: 0 },
+    { id: 'lamp5', kind: 'lamp', x: -28.0, z: -7.2, yaw: 0 },
+    { id: 'lamp6', kind: 'lamp', x: -44.0, z: -7.2, yaw: 0 },
+  ]);
 let BLD_LAYOUT = BLD_LAYOUTS.yard;
 function bldKindOf(at) { return at.kind || bldKind(at.id); }
 // The platform kinds (flush with the track, a deck people stand on): the hub's, Willow Ford's and the test yard's.
@@ -7845,7 +8158,7 @@ function bldBaysOf(layout) {
   }
   return out;
 }
-const BLD_BAYS_BY = { yard: bldBaysOf(BLD_LAYOUTS.yard), start: bldBaysOf(BLD_LAYOUTS.start) };
+const BLD_BAYS_BY = { yard: bldBaysOf(BLD_LAYOUTS.yard), start: bldBaysOf(BLD_LAYOUTS.start), hub: bldBaysOf(BLD_LAYOUTS.hub) };
 let BLD_BAYS = BLD_BAYS_BY.yard;
 // Points the plain layout tables at a world's (called by worldUse in "starting world layout").
 function bldUseWorld(id) {
@@ -7931,6 +8244,7 @@ const BLD_EXT_M1 = {
   waterbarrel: [-0.3, 0.3, -0.3, 0.3].map(v => v / WS),
   hitchrail: [-1.4, 1.4, -0.6, 0.6].map(v => v / WS),
   schedboard: [-1.35, 1.35, -0.12, 0.12].map(v => v / WS),   // D22 (3): drawn only, never a footprint
+  cargodock: [-8.5, 8.5, -1.5, 1.5],    // D24: the hub world's open cargo dock beside the cargo track: 27.2u x 4.8u, flush, a plank deck
 };
 // D22 (3): the public schedule board on its own posts (true units, the board's local frame: x along it, +z its face
 // towards the track): the painted face w x h with its bottom edge y0 above the deck, on two posts at +-post.
@@ -8095,6 +8409,14 @@ const BLD_RECIPES = {
   },
   // Willow Ford's platform: 16u long, as deep as the hub's, the same height and stone, with a bench; no canopy.
   wfplatform(b) { return bldPlatform(b, BLD_EXT_M1.wfplatform, -2.2, false); },
+  // D24: the open cargo dock beside the hub world's cargo track: a plank deck at the platform's height, flush with the
+  // track like the freight shed's dock, with sills at the ends and the back; goods are unloaded onto it from a freight
+  // train's cars (by hand or hand truck) and taken on to the freight shed's bays or the cargo yard behind it.
+  cargodock(b) {
+    const e = BLD_EXT_M1.cargodock, r = b.raw();
+    bldDeck(r, e[0] * WS, e[1] * WS, e[2] * WS, e[3] * WS, BLD_PLATFORM_TOP, bldSeedOf(b.at), { ends: true, back: true });
+    return BLD_EXTENTS.cargodock;
+  },
   // Wood stage: a raised deck at tender height holding stacked cordwood, under a lean-to roof.
   woodstage(b) {
     for (const x of [-2.7, 0, 2.7]) for (const z of [-1.7, 1.7]) b.add(box(0.16, 0.9, 0.16), PAL.trim, x, 0.45, z);
@@ -8437,7 +8759,7 @@ function buildingFootprints() {
     };
     if (kind === 'schedboard') continue;   // D22 (3): the schedule board's thin posts do not block walking
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
-    else rect(at.id, ext, bldIsPlatform(kind));
+    else rect(at.id, ext, bldIsPlatform(kind) || kind === 'cargodock');   // D24: the cargo dock is walked on, as the platforms
   }
   return out.concat(townFootprints()); // the town's businesses and homes (section "town")
 }
@@ -8559,6 +8881,13 @@ function buildBuildings(G) {
     if (bldDeck.planks > p0) bldPlankCount[at.id] = bldDeck.planks - p0;
   });
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
+  if (BLD_LAYOUT === BLD_LAYOUTS.hub) {
+    // D24: the cargo yard behind the cargo dock, a pad of trodden earth 1.1 cm up (under the 3 cm ballast, above the
+    // ground); and the town area north of Main Street staked out for M2's lots, like the real start's hub boundary.
+    const Y = HUBW.YARD;
+    kit.add(box(Y.x1 - Y.x0, 0.014, Y.z1 - Y.z0), '#9b8a68', (Y.x0 + Y.x1) / 2, 0.004, (Y.z0 + Y.z1) / 2);
+    bldHubBoundary(kit, HUBW.TOWN);
+  }
   const m = kit.mesh(); m.name = 'buildings'; G.add(m);
   const g = glow.mesh(false); g.material = GLOW_MAT; g.name = 'buildingGlow'; G.add(g);
   bldRoof.mesh = null; bldRoof.rects = bldRoofRects();
@@ -10562,6 +10891,7 @@ const DBG_SCENARIOS = {
   yard: () => newState(CFG.SEED, 'yard'),
   // The real start (a new game), and the same at Willow Ford: the player on its platform.
   start: () => newState(CFG.SEED, 'start'),
+  hub: () => newState(CFG.SEED, 'hub'),   // D24: a new game in the hub world
   willow: () => { const st = newState(CFG.SEED, 'start'); st.player.x = WFORD.x + 18 * SC; st.player.z = WFORD.z - 1.7 * SC; return st; },
   // The train stands on the passing siding, facing west, with switch 1 set to the siding.
   siding: () => {
@@ -10702,9 +11032,10 @@ function debugUpdate(dt) {
 }
 
 // ==== Section: game loop state ====
-// The world a new game starts in: the real start, or with ?world=yard the M0 test yard (used by the checks
-// written for the test yard's layout; a save always keeps its own world).
-const PAGE_WORLD = new URLSearchParams(location.search).get('world') === 'yard' ? 'yard' : 'start';
+// The world a new game starts in (a save always keeps its own world): the hub world (D24, the station rework), or
+// with ?world=start the M1 real start (the hub, the spur and Willow Ford: the checks written before D24 open it, see
+// tests/browser.js), or with ?world=yard the M0 test yard (the checks written for the test yard's layout).
+const PAGE_WORLD = (w => (w === 'yard' || w === 'start' ? w : 'hub'))(new URLSearchParams(location.search).get('world'));
 let S = newState(CFG.SEED, PAGE_WORLD);
 let pending = [];             // commands waiting for the next tick
 let speed = 1, lastSpeed = 1;
@@ -13187,7 +13518,9 @@ window.__railhead = {
   exportSave: () => JSON.stringify({ state: S, ui: saveUiPart() }),
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; cardsLoad(sv.ui && sv.ui.cards); buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
-  world: { WORLDS, HUB, WFORD, STATIONS, TURN_OFF, worldOf, worldId, stationsOf, buildingSpots, buildStartWorld, BLD_LAYOUTS, BLD_EXTENTS,
+  // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
+  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady },
+  world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };
 

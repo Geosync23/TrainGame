@@ -50,6 +50,7 @@ const checks = {
   'station rework screen guidance (D24 UI: boards, Next job and arrows, Check tickets and Send off, cards, the hub tutorial)': require('./check-hubui'),
   'explaining as it happens (first-time cards, warnings ahead, schedule board on posts, Work board button, one top line, switch 1 straight; D22)': require('./check-explain'),
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
+  'the station rework end to end (D24: three days in the hub played by the bot: every train in and out, tickets, goods, money, same result)': require('./check-hub-day'),
 };
 
 (async () => {

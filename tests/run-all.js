@@ -33,6 +33,7 @@ const checks = {
   'towns (businesses, contracts offered, delivery at the door)': require('./check-town'),
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
   'the hub world (D24: the through line, switches close together, all reachable, clear of the track, parked systems off)': require('./check-hubworld'),
+  'freight trains\' goods (D24: orders ride freight trains, unloading at the cargo dock, cgReady, leaving)': require('./check-freight'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
   'passengers (tickets, boarding, departure board)': require('./check-passengers'),
   'departure boards on the depots and the ticket booth': require('./check-board'),

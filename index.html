@@ -1030,7 +1030,7 @@ function newState(seed, world) {
     tools: carryNewTools(),          // hand truck and handcart, at their parking spots (section "player", carrying)
     jobs: jobNewStore(),             // staked construction jobs (section "construction jobs")
     tt: ttNewState(),                // train services, runs and line reservations (section "timetable")
-    econ: econNewState(0),           // cash, market, orders, contracts and the ledger (section "economy")
+    econ: econNewState(0, wid),      // cash, market, orders, contracts and the ledger (section "economy")
     town: townNewState(),            // the placeholder towns' businesses: stock and use (section "town")
     pax: paxNewStore(seed),          // travellers at the stations and aboard (section "passengers")
     tg: tgNewStore(),                // the telegram inbox (section "telegrams and alerts")
@@ -3993,7 +3993,7 @@ const ECON_START_OFFERS = [
   { kind: 'DELIVERY', counterparty: 0, commodity: 'beans', quantity: 4, dueDay: 2 },
   { kind: 'DELIVERY', counterparty: 2, commodity: 'lumber', quantity: 8, dueDay: 4 },
   { kind: 'DELIVERY', counterparty: 2, commodity: 'nails', quantity: 2, dueDay: 4 },
-  { kind: 'STANDING', counterparty: 1, commodity: 'coffee', quantity: 2, dueDay: 7, repeatWeeks: 4 },
+  { kind: 'STANDING', counterparty: 1, commodity: 'coffee', quantity: 2, dueDay: 7, repeatWeeks: 4, parked: 'willow' }, // D24: not in the hub world
 ];
 const econBiz = id => ECON_BUSINESSES.find(b => b.id === id) || null;
 const econTownName = id => { const t = CARGO_TOWNS.find(t => t.id === id); return t ? t.name : 'town ' + id; };
@@ -4053,8 +4053,11 @@ function econDeliveredPrice(E, c, townId) {
 
 // ---- State ----
 // A fresh economy at game time `time` (0 for a new game; an old save's time when it is migrated).
-function econNewState(time) {
+// world (D24): a new game's world; a starting offer marked parked is left out where that system is parked (Willow
+// Ford's standing coffee in the hub world). Without it (the save migration step) every offer is made, as before.
+function econNewState(time, world) {
   time = time || 0;
+  const parked = world && WORLDS[world] && WORLDS[world].parked || {};
   const day = Math.floor((time + CFG.DAY_START_S) / ECON.DAY_S);
   const M = { buy: {}, sell: {}, walk: {}, history: {} };
   for (const c of Object.keys(COMMODITIES).sort()) M.walk[c] = 1000;
@@ -4064,6 +4067,7 @@ function econNewState(time) {
     contracts: [], reputation: {} };
   for (const t of CARGO_TOWNS) E.reputation[t.id] = ECON.REP_START;
   for (const o of ECON_START_OFFERS) {
+    if (o.parked && parked[o.parked]) continue;
     econAddContract(E, time, { kind: o.kind, counterparty: o.counterparty, commodity: o.commodity, quantity: o.quantity,
       due: (day + o.dueDay) * ECON.DAY_S - CFG.DAY_START_S, repeatWeeks: o.repeatWeeks || 1 });
   }
@@ -4176,8 +4180,10 @@ function econAtKey(S, r) {
 }
 function econAtDesk(S, r) { const d = econDeskSpot(), P = S.player; return Math.hypot(P.x - d.x, P.z - d.z) <= (r || ECON.TEL_REACH); }
 function econRefuse(ev, why) { if (ev) ev.push({ t: 'econRefused', why }); return { ok: false, why }; }
-// The visit an order placed at `time` rides: the first 06:00 or 18:00 at least ECON.ORDER_LEAD_S away.
-function econNextVisit(time) {
+// The visit an order placed at `time` rides: the first 06:00 or 18:00 at least ECON.ORDER_LEAD_S away. D24: in the hub
+// world (world, or the world in use) the first freight train due at least CG_GOODS.LEAD_S away (section "freight trains' goods").
+function econNextVisit(time, world) {
+  if ((world || worldCur) === 'hub') return cgNextFreight(time);
   const abs = time + CFG.DAY_START_S;
   for (let d = Math.floor(abs / ECON.DAY_S); ; d++) for (const v of OVERLAND.DUE) {
     const at = d * ECON.DAY_S + v;
@@ -4223,9 +4229,10 @@ function econOrderCmd(S, c, ev) {
   if (typeof lines === 'string') return econRefuse(ev, lines);
   const cost = lines.reduce((s, l) => s + l.n * E.market.buy[l.c], 0);
   if (E.cash - cost < ECON.OVERDRAFT) return econRefuse(ev, `Not enough money: the order costs ${econMoney(cost)}, and cash may not go below ${econMoney(ECON.OVERDRAFT)}`);
-  const due = econNextVisit(S.time);
+  const hub = worldId(S.track) === 'hub', due = hub ? cgBook(S, lines) : econNextVisit(S.time);
+  if (due === null) return econRefuse(ev, `Too much for one train: the next ${1 + CG_GOODS.SPILL} freight trains have no room for it (each brings 4 or 5 cars)`);
   const booked = E.orders.filter(o => o.due <= due).reduce((a, o) => a.concat(o.lines), []);
-  if (econPack(econLineUnits(booked.concat(lines))).length > ECON.ORDER_MAX_CARS) return econRefuse(ev, `Too much for one train: the Overland brings at most ${ECON.ORDER_MAX_CARS} cars of orders a visit`);
+  if (!hub && econPack(econLineUnits(booked.concat(lines))).length > ECON.ORDER_MAX_CARS) return econRefuse(ev, `Too much for one train: the Overland brings at most ${ECON.ORDER_MAX_CARS} cars of orders a visit`);
   const id = E.nextOrder++;
   E.orders.push({ id, t: S.time, due, lines, cost });
   econPost(S, -cost, 'imports', 'Overland market', { kind: 'order', id }, ev);
@@ -4394,13 +4401,169 @@ function econCheckSaveShape(st) {
 // 'overland': overlandTick does nothing in the hub world). Pure simulation; its own bookkeeping in S.rr.cg.
 // Events: cgLoaded { run, cars, items } (as the train is made up), cgUnloaded { run } (no goods for the hub left aboard),
 // cgSold { run, items, paid } (overlandPickedUp's successor), plus the economy's orderDelivered.
+// Built (CG, 2026-11-06):
+// - Booking: an order placed in the hub world rides the first freight train due at its track at least CG_GOODS.LEAD_S (3 game
+//   hours, provisional) later (econNextVisit, cgNextFreight, from RR_SCHEDULE: the booking is by the schedule, so a train
+//   running late still brings what was booked on it). If that train's cars are full, the order goes on the next one with
+//   room (up to CG_GOODS.SPILL more), else it is refused (econOrderCmd, cgBook). An order's due is its train's arrival time.
+// - Making up (cgConsist, then cgLoad): the orders due by the train's arrival (its own and any left over, oldest
+//   first, whole orders that fit) packed as econPack (long bundles and machinery on flatcars, the rest in boxcars), then
+//   empty boxcars up to the run's car count (an empty car can take goods for Outside). The goods are items in the cars,
+//   addressed as now (econOrderWaybill: a contract's goods to its business, track materials to our construction, the
+//   rest to the hub warehouse). cgLoad is done once per run (S.rr.cg.loaded).
+// - Unloading: the car panel and carrying work on a railroad car while its run stands at the cargo track (carryCarWhy);
+//   goods go onto the cargo dock (drawn on its deck), into the freight shed's bays from its dock, onto the cargo yard or
+//   anywhere on the ground, and are sorted and delivered as before.
+// - cgReady: no goods for the hub (anything not tagged Outside) left in the train's cars; cgTick says cgUnloaded once
+//   per standing freight run when that is so (at once for a train that came empty).
+// - cgOnDepart: goods for Outside aboard are sold at the market's sell price (econSoldOutside, cgSold); goods for the
+//   hub still aboard (only if the crew leaves by itself) are set down in the cargo yard by the crew (cgSetDown), so no
+//   item leaves the map in a car. Then the cars are empty and TR may drop them.
+// S.rr.cg (all optional): loaded, unloaded (run ids, only the runs still listed), sold, paid (cents), setDown (counts).
+const CG_GOODS = {
+  LEAD_S: 3 * 3600,   // provisional (plan section 7, item 9): an order rides the first freight train at least 3 game hours away
+  SPILL: 3,           // an order that does not fit its train goes on one of the next 3 freight trains with room
+  YARD_GAP: 0.8,      // the crew's set-down spots in the cargo yard, this far apart (u), from the dock's back edge
+};
+const CG_FREIGHT = RR_SCHEDULE.filter(v => v.kind === 'freight').sort((a, b) => a.arr - b.arr);
+// The next n freight arrivals at or after `time` (S.time), by the schedule: [{ arr (S.time), svc, cars }].
+function cgFreightAfter(time, n) {
+  const out = [];
+  for (let d = Math.floor((time + CFG.DAY_START_S) / 86400); out.length < n; d++) for (const v of CG_FREIGHT) {
+    const at = d * 86400 + v.arr - CFG.DAY_START_S;
+    if (at >= time && out.length < n) out.push({ arr: at, svc: v.id, cars: v.cars });
+  }
+  return out;
+}
+// The freight train an order placed at `time` rides (its arrival, S.time).
+function cgNextFreight(time) { return cgFreightAfter(time + CG_GOODS.LEAD_S, 1)[0].arr; }
+// The train (arrival time) these checked order lines are booked on, or null when the next trains have no room for them.
+function cgBook(S, lines) {
+  for (const f of cgFreightAfter(S.time + CG_GOODS.LEAD_S, 1 + CG_GOODS.SPILL)) {
+    const booked = S.econ.orders.filter(o => o.due === f.arr).reduce((a, o) => a.concat(o.lines), []);
+    if (econPack(econLineUnits(booked.concat(lines))).length <= f.cars) return f.arr;
+  }
+  return null;
+}
+// A run's arrival time (S.time): a run entry's own, or for a schedule entry (rrDebugScenario) today's.
+function cgRunArr(S, run) {
+  if (run.day !== undefined) return run.arr;
+  return Math.floor((S.time + CFG.DAY_START_S) / 86400) * 86400 + run.arr - CFG.DAY_START_S;
+}
+// How many cars a freight run has behind its engine: a schedule entry's count, or its service's for a run entry (whose
+// cars field is the stock ids).
+const cgRunCars = run => Number.isInteger(run.cars) ? run.cars : ((RR_SCHEDULE.find(v => v.id === run.svc) || {}).cars || 4);
+// What a freight run brings: the orders due by its arrival that fit its cars (oldest first, whole orders), one entry
+// per item ({ c, n, contract, order }), and the cars they need (econPack). Changes nothing.
+function cgPlan(S, run) {
+  const E = S.econ, cap = cgRunCars(run), arr = cgRunArr(S, run), take = [];
+  let lines = [];
+  if (E) for (const o of E.orders) {
+    if (o.due > arr) continue;
+    const next = lines.concat(o.lines.map(l => ({ ...l, order: o.id })));
+    if (econPack(econLineUnits(next)).length > cap) continue;
+    take.push(o); lines = next;
+  }
+  const units = [];
+  for (const l of lines) for (let i = 0; i < l.n; i++) units.push(l);
+  return { take, units, cars: econPack(units.map(u => u.c)) };
+}
 // The cars of a freight run, front to back after the engine, as consist entries without ids ({ k, len, mass }) (called by
 // TR when the run's train is made up; TR gives the stock ids, then calls cgLoad).
-function cgConsist(S, run) { return Array.from({ length: run.cars || 4 }, () => ({ ...RR.CARS.boxcar })); } // CG
-function cgLoad(S, run, tr, ev) {}                         // CG: the orders due ride in the cars (as econLoadOverland)
-function cgReady(S, run, tr) { return true; }              // CG: no goods for the hub left aboard
-function cgOnDepart(S, run, tr, ev) {}                     // CG: goods for Outside aboard are sold (as econSoldOutside)
-function cgTick(S, ev) {}                                  // CG: anything that runs every tick (after econTick)
+function cgConsist(S, run) {
+  const need = cgPlan(S, run).cars.map(c => ({ ...RR.CARS[c.k] }));
+  while (need.length < cgRunCars(run)) need.push({ ...RR.CARS.boxcar });
+  return need;
+}
+function cgStore(S) { return S.rr.cg; }
+const cgKeep = (S, list) => list.filter(id => S.rr.runs.some(r => r.id === id));   // only the runs still listed
+// Put the orders due into the train's cars (once per run): events itemCreated, orderDelivered (each order), cgLoaded.
+function cgLoad(S, run, tr, ev) {
+  const C = cgStore(S);
+  tr = tr || rrTrainOf(S, run);
+  if (!tr || !S.econ) return { cars: 0, items: 0 };
+  if (run.id !== undefined && (C.loaded || []).includes(run.id)) return { cars: 0, items: 0 };
+  const plan = cgPlan(S, run), cars = tr.consist.filter(c => CARGO_CAR_RULES[c.k]), got = {}, full = new Set();
+  let items = 0;
+  plan.cars.forEach((p, j) => {
+    for (const i of p.units) {
+      const u = plan.units[i], wb = econOrderWaybill(S, u);
+      // Into the car made up for it; if the consist differs, the first car that takes it.
+      const order = cars[j] && cars[j].k === p.k ? [cars[j]].concat(cars) : cars;
+      for (const car of order) {
+        const room = cargoRoomProblem(S, COMMODITIES[u.c].type, { kind: 'CAR', stockId: car.id }, -1, u.c);
+        if (room) continue;
+        const r = itemCreate(S, wb, { kind: 'CAR', stockId: car.id }, ev);
+        if (r.ok) { items++; full.add(car.id); (got[u.order] = got[u.order] || []).push(r.id); break; }
+      }
+    }
+  });
+  const gone = new Set(plan.take.map(o => o.id));
+  S.econ.orders = S.econ.orders.filter(o => !gone.has(o.id));
+  if (run.id !== undefined) C.loaded = cgKeep(S, (C.loaded || []).concat(run.id));
+  if (ev) {
+    for (const o of plan.take) ev.push({ t: 'orderDelivered', id: o.id, items: got[o.id] || [] });
+    ev.push({ t: 'cgLoaded', run: run.id === undefined ? null : run.id, cars: full.size, items });
+  }
+  return { cars: full.size, items };
+}
+// How many goods for the hub (not tagged Outside) are in this train's cars.
+function cgHubAboard(S, tr) {
+  const I = S.items, cars = new Set(tr.consist.map(c => c.id));
+  let n = 0;
+  for (let i = 0; i < I.next; i++) { const w = I.where[i]; if (w && w.kind === 'CAR' && cars.has(w.stockId) && itemTag(I.waybill[i]) !== 'OUTSIDE') n++; }
+  return n;
+}
+function cgReady(S, run, tr) { tr = tr || rrTrainOf(S, run); return !tr || cgHubAboard(S, tr) === 0; }
+// A free spot in the cargo yard for the crew to set an item down (rows from the dock's back edge, west to east), in
+// hundredths of a u: no living item on the ground within 0.35u.
+function cgYardSpot(S) {
+  const Y = HUBW.YARD, I = S.items, g = CG_GOODS.YARD_GAP, ground = [];
+  for (let i = 0; i < I.next; i++) { const w = I.where[i]; if (w && w.kind === 'GROUND') ground.push(w); }
+  for (let z = Y.z1 - g / 2; z > Y.z0; z -= g) for (let x = Y.x0 + g / 2; x < Y.x1; x += g) {
+    const X = Math.round(x * 100), Z = Math.round(z * 100);
+    if (!ground.some(w => Math.hypot(w.x - X, w.z - Z) < 35)) return { kind: 'GROUND', x: X, z: Z };
+  }
+  return { kind: 'GROUND', x: Math.round((Y.x0 + g / 2) * 100), z: Math.round((Y.z1 - g / 2) * 100) };   // the yard is full: stack on the first spot
+}
+// The train is leaving (waved off, or its crew left by itself): goods for Outside are sold; goods for the hub still
+// aboard are set down in the cargo yard. Events cgSold { run, items, paid }, cgSetDown { run, items }.
+function cgOnDepart(S, run, tr, ev) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr) return { sold: 0, paid: 0, setDown: 0 };
+  const C = cgStore(S), rid = run && run.id !== undefined ? run.id : null;
+  let sold = 0, paid = 0, down = 0;
+  for (const car of tr.consist) for (const id of itemsAt(S, { kind: 'CAR', stockId: car.id })) {
+    if (itemTag(S.items.waybill[id]) === 'OUTSIDE') { if (itemConsume(S, id, 'soldOutside', ev).ok) { sold++; paid += econSoldOutside(S, id, ev); } }
+    else if (itemMove(S, id, cgYardSpot(S), ev).ok) down++;
+  }
+  if (sold) { C.sold = (C.sold || 0) + sold; C.paid = (C.paid || 0) + paid; }
+  if (down) C.setDown = (C.setDown || 0) + down;
+  if (ev && sold) ev.push({ t: 'cgSold', run: rid, items: sold, paid });
+  if (ev && down) ev.push({ t: 'cgSetDown', run: rid, items: down });
+  return { sold, paid, setDown: down };
+}
+// For the car panel and the UI: what is in a car and whether the player may work it now, or null for no such car.
+// { stock, k, run (run id, or null), items, hub (goods for the hub), out (goods for Outside), used, cap (slot units), why }
+function cgCarStatus(S, stock) {
+  const f = carryCarOf(S, stock);
+  if (!f) return null;
+  const R = CARGO_CAR_RULES[f.car.k], ids = itemsAt(S, { kind: 'CAR', stockId: stock }), run = f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+  const out = ids.filter(id => itemTag(S.items.waybill[id]) === 'OUTSIDE').length;
+  return { stock, k: f.car.k, run: run ? run.id : null, items: ids.length, hub: ids.length - out, out,
+    used: R ? ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0) : 0, cap: R ? R.cap : 0, why: carryCarWhy(S, stock) };
+}
+// After the economy, each tick: cgUnloaded once per standing freight run with no goods for the hub left aboard.
+function cgTick(S, ev) {
+  if (!S.rr || !S.rr.on) return;
+  for (const run of S.rr.runs) {
+    if (run.kind !== 'freight' || run.ph !== 'stand') continue;
+    const C = cgStore(S), tr = rrTrainOf(S, run);
+    if (!tr || (C.unloaded || []).includes(run.id) || cgHubAboard(S, tr)) continue;
+    C.unloaded = cgKeep(S, (C.unloaded || []).concat(run.id));
+    ev.push({ t: 'cgUnloaded', run: run.id, tr: tr.id });
+  }
+}
 
 // ==== Section: walk grid and path-finding ====
 // Design-doc section 11 "Pathfinding", for the player (M1). One grid of 0.5u cells over the whole map of the
@@ -5154,6 +5317,11 @@ function carryCarOf(S, stockId) {
 function carryCarWhy(S, stockId) {
   const f = Number.isInteger(stockId) ? carryCarOf(S, stockId) : null;
   if (!f || trainOff(f.tr)) return 'There is no such car here';
+  if (f.tr.owner === 'rr') {   // D24: the railroad's freight cars are worked while they stand at the cargo track (section "freight trains' goods")
+    if (!CARGO_CAR_RULES[f.car.k]) return f.car.k === 'coach' ? 'A coach carries travellers, not freight' : 'An engine carries no freight';
+    const run = rrRunOf(S, f.tr.id);
+    if (!run || run.ph !== 'stand' || run.track !== 'cargo') return 'Wait until the train stands at the cargo track';
+  }
   if (!CARGO_CAR_RULES[f.car.k]) return 'An engine carries no freight';
   if (f.tr.owner === 'overland') return 'The Overland\'s crew is working that car';
   if (f.tr.v > 0 || (f.tr.mode !== 'idle' && f.tr.mode !== 'stop')) return 'Wait until the train has stopped';
@@ -7454,7 +7622,8 @@ function cargoPoses(S) {
       // A job's stockpile items stand where they were put down (job.site, hand-building), like ground items.
       const at = w.kind === 'GROUND' ? [w.x, w.z] : jobSiteAt(S, w.jobId, i);
       if (!at) continue;
-      const x = at[0] / 100, z = at[1] / 100, ty = typeof terrainHeight === 'function' ? terrainHeight(x, z) : 0;
+      // D24: in the hub world goods set down on the cargo dock (or another flush deck) stand on its top, not under it.
+      const x = at[0] / 100, z = at[1] / 100, ty = worldCur === 'hub' ? bldStandY(x, z) : typeof terrainHeight === 'function' ? terrainHeight(x, z) : 0;
       put(i, 'G' + at[0] + ',' + at[1], x, ty + 0.004, z, cargoGroundYaw(i));
     }
   }
@@ -13555,7 +13724,8 @@ window.__railhead = {
   importSave(json) { const sv = migrate(JSON.parse(json)); S = sv.state; cardsLoad(sv.ui && sv.ui.cards); buildWorld(S); buildActors(S); resetViewsFromState(); return stateHash(S); },
   camera: cam,
   // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
-  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady },
+  rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady,
+    CG_GOODS, cgLoad, cgOnDepart, cgTick, cgCarStatus, cgPlan, cgBook, cgNextFreight, cgFreightAfter, cgHubAboard, cgYardSpot },
   world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };

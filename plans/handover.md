@@ -1,5 +1,12 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
+## Latest (2026-11-07): D24 station rework built
+- Playable: https://claude.ai/artifact/215immEY4Skh13fN9fN2db (version 3, the hub world: railroad trains, tickets on board, cargo track).
+- Review survey: https://claude.ai/artifact/AkbCSk732HZcQkMtqfrCiL (answers/d24-review); waiting on the designer.
+- Full npm test: 47 of 47 passed at 858b90a. Hub bot, 3 days: 27 runs, worst late 11 min, 96% tickets checked, all goods delivered.
+- Tech plan plans/rework-tech.md; provisional choices in DEV_NOTES "Station rework (D24)".
+- Overland is parked, so M2's newspaper delivery needs a new carrier (M2 plan).
+
 ## Latest (2026-11-04)
 - D22 (first-time cards, arrival warnings, schedule board on posts, Work board button, one top line, switch 1 starts straight) merged; full npm test passed (41 checks). check-m1: worst lateness 4, none cancelled, 211 tickets. D23: the designer is the M1 gate; M2 (plan https://claude.ai/artifact/XoP9wEVwNNTo3p7zbv2orE) starts only after the designer is satisfied with the M1 fixes.
 - D20 and D21 built, merged and pushed (fc66b95); full npm test passed (all checks). check-m1: worst lateness 0, none cancelled, 215 tickets, siding day 3 20:37. Busiest draw calls 84.

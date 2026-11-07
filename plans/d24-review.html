@@ -1,0 +1,186 @@
+<title>Station Rework Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column: the problem, the figures, one question slip; a fixed save bar at the foot. */
+:root {
+  --paper: #f3f1ea; --slip: #fffdf7; --ink: #262420; --muted: #6c675c;
+  --rule: #d9d3c4; --brass: #8a6418; --brass-soft: #f1e4c4; --ok: #2f6b3a; --ok-soft: #dcebd9; --warn: #9a4a1c; --warn-soft: #f6e0d2;
+  --f-display: "Zilla Slab", Georgia, serif;
+  --f-body: "Source Sans 3", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-body); }
+.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 120px; display: grid; gap: 28px; }
+.wrap > section { display: grid; gap: 12px; min-width: 0; }
+h1 { font: 700 1.9rem/1.15 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 700 1.35rem/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 500 1.1rem/1.3 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--brass); }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 .75rem var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.play { display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 4px;
+  background: var(--brass); color: var(--slip); font-weight: 600; text-decoration: none; justify-self: start; }
+.shots { display: grid; grid-auto-flow: column; grid-auto-columns: min(70%, 240px); gap: 12px; overflow-x: auto;
+  padding-bottom: 8px; scroll-snap-type: x mandatory; }
+.shots figure { margin: 0; scroll-snap-align: start; display: grid; gap: 6px; align-content: start; }
+.shots img { width: 100%; border: 1px solid var(--rule); border-radius: 4px; display: block; background: var(--slip); }
+.shots figcaption { font-size: .85rem; color: var(--muted); }
+.slip { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.res { display: grid; gap: 12px; }
+.res-row { display: grid; gap: 4px; }
+.pill { font: 500 .72rem var(--f-mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 3px; padding: 1px 6px; justify-self: start; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.you { background: var(--brass-soft); color: var(--brass); }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; }
+td.n { text-align: right; white-space: nowrap; }
+.gap { border-left: 3px solid var(--warn); padding-left: 10px; }
+details.group { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; }
+details.group > summary { list-style: none; cursor: pointer; padding: 14px 16px; min-height: 48px; box-sizing: border-box;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font: 500 1.2rem var(--f-mono); color: var(--brass); }
+details.group[open] > summary::after { content: "\2212"; }
+.gcount { font: 500 .75rem var(--f-mono); color: var(--muted); white-space: nowrap; }
+.gbody { padding: 0 16px 16px; display: grid; gap: 14px; }
+.keepall { justify-self: start; background: transparent; color: var(--brass); border: 1px solid var(--brass); }
+.item { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.item p { font-size: .95rem; }
+.who { font: 500 .7rem var(--f-mono); color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule);
+  border-radius: 4px; cursor: pointer; font-size: .95rem; }
+.seg label:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.seg input { accent-color: var(--brass); width: 18px; height: 18px; margin: 0; }
+.opts { display: grid; gap: 8px; border: 0; margin: 0; padding: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px; min-height: 48px; box-sizing: border-box;
+  border: 1px solid var(--rule); border-radius: 4px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.opt input { margin-top: 4px; accent-color: var(--brass); width: 18px; height: 18px; flex: none; }
+.opt span { min-width: 0; }
+.tag { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--brass);
+  border: 1px solid var(--brass); border-radius: 3px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+label.note { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+textarea { font: 16px/1.4 var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 8px 10px; min-height: 44px; resize: vertical; box-sizing: border-box; width: 100%; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--slip); border-top: 1px solid var(--rule);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+.bar-in { max-width: 680px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#status { font: 500 .8rem var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+#status.ok { color: var(--ok); }
+button { font: 600 1rem var(--f-body); min-height: 48px; padding: 0 20px; border-radius: 4px; border: 0;
+  background: var(--brass); color: var(--slip); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:12px">
+    <span class="eyebrow">Station rework is built: please play it and review</span>
+    <h1>Station rework review</h1>
+    <p class="muted">The new station is on your playable link: <a href="https://claude.ai/artifact/215immEY4Skh13fN9fN2db">Railhead, version 3</a>. The helpers made a few choices for you while building it. Each is listed below with what was built marked Suggested; change any you don't like, or leave them. All checks passed, and a robot player ran 3 game days with every train in and out, the worst train 11 game minutes late, 96 percent of tickets checked and every ordered good delivered.</p>
+  </header>
+
+  <section>
+    <h2>Your answers</h2>
+    <div id="qs" style="display:grid;gap:16px"></div>
+  </section>
+</div>
+<div class="bar"><div class="bar-in"><span id="status">Connecting...</span><button id="save" type="button">Save answers</button></div></div>
+
+<script>
+const QS = [
+  { id: 'feel', q: 'After playing, how does the new station feel?',
+    o: [['good', 'Good: keep going with small fixes from my notes.', 1], ['mixed', 'Some parts work, some need changing (say which in the note).'], ['wrong', 'Not what I meant (say what in the note).']] },
+  { id: 'busy', q: 'How busy is a day? (9 trains: 6 passenger, 3 freight)',
+    o: [['ok', 'About right.', 1], ['less', 'Too busy: fewer trains.'], ['more', 'Too quiet: more trains.']] },
+  { id: 'fuel', q: 'Wood and water: the railroad\'s crews fuel their own trains, so you don\'t.',
+    o: [['crew', 'Keep it that way: my jobs are switches, tickets, freight and sending trains off.', 1], ['me', 'I want to take wood and water to the engines too.']] },
+  { id: 'spring', q: 'The far west switch (switch 0) springs back to the cargo track by itself, so you rarely walk there.',
+    o: [['spring', 'Keep it springing back.', 1], ['manual', 'Make it a normal switch I throw myself.']] },
+  { id: 'sendoff', q: 'Sending off: you stand at the engine. You may send a train early. A train with freight still aboard refuses. A train left alone leaves by itself an hour after its time.',
+    o: [['keep', 'Keep these rules.', 1], ['ontime', 'Never let a train leave early.'], ['other', 'Change something (say in the note).']] },
+  { id: 'tickets', q: 'Tickets: 40 cents each, one traveller every 6 game seconds; 4 to 12 travellers per train; a coach seats 16.',
+    o: [['keep', 'About right.', 1], ['faster', 'Checking is too slow: make it quicker.'], ['other', 'Change something (say in the note).']] },
+  { id: 'orders', q: 'Goods you order ride the first freight train at least 3 game hours later. Freight trains bring only what you ordered.',
+    o: [['keep', 'Keep it.', 1], ['extra', 'Also bring goods the stores want on their own, so there is always something to unload.']] },
+  { id: 'size', q: 'Train size: the trains came out a little shorter than planned, so a standing train never blocks the loop.',
+    o: [['keep', 'They look right.', 1], ['bigger', 'Make them bigger (say in the note).']] },
+  { id: 'shed', q: 'The freight car door can be about 9 steps from the shed\'s bays. The robot player unloads onto the cargo dock first and sorts later.',
+    o: [['keep', 'That distance is fine.', 1], ['closer', 'Bring the shed closer to the cargo track.']] },
+  { id: 'offers', q: 'Known gap: no new contract offers come in the first 3 days at the new station, so money comes from the 4 starting contracts and fares.',
+    o: [['fix', 'Make new offers come in sooner (small fix).', 1], ['ok', 'Leave it for now.']] },
+  { id: 'else', q: 'Anything else you noticed while playing?', o: [] },
+];
+const answers = {};
+const statusEl = document.getElementById('status'), saveBtn = document.getElementById('save');
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function noteBox(key, label) {
+  const nl = el('label', 'note', label); const ta = el('textarea'); ta.id = 'note-' + key; ta.rows = 1;
+  ta.addEventListener('input', () => setA(key, 'note', ta.value)); nl.append(ta); return nl;
+}
+const qsEl = document.getElementById('qs');
+QS.forEach((Q, i) => {
+  const s = el('section', 'slip'); s.append(el('div', 'eyebrow', 'Question ' + (i + 1) + ' of ' + QS.length));
+  const h = el('h3', null, Q.q); h.id = 'q-' + Q.id; s.append(h);
+  if (Q.ctx) s.append(el('p', 'muted', Q.ctx));
+  if (Q.o.length) {
+    const fs = el('fieldset', 'opts'); fs.setAttribute('aria-labelledby', h.id);
+    for (const [v, label, sug] of Q.o) {
+      const l = el('label', 'opt'); const r = el('input'); r.type = 'radio'; r.name = 'q.' + Q.id; r.value = v; r.id = 'q.' + Q.id + '-' + v;
+      r.addEventListener('change', () => setA('q.' + Q.id, 'choice', v));
+      const t = el('span', null, label); if (sug) t.append(el('span', 'tag', 'Suggested'));
+      l.append(r, t); fs.append(l);
+    }
+    s.append(fs);
+  }
+  s.append(noteBox('q.' + Q.id, Q.o.length ? 'Note (optional)' : 'Your answer')); qsEl.append(s);
+});
+function render() {
+  for (const Q of QS) {
+    const key = 'q.' + Q.id, a = answers[key] || {};
+    for (const [v] of Q.o) document.getElementById(key + '-' + v).checked = a.choice === v;
+    const ta = document.getElementById('note-' + key); if (document.activeElement !== ta) ta.value = a.note || '';
+  }
+}
+render();
+let ref = null, dirty = false, saving = false, timer = null;
+function setA(id, k, v) { answers[id] = Object.assign({}, answers[id], { [k]: v }); dirty = true; status('Not saved yet'); clearTimeout(timer); timer = setTimeout(save, 1500); }
+function status(t, ok) { statusEl.textContent = t; statusEl.className = ok ? 'ok' : ''; }
+async function save() {
+  if (!ref) { status('Saving is not available here'); return; }
+  if (saving) { clearTimeout(timer); timer = setTimeout(save, 800); return; }
+  if (!dirty) return;
+  saving = true; dirty = false; saveBtn.disabled = true;
+  try { await ref.set({ answers, savedAt: Date.now() }); status('Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), true); }
+  catch (e) { dirty = true; status('Could not save: ' + ((e && e.message) || 'try again')); }
+  finally { saving = false; saveBtn.disabled = false; }
+}
+saveBtn.addEventListener('click', () => { dirty = true; clearTimeout(timer); save(); });
+(async () => {
+  const to = setTimeout(() => status('Still connecting; your choices are kept on screen'), 10000);
+  let db = null;
+  try { db = window.claude ? await window.claude.use('db') : null; } catch (e) { db = null; }
+  clearTimeout(to);
+  if (!db) { status('Saving is not available here'); saveBtn.disabled = true; return; }
+  ref = db.doc('answers/d24-review');
+  try {
+    const snap = await ref.get();
+    if (snap.exists) { const d = snap.data(); if (d && d.answers) for (const k in d.answers) if (!answers[k]) answers[k] = d.answers[k]; render(); status('Loaded your saved answers', true); }
+    else status('Nothing saved yet');
+  } catch (e) { status('Could not load saved answers'); }
+})();
+</script>

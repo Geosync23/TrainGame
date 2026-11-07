@@ -227,7 +227,8 @@ module.exports = async function checkHubWorld() {
         return R.drawCalls;
       });
       const sc = await page.evaluate(() => { const S = window.__railhead.state; return { stand: S.trains.filter(t => t.owner === 'rr' && !t.away && t.v === 0 && t.consist.length).length, runs: S.rr.runs.length }; });
-      if (sc.stand !== 2 || sc.runs !== 2) problems.push(`${orient}: the hubtrains scenario has ${sc.stand} trains standing and ${sc.runs} runs (expected 2 and 2)`);
+      // (Integrator: the scenario plans the whole day, p1 and f1 standing, the other 7 runs still to come.)
+      if (sc.stand !== 2 || sc.runs !== 9) problems.push(`${orient}: the hubtrains scenario has ${sc.stand} trains standing and ${sc.runs} runs (expected 2 and 9: the day planned)`);
       await page.screenshot({ path: screenshotPath(`hubworld-trains-${orient}`) });
       await page.evaluate(() => { const R = window.__railhead, S = R.state; R.setCrowd && R.setCrowd(0); });
       console.log(`  ${orient}: draw calls start ${dc.start}, inner throat ${dc.throat}, zoomed out 0.6 ${dc.out06}, 0.4 ${dc.out04}, with 200 walkers ${dc.crowd}, with two standing trains and 200 walkers ${dc.trains}`);

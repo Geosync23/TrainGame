@@ -34,6 +34,7 @@ const checks = {
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
   'the hub world (D24: the through line, switches close together, all reachable, clear of the track, parked systems off)': require('./check-hubworld'),
   'the prototype (D25: the station layout, switches close to the platforms, the walkway the only crossing, the day, parked systems off, the pixel renderer, old worlds in 3D)': require('./check-protoworld'),
+  'prototype passengers (D25 P: lines at the coach doors before a train, riders step off first, one punch boards one traveller, ready, counts)': require('./check-punch'),
   'the railroad\'s trains (D24: a day of 9 runs in and out, stopping short of a wrong switch, wave-off, lateness)': require('./check-rrtrains'),
   'the prototype\'s trains (D25: a day of 10 runs with a scripted player, through trains, wrong switches, wave-off refusals, the footbridges)': require('./check-prototrains'),
   'tickets on board (D24: travellers off and on the railroad\'s trains, checking a car, fares missed)': require('./check-tickets'),

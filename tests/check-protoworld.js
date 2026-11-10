@@ -4,13 +4,17 @@
 //   parked flag on (money, work board, contracts, ordering, building, telegrams, wood and water, the tutorial, the
 //   town's businesses, the D22 cards, the D24 hub's screens and the hub world's own), every switch straight.
 // - The track passes the validator; track 2 runs straight along z = 0 past both map edges; 4 switches (W3, W1, E1, E3,
-//   ids 0 to 3) on track 2, W1 and E1 turning north to track 1 (z -5.03), W3 and E3 south to track 3 (z 9.28); track 1
-//   and 3 straight from x -20 to 20; the walkway's two pads cross tracks 1 and 2 only.
+//   ids 0 to 3) on track 2, W1 and E1 turning north to track 1 (z -6.03), W3 and E3 south to track 3 (z 10.48; spaced
+//   out on 2026-11-10); track 1 and 3 straight from x -20 to 20; the walkway's two pads cross tracks 1 and 2 only.
+// - The two footbridges (T, 2026-11-10): each deck over tracks 1 and 2 with its underside at least 4.8u over the rail
+//   top, its stair flights on the platforms (inside the decks, clear of every building), bridge cells on the walk grid
+//   with heights from the stairs to the deck; walkers cross on them (walked distances recorded), the handcart cannot.
 // - Buildings keep the section 6 clearances, the decks are flush (1.44u) with their tracks, nothing overlaps, no
 //   building is near a switch stand; the shops face the main street, which runs away from the station at right angles
 //   to the tracks (the lead's change, 2026-11-10).
 // - Walking distances (the player walking on the walk grid) within the plan's promises; every place the player uses
-//   is reachable from the start, and platform 2 (with the storage bays and the track 3 stands) only by the walkway.
+//   is reachable from the start, and platform 2 (with the storage bays and the track 3 stands) only by the walkway or
+//   the footbridges; the walk from the nearest platform to every switch stand is under 20u.
 // - Trains: the first passenger train waits at the west switch set against it, then (switch thrown) stands at
 //   platform 1 short of the walkway and clear of every switch; the first freight train stands at track 3 beside
 //   platform 2; both leave when sent off with the switches set; a through run is planned (T builds it).
@@ -24,6 +28,8 @@
 const { openGame, screenshotPath } = require('./browser');
 
 // The walking distances the layout promises (u, on the walk grid), plans/proto-tech.md section 1.
+// T (2026-11-10): with track 1 4.0u from track 2, platform 1 1u deeper, platform 2 1.2u wider (W3, E3 2.08u further
+// out) and the two footbridges; the over-the-bridge walks are measured with the walkway shut (crossings removed).
 const PROMISE = {
   'platform 1 east end to switch E1': 9,
   'platform 1 west end to switch W1': 7,
@@ -32,6 +38,10 @@ const PROMISE = {
   'platform 2 west end to switch W3': 16,
   'the schedule board to the walkway onto platform 2': 20,
   'the station door side to the general store\'s door': 26,
+  'platform 1 to platform 2 over the west footbridge': 30,
+  'platform 1 to platform 2 over the east footbridge': 30,
+  'platform 1 middle to switch W3 (over the west footbridge)': 54,
+  'platform 1 middle to switch E3 (over the walkway)': 40,
 };
 
 module.exports = async function checkProtoWorld() {
@@ -125,8 +135,9 @@ module.exports = async function checkProtoWorld() {
           // Walking: the player walks from a to b in the sim (on a copy); the distance walked, in u.
           const Wk = Wd.walk, G = Wd.walkGrid(T);
           const cell = (x, z) => Math.floor((z - Wk.Z0) / Wk.CELL) * Wk.N + Math.floor((x - Wk.X0) / Wk.CELL);
-          const walk = (a, b) => {
+          const walk = (a, b, shut) => {
             const s = JSON.parse(JSON.stringify(S)), Pl = s.player;
+            if (shut) s.track.crossings = [];   // the walkway shut: over a footbridge
             Pl.x = a[0]; Pl.z = a[1]; Pl.mode = 'idle';
             R.simTick(s, [{ t: 'walkTo', x: Math.round(b[0] * 100), z: Math.round(b[1] * 100) }]);
             let d = 0, px = Pl.x, pz = Pl.z;
@@ -134,7 +145,7 @@ module.exports = async function checkProtoWorld() {
             return { d, miss: Math.hypot(s.player.x - b[0], s.player.z - b[1]) };
           };
           const use = id => [T.switches[id].stand.ux, T.switches[id].stand.uz], SW = Pr.PROTO_SW, P1 = P.P1, P2 = P.P2;
-          const p1z = P1.z1 - 1.0, p2z = P2.z0 + 0.8;
+          const p1z = P1.z1 - 0.5, p2z = P2.z0 + 2.0;   // clear of the footbridges' stair bands
           const legs = {
             'platform 1 east end to switch E1': [[P1.x1 - 0.6, p1z], use(SW.E1)],
             'platform 1 west end to switch W1': [[P1.x0 + 0.6, p1z], use(SW.W1)],
@@ -143,14 +154,31 @@ module.exports = async function checkProtoWorld() {
             'platform 2 west end to switch W3': [[P2.x0 + 0.6, p2z], use(SW.W3)],
             'the schedule board to the walkway onto platform 2': [[S.player.x, S.player.z], [P.WALKWAY.x, p2z]],
             'the station door side to the general store\'s door': [[0, P1.z0 + 0.6], [Pr.PROTO_SHOPS[0].door.x, Pr.PROTO_SHOPS[0].door.z]],
+            'platform 1 to platform 2 over the west footbridge': [[-14, p1z], [-14, p2z]],
+            'platform 1 to platform 2 over the east footbridge': [[12.5, p1z], [12.5, p2z]],
+            'platform 1 middle to switch W3 (over the west footbridge)': [[0, p1z], use(SW.W3)],
+            'platform 1 middle to switch E3 (over the walkway)': [[0, p1z], use(SW.E3)],
           };
           for (const [k, [a, b]] of Object.entries(legs)) {
-            const w = walk(a, b);
+            const w = walk(a, b, /footbridge/.test(k));
             out.dist[k] = +w.d.toFixed(2);
             if (w.miss > 0.3) B(`${k}: the walk ended ${w.miss.toFixed(2)}u short`);
             if (!(w.d <= PROMISE[k])) B(`${k}: ${w.d.toFixed(2)}u walked, promised at most ${PROMISE[k]}u`);
           }
-          // Reachability from the start; platform 2's side only by the walkway.
+          // The footbridges.
+          for (const b of Pr.PROTO_BRIDGES) {
+            if (b.under - 0.34 < 4.8) B(`footbridge ${b.id}: its deck is ${(b.under - 0.34).toFixed(2)}u over the rail top`);
+            const [deck, s1, s2] = b.parts;
+            if (!(deck.z0 < -P.D1 - 1.2 && deck.z1 > 1.2)) B(`footbridge ${b.id}'s deck does not span tracks 1 and 2`);
+            for (const [st, pl] of [[s1, P1], [s2, P2]]) {
+              if (st.x0 < pl.x0 || st.x1 > pl.x1 || st.z0 < pl.z0 || st.z1 > pl.z1) B(`footbridge ${b.id}: a stair flight is off its platform`);
+              for (const f of fps) if (!f.flush && f.kind !== 'p1deck' && dist(f, Math.max(st.x0, Math.min(st.x1, f.x)), Math.max(st.z0, Math.min(st.z1, f.z))) < 0.3) B(`footbridge ${b.id}'s stair is within 0.3u of ${f.id}`);
+            }
+            for (const W of T.switches) if (Math.hypot(W.stand.x - b.x, W.stand.z) < 8) B(`footbridge ${b.id} is near switch ${W.id}'s stand`);
+            const y = (x, z) => Wd.walkGrid(T) && Pr.walkBridgeY(T, x, z);
+            if (Math.abs(y(b.x, -3) - b.top) > 1e-6 || Math.abs(y(s1.xFoot + (s1.xTop - s1.xFoot) * 0.1, (s1.z0 + s1.z1) / 2) - (b.top * 0.1 + 0.375 * 0.9)) > 0.05 || y(b.x, P1.z0 + 0.5) !== null) B(`footbridge ${b.id}: heights wrong`);
+          }
+          // Reachability from the start; platform 2's side only by the walkway or the footbridges.
           const places = [];
           for (const W of T.switches) places.push([`switch ${W.id}'s stand`, W.stand.ux, W.stand.uz, W.id === SW.W3 || W.id === SW.E3]);
           const nearOpen = (G, x, z) => { let best = null; for (let dz = -1; dz <= 1.001; dz += 0.25) for (let dx = -1; dx <= 1.001; dx += 0.25) { const c = cell(x + dx, z + dz); if (G.cost[c] > 0 && (!best || Math.hypot(dx, dz) < best[2])) best = [x + dx, z + dz, Math.hypot(dx, dz)]; } return best; };
@@ -164,7 +192,12 @@ module.exports = async function checkProtoWorld() {
           for (const [nm, x, z] of places) { const a = area(G, x, z); if (a !== home) B(`${nm} (${x.toFixed(1)}, ${z.toFixed(1)}) ${a < 0 ? 'is on a blocked cell' : 'cannot be reached from the start'}`); }
           const T2 = JSON.parse(JSON.stringify(T)); T2.crossings = [];
           const G2 = Wd.walkGridBuild(T2), home2 = area(G2, S.player.x, S.player.z);
-          for (const [nm, x, z, island] of places) { const a = area(G2, x, z); if (island ? a === home2 : a !== home2) B(`without the walkway, ${nm} ${island ? 'can still be reached: the track is crossed elsewhere' : 'cannot be reached'}`); }
+          for (const [nm, x, z] of places) { const a = area(G2, x, z); if (a !== home2) B(`without the walkway, ${nm} cannot be reached (over the footbridges)`); }
+          // Without the walkway and the footbridges (their cells shut), the island is cut off: no other way across.
+          const N = Wk.N, NN = G2.cost.length, open = c => G2.cost[c] > 0 && !G2.br.id[c], seen = new Uint8Array(NN), q = [cell(S.player.x, S.player.z)];
+          seen[q[0]] = 1;
+          while (q.length) { const c = q.pop(), ci = c % N; for (const n of [ci < N - 1 ? c + 1 : -1, ci > 0 ? c - 1 : -1, c + N < NN ? c + N : -1, c - N]) if (n >= 0 && !seen[n] && open(n)) { seen[n] = 1; q.push(n); } }
+          for (const [nm, x, z, island] of places) { const c = cell(x, z); if (island ? seen[c] : !seen[c]) B(`without the walkway and the footbridges, ${nm} ${island ? 'can still be reached: the track is crossed elsewhere' : 'cannot be reached'}`); }
           Wd.walkGrid(T);   // the grid in use again
           out.places = places.length;
           for (const t of R.carry.TOOL_PARK) for (const f of fps) if (!f.flush && dist(f, t.x / 100, t.z / 100) < 0.3 + (t.k === 'cart' ? 1.05 : 0.4)) B(`the ${t.k} parking spot is too close to ${f.id}`);
@@ -191,8 +224,8 @@ module.exports = async function checkProtoWorld() {
             const occ = R.occupiedSwitches(s);
             if (Object.values(occ).includes(tr.id)) B('p1 stands on a switch');
             throwSw(SW.W1, 'N'); throwSw(SW.E1, 'R');
-            const en = ps[0];
-            s.player.x = en.x; s.player.z = en.z - 2.2; s.player.mode = 'idle';
+            const ws = R.rr.rrWaveSpot(s, tr.id);   // beside the engine, clear of the east footbridge's stair
+            s.player.x = ws.x; s.player.z = ws.z; s.player.mode = 'idle';
             run(60);   // the stub's dwell
             run(1, [{ t: 'rrWaveOff', tr: tr.id }]);
             if (!evs.some(e => e.t === 'rrWavedOff')) B(`p1 was not waved off: ${JSON.stringify(evs.filter(e => e.t === 'rrRefused').slice(-1))}`);

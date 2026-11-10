@@ -119,6 +119,30 @@ def register(reg):
     ax, ay = img[0][1]
     reg.add('bld/schedboard', 'town_station', img, dict(anchor='between the two posts at ground level', footprint=[2.4, 0.3],
                                                       board=TW.schedboard_area(ax, ay)))
+    # ---------------- footbridges (platform 1 over tracks 1 and 2 to platform 2) ----------------
+    FBA = 'the bridge anchor: x = the bridge centre line, z = 0 (track 2), ground level; draw every part there'
+    boxes = TW.footbridge_boxes()
+    parts = {'deck': TW.footbridge_deck, 'rail': TW.footbridge_rail}
+    for k in range(3):
+        parts[f'bent{k}'] = (lambda k=k: TW.footbridge_bent(k))
+    for plat in ('p1', 'p2'):
+        for d in ('e', 'w'):
+            parts[f'stair_{plat}_{d}'] = (lambda p=plat, d=d: TW.footbridge_stair(p, d))
+            parts[f'stair_{plat}_{d}_rail'] = (lambda p=plat, d=d: TW.footbridge_stair_rail(p, d))
+    notes = {'deck': 'the span with its floor and far railing; walkers on it are drawn at walk_y',
+             'rail': 'the near (+x) railing of the span: draw it after walkers on the deck',
+             'bent0': 'trestle bent on platform 1', 'bent1': 'trestle bent between tracks 1 and 2',
+             'bent2': 'trestle bent on platform 2'}
+    for nm, fn in parts.items():
+        ex = dict(boxes[nm])
+        bx = ex.pop('box')
+        note = notes.get(nm, 'stair flight ' + nm[6:8] + (' near handrail' if nm.endswith('_rail') else '') +
+                         ', running down towards ' + ('+x' if '_e' in nm else '-x'))
+        reg.add(f'bld/footbridge/{nm}', 'town_bridge', one(fn, **NOSHADOW),
+                dict(anchor=FBA, note=note, box=bx, height=ex))
+    reg.add('bld/sign_saloon', 'town_props', one(TW.saloon_sign, after=TW.saloon_sign_letters, **NOSHADOW),
+            dict(anchor='foot of the post (put it at the south end of the saloon\'s boardwalk, about x 4.0, z -25.2); '
+                        'the sign hangs 3.4 to 4 u towards -x over the street, its letters on the +z face'))
     # ---------------- shops ----------------
     for kind in TW.SHOPS:
         _shop(reg, kind)
@@ -273,6 +297,12 @@ def ground(layer):
         F.box(-TW.SHOP_A, TW.SHOP_FRONT + 1.2, 0, TW.SHOP_A, TW.SHOP_B, 1.5, 'wood', paint=planks,
               oid=new_oid(False), cast=False)
     TW.walk_planks(-6.15 * U_, -4.2 * U_, -39.0 * U_, -35.0 * U_, z=1.5, along='z')
+    # ---- footbridges: their shadows on the ground (positions from the layout when it has them)
+    for fb in footbridges(L):
+        TW.footbridge_casters(fb['x'] * U_, fb['p1'], fb['p2'], lambda bb: _caster(*bb))
+    # the saloon's hanging sign
+    _caster(SIGN_AT[0] * U_ - 0.6, SIGN_AT[1] * U_ - 0.6, 0, SIGN_AT[0] * U_ + 0.6, SIGN_AT[1] * U_ + 0.6, 22.0)
+    _caster(SIGN_AT[0] * U_ - 16.0, SIGN_AT[1] * U_ - 0.35, 11.0, SIGN_AT[0] * U_ - 1.4, SIGN_AT[1] * U_ + 0.35, 17.6)
     # ---- shadows of the buildings that stand on the layer (invisible casters)
     for b in L['buildings']:
         x, z = b['x'] * U_, b['z'] * U_
@@ -304,3 +334,19 @@ def ground(layer):
 def _wbox(F, a0, b0, a1, b1, z0, z1):
     x0, y0, x1, y1 = F.rect_w(a0, b0, a1, b1)
     return x0, y0, z0, x1, y1, z1
+
+
+SIGN_AT = (4.0, -25.2)          # where the saloon's hanging sign stands (u)
+FOOTBRIDGES = [dict(x=-5.0, p1='w', p2='w'), dict(x=6.5, p1='e', p2='e')]   # used until the layout has them
+
+
+def footbridges(L):
+    """The footbridges from proto-layout.json ('footbridges': [{x, ...}]) or the defaults above. Each gets the
+    direction its stairs run down: away from the middle of the platforms unless the layout says ('p1', 'p2')."""
+    out = []
+    for fb in L.get('footbridges') or FOOTBRIDGES:
+        x = fb['x'] if isinstance(fb, dict) else float(fb)
+        d = 'w' if x < 0 else 'e'
+        out.append(dict(x=x, p1=(fb.get('p1') or fb.get('dir') or d) if isinstance(fb, dict) else d,
+                        p2=(fb.get('p2') or fb.get('dir') or d) if isinstance(fb, dict) else d))
+    return out

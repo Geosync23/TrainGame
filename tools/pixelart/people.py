@@ -208,9 +208,9 @@ TPL['smith'] = [
 "....aSSs...",
 "....SeSes..",
 "....aAAa...",
-"...WWWWw...",
-"...WPPPw...",
-"...WPNPp...",
+"...WRRWw...",
+"...WNPNw...",
+"...WPPPp...",
 "...PPPpp...",
 "...PPPpp...",
 "...PPPpp...",
@@ -221,11 +221,11 @@ TPL['smith.back'] = [
 "....AAAa...",
 "....AAAa...",
 "....AAaa...",
-".....aSs...",
-"...WWWWw...",
-"...WNWNw...",
-"...WWNww...",
-"...TPTtp...",
+".....RRs...",
+"...NWWNw...",
+"...WNNWw...",
+"...WNNww...",
+"...TPPtp...",
 "...TTTtt...",
 "...TTttt...",
 ]
@@ -306,13 +306,13 @@ TPL['lady'] = [
 ]
 TPL['lady.back'] = [
 "....HHHh...",
-"...HHHHHk..",
-"...HHHHhk..",
-"...hHHHhs..",
-"....RRrs...",
-"...ODDDdo..",
-"....DDDd...",
-"....VVvv...",
+"...HHhHHk..",
+"...HHhHhk..",
+"..hhhhhhs..",
+"....RrRs...",
+"...ODdDdo..",
+"....DdDd...",
+"....VRVv...",
 "...DDDdDf..",
 "...DDdDdf..",
 "..DDDDDddf.",
@@ -336,16 +336,16 @@ TPL['farmwife'] = [
 "..fDDDdddf.",
 ]
 TPL['farmwife.back'] = [
-"....AAa....",
+"....aAa....",
 "...aAAAa...",
-"....AAAa...",
-"....AAaa...",
+"....AaAa...",
+"....aAaa...",
 ".....aSs...",
 "...UUUUu...",
 "..UUUUUuu..",
 "...UUUuu...",
-"...DDUDdf..",
-"...DDDDdf..",
+"...DDUudf..",
+"...DpPpdf..",
 "..DDDDDddf.",
 "..DDDDdddf.",
 "..fDDDdddf.",
@@ -430,7 +430,7 @@ SPECS = {
     'cowhand':     ('cowhand', 'man', spec(hat=('wood', 2), band=('wood', 4), coat=('ochre', 0), vest=('wood', 2),
                                            band2=None, trous=('navy', 1), hair=('wood', 3), skin='skin2',
                                            tie=('red', 1))),
-    'smith':       ('smith', 'man', spec(hair=('iron', 3), apron=('wood', 3), tie=('wood', 2), shirt=('cream', 0),
+    'smith':       ('smith', 'man', spec(hair=('iron', 3), apron=('ochre', 2), tie=('wood', 4), shirt=('cream', 0), band=('red', 1),
                                          trous=('iron', 2), sleeve='skin')),
     'storekeeper': ('storekeeper', 'man', spec(hair=('iron', 1), apron=('cream', 0), vest=('green', 1),
                                                tie=('dark', 1), trim=('red', 1), sleeve='shirt', trous=('iron', 2))),
@@ -654,9 +654,8 @@ def arm_pts(build, pose, side):
     elif pose == 'up2':
         sl(x0, top + 1); sl(x0, top + 2)
         hd(x0, top + 3)
-    elif pose == 'shoulder':     # hand up at the shoulder steadying a load on it
-        sl(x0, top); sl(x0, top + 1)
-        hd(x0, top + 2)
+    elif pose == 'shoulder':     # arm up at the shoulder steadying a load on it (the hand is drawn with the load)
+        sl(x0, top); sl(x0 - 1, top + 1)
     elif pose == 'none':
         pass
     else:
@@ -702,11 +701,12 @@ def held(kind, hx, hy, back, swing=0):
     raise ValueError(kind)
 
 
-TRUNK = [            # a small steamer trunk carried on the near shoulder (front view), lid trim and brass corners
-    ".111.",
-    "12223",
-    "G333G",
-    "34443",
+TRUNK = [            # a small steamer trunk seen end on, resting on the near shoulder, the hand steadying it
+    ".11.",
+    "1222",
+    "G22G",
+    "S334",
+    "3443",
 ]
 CRATE = [
     ".1112.",
@@ -859,7 +859,7 @@ def trim(img, anchor):
 # Animations
 # ---------------------------------------------------------------------------------------------------------------
 DIRS = {'se': (False, False), 'sw': (False, True), 'ne': (True, False), 'nw': (True, True)}
-DRAWN = ('se', 'ne')
+DRAWN = ('se', 'ne', 'sw', 'nw')    # all four drawn and lit from the upper left: do not mirror people
 # e: facing world +x (screen lower right, front three quarters); s: +z (lower left, front, mirrored);
 # n: -z (upper right, back three quarters); w: -x (upper left, back, mirrored).
 
@@ -936,8 +936,8 @@ def agent_anims():
 
 
 # Where the game draws a carried item (offset in px from the feet anchor to the item's anchor) and the cart grip.
-CARRY_HANDS = {'se': (0, -5), 'ne': (0, -7)}   # the contract's default is (0, -9): see NOTES (too high for a crate)
-PUSH_GRIP = {'se': (5, -3), 'ne': (5, -3)}
+CARRY_HANDS = {'se': (0, -5), 'ne': (0, -7), 'sw': (0, -5), 'nw': (0, -7)}   # contract default (0, -9) is too high for a crate
+PUSH_GRIP = {'se': (5, -3), 'ne': (5, -3), 'sw': (-5, -3), 'nw': (-5, -3)}
 CART_BEHIND = 2.1     # how far (u) behind the cart's centre the pusher stands, for the committed handcart sprite
 
 TAGS = {'store': ('green', 0), 'smithy': ('glass', 1), 'saloon': ('red', 0)}
@@ -969,7 +969,7 @@ def emit_frames(who, kwlist, d, extra=None):
         load = kw.pop('load', None)
         xh = kw.pop('extra_hold', None)
         if load == 'trunk':
-            kw['load'] = (TRUNK, -6, 5)
+            kw['load'] = (TRUNK, -5, 6)
         elif isinstance(load, tuple):
             kw['load'] = load
         g = frame(who, back, **kw)
@@ -987,10 +987,11 @@ def emit_frames(who, kwlist, d, extra=None):
 
 def build_all():
     """Returns a list of (contract key, [frames as (img, anchor)], meta). Keys: ppl/<who>/<anim>/<dir>; the
-    pipeline appends /0, /1, ... per frame. Only se and ne are drawn; the renderer mirrors them for sw and nw."""
+    pipeline appends /0, /1, ... per frame. All four facings are drawn and re-lit; the renderer must not mirror them."""
     out = []
     def meta_for(anim, more=None):
-        m = {'frame_note': FRAME_NOTES.get(anim, ''), 'anchor': 'between the feet, at ground level'}
+        m = {'frame_note': FRAME_NOTES.get(anim, ''), 'anchor': 'between the feet, at ground level',
+             'mirror': False}     # all four facings are drawn and lit from the upper left: never mirror people
         if more:
             m.update(more)
         return m

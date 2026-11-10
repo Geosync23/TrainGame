@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # Review pictures for the people (owner: the people artist). Writes, in tools/pixelart/out/:
-#   people-contact.png    every person sprite at 3x with its key: the drawn se and ne frames, then (dimmer
-#                         label) the sw and nw frames as the renderer will mirror them
-#   people-closeup.png    the idle frame of every type at 8x, se and ne, for judging faces and clothes
+#   people-contact.png    every person sprite at 3x with its key (all four facings are drawn; none mirrored)
+#   people-closeup.png    the idle frame of every type and facing at 8x, for judging faces and clothes
 #   people-testscene.png  people standing on a platform beside a coach, queueing, boarding, the agent punching,
 #                         carrying a crate (drawn at the hands offset) and pushing the handcart, at 3x
 # The test scene takes the platform, coach, goods and handcart from the committed sheets (out/atlas.json);
@@ -43,9 +42,6 @@ def contact(sprites, scale=3, width=620):
     cells = []
     for name, frames, meta in sprites:
         groups = [(name, frames, (43, 32, 38, 255))]
-        d = name.split('/')[-1]
-        md = {'se': 'sw', 'ne': 'nw'}[d]
-        groups.append((name[:-2] + md + ' (mirrored)', [mirrored(f, a) for f, a in frames], (110, 90, 70, 255)))
         for nm, frs, col in groups:
             fw = sum(i.shape[1] + 3 for i, _ in frs)
             ups = max(a[1] for _, a in frs); downs = max(i.shape[0] - a[1] for i, a in frs)
@@ -78,7 +74,7 @@ def contact(sprites, scale=3, width=620):
 def closeup(sprites, scale=8):
     sel = [(n, f[0]) for n, f, m in sprites if n.split('/')[2] == 'idle']
     CW, CH = 18, 24
-    per = 12
+    per = 16
     nrow = (len(sel) + per - 1) // per
     img = np.zeros((nrow * CH, per * CW, 4), np.uint8); img[...] = BG
     for i, (n, (f, (ax, ay))) in enumerate(sel):
@@ -96,11 +92,8 @@ def test_scene(sprites, scale=3):
         return sheets[e['sheet']][y:y + h, x:x + w], (ax, ay)
     ppl = {n: f for n, f, m in sprites}
     def person(key, d, k=0):
-        base = key + '/' + ('se' if d in ('se', 'sw') else 'ne')
-        f, a = ppl[base][k % len(ppl[base])]
-        if d in ('sw', 'nw'):
-            f, a = mirrored(f, a)
-        return f, a
+        frs = ppl[key + '/' + d]
+        return frs[k % len(frs)]
     W, H = 300, 200
     O = (120, 70)
     img = np.zeros((H, W, 4), np.uint8); img[..., :3] = (159, 174, 85); img[..., 3] = 255

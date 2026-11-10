@@ -59,7 +59,15 @@ def tex_deck(face, X, Y, Z, idx):
 def base(layer):
     """Placeholder ground until the town artist's module replaces it: the mockup's grass, the street, decks, walkway."""
     L = layer.layout
-    E.ground(S.tex_grass)
+    def grass(X, Y):
+        # the mockup's grass, with softer light and dark patches so the big layer does not stripe
+        lf = (np.sin(X * 0.07 + Y * 0.03) + 0.8 * np.sin(Y * 0.09 - X * 0.05 + 1.3) + 0.5 * np.sin((X + Y) * 0.19)) / 2.3
+        v = lf * 0.55 + (E.BAY - 0.5) * 0.9
+        i = np.where(v > 0.5, 0, np.where(v > -0.42, 1, 2))
+        h = hash2(np.floor(X * 2).astype(int), np.floor(Y * 2).astype(int)) % 97
+        i = np.where(h == 3, 3, i); i = np.where((h == 7) & (i > 0), i - 1, i)
+        return np.full(X.shape, R('grass')), i
+    E.ground(grass)
     st = L.get('street')
     if st:
         def dirt(face, X, Y, Z, idx):

@@ -41,7 +41,7 @@ module.exports = async function checkHubWorld() {
           const R = window.__railhead, Wd = R.world, S = R.state, T = S.track, H = Wd.HUBW, out = { bad: [], dist: {} }, P = m => out.bad.push(m), SC = R.CFG.SCALE;
           // A new game.
           if (T.world !== 'hub') P(`a new game is in the "${T.world}" world, not the hub world`);
-          if (S.schemaVersion !== 17) P(`schema ${S.schemaVersion}, expected 17`);
+          if (!(S.schemaVersion >= 17)) P(`schema ${S.schemaVersion}, expected 17 or later`);
           if (!S.rr || S.rr.on !== true) P('the railroad\'s store is not switched on');
           if (S.trains.length !== 5 || S.trains.some((t, i) => t.id !== i)) P(`trains: ${S.trains.map(t => t.id + ':' + (t.owner || 'ours')).join(', ')} (expected No. 1, the Overland, its cut and 2 railroad slots)`);
           const no1 = S.trains[0];

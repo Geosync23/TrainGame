@@ -5,23 +5,25 @@
 // Run once per new schema version:  node tests/make-fixture.js
 // From schema 17 (D24, the station rework) the new sample is a game in the hub world (a new game's world since then):
 // the same kind of session, with places that exist there (no dead end inside the hub, no Willow Ford travellers).
+// From schema 18 (D25, the prototype) the new sample is a game in the prototype world, the same session again: the flour
+// on platform 1, the salt in the storage shed's first bay, switch W1 thrown, the player's walk along platform 1.
 const fs = require('fs');
 const path = require('path');
 const { openGame, stopServer } = require('./browser');
 (async () => {
-  const { browser, page } = await openGame('portrait', { query: '?paused&world=hub' });
+  const { browser, page } = await openGame('portrait', { query: '?paused&world=proto' });
   const out = await page.evaluate(() => {
     const R = window.__railhead;
     // From schema 3: two freight items, and the player takes the hand truck and loads one.
-    const S0 = R.newState(1866), hub = S0.track.world === 'hub', carry = S0.schemaVersion >= 3, jobs = S0.schemaVersion >= 4 && !hub;
+    const S0 = R.newState(1866), proto = S0.track.world === 'proto', hub = S0.track.world === 'hub' || proto, carry = S0.schemaVersion >= 3, jobs = S0.schemaVersion >= 4 && !hub;
     const k = R.CFG.SCALE || 1; // schema 14 (D15): the world is 1.6x, so the scripted places grow with it
     // D24: the hub world's places (hundredths): the flour on the cargo yard, the player's walk onto the platform.
-    const flourAt = hub ? { x: -3600, z: -1000 } : { x: Math.round(-1050 * k), z: Math.round(1000 * k) };
-    const walkAt = hub ? { x: 600, z: -500 } : { x: Math.round(-500 * k), z: Math.round(800 * k) };
+    const flourAt = proto ? { x: 0, z: -1100 } : hub ? { x: -3600, z: -1000 } : { x: Math.round(-1050 * k), z: Math.round(1000 * k) };
+    const walkAt = proto ? { x: -600, z: -900 } : hub ? { x: 600, z: -500 } : { x: Math.round(-500 * k), z: Math.round(800 * k) };
     if (carry) {
       const wb = c => ({ commodity: c, originTownId: 'OUTSIDE', destTownId: 1, consignee: { kind: 'BUSINESS', id: 0 }, contractId: null, due: null });
       R.cargo.itemCreate(S0, wb('flour'), { kind: 'GROUND', ...flourAt }, null);
-      R.cargo.itemCreate(S0, wb('salt'), { kind: 'BAY', buildingId: 'freightshed', bay: 0 }, null);
+      R.cargo.itemCreate(S0, wb('salt'), { kind: 'BAY', buildingId: proto ? 'storage' : 'freightshed', bay: 0 }, null);
     }
     // From schema 4: a job staked 6u on from the spur's dead end, with a tie bundle lying beside it (on site).
     let stake = [];
@@ -37,7 +39,7 @@ const { openGame, stopServer } = require('./browser');
       S0.town.biz[0].shelf.flour = 2;
     }
     const S = R.simRun(S0, (hub ? [] : [{ tick: 0, cmd: { t: 'trainRun', tr: 0, dir: 1 } }]).concat([   // D24: No. 1 is parked in the hub world
-      { tick: 2, cmd: { t: 'useSwitch', sw: hub ? 2 : 0 } },   // D24: the platform's west switch, set against the first train
+      { tick: 2, cmd: { t: 'useSwitch', sw: proto ? 1 : hub ? 2 : 0 } },   // D24: the platform's west switch, set against the first train (D25: W1, to track 1)
     ]).concat(stake).concat(carry ? [
       { tick: 100, cmd: { t: 'carryTool', tool: 0 } },
       { tick: 160, cmd: { t: 'carryPick', id: 0 } },

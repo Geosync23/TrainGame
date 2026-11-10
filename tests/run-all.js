@@ -35,6 +35,7 @@ const checks = {
   'the hub world (D24: the through line, switches close together, all reachable, clear of the track, parked systems off)': require('./check-hubworld'),
   'the prototype (D25: the station layout, switches close to the platforms, the walkway the only crossing, the day, parked systems off, the pixel renderer, old worlds in 3D)': require('./check-protoworld'),
   'the railroad\'s trains (D24: a day of 9 runs in and out, stopping short of a wrong switch, wave-off, lateness)': require('./check-rrtrains'),
+  'the prototype\'s trains (D25: a day of 10 runs with a scripted player, through trains, wrong switches, wave-off refusals, the footbridges)': require('./check-prototrains'),
   'tickets on board (D24: travellers off and on the railroad\'s trains, checking a car, fares missed)': require('./check-tickets'),
   'freight trains\' goods (D24: orders ride freight trains, unloading at the cargo dock, cgReady, leaving)': require('./check-freight'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),

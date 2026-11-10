@@ -917,46 +917,98 @@ function buildHubWorld() {
 // track 3). Pure data and math: no three.js.
 const PROTO = (() => {
   const R = 12.8, A = Math.PI / 6, arcs = 2 * R * (1 - Math.cos(A)), PAR = 20, EDGE = 1.44;   // EDGE: a deck's track-side edge from the track centre (0.9 x SC)
-  const D1 = arcs + 3.2 * Math.sin(A), PROTO_D1_ = D1;   // track 1: 5.03u north of track 2 (3.2u straight between the arcs)
-  const W2 = 6.4, D3 = W2 + 2 * EDGE;             // track 3: 9.28u south, platform 2 (6.4u wide) between
+  // T (2026-11-10, the designer: "space out the bridges and platform a bit", then "get the tracks a little closer
+  // together, I don't like that gap between the two main tracks"): track 1 4.0u from track 2 (was 5.03), as close as
+  // two trains pass safely (each 2.0u wide: 2.0u between their sides; the ballast edges 1.5u apart). Its legs turn off
+  // at 26 degrees (ANG1; was 30, which with the validator's 3.2u straight between reverse curves needs 5.03u), the
+  // straight between the arcs 3.21u; platform 1 1u deeper (7.4u, was 6.4) and platform 2 1.2u wider (7.6u, was 6.4), so
+  // track 3 is 1.2u further out. W1/E1 move in 0.26u, W3/E3 out 2.08u with their legs.
+  const A1 = 26 * Math.PI / 180, arcs1 = 2 * R * (1 - Math.cos(A1));
+  const D1 = 4.0, L1 = (D1 - arcs1) / Math.sin(A1), PROTO_D1_ = D1, DP1 = 7.4;   // track 1: 4.0u north of track 2
+  const W2 = 7.6, D3 = W2 + 2 * EDGE;             // track 3: 10.48u south, platform 2 (7.6u wide) between
   const L3 = (D3 - arcs) / Math.sin(A);           // the straight between track 3's arcs
-  const dx = L => 2 * R * Math.sin(A) + L * Math.cos(A);
+  const dx = (L, a) => 2 * R * Math.sin(a || A) + L * Math.cos(a || A);
   return {
-    R, ANG: 30, PAR, EDGE, D1, D3, W2, L1: 3.2, L3,
+    R, ANG: 30, ANG1: 26, PAR, EDGE, D1, D3, W2, DP1, L1, L3,
     BOUNDS: { x0: -56, x1: 56, z0: -62, z1: 20 },   // the map: 112u x 82u (walk grid 224 x 164 cells)
     LINE: { x0: -120, x1: 120 },                    // track 2 runs 64u past each map edge (trains stand out of sight there)
-    SW: { W3: -(PAR + dx(L3)), W1: -(PAR + dx(3.2)), E1: PAR + dx(3.2), E3: PAR + dx(L3) },   // switch nodes on track 2 (x)
+    SW: { W3: -(PAR + dx(L3)), W1: -(PAR + dx(L1, A1)), E1: PAR + dx(L1, A1), E3: PAR + dx(L3) },   // switch nodes on track 2 (x)
     LIM_ST: 2.0 * SC,                               // speed limit through the station (u per game minute)
-    // Decks (x0, x1, z0, z1): platform 1 (6.4u deep, behind track 1), platform 2 (the island between tracks 2 and 3).
-    P1: { x0: -18, x1: 16, z0: -D1 - EDGE - 6.4, z1: -D1 - EDGE },
+    // Decks (x0, x1, z0, z1): platform 1 (7.4u deep, behind track 1), platform 2 (the island between tracks 2 and 3).
+    P1: { x0: -18, x1: 16, z0: -D1 - EDGE - DP1, z1: -D1 - EDGE },
     P2: { x0: -18, x1: 20, z0: EDGE, z1: D3 - EDGE },
     WALKWAY: { x: 18.5, z0: -D1 - EDGE - 0.6, z1: EDGE + 0.6 },   // the plank walkway across tracks 1 and 2 (pads XING.W wide)
     // Where trains stand (the engine's front, x on its track): short of the walkway on track 1, clear of the switch legs.
     STOP: { t1: { E: 15.6, W: -19.1 }, t3: { E: 19.1, W: -19.1 } },
     // The main street (drawn only: open ground), 6.4u wide, from behind the station building north to the map's edge.
-    STREET: { x0: -3.2, x1: 3.2, z0: -60, z1: -PROTO_D1_ - 1.44 - 6.4 - 5.6 },
+    // T (2026-11-10, the designer: "back up the train office building a bit ... offset from the platform roof ... to the
+    // left of the tracks"): the station building stands 2.5u back from platform 1 (a forecourt between) and west of the
+    // canopy (x -20 to -8, the canopy -8 to 8), so the canopy and the lines under it are not hidden behind it; the street
+    // now starts right behind platform 1, beside the station's east end.
+    STATION: { x: -14, z: -PROTO_D1_ - 1.44 - DP1 - 2.5 - 2.8 },
+    STREET: { x0: -3.2, x1: 3.2, z0: -60, z1: -PROTO_D1_ - 1.44 - DP1 - 0.4 },
     TOWN_EXITS: [[-1.5, -59], [1.5, -59]],                      // the street's far end: where travellers come from and go to
     // Switch stands [post x, z, use spot x, z] (provisional): the track 1 levers north of track 1 by the platform's ends,
     // rodded to their points; the track 3 levers in the vee between track 2 and track 3's leg, past platform 2's ends.
     STANDS: { W3: [-31.5, 2.0, -31.5, 2.6], W1: [-22.5, -D1 - 1.6, -22.5, -D1 - 2.6], E1: [22.5, -D1 - 1.6, 22.5, -D1 - 2.6], E3: [31.5, 2.0, 31.5, 2.6] },
-    PLAYER: { x: 9.5, z: -D1 - EDGE - 5.2 },        // a new day: on platform 1, in front of the schedule board
-    SCHEDBOARD: { x: 9.5, z: -D1 - EDGE - 6.1 },    // the public schedule board on its posts at platform 1's back edge
+    PLAYER: { x: 9.5, z: -D1 - EDGE - DP1 + 1.2 },  // a new day: on platform 1, in front of the schedule board
+    SCHEDBOARD: { x: 9.5, z: -D1 - EDGE - DP1 + 0.3 },   // the public schedule board on its posts at platform 1's back edge
     EDGE_W: 0,                                      // the westmost edge of track 2 (built first): where empty train slots are kept
   };
 })();
 const PROTO_SW = { W3: 0, W1: 1, E1: 2, E3: 3 };
+// D25 (T, the designer's change after the plan: "a bridge or two for easy access to both platforms"): two wooden
+// footbridges from platform 1 over tracks 1 and 2 to platform 2, matching the town artist's sprites (bld/footbridge/...,
+// tools/pixelart/town.py: every part drawn at the anchor (x, 0, 0)). Each has a deck along z at walk height TOP (its
+// underside UNDER, 4.85u over the rail top, so trains pass beneath) from z -7.17 (the landing over platform 1) to 2.8 (the
+// landing over platform 2), 1.4u wide, and on each platform one stair flight of 18 steps over RUN along x, down towards
+// +x ('e') or -x ('w'), in the band Z1 (platform 1, near its track edge) or Z2 (platform 2, near track 2). Placed
+// (provisional) where no coach door ever stands beside a stair or the deck: the west bridge's flights run west beside the
+// engine of a west-bound train, the east one's east beside an east-bound engine; the platform 2 flights are clear of the
+// storage shed. At x -10.75 and 9.25: about a fifth and three quarters along platform 1 (the designer first asked for a
+// third and two thirds, then "space out the bridges"; a stair at a third would hide two coach doors). Walkers use them through the walk grid (bridge cells,
+// walkBridgeY); the handcart cannot (stairs): it keeps to the plank walkway at the east end.
+// Z1, Z2 keep the artist's offsets from each platform's track edge (0.58 to 1.73u in); with the wider spacing
+// (2026-11-10: track 1 at 4.0u from track 2) the deck runs from z Z1[0] (-7.17) to Z2[1] (2.8), 9.97u, 1.03u shorter than the
+// artist's first drawing (z -8.2 to 2.8); its middle trestle (bent1, drawn between tracks 1 and 2) no longer fits there.
+const PROTO_FB = { HALF: 0.7, Z1: [PROTO.P1.z1 - 1.73, PROTO.P1.z1 - 0.58].map(v => Math.round(v * 1000) / 1000), Z2: [PROTO.P2.z0 + 0.21, PROTO.P2.z0 + 1.36].map(v => Math.round(v * 1000) / 1000), RUN: 5.85, STEPS: 18, TOP: 5.452, FOOT: 0.375, UNDER: 5.19 };
+const PROTO_BRIDGES = [{ id: 'fb_w', x: -10.75, p1: 'w', p2: 'w' }, { id: 'fb_e', x: 9.25, p1: 'e', p2: 'e' }].map(b => {
+  const F = PROTO_FB, r3 = v => Math.round(v * 1000) / 1000;
+  // A flight on a platform: from its top at the deck's side to its foot RUN further along x; y falls from TOP to FOOT.
+  const stair = (plat, d) => {
+    const s = d === 'e' ? 1 : -1, xt = b.x + s * F.HALF, xf = xt + s * F.RUN, [z0, z1] = plat === 'p1' ? F.Z1 : F.Z2;
+    return { k: 'stair', plat, d, x0: r3(Math.min(xt, xf)), x1: r3(Math.max(xt, xf)), z0, z1, xTop: r3(xt), xFoot: r3(xf), yTop: F.TOP, yFoot: F.FOOT };
+  };
+  const deck = { k: 'deck', x0: r3(b.x - F.HALF), x1: r3(b.x + F.HALF), z0: F.Z1[0], z1: F.Z2[1], y: F.TOP };
+  const s1 = stair('p1', b.p1), s2 = stair('p2', b.p2), m1 = (F.Z1[0] + F.Z1[1]) / 2, m2 = (F.Z2[0] + F.Z2[1]) / 2;
+  // The walking path (centre line, [x, z, y]): platform 1's foot, up to the landing, across, down to platform 2's foot.
+  const path = [[s1.xFoot, r3(m1), F.FOOT], [s1.xTop, r3(m1), F.TOP], [b.x, r3(m1), F.TOP], [b.x, r3(m2), F.TOP], [s2.xTop, r3(m2), F.TOP], [s2.xFoot, r3(m2), F.FOOT]];
+  return { ...b, top: F.TOP, under: F.UNDER, parts: [deck, s1, s2], path };
+});
+// The height (u above the ground) of the bridge surface at (x, z) for bridge b (a PROTO_BRIDGES entry): the deck's TOP,
+// or along a flight; the point is clamped into the nearest part (a walker in a bridge cell whose centre is in a part).
+function protoBridgeYOf(b, x, z) {
+  let best = null, bd = Infinity;
+  for (const p of b.parts) {
+    const cx = Math.max(p.x0, Math.min(p.x1, x)), cz = Math.max(p.z0, Math.min(p.z1, z)), d = Math.hypot(cx - x, cz - z);
+    if (d < bd - 1e-9) { bd = d; best = [p, cx]; }
+  }
+  const [p, cx] = best;
+  if (p.k === 'deck') return p.y;
+  return p.yTop + (p.yFoot - p.yTop) * Math.abs(cx - p.xTop) / Math.abs(p.xFoot - p.xTop);
+}
 // Builds the prototype's track (D25). Edge 0 is track 2's west end (off the map), so s = x - LINE.x0 on it.
 function buildProtoWorld() {
   const T = trackNew(), L = CFG.LIM, P = PROTO, X = P.SW, ST = P.LIM_ST, n = x => trackNode(T, x, 0);
   T.world = 'proto';
   // A crossover leg from a switch node on track 2 heading hx (+1 east, -1 west) to the parallel track dz away (north
   // -1, south +1): a 30 degree arc (the switch's diverging leg), a straight, an arc back. Returns the leg and the end node.
-  const leg = (node, hx, south, Lmid) => {
+  const leg = (node, hx, south, Lmid, ang) => {
     const turn = (south ? -1 : 1) * hx;
-    const d = trackArc(T, node, hx, 0, P.R, turn, P.ANG, 'switch', L.diverge);
+    const d = trackArc(T, node, hx, 0, P.R, turn, ang, 'switch', L.diverge);
     const a = trackNode(T, T.nodes[d.node].x + d.hx * Lmid, T.nodes[d.node].z + d.hz * Lmid);
     trackStraight(T, d.node, a, 'yard', L.diverge);
-    const b = trackArc(T, a, d.hx, d.hz, P.R, -turn, P.ANG, 'yard', L.diverge);
+    const b = trackArc(T, a, d.hx, d.hz, P.R, -turn, ang, 'yard', L.diverge);
     return { e: d.e, node: b.node };
   };
   const nW = n(P.LINE.x0), w3 = n(X.W3), wm = n((X.W3 + X.W1) / 2), w1 = n(X.W1), w1n = n(X.W1 + 3);
@@ -970,7 +1022,7 @@ function buildProtoWorld() {
   const eEm = trackStraight(T, e1, em, 'main', ST);                 // between the east switches: trunk of switch 2
   const eE3n = trackStraight(T, e3, em, 'switch', ST);              // switch 3's straight leg
   const eE = trackStraight(T, e3, nE, 'main', L.main);              // out to the east end
-  const l3w = leg(w3, 1, true, P.L3), l1w = leg(w1, 1, false, P.L1), l1e = leg(e1, -1, false, P.L1), l3e = leg(e3, -1, true, P.L3);
+  const l3w = leg(w3, 1, true, P.L3, P.ANG), l1w = leg(w1, 1, false, P.L1, P.ANG1), l1e = leg(e1, -1, false, P.L1, P.ANG1), l3e = leg(e3, -1, true, P.L3, P.ANG);
   trackStraight(T, l1w.node, l1e.node, 'yard', ST);                 // track 1, beside platform 1
   trackStraight(T, l3w.node, l3e.node, 'yard', ST);                 // track 3, beside platform 2
   trackSwitch(T, w3, eW, eW3n, l3w.e);    // 0 W3
@@ -2911,15 +2963,22 @@ const RR_SCHEDULE = [
 // side), 't2' (through; arr = dep = the time it passes the station). unload / load: goods put off at and taken on
 // here (F makes them: pgConsist, pgLoad). Each end of the line is single track beyond the switches, so a train leaving
 // towards an end and one coming in from it are kept about 30 game minutes apart.
+// T (2026-11-10), checked against the real running times with a careful player (tests/check-prototrains.js): a train
+// needs about 32 game minutes from appearing off the map to standing at its track, 25 from being waved off to being off
+// the map, and the line is single beyond the switches, so f1 (in from the east behind x1 going out east) comes in at
+// 08:45 (was 08:40) and f2 (in from the west behind x2 going out west) at 13:45 (was 13:40); f2 leaves at 15:10 (was
+// 15:00): the player sets W1 for p4 leaving west and needs about 30 minutes to walk to E3 at the east end; p4 comes in
+// at 14:20 and leaves at 14:40 (was 14:15 and 14:30): between f2 coming in from the west (W3 set for it) and p4 leaving
+// west (W3 back), the player also sets E1 for p4 at the east end, about 30 minutes' walk each way.
 const PROTO_SCHEDULE = [
   { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(6, 40), dep: RR_H(6, 55), cars: 3 },
   { id: 'x1', kind: 'freight', from: 'W', to: 'E', track: 't2', arr: RR_H(7, 45), dep: RR_H(7, 45), cars: 4, through: true },
-  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 40), dep: RR_H(10, 30), cars: 4, unload: 6, load: 0 },
+  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 45), dep: RR_H(10, 30), cars: 4, unload: 6, load: 0 },
   { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(9, 15), dep: RR_H(9, 30), cars: 3 },
   { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(11, 30), dep: RR_H(11, 45), cars: 3 },
   { id: 'x2', kind: 'pax', from: 'E', to: 'W', track: 't2', arr: RR_H(12, 45), dep: RR_H(12, 45), cars: 3, through: true },
-  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 't3', arr: RR_H(13, 40), dep: RR_H(15, 0), cars: 3, unload: 0, load: 4 },
-  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(14, 15), dep: RR_H(14, 30), cars: 3 },
+  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 't3', arr: RR_H(13, 45), dep: RR_H(15, 10), cars: 3, unload: 0, load: 4 },
+  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(14, 20), dep: RR_H(14, 40), cars: 3 },
   { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(16, 0), dep: RR_H(16, 15), cars: 3 },
   { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(17, 15), dep: RR_H(18, 30), cars: 4, unload: 4, load: 2 },
 ];
@@ -3001,6 +3060,29 @@ function rrDebugScenario(S) {
   S.track.switches[HUB_SW.PW].state = 'N';
   return S;
 }
+// D25 (T): debug scenarios in the prototype (rh.scenario('proto'), 'protop1'), so P, F, U and R can test with trains
+// standing: a new prototype game on day 0 at hh:mm, the day started (S.pd 'day'), today's runs planned, the runs svcs
+// standing at their tracks (each in its slot, made up as rrTryEnter makes it, ppOnArrive / pgLoad called), every
+// earlier run of today skipped (gone, skipped: true), the switches straight, the player on platform 1.
+function protoDebugScenario(S, hh, mm, svcs) {
+  const T = S.track, R = S.rr, day = 0, ev = [];
+  simTick(S, []);   // plans the day
+  S.time = RR_H(hh, mm) - CFG.DAY_START_S;
+  if (S.pd && S.pd.ph === 'morning') S.pd.ph = 'day';
+  const W = rrW(T);
+  for (const r of R.runs) if (r.day === day && r.ph === 'due' && r.arr < S.time && !svcs.includes(r.svc)) { r.ph = 'gone'; r.skipped = true; }
+  svcs.forEach((svc, i) => {
+    const run = R.runs.find(r => r.day === day && r.svc === svc), tr = S.trains[W.SLOTS[i]], p = rrStopPos(T, run);
+    const cars = run.kind === 'pax' ? Array.from({ length: rrNcars(run) }, () => ({ ...W.CARS.coach })) : cgConsist(S, run);
+    tr.consist = [{ ...W.LOCO }].concat(cars).map(c => ({ ...c, id: R.nextStock++ }));
+    Object.assign(tr, { away: false, front: { e: p.e, s: p.s, d: p.d }, v: 0, mode: 'idle', m: 1, route: null, status: 'Standing', name: run.name });
+    Object.assign(run, { slot: tr.id, ncars: tr.consist.length - 1, cars: tr.consist.slice(1).map(c => c.id), ph: 'stand', tIn: Math.min(S.time, run.arr) - 900, tArr: Math.min(S.time, run.arr), warned: true });
+    if (run.kind === 'freight') cgLoad(S, run, tr, ev); else pxOnArrive(S, run, tr, ev);
+  });
+  T.switches.forEach(Wd => { Wd.state = 'N'; });
+  Object.assign(S.player, { x: 0, z: PROTO.P1.z1 - 2.2, mode: 'idle', use: null, act: null });
+  return S;
+}
 const rrTrainOf = (S, run) => (run && run.slot !== null && run.slot !== undefined ? S.trains[run.slot] : null);
 function rrRunOf(S, trId) { return S.rr ? S.rr.runs.find(r => r.slot === trId && r.ph !== 'gone' && r.ph !== 'cxl') || null : null; }
 // TR (2026-11-06). How a run goes (plans/rework-tech.md section 2):
@@ -3060,7 +3142,8 @@ const rrTrainAccel = tr => CFG.ACCEL_K * trainPower(tr) / tr.consist.reduce((s, 
 // The time (s, whole ticks) a train of length L takes along route r (from findRoute) from a standstill at start to a
 // stop at its end, driven as trainTick drives it: speed limits under the whole train and ahead, braking to the end.
 // Stops at switches set against it are not in it.
-function rrRunTime(T, start, r, L, accel) {
+// upTo (optional, D25): the time until the front has run that far instead (a through train passing the station's middle).
+function rrRunTime(T, start, r, L, accel, upTo) {
   const segs = [];
   let at = 0;
   r.path.forEach((e, i) => {
@@ -3082,6 +3165,7 @@ function rrRunTime(T, start, r, L, accel) {
     vT = Math.min(vT, Math.sqrt(2 * CFG.BRAKE * (D - x)));
     v = v < vT ? Math.min(vT, v + accel * dt) : vT;
     x += Math.min(v * dt, D - x); n++;
+    if (upTo !== undefined && x >= upTo) break;
   }
   return n * CFG.TICK_GAME_S;
 }
@@ -3143,6 +3227,7 @@ function rrTrackFree(S, run) {
   const T = S.track, p = rrStopPos(T, run);
   for (const o of S.rr.runs) {
     if (o === run || o.track !== run.track) continue;
+    if (!p) { if (o.ph === 'out' && o.through) return false; continue; }   // D25: one through train on track 2 at a time
     if (o.ph === 'in' || o.ph === 'stand') return false;
     if (o.ph === 'out') { const tr = rrTrainOf(S, o); if (!o.go || (tr && trainSegs(T, tr).some(([e]) => e === p.e))) return false; }
   }
@@ -3156,9 +3241,9 @@ function rrPlanDay(S, day) {
     const run = { id: R.next++, svc: sv.id, day, kind: sv.kind, name: (sv.kind === 'pax' ? 'Passenger ' : 'Freight ') + sv.id.slice(1), from: sv.from, to: sv.to,
       track: sv.track, arr: day * 86400 + sv.arr - CFG.DAY_START_S, dep: day * 86400 + sv.dep - CFG.DAY_START_S, slot: null, ph: 'due',
       tIn: null, tArr: null, tWave: null, tGone: null, cars: sv.cars, ncars: sv.cars, lead: 0, warned: false };
-    if (sv.through) run.through = true;   // D25: runs through on track 2 (T builds how; plans/proto-tech.md section 2)
+    if (sv.through) run.through = true;   // D25: runs through on track 2 (rrThroughTick)
     const go = rrRoute(S, rrEntry(T, run.from), run.through ? rrExitPos(T, run.to) : rrStopPos(T, run), new Set(), rrLenOf(run, T), rrAccelOf(run, T));
-    run.lead = go ? go.time : 3600;
+    run.lead = go ? (run.through ? rrThroughLead(S, run, go) : go.time) : 3600;
     R.runs.push(run); out.push(run);
   }
   return out;
@@ -3209,8 +3294,52 @@ function rrRunTick(S, run, ev) {
 // D25 (owner T): a through run (track 't2', run.through) comes in from its end at its time, runs along track 2 without
 // stopping and leaves by the other end, stopping short of any switch set against it (the player sets them, in and out)
 // and waiting there for as long as it takes (it is then late). Phases: 'due' > 'out' (on its way, go true) > 'gone';
-// tArr: when its front passed the station's middle (x 0), its lateness = tArr - arr. Foundation stub: it stays 'due'.
-function rrThroughTick(S, run, ev) { }
+// tArr: when its front passed the station's middle (x 0), its lateness = tArr - arr. run.lead is the time from its
+// entry off the map to the station's middle (rrThroughLead), so it passes x 0 at its time when nothing holds it up.
+// Events: rrDue, rrEntered, rrPassed { run, tr, late } (its front at x 0), rrLeft { run, late, through: true } (late:
+// at the station's middle, which pdTick counts), trainSwitchWait (trainTick) while it waits at a switch.
+function rrThroughTick(S, run, ev) {
+  const T = S.track, R = S.rr;
+  if (run.ph === 'due') {
+    const at = rrEnterAt(run);
+    if (!run.warned && S.time >= at - RR.WARN_S) { run.warned = true; ev.push({ t: 'rrDue', run: run.id, mins: Math.max(0, Math.round((at - S.time) / 60)) }); }
+    if (S.time < at) return;
+    const W = rrW(T), slot = W.SLOTS.find(id => S.trains[id] && S.trains[id].owner === 'rr' && trainOff(S.trains[id]) && !R.runs.some(o => o.slot === id && o.ph !== 'gone' && o.ph !== 'cxl'));
+    if (slot === undefined || !rrTrackFree(S, run)) return;
+    const start = rrEntry(T, run.from), go = rrRoute(S, start, rrExitPos(T, run.to), rrAvoid(S, run), rrLenOf(run, T), rrAccelOf(run, T));
+    if (!go || !rrLineClear(S, run, go.r.path)) return;
+    const tr = S.trains[slot];
+    const cars = run.kind === 'pax' ? Array.from({ length: rrNcars(run) }, () => ({ ...W.CARS.coach })) : Array.from({ length: rrNcars(run) }, () => ({ ...W.CARS.boxcar }));
+    tr.consist = [{ ...W.LOCO }].concat(cars).map(c => ({ ...c, id: R.nextStock++ }));
+    Object.assign(tr, { away: false, front: { ...start }, v: 0, m: 1, mode: 'route', route: routeNew(go.r), status: 'Running through', name: run.name });
+    delete tr.swWait;
+    run.slot = slot; run.ncars = tr.consist.length - 1; run.cars = tr.consist.slice(1).map(c => c.id); run.ph = 'out'; run.go = true; run.tIn = S.time; run.path = go.r.path.slice();
+    ev.push({ t: 'rrEntered', run: run.id, tr: slot });
+    return;
+  }
+  const tr = rrTrainOf(S, run);
+  if (!tr || run.ph !== 'out') return;
+  const front = edgeAt(T, T.edges[tr.front.e], tr.front.s).x, east = run.to === 'E';
+  if (run.tArr === null && (east ? front >= 0 : front <= 0)) {
+    run.tArr = S.time;
+    ev.push({ t: 'rrPassed', run: run.id, tr: tr.id, late: Math.max(0, run.tArr - run.arr) });
+  }
+  const rear = leadPos(T, tr, -1), x = edgeAt(T, T.edges[rear.e], rear.s).x, B = rrW(T).BOUNDS;
+  if ((east ? x > B.x1 + RR.GONE_U : x < B.x0 - RR.GONE_U) || (tr.mode === 'idle' && !tr.route)) {
+    const W = rrW(T), i = Math.max(0, W.SLOTS.indexOf(tr.id));
+    Object.assign(tr, { away: true, consist: [], v: 0, mode: 'idle', m: 1, route: null, status: 'Away', name: 'Railroad train', front: { e: W.EDGE_W, s: 4 + 40 * i, d: 1 } });
+    delete tr.swWait;
+    if (run.tArr === null) run.tArr = S.time;
+    run.ph = 'gone'; run.tGone = S.time; run.slot = null;
+    ev.push({ t: 'rrLeft', run: run.id, late: Math.max(0, run.tArr - run.arr), through: true });
+  }
+}
+// D25: a through run's lead: the time from its entry off the map to its front passing the station's middle (x 0), driven
+// as trainTick drives it along its whole route (go: rrRoute from the entry to the exit).
+function rrThroughLead(S, run, go) {
+  const T = S.track, start = rrEntry(T, run.from), x0 = edgeAt(T, T.edges[start.e], start.s).x;
+  return rrRunTime(T, start, go.r, rrLenOf(run, T), rrAccelOf(run, T), Math.abs(x0));
+}
 // Bring a due run in, when it is time and its slot, track and line are free. Returns true if it came in.
 function rrTryEnter(S, run, ev) {
   const T = S.track, R = S.rr;
@@ -3259,9 +3388,15 @@ function rrStatus(S) {
   for (const run of S.rr.runs) {
     const tr = rrTrainOf(S, run);
     if (!tr || trainOff(tr)) continue;
-    if (run.ph === 'stand') tr.status = run.ready ? 'Ready to leave: wave it off' : run.track === 'platform' ? 'Standing at the platform' : 'Standing at the cargo track';
+    if (run.ph === 'stand') tr.status = run.ready ? 'Ready to leave: wave it off' : 'Standing ' + rrAtTrack(run, false);
     else if (run.ph === 'out' && !run.go) tr.status = 'Waiting for the line to clear';
   }
+}
+// Where a run stands, for the texts: 'At the platform' / 'at the platform' (hub), 'At track 1' (prototype: track 1 beside
+// platform 1, track 3 beside platform 2).
+function rrAtTrack(run, cap) {
+  const t = run.track === 't1' ? 'at track 1' : run.track === 't3' ? 'at track 3' : run.track === 't2' ? 'on track 2' : run.track === 'platform' ? 'at the platform' : 'at the cargo track';
+  return cap ? t[0].toUpperCase() + t.slice(1) : t;
 }
 // How far the player is from the engine's side (u, 0 when touching it); Infinity off the map.
 function rrEngineDist(S, tr) {
@@ -3274,6 +3409,9 @@ function rrEngineDist(S, tr) {
 // Where the player stands to wave a train off: beside the middle of its engine on the north (station) side. { x, z } in u.
 function rrWaveSpot(S, trId) {
   const tr = S.trains[trId], p = tr && trainPoses(S.track, tr)[0];
+  // D25: on the platform's side, just clear of the train and between a footbridge's stair and the edge (the walk grid's
+  // row next to the edge stays open beside the stairs): platform 1 for track 1 (north), platform 2 for track 3 (north).
+  if (p && protoWorld(S.track)) return { x: p.x, z: p.z - 1.72 };
   return p ? { x: p.x, z: p.z - 0.5 * SC - 1.6 } : null;
 }
 // Command { t: 'rrWaveOff', tr }: the player sends a standing railroad train on its way (D24 (4)). Provisional rules:
@@ -3283,10 +3421,17 @@ function rrWaveOffCmd(S, c, ev) {
   const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null, run = tr && tr.owner === 'rr' ? rrRunOf(S, tr.id) : null;
   const no = why => { ev.push({ t: 'rrRefused', why, tr: tr ? tr.id : null, run: run ? run.id : null }); };
   if (!run) return no('That is not one of the railroad\'s trains at the station');
-  if (run.ph === 'in') return no(`${run.name} has not stopped at the ${run.track === 'platform' ? 'platform' : 'cargo track'} yet`);
+  if (run.through) return no(`${run.name} runs through without stopping`);
+  if (run.ph === 'in') return no(`${run.name} has not stopped ${rrAtTrack(run, false)} yet`);
   if (run.ph !== 'stand') return no(`${run.name} is already on its way`);
+  if (protoWorld(S.track) && walkBridgeAt(S.track, S.player.x, S.player.z)) return no(`Come down from the footbridge to wave ${run.name} off`);
   if (!(rrEngineDist(S, tr) <= RR.REACH)) return no(`Walk up to ${run.name}'s engine to wave it off`);
-  if (!cgReady(S, run, tr)) return no('Goods for the hub are still aboard: unload them first');
+  if (protoWorld(S.track)) {
+    // D25 (provisional): not while travellers are still in line or boarding at platform 1 (P: ppReady), nor while goods
+    // for the town are aboard at track 3 or the goods for the railroad are not loaded yet (F: pgReady).
+    if (run.kind === 'pax' && !pxReady(S, run, tr)) return no(`Travellers are still waiting at platform 1: punch their tickets before ${run.name} leaves`);
+    if (run.kind === 'freight' && !cgReady(S, run, tr)) return no(`${run.name} is not unloaded and loaded yet at track 3: finish the goods first`);
+  } else if (!cgReady(S, run, tr)) return no('Goods for the hub are still aboard: unload them first');
   rrDepart(S, run, tr, ev, false);
 }
 // Switches each run needs, for the work board, the Next job line and the arrows, in the row shape of ttSwitchNeeds
@@ -3311,7 +3456,7 @@ function rrSwitchNeeds(S) {
   };
   for (const run of R.runs) {
     if (run.ph === 'gone' || run.ph === 'cxl' || (run.day !== today && run.ph === 'due')) continue;
-    if (run.through) continue;   // D25: T lists a through run's switches (rrThroughTick's route)
+    if (run.through) { rrThroughNeeds(S, run, add); continue; }   // D25: a through run's one move, in and out
     const tr = rrTrainOf(S, run), L = tr && !trainOff(tr) ? trainLength(tr) : rrLenOf(run, T), acc = tr && !trainOff(tr) ? rrTrainAccel(tr) : rrAccelOf(run, T);
     const stop = rrStopPos(T, run);
     if (run.ph === 'due') {
@@ -3326,6 +3471,8 @@ function rrSwitchNeeds(S) {
       if (go) add(run, 'out', go.r.needs, go.r.dist, Math.max(run.dep, run.ph === 'out' ? S.time : run.dep), go.time, null, L);
     }
   }
+  // D25: the 'in' and 'out' of a through run's one move: the switches on its way to the station's middle are its way in.
+  for (const x of out) if (x.move === 'thru') x.move = (T.nodes[T.switches[x.sw].node].x < 0) === (rrRunOfId(S, x.run).from === 'W') ? 'in' : 'out';
   out.sort((a, b) => a.byTime - b.byTime || a.run - b.run || a.sw - b.sw);
   const first = {};
   for (const x of out) {
@@ -3335,6 +3482,18 @@ function rrSwitchNeeds(S) {
   }
   return out;
 }
+// D25: a through run's switches (all four straight: rrSwitchNeeds' add, move 'thru' sorted into 'in' and 'out' there):
+// before it comes in, planned along its route from the entry to the exit; on its way, its route's (passed once the
+// whole train is over one). byTime: when its front reaches the switch, at its time at the station's middle.
+function rrThroughNeeds(S, run, add) {
+  const T = S.track, tr = rrTrainOf(S, run), L = tr && !trainOff(tr) ? trainLength(tr) : rrLenOf(run, T), acc = tr && !trainOff(tr) ? rrTrainAccel(tr) : rrAccelOf(run, T);
+  const go = rrRoute(S, rrEntry(T, run.from), rrExitPos(T, run.to), run.ph === 'due' ? rrAvoid(S, run, run.arr) : new Set(), L, acc);
+  if (!go) return;
+  const t0 = (run.ph === 'due' ? Math.max(run.arr, S.time + (run.lead || 0)) : (run.tIn || S.time) + (run.lead || 0)) - (run.lead || 0);
+  if (run.ph === 'due') add(run, 'thru', go.r.needs, go.r.dist, t0, go.time, null, L);
+  else if (run.ph === 'out' && tr && tr.route && tr.route.needs) add(run, 'thru', tr.route.needs, tr.route.total, t0, go.time, tr.route.total - tr.route.left, L);
+}
+const rrRunOfId = (S, id) => S.rr.runs.find(r => r.id === id);
 // The rows of the public schedule board and the work board (UI reads them), one per run of today (and any of
 // yesterday's still at the hub): { run, svc, name, kind, from, to, track, arr, dep (S.time), state ('Due' | 'Coming in' |
 // 'At the platform' | 'At the cargo track' | 'Ready' | 'Left' | 'Cancelled'), late (s: the arrival's until it stands, then
@@ -3347,11 +3506,12 @@ function rrBoardRows(S) {
   const needs = rrSwitchNeeds(S), today = rrDayOf(S);
   return R.runs.filter(r => r.day === today || (r.ph !== 'gone' && r.ph !== 'cxl')).map(run => {
     const tr = rrTrainOf(S, run), on = tr && !trainOff(tr);
-    const state = run.ph === 'due' ? 'Due' : run.ph === 'in' ? 'Coming in' : run.ph === 'stand' ? (run.ready ? 'Ready' : run.track === 'platform' ? 'At the platform' : 'At the cargo track')
-      : run.ph === 'cxl' ? 'Cancelled' : 'Left';
+    const state = run.ph === 'due' ? 'Due' : run.ph === 'in' ? 'Coming in' : run.ph === 'stand' ? (run.ready ? 'Ready' : rrAtTrack(run, true))
+      : run.ph === 'out' && run.through && on ? 'Running through' : run.ph === 'cxl' ? 'Cancelled' : 'Left';
+    // D25: a through run's lateness is at the station's middle (arr = dep), its own until it has passed.
     const arrLate = run.tArr !== null ? Math.max(0, run.tArr - run.arr)
-      : run.ph === 'due' ? Math.max(0, Math.max(S.time, rrEnterAt(run)) + (run.lead || 0) + RR.EARLY_S - run.arr) : run.ph === 'in' ? Math.max(0, S.time - run.arr) : 0;
-    const depLate = run.tWave !== null ? rrDepLate(run) : Math.max(0, S.time - run.dep);
+      : run.ph === 'due' ? Math.max(0, Math.max(S.time, rrEnterAt(run)) + (run.lead || 0) + RR.EARLY_S - run.arr) : run.ph === 'in' || (run.through && run.ph === 'out') ? Math.max(0, S.time - run.arr) : 0;
+    const depLate = run.through ? arrLate : run.tWave !== null ? rrDepLate(run) : Math.max(0, S.time - run.dep);
     const carStatus = on ? tr.consist.slice(1).map(c => ({ stock: c.id, k: c.k, px: pxCarStatus(S, c.id), cg: cgCarStatus(S, c.id) })) : [];
     // Integrator: the counts. Passengers (pxRunStatus): off, riders still to step off; on, travellers aboard who
     // boarded here, or before it stands those waiting for its way. Freight (cgCarStatus, or cgPlan before it is made
@@ -5178,7 +5338,7 @@ function cgTick(S, ev) {
 // Pure math: no three.js, no DOM.
 // N is the row length (cells along x) and NZ the number of rows; X0, Z0 the map's north-west corner.
 // MAXEXP caps one search: a goal cut off by a train on the large map would otherwise search every cell.
-const WALK = { CELL: 0.5, X0: -60 * SC, Z0: -60 * SC, N: 384, NZ: 384, R: 0.25, GRASS: 14, PLATFORM: 10, LOOK: 48, MAXEXP: 60000 };
+const WALK = { CELL: 0.5, X0: -60 * SC, Z0: -60 * SC, N: 384, NZ: 384, R: 0.25, GRASS: 14, PLATFORM: 10, STAIR: 16, LOOK: 48, MAXEXP: 60000 };
 function walkUseDims(T) {
   const w = worldOf(T).walk;
   WALK.X0 = w.x0; WALK.Z0 = w.z0; WALK.N = w.nx; WALK.NZ = w.nz;
@@ -5196,7 +5356,8 @@ function walkGrid(T, cart) {
   if (!G.cart) {
     const cost = G.cost.slice();
     for (const [x0, x1, z0, z1] of carryNoCartRects()) walkStampRect({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, yaw: 0 }, 0, i => { cost[i] = 0; });
-    G.cart = walkGridLayer(G.sig, cost, G.solid, G.sc); // shares the search scratch with the plain grid (memory, D15)
+    if (G.br) for (let i = 0; i < cost.length; i++) if (G.br.id[i]) cost[i] = 0;   // D25: no handcart on the footbridges' stairs
+    G.cart = walkGridLayer(G.sig, cost, G.solid, G.sc, G.br); // shares the search scratch with the plain grid (memory, D15)
     G.cart.trk = G.trk;
   }
   return G.cart;
@@ -5271,9 +5432,56 @@ function walkGridBuild(T) {
   // Track (D15): shut except at the plank crossings.
   const trk = xingTrackMask(T);
   for (let i = 0; i < cost.length; i++) if (trk[i]) cost[i] = 0;
-  const G = walkGridLayer(walkGridSig(T), cost, solid);
+  const br = walkBridgeCells(T, cost, trk);
+  const G = walkGridLayer(walkGridSig(T), cost, solid, undefined, br);
   G.trk = trk;
   return G;
+}
+// D25 (T): the footbridges (PROTO_BRIDGES) on the walk grid. A cell whose centre is in a bridge part (deck or stair
+// flight) is a bridge cell: br.id[i] = the bridge's index + 1 (0: ground). It is open (the deck over the track too:
+// its track cells are not shut), costs WALK.PLATFORM on the deck and WALK.STAIR on a flight, and is never shut by a
+// train passing beneath (walkOpen). A walker steps between a bridge cell and a ground cell only at the foot of a flight
+// (br.foot[i] = 1: the cells within half a cell of the foot), so the ground under a bridge cell is not walked on and a
+// walker's height follows from where it is (walkBridgeY). Other worlds: null.
+function walkBridgeCells(T, cost, trk) {
+  if (!protoWorld(T)) return null;
+  const N = WALK.N, id = new Uint8Array(N * WALK.NZ), foot = new Uint8Array(N * WALK.NZ);
+  PROTO_BRIDGES.forEach((b, k) => {
+    for (const p of b.parts) {
+      for (let j = walkRowOf(p.z0); j <= walkRowOf(p.z1); j++) for (let i = walkCellOf(p.x0); i <= walkCellOf(p.x1); i++) {
+        const c = j * N + i, [cx, cz] = walkCentre(c);
+        if (cx < p.x0 || cx > p.x1 || cz < p.z0 || cz > p.z1) continue;
+        id[c] = k + 1; trk[c] = 0;
+        if (p.k === 'stair') { cost[c] = WALK.STAIR; if (Math.abs(cx - p.xFoot) <= WALK.CELL) foot[c] = 1; }
+        else if (!foot[c]) cost[c] = WALK.PLATFORM;
+      }
+    }
+  });
+  return { id, foot };
+}
+// May a walker step from cell a to the next cell b? Between ground and bridge only at a flight's foot (walkBridgeCells).
+function walkStep(G, a, b) {
+  const B = G.br;
+  if (!B) return true;
+  const x = B.id[a], y = B.id[b];
+  return x === y || (x === 0 ? y > 0 && B.foot[b] === 1 : y === 0 && B.foot[a] === 1);
+}
+// A walker's step from cell a to cell b (one tick: the same or a neighbouring cell): walkStep, or for a diagonal step
+// round either corner (a string-pulled line just past the corner of a flight's foot).
+function walkStepMove(G, a, b) {
+  if (!G.br || walkStep(G, a, b)) return true;
+  const N = WALK.N, ai = a % N, bi = b % N, aj = (a - ai) / N, bj = (b - bi) / N;
+  if (Math.abs(ai - bi) !== 1 || Math.abs(aj - bj) !== 1) return false;
+  const m1 = aj * N + bi, m2 = bj * N + ai;
+  return (walkStep(G, a, m1) && walkStep(G, m1, b)) || (walkStep(G, a, m2) && walkStep(G, m2, b));
+}
+// The bridge cell (x, z) is on: the bridge's index + 1, or 0 (on the ground, or not the prototype).
+function walkBridgeAt(T, x, z) { const G = walkGrid(T); return G.br ? G.br.id[walkCell(x, z)] : 0; }
+// D25: the height (u above the ground) a walker at (x, z) stands at on a footbridge, or null when on the ground (on a
+// platform deck R draws it DECK higher, as before). For the pixel renderer (people at their height) and checks.
+function walkBridgeY(T, x, z) {
+  const k = walkBridgeAt(T, x, z);
+  return k ? protoBridgeYOf(PROTO_BRIDGES[k - 1], x, z) : null;
 }
 // The depots' ticket booths (buildingBooths): their strip and doorway are walked on like the platform, the rest of
 // the depot stays blocked. Open: the cells whose centre is inside a booth rectangle shrunk by the player's radius.
@@ -5290,7 +5498,8 @@ function walkBoothCarve(cost) {
 function walkInBooth(x, z) { return buildingBooths().some(r => walkRectHits(r, -WALK.R, x, z, 0)); }
 // A grid from its costs: connected areas, and the scratch arrays for the searches (sc; shared by the plain and the
 // handcart grid, as every search and train stamp starts afresh by bumping a counter in sc).
-function walkGridLayer(sig, cost, solid, sc) {
+function walkGridLayer(sig, cost, solid, sc, br) {
+  const G0 = { br: br || null };
   const N = WALK.N, NN = N * WALK.NZ;
   // Connected areas over open cells (4 neighbours; a diagonal step needs both side cells open, so this
   // matches what A* can reach). Used to pick a reachable goal without searching the whole map.
@@ -5301,15 +5510,15 @@ function walkGridLayer(sig, cost, solid, sc) {
     let qh = 0, qt = 0; q[qt++] = s0; comp[s0] = nc;
     while (qh < qt) {
       const c = q[qh++], ci = c % N;
-      if (ci < N - 1 && cost[c + 1] && comp[c + 1] < 0) { comp[c + 1] = nc; q[qt++] = c + 1; }
-      if (ci > 0 && cost[c - 1] && comp[c - 1] < 0) { comp[c - 1] = nc; q[qt++] = c - 1; }
-      if (c + N < NN && cost[c + N] && comp[c + N] < 0) { comp[c + N] = nc; q[qt++] = c + N; }
-      if (c - N >= 0 && cost[c - N] && comp[c - N] < 0) { comp[c - N] = nc; q[qt++] = c - N; }
+      if (ci < N - 1 && cost[c + 1] && comp[c + 1] < 0 && walkStep(G0, c, c + 1)) { comp[c + 1] = nc; q[qt++] = c + 1; }
+      if (ci > 0 && cost[c - 1] && comp[c - 1] < 0 && walkStep(G0, c, c - 1)) { comp[c - 1] = nc; q[qt++] = c - 1; }
+      if (c + N < NN && cost[c + N] && comp[c + N] < 0 && walkStep(G0, c, c + N)) { comp[c + N] = nc; q[qt++] = c + N; }
+      if (c - N >= 0 && cost[c - N] && comp[c - N] < 0 && walkStep(G0, c, c - N)) { comp[c - N] = nc; q[qt++] = c - N; }
     }
     nc++;
   }
   sc = sc || { g: new Int32Array(NN), from: new Int32Array(NN), seen: new Uint32Array(NN), q: 0, dyn: new Uint32Array(NN), dq: 0 };
-  return { sig, cost, comp, solid, sc, memo: null };
+  return { sig, cost, comp, solid, sc, memo: null, br: G0.br };
 }
 // Stamps the cells under the trains (vehicle footprint as insideTrain() sees it, which already includes
 // the player's radius). Returns them sorted, as part of the memo key.
@@ -5340,15 +5549,15 @@ function walkTrainAhead(S) {
   }
   return out;
 }
-function walkOpen(G, i) { return G.cost[i] > 0 && G.sc.dyn[i] !== G.sc.dq; }
+function walkOpen(G, i) { return G.cost[i] > 0 && (G.sc.dyn[i] !== G.sc.dq || (G.br !== null && G.br !== undefined && G.br.id[i] > 0)); }   // D25: a train passes under a footbridge
 // Nearest open cell to cell g (by distance in cells, ties by cell index), in connected area k (or any if k < 0).
 function walkNearest(G, g, k) {
-  const N = WALK.N, NZ = WALK.NZ, gi = g % N, gj = (g - gi) / N;
+  const N = WALK.N, NZ = WALK.NZ, gi = g % N, gj = (g - gi) / N, onGround = !!G.br && !G.br.id[g];
   let best = -1, bd = Infinity;
   const tryCell = (i, j) => {
     if (i < 0 || j < 0 || i >= N || j >= NZ) return;
     const c = j * N + i;
-    if (!walkOpen(G, c) || (k >= 0 && G.comp[c] !== k)) return;
+    if (!walkOpen(G, c) || (k >= 0 && G.comp[c] !== k) || (onGround && G.br.id[c])) return;   // D25: the nearest spot on the ground
     const d = (i - gi) * (i - gi) + (j - gj) * (j - gj);
     if (d < bd || (d === bd && c < best)) { bd = d; best = c; }
   };
@@ -5392,9 +5601,10 @@ function walkAStar(G, s, goal) {
       const ni = ci + di, nj = cj + dj;
       if (ni < 0 || nj < 0 || ni >= N || nj >= NZ) continue;
       const n = nj * N + ni;
-      if (!walkOpen(G, n)) continue;
+      if (!walkOpen(G, n) || !walkStep(G, c, n)) continue;
       const diag = di !== 0 && dj !== 0;
       if (diag && (!walkOpen(G, cj * N + ni) || !walkOpen(G, nj * N + ci))) continue; // no cutting corners
+      if (diag && G.br && (G.br.id[c] !== G.br.id[n] || G.br.id[cj * N + ni] !== G.br.id[c] || G.br.id[nj * N + ci] !== G.br.id[c])) continue;   // D25: onto a footbridge only straight
       const ng = g[c] + cost[n] * (diag ? 14 : 10);
       if (seen[n] !== q || ng < g[n]) { seen[n] = q; g[n] = ng; from[n] = c; push(ng + hOf(n), n); }
     }
@@ -5451,6 +5661,8 @@ function walkClear(G, x0, z0, x1, z1) {
     if (i === pi && j === pj) continue;
     if (!walkOpen(G, j * N + i)) return false;
     if (i !== pi && j !== pj && (!walkOpen(G, pj * N + i) || !walkOpen(G, j * N + pi))) return false;
+    if (G.br && (i !== pi && j !== pj ? !(walkStep(G, pj * N + pi, pj * N + i) && walkStep(G, pj * N + i, j * N + i) && walkStep(G, pj * N + pi, j * N + pi) && walkStep(G, j * N + pi, j * N + i))
+      : !walkStep(G, pj * N + pi, j * N + i))) return false;   // D25: onto and off a footbridge only at a flight's foot
     pi = i; pj = j;
   }
   return true;
@@ -5654,7 +5866,9 @@ function playerTick(S, ev, poseCache) {
   const step = (P.tool !== null && P.tool !== undefined ? CFG.TOOL_WALK : CFG.WALK) * DT_MIN, T = S.track;
   // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building or onto
   // track away from a crossing (D15)? A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
-  const into = (x0, z0, x1, z1, bld) => (insideTrain(poses, x1, z1) && !insideTrain(poses, x0, z0))
+  // D25: on a footbridge a train passes beneath; onto or off one only at a flight's foot (walkStep).
+  const into = (x0, z0, x1, z1, bld) => (insideTrain(poses, x1, z1) && !insideTrain(poses, x0, z0) && !walkBridgeAt(T, x1, z1))
+    || (walkGrid(T).br && !walkStepMove(walkGrid(T), walkCell(x0, z0), walkCell(x1, z1)))
     || (!terrainFlatAt(T, x1, z1) && terrainFlatAt(T, x0, z0))
     || (bld && walkInBuilding(T, x1, z1) && !walkInBuilding(T, x0, z0))
     || (bld && walkOnTrack(walkGrid(T), x1, z1) && !walkOnTrack(walkGrid(T), x0, z0));
@@ -9593,7 +9807,7 @@ BLD_LAYOUTS.hub = BLD_LAYOUTS.start
 BLD_LAYOUTS.proto = [
   { id: 'platform1', kind: 'p1deck', x: (PROTO.P1.x0 + PROTO.P1.x1) / 2, z: (PROTO.P1.z0 + PROTO.P1.z1) / 2, yaw: 0 },
   { id: 'platform2', kind: 'p2deck', x: (PROTO.P2.x0 + PROTO.P2.x1) / 2, z: (PROTO.P2.z0 + PROTO.P2.z1) / 2, yaw: 0 },
-  { id: 'station', kind: 'station', x: 0, z: PROTO.P1.z0 - 2.8, yaw: 0 },
+  { id: 'station', kind: 'station', x: PROTO.STATION.x, z: PROTO.STATION.z, yaw: 0 },
   { id: 'storage', kind: 'storage', x: -1, z: PROTO.P2.z0 + 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
   // The shops along the main street (x 0, running north), their fronts on it: the store (west side, facing east) and
   // the saloon (east side, facing west) face each other; the blacksmith further up on the west side (provisional).
@@ -9718,8 +9932,8 @@ const BLD_EXT_M1 = {
   cargodock: [-8.5, 8.5, -1.5, 1.5],    // D24: the hub world's open cargo dock beside the cargo track: 27.2u x 4.8u, flush, a plank deck
   // D25: the prototype's buildings (plans/proto-tech.md), given in true units here / WS like the props. Drawn by the pixel
   // renderer; the 3D renderer draws each as a plain box (bldBoxRecipe) for ?world=proto&view=3d.
-  p1deck: [-17, 17, -3.2, 3.2].map(v => v / WS),          // platform 1: 34u x 6.4u, flush
-  p2deck: [-19, 19, -3.2, 3.2].map(v => v / WS),          // platform 2, the island: 38u x 6.4u, flush on both sides
+  p1deck: [-17, 17, -PROTO.DP1 / 2, PROTO.DP1 / 2].map(v => v / WS),   // platform 1: 34u x 7.4u, flush (T, 2026-11-10: was 6.4u)
+  p2deck: [-19, 19, -PROTO.W2 / 2, PROTO.W2 / 2].map(v => v / WS),     // platform 2, the island: 38u x 7.6u, flush on both sides (was 6.4u)
   station: [-6, 6, -2.8, 2.8].map(v => v / WS),           // the station building behind platform 1
   shop: [-5, 5, -4, 4].map(v => v / WS),                  // the general store, the blacksmith, the saloon: 10u along the street, 8u deep, the front (local +z) on the street
   storage: [-5, 5, -1.2, 1.2].map(v => v / WS),           // the storage shed on platform 2
@@ -12387,6 +12601,10 @@ const DBG_SCENARIOS = {
   start: () => newState(CFG.SEED, 'start'),
   hub: () => newState(CFG.SEED, 'hub'),   // D24: a new game in the hub world
   hubtrains: () => rrDebugScenario(newState(CFG.SEED, 'hub')),   // D24: two railroad trains standing at the platform and the cargo track
+  // D25 (T): the prototype at 09:20 with Passenger 2 standing at track 1 and Freight 1 at track 3; and at 06:45 with
+  // Passenger 1 at track 1 (protoDebugScenario).
+  proto: () => protoDebugScenario(newState(CFG.SEED, 'proto'), 9, 20, ['p2', 'f1']),
+  protop1: () => protoDebugScenario(newState(CFG.SEED, 'proto'), 6, 45, ['p1']),
   willow: () => { const st = newState(CFG.SEED, 'start'); st.player.x = WFORD.x + 18 * SC; st.player.z = WFORD.z - 1.7 * SC; return st; },
   // The train stands on the passing siding, facing west, with switch 1 set to the siding.
   siding: () => {
@@ -15562,8 +15780,11 @@ function protoLayoutExport() {
   const out = { v: 1, note: 'D25 prototype layout, world units (u); see plans/proto-sprites.md', proj: PIX_PROJ, bounds: PROTO.BOUNDS, line: PROTO.LINE,
     tracks: { t1z: r3(-PROTO.D1), t2z: 0, t3z: r3(PROTO.D3), gaugeHalf: CFG.GAUGE_HALF }, edges, switches: sw, buildings: bld,
     shops: PROTO_SHOPS.map(q => ({ id: q.id, bld: q.bld, name: q.name, sign: q.sign, door: [r3(q.door.x), r3(q.door.z)] })),
-    walkway: { ...PROTO.WALKWAY, w: XING.W }, street: PROTO.STREET, schedboard: PROTO.SCHEDBOARD, canopy: { x0: -8, x1: 8, z0: r3((PROTO.P1.z0 + PROTO.P1.z1) / 2 - 2.8), z1: r3((PROTO.P1.z0 + PROTO.P1.z1) / 2 + 1.2), y0: 2.6 },
-    stock: PROTO_STOCK, stops: PROTO.STOP };
+    walkway: { ...PROTO.WALKWAY, w: XING.W }, station: PROTO.STATION, street: PROTO.STREET, schedboard: PROTO.SCHEDBOARD, canopy: { x0: -8, x1: 8, z0: r3((PROTO.P1.z0 + PROTO.P1.z1) / 2 - 2.8), z1: r3((PROTO.P1.z0 + PROTO.P1.z1) / 2 + 1.2), y0: 2.6 },
+    stock: PROTO_STOCK, stops: PROTO.STOP,
+    // D25 (T): the two footbridges (PROTO_BRIDGES): x (the anchor's centre line), the way each platform's flight runs
+    // down ('e' or 'w'), and their parts and walking path with heights, for the art's ground shadows.
+    footbridges: PROTO_BRIDGES.map(b => ({ id: b.id, x: b.x, p1: b.p1, p2: b.p2, top: b.top, under: b.under, parts: b.parts, path: b.path })), fb: PROTO_FB };
   if (prev) worldUse({ world: prev });
   return out;
 }
@@ -15849,6 +16070,7 @@ window.__railhead = {
   // D24: the hub world, the railroad's trains, tickets on board and the freight trains' goods (foundation and stubs).
   rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady,
     rrDebugJump, rrStopPos, rrExitPos, rrEngineDist, rrWaveSpot, rrRunTime, rrTrainOf,   // TR
+    protoDebugScenario, rrThroughTick, rrThroughLead, rrAtTrack, rrEnterAt, rrLineClear,   // D25 (T)
     CG_GOODS, cgLoad, cgOnDepart, cgTick, cgCarStatus, cgPlan, cgBook, cgOnCancel, cgNextFreight, cgFreightAfter, cgHubAboard, cgYardSpot },   // CG
   px: { PX, pxTk, pxCars: (st, pc) => pxCars(st || S, paxStation((st || S).track, 'hub'), pc || ridePoses(st || S)), pxCarStatus, pxRunStatus, pxReady, pxOnArrive, pxOnDepart, pxNearCar },   // D24: tickets on board (PX)
   // D24 (UI): the page side of the station rework (boards, Next job, buttons, cards, tutorial).
@@ -15857,7 +16079,7 @@ window.__railhead = {
     carPax: stock => rrUiCarPax(S, stock), carGoods: stock => rrUiCarGoods(S, stock), standing: () => rrUiStanding(S), ready: (run, tr) => rrUiReady(S, run, tr), tutHubTarget: c => tutHubTarget(S, c) },
   // D25: the prototype (its layout, schedule, stubs and the day) and the pixel renderer.
   proto: { PROTO, PROTO_SW, PROTO_SCHEDULE, PROTO_STOCK, PROTO_SHOPS, RR_WORLDS, rrW, protoStopPos, protoTrackAt, buildProtoWorld, protoLayoutExport,
-    PP, PG, PD, pdCount, pdNewStore, ppLineSpots, ppCarStatus, pgToDeliver, rrThroughTick },
+    PP, PG, PD, pdCount, pdNewStore, ppLineSpots, ppCarStatus, pgToDeliver, rrThroughTick, PROTO_BRIDGES, PROTO_FB, protoBridgeYOf, walkBridgeY, walkBridgeAt, walkStep, walkPlan, walkPoints },
   pix: { PIX, PIX_PROJ, PIX_FONT, pixOn, pixProject, pixUnproject, pixToScreen, pixGroundAt, pixPickTrain, pixSort, pixItem, pixScale, pixScene, pixScreenRect, pixBehind, get stats() { return PIX.stats; },
     get view() { return { vx: PIX.vx, vy: PIX.vy, nw: PIX.nw, nh: PIX.nh, scale: PIX.scale, dpr: PIX.dpr }; },
     get canvas() { return PIX.canvas; }, get ground() { return PIX.ground; } },

@@ -3454,7 +3454,12 @@ const CARGO_TAGS = {
   RAILHEAD: { name: 'Railhead', letter: 'R', col: '#d55e00', shape: 2 },
   OUTSIDE: { name: 'Outside', letter: 'O', col: '#0072b2', shape: 3 },
   ANY: { name: 'Any', letter: 'A', col: '#9a9a9a', shape: 5 },
+  // D25 (F, section "prototype goods"): the prototype's three shops (goods addressed { kind: 'BUSINESS', id: 'store' | ... }).
+  STORE: { name: 'General Store', letter: 'G', col: '#e69f00', shape: 1 },
+  SMITHY: { name: 'Blacksmith', letter: 'B', col: '#56b4e9', shape: 2 },
+  SALOON: { name: 'Saloon', letter: 'S', col: '#cc79a7', shape: 0 },
 };
+const CARGO_SHOP_TAGS = { store: 'STORE', smithy: 'SMITHY', saloon: 'SALOON' };   // D25: the prototype shops' ids to their tags
 const CARGO_CONSIGNEE_KINDS = ['BUSINESS', 'CAMP', 'WAREHOUSE', 'CONSTRUCTION', 'OUTSIDE'];
 const CARGO_CONSUME_REASONS = ['business', 'household', 'construction', 'soldOutside', 'fuel'];
 const CARGO_BAY_CAP = 8;
@@ -3489,6 +3494,7 @@ function itemTag(wb) {
   if (wb.destTownId === 'OUTSIDE' || k === 'OUTSIDE') return 'OUTSIDE';
   if (k === 'CONSTRUCTION' || k === 'CAMP') return 'RAILHEAD';
   if (k === 'WAREHOUSE') return 'HUBWH';
+  if (k === 'BUSINESS' && typeof wb.consignee.id === 'string' && CARGO_SHOP_TAGS[wb.consignee.id]) return CARGO_SHOP_TAGS[wb.consignee.id];   // D25: a prototype shop (older worlds' businesses have number ids)
   return wb.destTownId === 1 ? 'WILLOW' : 'HUB';
 }
 function bayTagMatches(S, b, bay, id) { const t = S.bayTags[b] && S.bayTags[b][bay]; return t === 'ANY' || t === itemTag(S.items.waybill[id]); }
@@ -5763,6 +5769,7 @@ function carryNoCartRects() {
     const k = bldKindOf(at), e = BLD_EXTENTS[k];  // the platforms and the freight shed (yaw 0), straight from the layout's sizes
     if (bldIsPlatform(k) || k === 'freightshed' || k === 'cargodock') out.push([at.x + e[0] - r, at.x + e[1] + r, at.z + e[2] - r, at.z + e[3] + r]);
   }
+  if (BLD_LAYOUT === BLD_LAYOUTS.proto) out.push(...pgNoCartRects());   // D25 (F): across the tracks only by the east walkway, never the footbridges
   return (carryNoCartCache = out);
 }
 const carryNoCartAt = (x, z) => carryNoCartRects().some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1);
@@ -5825,7 +5832,7 @@ function carryPutCmd(S, c, ev) {
     dest = { kind: 'BUSINESS', businessId: c.biz };
   }
   else if (Number.isInteger(c.stock)) {
-    const no = carryCarWhy(S, c.stock);
+    const no = carryCarWhy(S, c.stock) || (protoWorld(S.track) ? pgPutCarWhy(S, held[held.length - 1], c.stock) : null);   // D25 (F): town goods stay, a run takes its load
     if (no) return carryRefuse(ev, no);
     dest = { kind: 'CAR', stockId: c.stock };
   }
@@ -5860,7 +5867,7 @@ function carryToggleTool(S, id, ev) {
 function carryArrive(S, ev, use, evFrom) {
   const P = S.player;
   const spot = use.k === 'pick' ? carryItemSpot(S, use.id) : use.k === 'put' ? carrySpotIn(S, use.dest)
-    : use.k === 'car' ? carryCarDoor(S, use.stock, P.x, P.z) : use.k === 'biz' ? townDoor(use.id) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
+    : use.k === 'car' ? carryCarDoor(S, use.stock, P.x, P.z) : use.k === 'biz' ? townDoor(use.id) : use.k === 'shop' ? pgDoorSpot(use.shop) : { x: S.tools[use.id].x / 100, z: S.tools[use.id].z / 100 };
   P.mode = 'idle'; P.use = null;
   if (!spot || Math.hypot(spot.x - P.x, spot.z - P.z) > CFG.REACH) { if (!ev.slice(evFrom).some(e => e.t === 'blocked')) ev.push({ t: 'blocked' }); return; }
   for (let i = ev.length - 1; i >= evFrom; i--) if (ev[i].t === 'blocked') ev.splice(i, 1); // in reach: not blocked after all
@@ -5868,6 +5875,7 @@ function carryArrive(S, ev, use, evFrom) {
   if (use.k === 'tool') { carryToggleTool(S, use.id, ev); return; }
   if (use.k === 'car') { ev.push({ t: 'reachedCar', stock: use.stock }); return; }
   if (use.k === 'biz') { ev.push({ t: 'reachedBiz', biz: use.id }); return; }
+  if (use.k === 'shop') { pgStartHand(S, use.shop); return; }   // D25 (F): hand the goods in at a prototype shop's door
   P.act = use.k === 'pick' ? { k: 'pick', id: use.id, left: CFG.CARRY_S } : { k: 'put', dest: use.dest, left: CFG.CARRY_S };
 }
 // The end of a pick-up or put-down: the item moves (or the move is refused, if something changed meanwhile).
@@ -5894,7 +5902,7 @@ function carryFinish(S, a, ev) {
     ev.push({ t: 'carryPut', id });
   }
 }
-const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1, biz: 1 };
+const CARRY_USES = { pick: 1, put: 1, tool: 1, car: 1, biz: 1, shop: 1 };
 // ---- Car doors (M1 package 2, builder B4): loading and unloading cars by hand (design-doc 9) ----
 // The player works a car from beside it: a boxcar at the door in the middle of its side, a combine at its
 // baggage door, a flatcar from the nearest point of its side (the edge of the deck). The spot is on the side
@@ -5920,7 +5928,8 @@ function carryCarWhy(S, stockId) {
   if (f.tr.owner === 'rr') {   // D24: the railroad's freight cars are worked while they stand at the cargo track (section "freight trains' goods")
     if (!CARGO_CAR_RULES[f.car.k]) return f.car.k === 'coach' ? 'A coach carries travellers, not freight' : 'An engine carries no freight';
     const run = rrRunOf(S, f.tr.id);
-    if (!run || run.ph !== 'stand' || run.track !== 'cargo') return 'Wait until the train stands at the cargo track';
+    if (protoWorld(S.track)) { if (!run || run.ph !== 'stand' || run.track !== 't3') return 'Wait until the train stands at track 3'; }   // D25 (F): freight at track 3
+    else if (!run || run.ph !== 'stand' || run.track !== 'cargo') return 'Wait until the train stands at the cargo track';
   }
   if (!CARGO_CAR_RULES[f.car.k]) return 'An engine carries no freight';
   if (f.tr.owner === 'overland') return 'The Overland\'s crew is working that car';
@@ -5965,6 +5974,11 @@ function carryActorTick(S, ev, poseCache) {
   if (P.act && (P.act.k === 'pick' || P.act.k === 'put')) {
     P.act.left -= CFG.TICK_GAME_S;
     if (P.act.left <= 0) { const a = P.act; P.act = null; P.mode = 'idle'; carryFinish(S, a, ev); jobAfterCarry(S, a, ev); townAfterCarry(S, a, ev); }
+    return;
+  }
+  if (P.act && P.act.k === 'hand') {   // D25 (F): handing goods in at a prototype shop's door
+    P.act.left -= CFG.TICK_GAME_S;
+    if (P.act.left <= 0) { const shop = P.act.shop; P.act = null; P.mode = 'idle'; pgHandIn(S, shop, ev); }
     return;
   }
   const use = P.use && CARRY_USES[P.use.k] ? P.use : null, x0 = P.x, z0 = P.z, evFrom = ev.length;
@@ -6922,26 +6936,365 @@ function ppPunchCmd(S, c, ev) { ev.push({ t: 'ppRefused', why: 'Nobody is waitin
 // ==== Section: prototype goods (D25) ====
 // Owner: builder F (plans/proto-tech.md section 4). Freight trains stand at track 3 beside platform 2: goods for the
 // town are unloaded into the storage shed's bays (tagged by shop: STORE, SMITHY, SALOON), goods waiting in storage
-// for the railroad (tag OUT) are loaded into the cars. In the evening the day's goods are sorted by shop into the
-// handcart and handed in at the three shops' doors (command { t: 'pgDeliver', shop }). No money, no orders (parked).
+// for the railroad (tag OUTSIDE, drawn 'out') are loaded into the cars. In the evening the day's goods are sorted by
+// shop into the handcart and handed in at the three shops' doors (command { t: 'pgDeliver', shop }). No money, no
+// orders (parked).
 // Reuses the item store (S.items: crates, sacks, barrels in cars, bays, carried, on the ground), the carrying
-// commands, the hand truck and the handcart. The foundation's stubs: empty boxcars, nothing to unload or load.
+// commands (carryPick / carryPut / carryTool / useCar, by hand, hand truck or handcart) and the storage shed's bays.
+// Built (F, 2026-11-10):
+// - Goods: a shop's goods are addressed { kind: 'BUSINESS', id: 'store' | 'smithy' | 'saloon' } (destTownId 0), goods
+//   for the railroad { kind: 'OUTSIDE', id: 'out' }; itemTag gives STORE, SMITHY, SALOON or OUTSIDE (CARGO_TAGS). The
+//   storage shed's 4 bays start tagged STORE, SMITHY, SALOON, OUTSIDE (the player may retag them: setBayTag).
+// - pgNewDay: the goods for the railroad waiting in storage at dawn are topped up to PG.OUT_DAWN (6: 4 for f2, 2 for
+//   f3), in the OUTSIDE bay (overflow: the next bay with room). Goods not delivered yesterday stay where they are.
+// - pgConsist / pgLoad (TR makes the train up, then F loads it once, S.rr.cg.pg.made): boxcars; the run's shop goods
+//   (PG.UNLOAD, the same each day, provisional) shared round the cars, first car first.
+// - Working a car at track 3 (carryCarWhy allows track 't3' in the prototype): goods for the town come off (onto
+//   platform 2 or into the bays) and never go back in (pgPutCarWhy); goods for the railroad go in, as many as the
+//   run takes (its schedule's load), no more.
+// - pgReady: no goods for the town aboard and the run's load aboard (or every good for the railroad there is, if fewer
+//   exist). The wave-off asks it (trains wait until unloaded and loaded, provisional).
+// - pgOnDepart: the goods for the railroad aboard leave (itemConsume 'soldOutside'; no money); goods for the town still
+//   aboard (only if a train is sent off by a debug jump) are set down by the crew into the bays or onto platform 2.
+// - pgTick: pgUnloaded / pgLoaded for every item moved off / onto a car this tick; the figures pdCount 'unloaded' (a
+//   shop's good off a car) and 'loaded' (a good for the railroad leaving in a car, counted as it leaves).
+// - The evening: the player takes the handcart (carryTool), loads the day's goods for the shops into it (6 slots; slot
+//   order is the load order, the atlas' cart slots), wheels it over the east plank walkway (the handcart may not cross
+//   the tracks between the platforms anywhere else: carryNoCartRects, so never by the footbridges' stairs) and along
+//   the main street to a shop's door spot (pgDoorSpot); pgDeliverCmd walks there if needed, then hands in (PG.HAND_S)
+//   every carried good for that shop (itemConsume 'business'), pgDelivered per item, pdCount 'delivered'. Goods for
+//   another shop stay in the cart: each shop takes only its own (nothing for it aboard: pgRefused).
+// - For the screens: pgToDeliver (by shop), pgCarStatus (a car), pgCartStatus (what the player carries, by shop),
+//   pgRunGoods (a run's goods to unload and load). For the renderer: pgDrawList (every good on the map with its
+//   kind, tag and place), pgCartPose, pgShedOpen.
+// S.rr.cg.pg (optional, made by pgNewDay): { made: [run ids loaded], delivered: { store, smithy, saloon } (all days) }.
 // Events (agreed names): pgUnloaded { run, id }, pgLoaded { run, id }, pgDelivered { shop, id }, pgRefused { why }.
 // Figures for the summary: pdCount(S, 'unloaded' | 'loaded' | 'delivered', n).
 const PG = {
   TAGS: { STORE: 'store', SMITHY: 'smithy', SALOON: 'saloon', OUT: null },   // goods tags to PROTO_SHOPS ids (OUT: for the railroad)
+  // The storage shed's bays at the start (one per shop and one for the railroad's goods), west to east.
+  BAY_TAGS: ['STORE', 'SMITHY', 'SALOON', 'OUTSIDE'],
+  SHED: 'storage',
+  // What each freight run brings for the shops (provisional, the same every day; plans/proto-tech.md section 4):
+  // [shop, commodity]. Crates, sacks and barrels only (they have carried sprites).
+  UNLOAD: {
+    f1: [['store', 'flour'], ['store', 'tinned'], ['store', 'coffee'], ['smithy', 'iron'], ['smithy', 'tools'], ['saloon', 'whiskey']],
+    f3: [['store', 'flour'], ['smithy', 'iron'], ['saloon', 'whiskey'], ['saloon', 'meat']],
+  },
+  // The goods for the railroad waiting in storage at dawn (6: f2 takes 4, f3 2), by commodity (provisional).
+  OUT_DAWN: ['grain', 'grain', 'furniture', 'furniture', 'grain', 'furniture'],
+  HAND_S: 12,        // handing the goods for a shop in at its door (game seconds, as a put-down)
+  SHED_NEAR: 5,      // the storage shed's doors stand open while the player is within this of them (u), or a freight train stands at track 3
 };
-function pgNewDay(S, day, ev) { }                       // the goods for the railroad waiting in storage at dawn
-function pgPlan(S, run) { return { cars: [], units: [], lines: [] }; }
-function pgConsist(S, run) { const n = Number.isInteger(run.cars) ? run.cars : (PROTO_SCHEDULE.find(v => v.id === run.svc) || {}).cars || 3; return Array.from({ length: n }, () => ({ ...PROTO_STOCK.cars.boxcar })); }
-function pgLoad(S, run, tr, ev) { return { cars: 0, items: 0 }; }
-function pgReady(S, run, tr) { return true; }
-function pgOnDepart(S, run, tr, ev) { return { sold: 0, paid: 0, setDown: 0 }; }
-function pgCarStatus(S, stock) { return null; }
-function pgTick(S, ev) { }
-// Goods still to deliver today, by shop id: { store: n, smithy: n, saloon: n }.
-function pgToDeliver(S) { return { store: 0, smithy: 0, saloon: 0 }; }
-function pgDeliverCmd(S, c, ev) { ev.push({ t: 'pgRefused', why: 'Nothing to hand in here' }); }
+const pgShop = id => PROTO_SHOPS.find(q => q.id === id) || null;
+// The shop a waybill is addressed to ('store', 'smithy', 'saloon'), or null (goods for the railroad, or not a shop's).
+function pgShopOf(wb) { return wb && wb.consignee && wb.consignee.kind === 'BUSINESS' && typeof wb.consignee.id === 'string' && pgShop(wb.consignee.id) ? wb.consignee.id : null; }
+// The tag drawn on a good (the atlas' tag/<x> and goods/<kind>/carried/<x>): 'store', 'smithy', 'saloon', 'out' or 'any'.
+function pgTagOf(S, id) { const wb = S.items.waybill[id], s = pgShopOf(wb); return s || (itemTag(wb) === 'OUTSIDE' ? 'out' : 'any'); }
+// A schedule entry for a run (run entry: by its svc; a schedule entry itself: as is).
+function pgSvc(run) { return PROTO_SCHEDULE.find(v => v.id === (run.svc || run.id)) || null; }
+function pgStore(S) { const C = S.rr.cg; if (!C.pg) C.pg = { made: [], delivered: { store: 0, smithy: 0, saloon: 0 } }; return C.pg; }
+const pgWb = (commodity, shop) => shop
+  ? { commodity, originTownId: 'OUTSIDE', destTownId: 0, consignee: { kind: 'BUSINESS', id: shop }, contractId: null, due: null }
+  : { commodity, originTownId: 0, destTownId: 'OUTSIDE', consignee: { kind: 'OUTSIDE', id: 'out' }, contractId: null, due: null };
+// A bay of the storage shed for a tag (its tagged bay, else the first with room), or -1 when every bay is full.
+function pgBayFor(S, tag) {
+  const tags = S.bayTags[PG.SHED] || [], n = BLD_BAYS[PG.SHED] ? BLD_BAYS[PG.SHED].bays.length : 0, room = b => itemsAt(S, { kind: 'BAY', buildingId: PG.SHED, bay: b }).length < CARGO_BAY_CAP;
+  for (let b = 0; b < n; b++) if (tags[b] === tag && room(b)) return b;
+  for (let b = 0; b < n; b++) if (room(b)) return b;
+  return -1;
+}
+// The goods for the railroad alive anywhere but in a car.
+function pgOutWaiting(S) {
+  const I = S.items, out = [];
+  for (let i = 0; i < I.next; i++) if (I.alive[i] && I.where[i].kind !== 'CAR' && itemTag(I.waybill[i]) === 'OUTSIDE') out.push(i);
+  return out;
+}
+// The start of each prototype day (and of a new game, day 0): the goods for the railroad waiting in storage at dawn.
+function pgNewDay(S, day, ev) {
+  if (!S.rr || !BLD_BAYS[PG.SHED]) return;
+  const first = !S.rr.cg.pg, G = pgStore(S);
+  if (first && S.bayTags[PG.SHED]) S.bayTags[PG.SHED] = PG.BAY_TAGS.slice(0, S.bayTags[PG.SHED].length);
+  G.made = G.made.filter(id => S.rr.runs.some(r => r.id === id));
+  for (let k = pgOutWaiting(S).length; k < PG.OUT_DAWN.length; k++) {
+    const b = pgBayFor(S, 'OUTSIDE');
+    if (b < 0) break;
+    itemCreate(S, pgWb(PG.OUT_DAWN[k], null), { kind: 'BAY', buildingId: PG.SHED, bay: b }, ev);
+  }
+}
+// What a freight run brings and takes: { cars: [{ k, units: [unit indexes] }], units: [{ c, shop }], lines: [], load }.
+function pgPlan(S, run) {
+  const sv = pgSvc(run) || {}, n = Number.isInteger(run.ncars) ? run.ncars : Number.isInteger(run.cars) ? run.cars : sv.cars || 3;
+  const units = (PG.UNLOAD[sv.id] || []).map(([shop, c]) => ({ c, shop }));
+  const cars = Array.from({ length: n }, () => ({ k: 'boxcar', units: [] }));
+  units.forEach((u, i) => cars[i % n].units.push(i));
+  return { cars, units, lines: [], load: sv.load || 0 };
+}
+function pgConsist(S, run) { return pgPlan(S, run).cars.map(() => ({ ...PROTO_STOCK.cars.boxcar })); }
+// The train is made up (TR, rrTryEnter): its shop goods are put in its cars, once per run. Events itemCreated.
+function pgLoad(S, run, tr, ev) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr) return { cars: 0, items: 0 };
+  const G = pgStore(S);
+  if (run.id !== undefined && run.day !== undefined && G.made.includes(run.id)) return { cars: 0, items: 0 };
+  const plan = pgPlan(S, run), cars = tr.consist.filter(c => CARGO_CAR_RULES[c.k]), used = new Set();
+  let items = 0;
+  plan.cars.forEach((p, j) => {
+    for (const i of p.units) {
+      const u = plan.units[i];
+      for (const car of [cars[j]].concat(cars).filter(Boolean)) {
+        if (cargoRoomProblem(S, COMMODITIES[u.c].type, { kind: 'CAR', stockId: car.id }, -1, u.c)) continue;
+        const r = itemCreate(S, pgWb(u.c, u.shop), { kind: 'CAR', stockId: car.id }, ev || null);
+        if (r.ok) { items++; used.add(car.id); break; }
+      }
+    }
+  });
+  if (run.id !== undefined && run.day !== undefined) G.made.push(run.id);
+  return { cars: used.size, items };
+}
+// Goods in this train's cars: { town (for the shops), out (for the railroad), ids }.
+function pgAboard(S, tr) {
+  const cars = new Set(tr.consist.map(c => c.id)), I = S.items, o = { town: 0, out: 0, ids: [] };
+  for (let i = 0; i < I.next; i++) { const w = I.where[i]; if (w && w.kind === 'CAR' && cars.has(w.stockId)) { o.ids.push(i); if (itemTag(I.waybill[i]) === 'OUTSIDE') o.out++; else o.town++; } }
+  return o;
+}
+// How many goods for the railroad this run must take before it may leave: its load, or fewer if fewer exist.
+function pgNeed(S, run, tr) { const sv = pgSvc(run), load = sv && sv.load || 0; return Math.min(load, pgAboard(S, tr).out + pgOutWaiting(S).length); }
+// A run's goods for the screens: { unload (still aboard for the town), unloaded (brought, off now), load (to take), loaded (aboard) }.
+function pgRunGoods(S, run) {
+  const sv = pgSvc(run) || {}, tr = rrTrainOf(S, run), a = tr && !trainOff(tr) ? pgAboard(S, tr) : { town: 0, out: 0 };
+  const brought = (PG.UNLOAD[sv.id] || []).length, standing = run.ph === 'stand' || run.ph === 'in';
+  return { unload: standing ? a.town : run.ph === 'due' ? brought : 0, unloaded: standing ? brought - a.town : run.ph === 'due' ? 0 : brought, load: sv.load || 0, loaded: a.out };
+}
+function pgReady(S, run, tr) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr || trainOff(tr)) return true;
+  const a = pgAboard(S, tr);
+  return a.town === 0 && a.out >= pgNeed(S, run, tr);
+}
+// Why this carried good may not go into this car, or null (goods for the town stay here; a run takes its load only).
+function pgPutCarWhy(S, id, stock) {
+  const f = carryCarOf(S, stock), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+  if (itemTag(S.items.waybill[id]) !== 'OUTSIDE') return 'Goods for the town stay here: put them in the storage shed';
+  if (!run) return null;
+  const sv = pgSvc(run), load = sv && sv.load || 0;
+  if (!load) return `${run.name} takes no goods on here`;
+  if (pgAboard(S, f.tr).out >= load) return `${run.name} takes only ${load} goods for the railroad`;
+  return null;
+}
+// The train leaves: its goods for the railroad go with it (no money); goods for the town still aboard are set down.
+function pgOnDepart(S, run, tr, ev) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr) return { sold: 0, paid: 0, setDown: 0 };
+  let sold = 0, down = 0;
+  for (const id of pgAboard(S, tr).ids) {
+    if (itemTag(S.items.waybill[id]) === 'OUTSIDE') { if (itemConsume(S, id, 'soldOutside', ev).ok) sold++; continue; }
+    const b = pgBayFor(S, itemTag(S.items.waybill[id]));
+    const to = b >= 0 ? { kind: 'BAY', buildingId: PG.SHED, bay: b } : { kind: 'GROUND', x: Math.round((PROTO.P2.x0 + 2 + down * 0.8) * 100), z: Math.round((PROTO.P2.z1 - 1) * 100) };
+    if (itemMove(S, id, to, ev).ok) down++;
+  }
+  if (sold) pdCount(S, 'loaded', sold);
+  return { sold, paid: 0, setDown: down };
+}
+// For the car panel and the screens: { stock, k, run, items, town, out, want (goods for the railroad still to load), used, cap, why } or null.
+function pgCarStatus(S, stock) {
+  const f = carryCarOf(S, stock);
+  if (!f) return null;
+  const R = CARGO_CAR_RULES[f.car.k], ids = itemsAt(S, { kind: 'CAR', stockId: stock }), run = f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+  const out = ids.filter(id => itemTag(S.items.waybill[id]) === 'OUTSIDE').length;
+  const want = run && run.kind === 'freight' ? Math.max(0, pgNeed(S, run, f.tr) - pgAboard(S, f.tr).out) : 0;
+  return { stock, k: f.car.k, run: run ? run.id : null, items: ids.length, town: ids.length - out, hub: ids.length - out, out, want,
+    used: R ? ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0) : 0, cap: R ? R.cap : 0, why: carryCarWhy(S, stock) };
+}
+// After the actors, each tick: what came off and went onto the cars.
+function pgTick(S, ev) {
+  if (!S.rr || !S.rr.on) return;
+  const n = ev.length;
+  for (let k = 0; k < n; k++) {
+    const e = ev[k];
+    if (e.t !== 'itemMoved') continue;
+    const off = e.from && e.from.kind === 'CAR', on = e.to && e.to.kind === 'CAR';
+    if (!off && !on) continue;
+    const f = carryCarOf(S, (on ? e.to : e.from).stockId), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+    if (off && !on) {
+      ev.push({ t: 'pgUnloaded', run: run ? run.id : null, id: e.id });
+      if (pgShopOf(S.items.waybill[e.id])) pdCount(S, 'unloaded');
+    } else if (on && !off) ev.push({ t: 'pgLoaded', run: run ? run.id : null, id: e.id });
+  }
+}
+// Goods still to deliver, by shop id: { store: n, smithy: n, saloon: n } (everything alive addressed to a shop: in the
+// cars, the bays, on the ground or carried).
+function pgToDeliver(S) {
+  const out = { store: 0, smithy: 0, saloon: 0 }, I = S.items;
+  for (let i = 0; i < I.next; i++) { if (!I.alive[i]) continue; const s = pgShopOf(I.waybill[i]); if (s) out[s]++; }
+  return out;
+}
+// What the player carries (hands, hand truck or handcart), for the screens: { carrier, cap, slots: [{ slot, id, kind,
+// tag }], byShop: { store, smithy, saloon, out } }.
+function pgCartStatus(S) {
+  const carrier = carryCarrier(S), byShop = { store: 0, smithy: 0, saloon: 0, out: 0 };
+  const slots = carryHeld(S).map(id => { const tag = pgTagOf(S, id); if (byShop[tag] !== undefined) byShop[tag]++; return { slot: S.items.where[id].slot, id, kind: itemType(S, id), tag }; });
+  return { carrier, cap: CARGO_CARRY_CAP[carrier], slots, byShop };
+}
+// A shop's door spot: { x, z } where the player (and the handcart) stands to hand goods in (PROTO_SHOPS: 0.9u out from
+// the front's middle, on the street's edge), and dx, dz: the door itself (the atlas' extra door spot, when given).
+function pgDoorSpot(shopId) {
+  const sh = pgShop(shopId);
+  if (!sh) return null;
+  const at = BLD_LAYOUTS.proto.find(a => a.id === sh.bld), A = typeof PIX_ATLAS !== 'undefined' && PIX_ATLAS.extra ? PIX_ATLAS.extra['bld/' + sh.bld] : null;
+  const d = A && Array.isArray(A.door) ? Math.abs(A.door[0]) : 4;   // the art's door: this far out along the shop's facing
+  return { x: sh.door.x, z: sh.door.z, dx: at.x + d * Math.sin(at.yaw), dz: at.z + d * Math.cos(at.yaw) };
+}
+// Command { t: 'pgDeliver', shop }: walk to the shop's door spot (if not already there) and hand in every carried good
+// for that shop. Refused when the player carries nothing for it.
+function pgDeliverCmd(S, c, ev) {
+  const sh = pgShop(c.shop), refuse = why => ev.push({ t: 'pgRefused', why, shop: c.shop });
+  if (!sh) return refuse('There is no such shop');
+  const held = carryHeld(S), mine = held.filter(id => pgShopOf(S.items.waybill[id]) === sh.id);
+  if (!held.length) return refuse(`You are not carrying anything for the ${sh.name}`);
+  if (!mine.length) return refuse(`Nothing you carry is for the ${sh.name}`);
+  const P = S.player, d = pgDoorSpot(sh.id);
+  if (Math.hypot(d.x - P.x, d.z - P.z) <= CFG.REACH) { pgStartHand(S, sh.id); return; }
+  carryWalkTo(S, d.x, d.z, { k: 'shop', shop: sh.id });
+}
+function pgStartHand(S, shop) { const P = S.player, d = pgDoorSpot(shop); P.mode = 'idle'; P.use = null; P.f = Math.atan2(d.dx - P.x, d.dz - P.z); P.act = { k: 'hand', shop, left: PG.HAND_S }; }
+// The end of a hand-in (carryActorTick): the goods for that shop leave the cart, delivered.
+function pgHandIn(S, shop, ev) {
+  const G = pgStore(S), d = pgDoorSpot(shop), P = S.player;
+  if (Math.hypot(d.x - P.x, d.z - P.z) > CFG.REACH + 0.25) { ev.push({ t: 'pgRefused', why: 'The shop door is out of reach now', shop }); return 0; }
+  let n = 0;
+  for (const id of carryHeld(S)) {
+    if (pgShopOf(S.items.waybill[id]) !== shop) continue;
+    if (!itemConsume(S, id, 'business', ev).ok) continue;
+    n++; G.delivered[shop] = (G.delivered[shop] || 0) + 1;
+    ev.push({ t: 'pgDelivered', shop, id });
+  }
+  if (n) pdCount(S, 'delivered', n);
+  return n;
+}
+// The handcart may not cross the tracks between the platforms anywhere but at the east plank walkway (a cart cannot
+// climb the footbridges' stairs): the corridor between platform 1 and platform 2, west of the walkway (carryNoCartRects).
+function pgNoCartRects() {
+  const P = PROTO, x1 = P.WALKWAY.x - XING.W / 2 - 0.3;
+  return [[P.BOUNDS.x0, x1, P.P1.z1 + 0.05, P.P2.z0 - 0.05]];
+}
+// ---- For the renderer (R): goods, the handcart and the storage shed ----
+// Every good on the map, as plain data: [{ id, kind (item type: crate, sack, barrel, ...), tag ('store' | 'smithy' |
+// 'saloon' | 'out' | 'any'), at ('bay' | 'ground' | 'hand' | 'truck' | 'cart' | 'car'), x, z (u), y (u above the
+// ground or deck; for a bay its stack height), slot (bay slot 0..7 or carried slot), stock (a car's) }].
+// Carried goods: R draws goods/<kind>/carried(/<tag>) at the agent's hands (PIX_HANDS) for 'hand', on the hand truck
+// or at the cart's slot (atlas extra cartSlots) for 'truck' and 'cart'. In a car: shown in an open boxcar door, if at all.
+function pgDrawList(S) {
+  const I = S.items, out = [];
+  for (let id = 0; id < I.next; id++) {
+    const w = I.where[id];
+    if (!w || !I.alive[id]) continue;
+    const o = { id, kind: itemType(S, id), tag: pgTagOf(S, id) };
+    if (w.kind === 'GROUND') Object.assign(o, { at: 'ground', x: w.x / 100, z: w.z / 100, y: 0 });
+    else if (w.kind === 'BAY' && BLD_BAYS[w.buildingId]) {
+      const b = BLD_BAYS[w.buildingId].bays[w.bay], slot = itemsAt(S, { kind: 'BAY', buildingId: w.buildingId, bay: w.bay }).indexOf(id);
+      Object.assign(o, { at: 'bay', x: b.x + (slot & 1 ? 0.38 : -0.38), z: b.z + (slot & 2 ? 0.32 : -0.32), y: (slot >> 2) * 0.6, slot });
+    } else if (w.kind === 'CARRIED' && w.actorId === 'player') Object.assign(o, { at: w.carrier === 'HAND' ? 'hand' : w.carrier === 'HANDTRUCK' ? 'truck' : 'cart', x: S.player.x, z: S.player.z, y: 0, slot: w.slot });
+    else if (w.kind === 'CAR') { const f = carryCarOf(S, w.stockId); if (!f || trainOff(f.tr)) continue; Object.assign(o, { at: 'car', stock: w.stockId }); }
+    else continue;
+    out.push(o);
+  }
+  return out;
+}
+// Where the hand truck and the handcart are, for drawing: [{ id, k, x, z, dir ('se' | 'ne' | 'sw' | 'nw'), pushed,
+// loaded }]: parked at its spot, or pushed in front of the player (the atlas' cart pusher offset, 1.2u for the truck).
+function pgCartPose(S, px, pz) {
+  const P = S.player, out = [];
+  if (px === undefined) { px = P.x; pz = P.z; }
+  const dirOf = (dx, dz) => Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 'se' : 'nw') : (dz >= 0 ? 'sw' : 'ne');
+  for (const t of S.tools || []) {
+    const pushed = P.tool === t.id;
+    let x = t.x / 100, z = t.z / 100, dir;
+    if (pushed) {
+      const fx = Math.sin(P.f), fz = Math.cos(P.f);
+      dir = dirOf(fx, fz);
+      const ex = typeof PIX_ATLAS !== 'undefined' && PIX_ATLAS.extra && PIX_ATLAS.extra['cart/' + dir], off = t.k === 'cart' && ex && ex.pusher ? Math.hypot(ex.pusher[0], ex.pusher[1]) : 1.2;
+      const ux = dir === 'se' ? 1 : dir === 'nw' ? -1 : 0, uz = dir === 'sw' ? 1 : dir === 'ne' ? -1 : 0;
+      x = px + ux * off; z = pz + uz * off;
+      if (walkInBuilding(S.track, x, z)) { x = px - ux * off; z = pz - uz * off; }   // pushed up to a wall (a bay, a shop door): drawn behind the player instead
+    } else { const a = t.yaw / 256 * Math.PI * 2; dir = dirOf(Math.cos(a), Math.sin(a)); }
+    out.push({ id: t.id, k: t.k, x, z, dir, pushed, loaded: pushed && carryHeld(S).length > 0 });
+  }
+  return out;
+}
+// The storage shed's doors stand open (the atlas' bld/storage_open) while a freight train stands at track 3 or the
+// player is near its bays.
+function pgShedOpen(S) {
+  if (S.rr && S.rr.runs.some(r => r.track === 't3' && r.ph === 'stand')) return true;
+  const B = BLD_BAYS[PG.SHED];
+  return !!B && B.bays.some(b => Math.hypot(b.x - S.player.x, b.z - S.player.z) < PG.SHED_NEAR);
+}
+// Placeholder drawing for the goods, the hand truck, the handcart and the storage shed in the pixel view, with the
+// atlas' sprites where they exist (called by pixScene; R may replace it with its own drawing from pgDrawList,
+// pgCartPose and pgShedOpen). Returns pixItems.
+const PG_IMG = {};
+function pgSprite(g, key, x, y, z, dx, dy) {
+  const A = typeof PIX_ATLAS !== 'undefined' ? PIX_ATLAS : null, f = A && A.frames[key];
+  if (!f) return false;
+  let img = PG_IMG[f[0]];
+  if (!img) { img = PG_IMG[f[0]] = new Image(); img.src = A.sheets[f[0]]; }
+  if (!img.complete || !img.naturalWidth) return false;
+  const p = pixProject(x, y, z);
+  g.drawImage(img, f[1], f[2], f[3], f[4], Math.round(p.x - PIX.vx - f[5] + (dx || 0)), Math.round(p.y - PIX.vy - f[6] + (dy || 0)), f[3], f[4]);
+  return true;
+}
+function pgPixItems(S, alpha) {
+  const out = [], C = PIX.COL, dy = pixDeckY(), deck = (x, z) => (bldDeckInside(x, z) > 0 ? dy : 0);
+  const TAGC = { store: '#e69f00', smithy: '#56b4e9', saloon: '#cc79a7', out: '#0072b2', any: '#9a9a9a' };
+  const Pl = S.player, px = lerp(prevPlayer.x, Pl.x, alpha), pz = lerp(prevPlayer.z, Pl.z, alpha);
+  const ex = k => (typeof PIX_ATLAS !== 'undefined' && PIX_ATLAS.extra && PIX_ATLAS.extra[k]) || {};
+  const good = (g, o, x, y, z, sx, sy) => {
+    if (pgSprite(g, 'goods/' + o.kind, x, y, z, sx, sy)) { const t = ex('goods/' + o.kind).tag_at || [-2, -2]; pgSprite(g, 'tag/' + o.tag, x, y, z, (sx || 0) + t[0], (sy || 0) + t[1]); return; }
+    const p = pixProject(x, y, z), X = Math.round(p.x - PIX.vx + (sx || 0)), Y = Math.round(p.y - PIX.vy + (sy || 0));
+    pixBox(g, x + (sx || 0) / 16, z - (sx || 0) / 16, 0, 0.6, 0.6, y - (sy || 0) / 8, y - (sy || 0) / 8 + 0.5, C.ochre);
+    g.fillStyle = TAGC[o.tag]; g.fillRect(X - 1, Y - 5, 3, 3);
+  };
+  // The storage shed (closed or open) on platform 2.
+  const shed = buildingFootprints().find(f => f.id === PG.SHED), open = pgShedOpen(S);
+  if (shed) {
+    const x0 = shed.x - shed.w / 2, x1 = shed.x + shed.w / 2, z0 = shed.z - shed.d / 2, z1 = shed.z + shed.d / 2;
+    out.push(pixItem(x0, x1, z0, z1, dy, dy + 3.2, g => {
+      if (pgSprite(g, open ? 'bld/storage_open' : 'bld/storage', shed.x, dy, shed.z) || pgSprite(g, 'bld/storage', shed.x, dy, shed.z)) return;
+      pixBox(g, shed.x, shed.z, 0, x1 - x0, z1 - z0, dy, dy + 1.9, [C.wall[1], C.wall[2], C.deckFace]);
+      pixBox(g, shed.x, shed.z, 0, x1 - x0, (z1 - z0) * 0.98, dy + 1.9, dy + 3, C.roof);
+      if (open) for (const b of BLD_BAYS[PG.SHED].bays) pixBox(g, b.x, z1 - 0.02, 0, 1.2, 0.04, dy, dy + 1.6, [C.ink, C.ink, C.ink]);
+    }));
+  }
+  // The hand truck and the handcart, with what they carry.
+  const list = pgDrawList(S);
+  for (const t of pgCartPose(S, px, pz)) {
+    const ty = deck(t.x, t.z), load = t.pushed ? list.filter(o => o.at === (t.k === 'cart' ? 'cart' : 'truck')) : [];
+    out.push(pixItem(t.x - 0.8, t.x + 0.8, t.z - 0.8, t.z + 0.8, ty, ty + 1, g => {
+      if (t.k === 'cart') {
+        if (!pgSprite(g, 'cart/' + t.dir + (load.length ? '/loaded' : ''), t.x, ty, t.z) && !pgSprite(g, 'cart/' + t.dir, t.x, ty, t.z)) pixBox(g, t.x, t.z, t.dir === 'se' || t.dir === 'nw' ? 0 : Math.PI / 2, 1.6, 1.0, ty + 0.3, ty + 0.7, C.red);
+        const slots = ex('cart/' + t.dir).cartSlots || [[2, -2], [6, -4], [-2, -4], [2, -6], [-6, -6], [-2, -8]];
+        for (const o of load.sort((a, b) => b.slot - a.slot)) { const s = slots[o.slot] || [0, -4]; good(g, o, t.x, ty, t.z, s[0], s[1]); }
+      } else {
+        pixBox(g, t.x, t.z, 0, 0.5, 0.5, ty, ty + 1.0, C.iron);
+        load.forEach(o => good(g, o, t.x, ty + 0.15 + o.slot * 0.5, t.z));
+      }
+    }));
+  }
+  // Goods in the bays, on the ground and in the player's hands.
+  for (const o of list) {
+    if (o.at === 'bay' || o.at === 'ground') {
+      const y = deck(o.x, o.z) + o.y;
+      out.push(pixItem(o.x - 0.35, o.x + 0.35, o.z - 0.35, o.z + 0.35, y, y + 0.6, g => good(g, o, o.x, y, o.z)));
+    } else if (o.at === 'hand') {
+      const y = deck(px, pz);
+      out.push(pixItem(px - 0.25, px + 0.27, pz - 0.25, pz + 0.27, y, y + 1.76, g => {   // the player's box, a hair nearer the viewer: drawn over the body
+        if (pgSprite(g, 'goods/' + o.kind + '/carried' + (o.tag === 'out' || o.tag === 'any' ? '' : '/' + o.tag), px, y, pz, 0, -9) || pgSprite(g, 'goods/' + o.kind + '/carried', px, y, pz, 0, -9)) return;
+        good(g, o, px, y + 0.9, pz);
+      }));
+    }
+  }
+  return out;
+}
 
 // ==== Section: prototype day (D25) ====
 // Owner: builder U (the sim side of the day is small; plans/proto-tech.md section 5). The prototype's day, the same
@@ -15488,7 +15841,7 @@ const PIX_BLD_H = { station: 4.5, shop: 5, storage: 3, lamp: 2.4, schedboard: 2.
 function pixScene(alpha) {
   const C = PIX.COL, out = [], dy = pixDeckY();
   for (const f of buildingFootprints()) {
-    if (f.flush) continue;
+    if (f.flush || f.kind === 'storage') continue;   // the storage shed: pgPixItems (F) draws it, open or closed
     const h = PIX_BLD_H[f.kind] || 1.2, lift = f.kind === 'storage' || f.kind === 'lamp' ? dy : 0, turned = Math.abs(Math.sin(f.yaw || 0)) > 0.5;
     const ww = turned ? f.d : f.w, dd = turned ? f.w : f.d, x0 = f.x - ww / 2, z0 = f.z - dd / 2;
     const cols = f.kind === 'shop' ? C.wall : f.kind === 'lamp' ? C.iron : [C.wall[1], C.wall[2], C.deckFace];
@@ -15532,17 +15885,9 @@ function pixScene(alpha) {
   // The player: a small figure (body and head), on a deck 3 px up.
   const Pl = S.player, px = lerp(prevPlayer.x, Pl.x, alpha), pz = lerp(prevPlayer.z, Pl.z, alpha), py = bldDeckInside(px, pz) > 0 ? dy : 0;
   out.push(pixItem(px - 0.25, px + 0.25, pz - 0.25, pz + 0.25, py, py + 1.75, g => { pixBox(g, px, pz, 0, 0.5, 0.4, py, py + 1.35, C.navy); pixBox(g, px, pz, 0, 0.36, 0.36, py + 1.35, py + 1.75, [C.skin, C.skin, C.skin]); }));
-  // Goods: in the storage bays and on the ground, a small crate each.
-  const I = S.items;
-  for (let id = 0; id < I.next; id++) {
-    const w = I.where[id];
-    if (!w || !I.alive[id]) continue;
-    let x, z, y = 0;
-    if (w.kind === 'GROUND') { x = w.x / 100; z = w.z / 100; y = bldDeckInside(x, z) > 0 ? dy : 0; }
-    else if (w.kind === 'BAY' && BLD_BAYS[w.buildingId]) { const b = BLD_BAYS[w.buildingId].bays[w.bay]; x = b.x; z = b.z; y = dy + 0.6 * (itemsAt(S, { kind: 'BAY', buildingId: w.buildingId, bay: w.bay }).indexOf(id)); }
-    else continue;
-    out.push(pixItem(x - 0.35, x + 0.35, z - 0.35, z + 0.35, y, y + 0.6, g => pixBox(g, x, z, 0, 0.7, 0.7, y, y + 0.6, C.ochre)));
-  }
+  // Goods (in the bays, on the ground, carried), the hand truck, the handcart and the storage shed: F's placeholder
+  // drawing with the atlas' sprites (section "prototype goods"); R may replace it from pgDrawList, pgCartPose, pgShedOpen.
+  out.push(...pgPixItems(S, alpha));
   return out;
 }
 // The layout as plain data for the art pipeline (tools/pixelart/export-layout.js writes it to
@@ -15858,6 +16203,9 @@ window.__railhead = {
   // D25: the prototype (its layout, schedule, stubs and the day) and the pixel renderer.
   proto: { PROTO, PROTO_SW, PROTO_SCHEDULE, PROTO_STOCK, PROTO_SHOPS, RR_WORLDS, rrW, protoStopPos, protoTrackAt, buildProtoWorld, protoLayoutExport,
     PP, PG, PD, pdCount, pdNewStore, ppLineSpots, ppCarStatus, pgToDeliver, rrThroughTick },
+  // D25 (F): the prototype's goods, storage, handcart and shops.
+  pg: { PG, pgNewDay, pgPlan, pgConsist, pgLoad, pgReady, pgOnDepart, pgCarStatus, pgTick, pgToDeliver, pgDeliverCmd, pgCartStatus, pgDoorSpot, pgDrawList, pgCartPose,
+    pgShedOpen, pgRunGoods, pgPutCarWhy, pgNoCartRects, pgTagOf, pgShopOf, pgAboard, pgOutWaiting, carryNoCartRects, carryHeld },
   pix: { PIX, PIX_PROJ, PIX_FONT, pixOn, pixProject, pixUnproject, pixToScreen, pixGroundAt, pixPickTrain, pixSort, pixItem, pixScale, pixScene, pixScreenRect, pixBehind, get stats() { return PIX.stats; },
     get view() { return { vx: PIX.vx, vy: PIX.vy, nw: PIX.nw, nh: PIX.nh, scale: PIX.scale, dpr: PIX.dpr }; },
     get canvas() { return PIX.canvas; }, get ground() { return PIX.ground; } },

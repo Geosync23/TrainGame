@@ -1,6 +1,13 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
-## Latest (2026-11-07): D24 station rework built
+## Latest (2026-11-10): D25 prototype built
+- D25 (the streamlined prototype in pixel art) is built and merged: switches, ticket lines and punching, freight unload/load, the evening handcart to three shops, the end-of-day summary. It is the default world; ?world=hub etc. still open the parked 3D game.
+- Checks: 54, including check-proto-day (a bot plays two full days). See DEV_NOTES "Prototype (D25)".
+- Open with the designer: station placement (https://claude.ai/artifact/BSiGDpCg3JWu8YKXTfbsBM, answers/station-place); the 'mid' style question (https://claude.ai/artifact/BK9crSPmx8SK1BYTWgH1FJ); the D25 review survey of the builders' provisional choices.
+- Known weak point: with the far switches W3/E3 a long walk from platform 1, even the bot runs trains 15 to 45 minutes late.
+- Art: python3 tools/pixelart/build.py then embed.py after any sprite change; the layout comes from node tools/pixelart/export-layout.js.
+
+## Earlier (2026-11-07): D24 station rework built
 - Playable: https://claude.ai/artifact/215immEY4Skh13fN9fN2db (version 3, the hub world: railroad trains, tickets on board, cargo track).
 - Review survey: https://claude.ai/artifact/AkbCSk732HZcQkMtqfrCiL (answers/d24-review); waiting on the designer.
 - Full npm test: 47 of 47 passed at 858b90a. Hub bot, 3 days: 27 runs, worst late 11 min, 96% tickets checked, all goods delivered.

@@ -835,18 +835,21 @@ def tree_pine(s=1.0, seed=3):
     """A dark pine: three stepped tiers, each a stack of thin discs narrowing upwards."""
     o = new_oid(True)
     box(-0.6, -0.6, 0, 0.6, 0.6, 5 * s, 'wood', shades=(1, 2, 3), oid=o)
-    rnd = np.random.RandomState(seed)
     def needles(face, X, Y, Z, idx):
         h = hash2(np.floor(X * 1.5).astype(int) + seed, np.floor((Y + Z) * 1.5).astype(int)) % 7
-        ii = np.where(h == 0, clampi(idx + 1, 1, 4), np.where(h == 3, clampi(idx - 1, 1, 4), idx))
-        ii = np.clip(ii + 1, 2, 4)
-        return np.full(X.shape, R('leaf')), ii
-    for (z0, r0, hh) in ((3.0, 5.2, 8.0), (8.0, 4.0, 7.0), (12.5, 2.8, 6.5)):
-        n = int(hh / 0.8)
+        if face == 't':
+            d = (-X * 0.55 + Y * 0.15) / (np.sqrt(X * X + Y * Y) + 0.6)
+            base = np.where(d > 0.25, 1, np.where(d > -0.2, 2, 3))
+        else:
+            base = np.clip(idx + 1, 1, 4)
+        ii = np.where(h == 0, base + 1, np.where(h == 3, base - 1, base))
+        return np.full(X.shape, R('leaf')), np.clip(ii, 1, 4)
+    for t, (z0, r0, hh) in enumerate(((3.6, 4.8, 7.0), (8.2, 3.8, 6.4), (12.4, 2.7, 6.4))):
+        n = int(hh / 0.5)
         for k in range(n):
-            r = r0 * (1 - k / n) + 0.4
-            z = (z0 + k * 0.8) * s
-            cyl_z(0, 0, z, z + 0.8 * s, r * s, 'leaf', oid=o, tex=needles, th=(0.5, 0.2, -0.2))
+            r = r0 * (1 - k / n) ** 0.9 + 0.3
+            z = (z0 + k * 0.5) * s
+            cyl_z(0, 0, z, z + 0.5 * s, r * s, 'leaf', oid=o, tex=needles, th=(0.55, 0.25, -0.25), topidx=3)
     return o
 
 

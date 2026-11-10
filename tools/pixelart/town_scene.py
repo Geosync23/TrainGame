@@ -3,7 +3,8 @@
 # Puts the station, canopy, schedule board, storage shed, the shops (by parts), houses, church, water tower,
 # trees, fences, props, goods and carts on the ground layer, from the finished sheets and atlas only, where
 # proto-layout.json has them (scenery where it looks right), sorted back to front the way a renderer would.
-# Writes out/town-testscene.png (3x) and out/town-testscene-native.png.
+# Writes out/town-testscene.png (3x) and out/town-testscene-native.png, and out/bridge-testscene.png: the two
+# footbridges with a train passing under them and people on the stairs and decks.
 import os, sys, json
 import numpy as np
 from PIL import Image
@@ -12,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import review as RV
 import groundlayer as GL
+import town as TW
 
 OUT = os.path.join(HERE, 'out')
 
@@ -54,6 +56,22 @@ def main(scale=3):
     c = L['canopy']
     put('bld/canopy', (c['x0'] + c['x1']) / 2, (c['z0'] + c['z1']) / 2, depth=(c['x0'] + c['x1']) / 2 + c['z1'] + 0.5)
     put('bld/schedboard', L['schedboard']['x'], L['schedboard']['z'])
+    put('bld/sign_saloon', 4.0, -25.2)
+    # --- the footbridges (parts sorted by their boxes; the deck and its near railing over everything near them)
+    import sprites_town as STN
+    for fb in STN.footbridges(L):
+        bx = fb['x']
+        for k, zb in enumerate([v / 4.0 for v in TW.FB_BENTS]):
+            put(f'bld/footbridge/bent{k}', bx, 0.0, depth=bx + zb + 0.3)
+        for plat in ('p1', 'p2'):
+            zc = sum(TW.FB_Z[plat]) / 8.0
+            nm = f'bld/footbridge/stair_{plat}_{fb[plat]}'
+            h = m(nm).get('height', {})
+            xm = bx + (h['walk_top'][0] + h['walk_bottom'][0]) / 2
+            put(nm, bx, 0.0, depth=xm + zc - 0.6)
+            put(nm + '_rail', bx, 0.0, depth=xm + zc - 0.4)
+        put('bld/footbridge/deck', bx, 0.0, depth=1000 + bx)
+        put('bld/footbridge/rail', bx, 0.0, depth=1000 + bx + 0.5)
     # --- shops, by parts, facing the street
     for sp in L['shops']:
         b = next(bb for bb in L['buildings'] if bb['id'] == sp['bld'])
@@ -128,5 +146,95 @@ def main(scale=3):
     print('town-testscene.png:', crop.shape[1] * scale, 'x', crop.shape[0] * scale)
 
 
+
+def bridge_scene(scale=3):
+    """The two footbridges with a passenger train passing under them on track 1, a boxcar on track 2, and people
+    on the stairs and decks. Writes out/bridge-testscene.png."""
+    import sprites_town as STN
+    info = json.load(open(os.path.join(OUT, 'atlas.json')))
+    frame = RV.loader(info, OUT)
+    F = info['frames']
+    ex = info.get('extra', {})
+    L = GL.load_layout()
+    OX, OY = L['proj']['OX'], L['proj']['OY']
+    img = frame('ground')[0].copy()
+    t1, t2 = L['tracks']['t1z'], L['tracks']['t2z']
+    objs = []
+
+    def sxy(x, z, y=0.0):
+        return int(round(OX + 8 * (x - z))), int(round(OY + 4 * (x + z) - 8 * y))
+
+    def put(key, x, z, y=0.0, order=None, mirror=False):
+        if key not in F:
+            print('  missing', key); return
+        objs.append(((x + z) if order is None else order, len(objs), key, x, z, y, mirror))
+
+    BIG = 1000.0
+    for b in L['buildings']:
+        if b['kind'] == 'station':
+            put('bld/station', b['x'], b['z'], order=b['x'] + b['z'] + 1.5)
+        elif b['kind'] == 'storage':
+            put('bld/storage', b['x'], b['z'], order=b['x'] + b['z'] + 1.0)
+        elif b['kind'] == 'lamp':
+            put('bld/lamp', b['x'], b['z'], y=0.375)
+    c = L['canopy']
+    put('bld/canopy', (c['x0'] + c['x1']) / 2, (c['z0'] + c['z1']) / 2, order=(c['x0'] + c['x1']) / 2 + c['z1'] + 0.5)
+    # the train under the bridges on track 1 (heading east), a boxcar on track 2
+    put('veh/loco/e/0', 9.0, t1, order=9.0 + t1 + 1.0)
+    for k in range(3):
+        x = 9.0 - 7.2 - k * 5.8
+        put('veh/coach/e', x, t1, order=x + t1 + 1.0)
+    put('veh/boxcar/w', -6.0, t2, order=-6.0 + t2 + 1.0)
+    for fb in STN.footbridges(L):
+        bx = fb['x']
+        def part(nm, order):
+            put(f'bld/footbridge/{nm}', bx, 0.0, order=order)
+        for k, z in enumerate([v / 4.0 for v in TW.FB_BENTS]):
+            part(f'bent{k}', bx + z + 0.3)
+        for plat, zc in (('p1', sum(TW.FB_Z['p1']) / 8.0), ('p2', sum(TW.FB_Z['p2']) / 8.0)):
+            d = fb[plat]
+            nm = f'stair_{plat}_{d}'
+            h = ex[f'bld/footbridge/{nm}']['height']
+            xm = bx + (h['walk_top'][0] + h['walk_bottom'][0]) / 2
+            part(nm, xm + zc - 0.6)
+            # a walker halfway up the flight
+            f = 0.45
+            wx = bx + h['walk_top'][0] + (h['walk_bottom'][0] - h['walk_top'][0]) * f
+            wy = h['walk_top'][2] + (h['walk_bottom'][2] - h['walk_top'][2]) * f
+            going_down = plat == 'p2'
+            if d == 'e':
+                key, mir = ('ppl/man_top/walk/se/1', False) if going_down else ('ppl/woman_bonnet/walk/ne/1', True)
+            else:
+                key, mir = ('ppl/agent/walk/se/2', True) if going_down else ('ppl/man_bag/walk/ne/2', False)
+            put(key, wx, zc, y=wy, order=xm + zc - 0.5, mirror=mir)
+            part(nm + '_rail', xm + zc - 0.4)
+        hd = ex['bld/footbridge/deck']['height']
+        part('deck', BIG + bx)
+        put('ppl/woman_shawl/walk/ne/0', bx - 0.1, -4.0, y=hd['walk_y'], order=BIG + bx + 0.1)
+        put('ppl/child/walk/se/1', bx + 0.1, -0.8, y=hd['walk_y'], order=BIG + bx + 0.2)
+        part('rail', BIG + bx + 0.5)
+    # people waiting on the platforms
+    for k, (key, x, z) in enumerate((('ppl/man_bowler/idle/se/0', -1.0, -7.4), ('ppl/agent/idle/se/0', 1.4, -7.0),
+                                      ('ppl/porter/idle/se/0', 9.0, 2.0), ('ppl/woman_shawl/idle/ne/0', -10.0, 2.2))):
+        put(key, x, z, y=0.375)
+
+    objs.sort(key=lambda o: (o[0], o[1]))
+    for order, _, key, x, z, y, mir in objs:
+        f, (ax, ay) = frame(key)
+        if mir:
+            f = f[:, ::-1]; ax = f.shape[1] - ax
+        sx, sy = sxy(x, z, y)
+        RV.blit(img, f, sx - ax, sy - ay)
+    x0, _ = sxy(-16, 6)
+    x1, _ = sxy(18, -12)
+    _, y0 = sxy(-12, -18, 8)
+    _, y1 = sxy(16, 8)
+    crop = img[max(0, y0):min(img.shape[0], y1), max(0, x0):min(img.shape[1], x1)]
+    Image.fromarray(crop).save(os.path.join(OUT, 'bridge-testscene-native.png'))
+    Image.fromarray(crop).resize((crop.shape[1] * scale, crop.shape[0] * scale), Image.NEAREST).save(
+        os.path.join(OUT, 'bridge-testscene.png'), optimize=True)
+    print('bridge-testscene.png:', crop.shape[1] * scale, 'x', crop.shape[0] * scale)
+
 if __name__ == '__main__':
     main()
+    bridge_scene()

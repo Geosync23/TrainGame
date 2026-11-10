@@ -642,11 +642,12 @@ def shop_all(kind, facing='e'):
 
 # ============================ storage shed (platform 2) ============================
 STORAGE = dict(a=20.0, b=4.8, wall=13.0)      # 10 x 2.4 u, about 3 u high to the ridge
-STORAGE_BAYS = (3.0, 15.0, 27.0)              # left edges (u) of the three freight doors, each 10 MU wide
+STORAGE_BAYS = (1.0, 11.0, 21.0, 31.0)        # left edges (u) of the four freight doors (the game's 4 bays,
+STORAGE_DW = 8.0                              # centres at x -3.75, -1.25, 1.25, 3.75 u), each 2 u wide
 
 
 def storage(open_=False):
-    """The freight shed on platform 2: red board-and-batten, three sliding freight doors on the +z side (towards
+    """The freight shed on platform 2: red board-and-batten, four freight doors on the +z side (towards
     track 3) with cream cross braces. open_=True: the doors are slid aside and the bays show shelves of goods."""
     F = Frame('s')
     o = new_oid(True)
@@ -659,17 +660,17 @@ def storage(open_=False):
         p.fill(zz < 0.8, 'wood', 3 + lit)
         if lf == 'f':
             for k, d0 in enumerate(STORAGE_BAYS):
-                d1 = d0 + 10.0
+                d1 = d0 + STORAGE_DW
                 # the door track rail above the doors
                 p.fill(rect(u, zz, d0 - 1.0, d1 + 1.0, 10.6, 11.4), 'iron', 2 + lit)
                 if not open_:
                     dm = rect(u, zz, d0, d1, 0.4, 10.6)
                     fr = dm & ((u - d0 < 0.8) | (d1 - u < 0.8) | (zz < 1.2) | (zz > 9.8) | (np.abs(zz - 5.5) < 0.4) |
-                               (np.abs((u - d0) / 10.0 - (zz - 0.4) / 10.2) < 0.06) |
-                               (np.abs((u - d0) / 10.0 - (1 - (zz - 0.4) / 10.2)) < 0.06))
+                               (np.abs((u - d0) / STORAGE_DW - (zz - 0.4) / 10.2) < 0.07) |
+                               (np.abs((u - d0) / STORAGE_DW - (1 - (zz - 0.4) / 10.2)) < 0.07))
                     p.fill(dm, 'red', np.where(np.mod(u - d0, 2.0) < 0.5, 2 + lit, 1 + lit))
                     p.fill(fr, 'cream', 1 + lit)
-                    p.fill(rect(u, zz, d0 + 4.6, d0 + 5.4, 4.6, 6.2), 'iron', 3)       # handle
+                    p.fill(rect(u, zz, d0 + STORAGE_DW / 2 - 0.4, d0 + STORAGE_DW / 2 + 0.4, 4.6, 6.2), 'iron', 3)
                 else:
                     op = rect(u, zz, d0, d1, 0.0, 10.6)
                     p.fill(op, 'dark', 2)
@@ -692,17 +693,16 @@ def storage(open_=False):
         return p.rr, p.ii
     F.box(-A, -B, 0, A, B, zb + Hh, 'red', paint=walls, oid=o)
     if open_:
-        # doors slid to the right of each opening, standing just proud of the wall
-        def door(lf, u, z, a, b, idx, lit):
+        # each bay's two door leaves swung open, standing out from the wall at both sides of the opening
+        def leaf(lf, u, z, a, b, idx, lit):
             p = Paint('red', u, z - zb, idx, lit)
             zz = z - zb
-            p.fill(np.mod(u, 2.0) < 0.5, 'red', 2 + lit)
-            fr = (u < 0.8) | (u > 3.4) | (zz < 1.2) | (zz > 9.8)
-            p.fill(fr, 'cream', 1 + lit)
+            p.fill(np.mod(b, 2.0) < 0.5, 'red', 2 + lit)
+            p.fill((zz < 1.2) | (zz > 9.8) | (np.abs(zz - 5.5) < 0.4), 'cream', 1 + lit)
             return p.rr, p.ii
         for d0 in STORAGE_BAYS:
-            a0 = -A + d0 + 10.0
-            F.box(a0, B, zb + 0.4, a0 + 4.2, B + 0.5, zb + 10.6, 'red', paint=door, oid=o)
+            for a0 in (-A + d0 - 0.4, -A + d0 + STORAGE_DW):
+                F.box(a0, B, zb + 0.4, a0 + 0.4, B + STORAGE_DW / 2 - 0.2, zb + 10.6, 'red', paint=leaf, oid=o)
     ze = zb + Hh - 0.4
     F.roof_across(-A - 1.2, A + 0.6, 0, B + 2.2, ze, ze + 4.0, 'roof', wall='red', oid=o, tex=shingle_tex(),
                   shades=(1, 2), endtex=end_batten('y', 2.4, ramp='red'))
@@ -1420,3 +1420,217 @@ def carried_mark(kind, tag):
             if 0 <= px < E.W and 0 <= py < E.H and E.RB[py, px] >= 0:
                 E.RB[py, px] = R(rn)
                 E.IB[py, px] = ii if (dx, dy) != (1, 1) else min(ii + 1, dark)
+
+
+# ============================ footbridges ============================
+# A wooden footbridge from platform 1 over tracks 1 and 2 to platform 2 (the island). Every part is drawn around
+# the bridge's anchor: x = the bridge's centre line, z = 0 (track 2's centre line), at ground level, so every
+# part of one bridge is drawn at the same screen point. The deck runs along z; a stair flight on each platform
+# runs along x (down towards +x for 'e', towards -x for 'w'), its top at the deck's side.
+FB_RAIL_TOP = 0.34 * UY                     # rail top (MU)
+FB_UNDER = FB_RAIL_TOP + 4.85 * UY          # deck underside: 4.85 u over the rail top
+FB_TOP = FB_UNDER + 1.4                     # walking surface of the deck
+FB_HALF = 2.8                               # deck half width along x (1.4 u wide)
+FB_Z = dict(p1=(-7.17 * U, -6.02 * U), p2=(1.65 * U, 2.8 * U))  # the landings over each platform (z0, z1 MU)
+FB_STEPS = 18
+FB_RISE = (FB_TOP - DECK) / FB_STEPS        # about 1.5 MU (2 px) a step
+FB_RUN = 1.3                                # 0.325 u a step
+FB_BENTS = (-6.595 * U, -2.0 * U, 2.225 * U)  # z (MU) of the bents: platform 1, between tracks 1 and 2 (thin), platform 2
+RAIL_H = 5.0                                # handrail height over a tread or the deck (MU)
+
+
+def _post(x, y, z0, z1, oid, w=0.45, ramp='wood'):
+    box(x - w, y - w, z0, x + w, y + w, z1, ramp, shades=(1, 2, 3), oid=oid)
+
+
+def _deck_tex(face, X, Y, Z, idx):
+    if face == 't':
+        ii = np.where(np.mod(Y, 1.3) < 0.4, 2, np.where(hash2(np.floor(Y / 1.3).astype(int), 7) % 5 == 0, 0, 1))
+        return None, ii
+    return None, np.where(np.mod(Y if face == 'r' else X, 4.0) < 0.6, clampi(idx + 1), idx)
+
+
+def footbridge_deck():
+    """The span: beams and a plank floor from the platform 1 landing to the platform 2 landing, with the far
+    (-x) railing. The near railing is its own part (footbridge_rail), so walkers sort between them."""
+    o = new_oid(True)
+    y0, y1 = FB_Z['p1'][0], FB_Z['p2'][1]
+    # two stringer beams under the floor (lit face shows the deep timber)
+    def beam(face, X, Y, Z, idx):
+        return None, np.where(np.mod(Y, 8.0) < 0.5, clampi(idx + 1), idx)
+    box(-FB_HALF, y0, FB_UNDER, FB_HALF, y1, FB_UNDER + 1.0, 'wood', shades=(1, 3, 3), tex=beam, oid=o)
+    box(-FB_HALF, y0, FB_UNDER + 1.0, FB_HALF, y1, FB_TOP, 'wood', shades=(1, 2, 3), tex=_deck_tex, oid=o)
+    _railing_x(-FB_HALF + 0.3, y0, y1, o, far=True)
+    return o
+
+
+def _railing_x(x, y0, y1, o, far=False):
+    """A railing along z at x: posts every 4 MU, a top rail, a middle rail and X braces between posts."""
+    zt = FB_TOP
+    n = int(round((y1 - y0) / 4.0))
+    for k in range(n + 1):
+        y = y0 + (y1 - y0) * k / n
+        box(x - 0.4, y - 0.4, zt, x + 0.4, y + 0.4, zt + RAIL_H + 0.6, 'wood', shades=(1, 2, 3), oid=o)
+    box(x - 0.45, y0, zt + RAIL_H, x + 0.45, y1, zt + RAIL_H + 0.7, 'wood', shades=(0, 1, 2), oid=o)
+    box(x - 0.3, y0, zt + RAIL_H * 0.5, x + 0.3, y1, zt + RAIL_H * 0.5 + 0.5, 'wood', shades=(1, 2, 3), oid=o)
+    # X braces in the lower half of each bay
+    for k in range(n):
+        ya = y0 + (y1 - y0) * k / n
+        for j in range(6):
+            t = (j + 0.5) / 6
+            for (yy, zz) in ((ya + t * 4.0, zt + t * RAIL_H * 0.5), (ya + t * 4.0, zt + (1 - t) * RAIL_H * 0.5)):
+                box(x - 0.25, yy - 0.35, zz - 0.3, x + 0.25, yy + 0.35, zz + 0.4, 'wood', shades=(1, 2, 3), oid=o, cast=False)
+
+
+def footbridge_rail():
+    """The near (+x) railing of the span, drawn over walkers on the deck."""
+    o = new_oid(True)
+    _railing_x(FB_HALF - 0.3, FB_Z['p1'][0], FB_Z['p2'][1], o)
+    return o
+
+
+def footbridge_bent(k):
+    """Trestle bent k (0: on platform 1, 1: between tracks 1 and 2, 2: on platform 2): two posts, cap beam,
+    cross braces in the x-z plane facing the viewer."""
+    o = new_oid(True)
+    y = FB_BENTS[k]
+    z0 = DECK if k != 1 else 0.0
+    for x in (-FB_HALF + 0.5, FB_HALF - 0.5):
+        _post(x, y, z0, FB_UNDER, o, w=0.55 if k != 1 else 0.5)
+        box(x - 0.9, y - 0.9, z0, x + 0.9, y + 0.9, z0 + 1.0, 'iron' if k == 1 else 'wood', shades=(1, 2, 3), oid=o)
+    box(-FB_HALF - 0.6, y - 0.6, FB_UNDER - 1.0, FB_HALF + 0.6, y + 0.6, FB_UNDER, 'wood', shades=(0, 2, 3), oid=o)
+    # X bracing: two diagonals of small blocks across the bent
+    xa, xb = -FB_HALF + 0.9, FB_HALF - 0.9
+    za, zb = z0 + 2.0, FB_UNDER - 1.6
+    for j in range(15):
+        t = (j + 0.5) / 15
+        for (xx, zz) in ((xa + (xb - xa) * t, za + (zb - za) * t), (xa + (xb - xa) * t, zb - (zb - za) * t)):
+            box(xx - 0.3, y - 0.3, zz - 0.8, xx + 0.3, y + 0.3, zz + 0.8, 'wood', shades=(1, 2, 3), oid=o, cast=False)
+    box(xa, y - 0.3, za + 3.0, xb, y + 0.3, za + 3.6, 'wood', shades=(1, 2, 3), oid=o, cast=False)
+    return o
+
+
+def _stair_geom(plat, d):
+    y0, y1 = FB_Z[plat]
+    s = 1 if d == 'e' else -1
+    xt = s * FB_HALF                       # top of the flight, at the deck's side
+    xb = xt + s * FB_STEPS * FB_RUN        # foot of the flight
+    return y0, y1, s, xt, xb
+
+
+def footbridge_stair(plat, d):
+    """One stair flight on platform `plat` ('p1' or 'p2'), running along x down towards +x ('e') or -x ('w'):
+    treads, stringers, the far (-z) handrail and support posts. Its near (+z) handrail is footbridge_stair_rail."""
+    o = new_oid(True)
+    y0, y1, s, xt, xb = _stair_geom(plat, d)
+    for k in range(FB_STEPS):
+        top = FB_TOP - (k + 1) * FB_RISE
+        xa = xt + s * k * FB_RUN; xc = xa + s * FB_RUN
+        lo, hi = min(xa, xc), max(xa, xc)
+        def tread(face, X, Y, Z, idx):
+            return None, np.where(face == 't', np.where(np.mod(Y, 1.5) < 0.4, 2, 1), idx)
+        box(lo, y0 + 0.6, top - 0.6, hi, y1 - 0.6, top, 'wood', shades=(0, 2, 3), tex=tread, oid=o)
+        # stringers: deep side boards under the treads
+        for (ya, yb) in ((y0, y0 + 0.6), (y1 - 0.6, y1)):
+            box(lo, ya, max(top - 2.6, DECK), hi, yb, top + 0.4, 'wood', shades=(1, 2, 3), oid=o)
+    # the landing joins the deck
+    box(min(0, xt), y0, FB_UNDER, max(0, xt), y1, FB_TOP, 'wood', shades=(1, 2, 3), tex=_deck_tex, oid=o)
+    # support posts under the flight
+    for f in (0.35, 0.75):
+        x = xt + (xb - xt) * f
+        ztop = FB_TOP - (FB_TOP - DECK) * f - 2.0
+        for y in (y0 + 0.3, y1 - 0.3):
+            _post(x, y, DECK, ztop, o, w=0.45)
+    _stair_rail(plat, d, y0 + 0.3, o)
+    return o
+
+
+def _stair_rail(plat, d, y, o):
+    y0, y1, s, xt, xb = _stair_geom(plat, d)
+    for k in range(0, FB_STEPS + 1, 3):
+        x = xt + s * k * FB_RUN
+        z = FB_TOP - k * FB_RISE
+        box(x - 0.4, y - 0.4, z - 0.5, x + 0.4, y + 0.4, z + RAIL_H + 0.4, 'wood', shades=(1, 2, 3), oid=o)
+    for k in range(FB_STEPS * 2):
+        x = xt + s * (k + 0.5) * FB_RUN / 2
+        z = FB_TOP - (k + 0.5) * FB_RISE / 2 + RAIL_H
+        box(x - FB_RUN / 4 - 0.05, y - 0.4, z, x + FB_RUN / 4 + 0.05, y + 0.4, z + 0.7, 'wood', shades=(0, 1, 2), oid=o, cast=False)
+
+
+def footbridge_stair_rail(plat, d):
+    o = new_oid(True)
+    y0, y1, s, xt, xb = _stair_geom(plat, d)
+    _stair_rail(plat, d, y1 - 0.3, o)
+    return o
+
+
+def footbridge_all(d1='w', d2='w'):
+    footbridge_bent(0); footbridge_bent(1); footbridge_bent(2)
+    footbridge_stair('p1', d1); footbridge_stair('p2', d2)
+    footbridge_deck(); footbridge_rail()
+    footbridge_stair_rail('p1', d1); footbridge_stair_rail('p2', d2)
+
+
+def footbridge_boxes():
+    """Sorting boxes and walking paths of every part, in game units from the bridge anchor."""
+    u = lambda v: round(v / U, 3)
+    h = lambda v: round(v / UY, 3)
+    y0, y1 = FB_Z['p1'][0], FB_Z['p2'][1]
+    out = {
+        'deck': dict(box=[u(-FB_HALF), u(y0), u(FB_HALF), u(y1), h(FB_TOP + RAIL_H)], y0=h(FB_UNDER),
+                     walk_y=h(FB_TOP), walk_x=0.0, walk_z=[u(y0 + 2.2), u(y1 - 2.2)]),
+        'rail': dict(box=[u(FB_HALF - 0.8), u(y0), u(FB_HALF), u(y1), h(FB_TOP + RAIL_H)], y0=h(FB_TOP)),
+    }
+    for k, y in enumerate(FB_BENTS):
+        out[f'bent{k}'] = dict(box=[u(-FB_HALF - 0.6), u(y - 0.6), u(FB_HALF + 0.6), u(y + 0.6), h(FB_UNDER)], y0=0.0)
+    for plat in ('p1', 'p2'):
+        for d in ('e', 'w'):
+            sy0, sy1, s, xt, xb = _stair_geom(plat, d)
+            out[f'stair_{plat}_{d}'] = dict(
+                box=[u(min(xt, xb, 0)), u(sy0), u(max(xt, xb, 0)), u(sy1), h(FB_TOP + RAIL_H)], y0=0.0,
+                walk_top=[u(xt), u((sy0 + sy1) / 2), h(FB_TOP)], walk_bottom=[u(xb), u((sy0 + sy1) / 2), h(DECK)],
+                walk_landing=[0.0, u((sy0 + sy1) / 2), h(FB_TOP)])
+            out[f'stair_{plat}_{d}_rail'] = dict(box=[u(min(xt, xb)), u(sy1 - 0.8), u(max(xt, xb)), u(sy1), h(FB_TOP + RAIL_H)], y0=0.0)
+    return out
+
+
+def footbridge_casters(bx_mu, d1, d2, reg):
+    """Invisible boxes that cast the bridge's shadow onto the ground layer (bx_mu: the bridge's x in MU)."""
+    y0, y1 = FB_Z['p1'][0], FB_Z['p2'][1]
+    reg((bx_mu - FB_HALF, y0, FB_UNDER, bx_mu + FB_HALF, y1, FB_TOP + 1.0))
+    for y in FB_BENTS:
+        for x in (-FB_HALF + 0.5, FB_HALF - 0.5):
+            reg((bx_mu + x - 0.55, y - 0.55, 0, bx_mu + x + 0.55, y + 0.55, FB_UNDER))
+    for plat, d in (('p1', d1), ('p2', d2)):
+        sy0, sy1, s, xt, xb = _stair_geom(plat, d)
+        n = 6
+        for k in range(n):
+            xa = xt + (xb - xt) * k / n; xc = xt + (xb - xt) * (k + 1) / n
+            ztop = FB_TOP - (FB_TOP - DECK) * (k + 0.5) / n
+            reg((bx_mu + min(xa, xc), sy0, ztop - 2.0, bx_mu + max(xa, xc), sy1, ztop))
+
+
+# ============================ the saloon's hanging sign ============================
+def saloon_sign():
+    """A sign hanging over the street from a post at the saloon's corner, so SALOON reads from the viewer's side
+    (the saloon's front faces away). Anchor: the foot of the post; the arm reaches 4.1 u towards -x."""
+    o = new_oid(True)
+    _post(0, 0, 0, 22.0, o, w=0.6)
+    box(-0.9, -0.9, 0, 0.9, 0.9, 1.2, 'wood', shades=(1, 2, 3), oid=o)
+    box(-16.4, -0.45, 20.6, 0.6, 0.45, 21.6, 'wood', shades=(0, 2, 3), oid=o)       # the arm
+    for j in range(5):                                                             # its brace
+        t = (j + 0.5) / 5
+        box(-3.2 * t - 0.4, -0.3, 21.0 - 4.0 * (1 - t) - 0.6, -3.2 * t + 0.4, 0.3, 21.0 - 4.0 * (1 - t) + 0.4,
+            'wood', shades=(1, 2, 3), oid=o, cast=False)
+    for x in (-15.0, -2.4):                                                        # chains
+        box(x - 0.2, -0.2, 17.6, x + 0.2, 0.2, 20.6, 'iron', shades=(1, 2, 3), oid=o, cast=False)
+    so = new_oid(True)
+    box(-16.0, -0.35, 11.0, -1.4, 0.35, 17.6, 'ochre', shades=(0, 0, 2), oid=so)
+    box(-16.0, -0.35, 11.0, -1.4, 0.35, 11.6, 'red', shades=(1, 1, 2), oid=so)
+    box(-16.0, -0.35, 17.0, -1.4, 0.35, 17.6, 'red', shades=(1, 1, 2), oid=so)
+    return o
+
+
+def saloon_sign_letters():
+    w = text_width('SALOON') / 2.0
+    text_on('l', -8.7 - w / 2, 0.35, 16.6, 'SALOON', 'red', 2)

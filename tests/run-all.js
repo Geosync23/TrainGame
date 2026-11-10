@@ -34,7 +34,12 @@ const checks = {
   'the real start (hub, spur and Willow Ford)': require('./check-world-start'),
   'the hub world (D24: the through line, switches close together, all reachable, clear of the track, parked systems off)': require('./check-hubworld'),
   'the prototype (D25: the station layout, switches close to the platforms, the walkway the only crossing, the day, parked systems off, the pixel renderer, old worlds in 3D)': require('./check-protoworld'),
+  'prototype passengers (D25 P: lines at the coach doors before a train, riders step off first, one punch boards one traveller, ready, counts)': require('./check-punch'),
+  'the prototype\'s goods (D25 F: freight unloaded into the storage shed and loaded from it, the handcart over the walkway to the three shops, items conserved)': require('./check-protogoods'),
+  'the pixel renderer (D25, R: sprites from the atlas, painter\'s order, see-through, footbridges, whole zoom steps, picking what is drawn, the board text, frame time)': require('./check-pixrender'),
+  'the prototype\'s screens (D25, U: the morning board, the Next job line through a day, the buttons over the world, the summary, nothing overlapping)': require('./check-protoui'),
   'the railroad\'s trains (D24: a day of 9 runs in and out, stopping short of a wrong switch, wave-off, lateness)': require('./check-rrtrains'),
+  'the prototype\'s trains (D25: a day of 10 runs with a scripted player, through trains, wrong switches, wave-off refusals, the footbridges)': require('./check-prototrains'),
   'tickets on board (D24: travellers off and on the railroad\'s trains, checking a car, fares missed)': require('./check-tickets'),
   'freight trains\' goods (D24: orders ride freight trains, unloading at the cargo dock, cgReady, leaving)': require('./check-freight'),
   'timetable (coupling, services, dispatch, wood and water)': require('./check-timetable'),
@@ -52,6 +57,7 @@ const checks = {
   'explaining as it happens (first-time cards, warnings ahead, schedule board on posts, Work board button, one top line, switch 1 straight; D22)': require('./check-explain'),
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
   'the station rework end to end (D24: three days in the hub played by the bot: every train in and out, tickets, goods, money, same result)': require('./check-hub-day'),
+  'the prototype end to end (D25: two days played by the bot through touch-level commands: every train in and out, every switch, ticket and good, the summary, same result)': require('./check-proto-day'),
 };
 
 (async () => {

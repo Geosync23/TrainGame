@@ -57,6 +57,7 @@ const checks = {
   'explaining as it happens (first-time cards, warnings ahead, schedule board on posts, Work board button, one top line, switch 1 straight; D22)': require('./check-explain'),
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
   'the station rework end to end (D24: three days in the hub played by the bot: every train in and out, tickets, goods, money, same result)': require('./check-hub-day'),
+  'the prototype end to end (D25: two days played by the bot through touch-level commands: every train in and out, every switch, ticket and good, the summary, same result)': require('./check-proto-day'),
 };
 
 (async () => {

@@ -7810,7 +7810,8 @@ function pgCarStatus(S, stock) {
   const R = CARGO_CAR_RULES[f.car.k], ids = itemsAt(S, { kind: 'CAR', stockId: stock }), run = f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
   const out = ids.filter(id => itemTag(S.items.waybill[id]) === 'OUTSIDE').length;
   const want = run && run.kind === 'freight' ? Math.max(0, pgNeed(S, run, f.tr) - pgAboard(S, f.tr).out) : 0;
-  return { stock, k: f.car.k, run: run ? run.id : null, items: ids.length, town: ids.length - out, hub: ids.length - out, out, want,
+  // unload / load: the names U's screens read (integrator): shop goods still to take off, railroad goods still to put on.
+  return { stock, k: f.car.k, run: run ? run.id : null, items: ids.length, town: ids.length - out, hub: ids.length - out, out, want, unload: ids.length - out, load: want,
     used: R ? ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0) : 0, cap: R ? R.cap : 0, why: carryCarWhy(S, stock) };
 }
 // After the actors, each tick: what came off and went onto the cars.
@@ -15595,8 +15596,14 @@ function pdJob() {
     const n = needs.find(q => q.run === run.id && q.sw === tr.swWait), want = n ? n.want : swWant(W.state === 'N' ? 'R' : 'N'), nm = pdSwName(tr.swWait);
     return { key: 'wait' + tr.swWait + run.id, text: `${pdRunId(run)} is waiting at ${nm}: throw it ${pdWantWords(tr.swWait, want)}`, t: pdStandSpot(tr.swWait, `${nm}: throw it`) };
   }
+  // A switch's rows in time order: a later train's way is not asked for while an earlier train still needs that switch
+  // the other way (integrator: else the line flips between them, e.g. E3 for F1 while X1 has still to run through it).
+  const firstWant = {};
   for (const n of needs) {
     const run = runOf(n.run);
+    if (n.passed || !run) continue;
+    if (firstWant[n.sw] === undefined) firstWant[n.sw] = n.want;
+    else if (firstWant[n.sw] !== n.want) continue;
     if (!pdNeedSoon(n, run)) continue;
     const nm = pdSwName(n.sw), id = pdRunId(run);
     return { key: 'sw' + n.sw + n.want + run.id, text: `Throw switch ${nm} ${pdWantWords(n.sw, n.want)} for ${id}` + (n.move === 'out' && !run.through ? ', its way out' : run.through ? ' (it runs through)' : ` (due ${pdClock(rrSod(run.arr))})`),

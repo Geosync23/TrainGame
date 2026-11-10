@@ -7,8 +7,9 @@
 //   (Throw at a switch stand, Punch at a coach door, Send off at the engine, Unload and Load at a freight car door,
 //   Deliver at a shop door): throw W1 for P1, punch the tickets at each coach with a line, throw the way out, send
 //   P1 off, ... unload F1, load F1, send it off, the handcart and the deliveries in the evening, end the day.
-//   Until P (tickets) and F (goods) land their parts, the check fakes them: ppCarStatus, ppReady, ppPunchCmd,
-//   pgCarStatus, pgReady, pgToDeliver, pgDeliverCmd and the goods in hand (plain page-side stand-ins).
+//   The check fakes P (tickets) and F (goods): ppCarStatus, ppReady, ppPunchCmd, pgCarStatus, pgReady, pgOnDepart,
+//   pgToDeliver, pgDeliverCmd and the goods in hand (plain page-side stand-ins), so it tests the screens alone;
+//   check-proto-day.js plays the real pieces through the same commands (integrator, 2026-11-10).
 // - pdHintTarget (for R's arrows) follows the job; pdBoardRows gives the rows R draws on the board in the world.
 // - The first-day guide's sentences come as the first trains do; the summary card at the end of the day shows the
 //   day's figures (S.pd.sum); Next day opens the next morning's board.
@@ -52,7 +53,7 @@ module.exports = async function checkProtoUi() {
       });
       if (m.ph !== 'morning' || !m.board) P(`the morning: phase ${m.ph}, board card shown ${m.board}`);
       if (m.rows.length !== 10 || m.cardRows !== 10) P(`the board has ${m.rows.length} rows (card ${m.cardRows}), expected the day's 10 trains`);
-      const want = { P1: [1, '06:40', '06:55'], X1: [2, '07:45', '07:45'], F1: [3, '08:40', '10:30'], F2: [3, '13:40', '15:00'], X2: [2, '12:45', '12:45'] };
+      const want = { P1: [1, '06:40', '06:55'], X1: [2, '07:45', '07:45'], F1: [3, '08:45', '10:30'], F2: [3, '13:45', '15:10'], X2: [2, '12:45', '12:45'] };
       for (const [id, [trk, a, d]] of Object.entries(want)) { const r = m.rows.find(q => q[0] === id); if (!r || r[1] !== trk || r[2] !== a || r[3] !== d) P(`board row ${id}: ${JSON.stringify(r)}`); }
       if (m.rows.filter(r => r[4]).length !== 2 || m.rows.filter(r => r[5] === 'freight' && !r[4]).length !== 3) P('the board does not show 2 through trains and 3 freight trains');
       if (!/Start the day/.test(m.start)) P(`the morning card's button says "${m.start}"`);
@@ -97,6 +98,7 @@ module.exports = async function checkProtoUi() {
         window.pgCarStatus = (S, stock) => F.goods[stock] || null;
         window.pgReady = (S, run, tr) => !tr || tr.consist.every(c => !F.goods[c.id] || (!F.goods[c.id].unload && !F.goods[c.id].load));
         window.pgToDeliver = () => ({ ...F.deliver });
+        window.pgOnDepart = () => ({ sold: 0, paid: 0, setDown: 0 });   // F's real goods stay in the car (the fakes count instead)
         window.pgDeliverCmd = (S, c, ev) => {
           const I = S.items;
           for (const id of carryHeld(S)) if (I.waybill[id].consignee.id === c.shop) { I.where[id] = null; I.alive[id] = false; F.deliver[c.shop]--; pdCount(S, 'delivered'); ev.push({ t: 'pgDelivered', shop: c.shop, id }); }
@@ -110,7 +112,9 @@ module.exports = async function checkProtoUi() {
       // ---- The scripted player: reads the Next job line and does it through the buttons ----
       const jobs = [];
       const job = () => ev(() => window.__railhead.pdui.job());
-      const goTo = async (x, z) => { await ev(([x, z]) => { const S = window.__railhead.state; Object.assign(S.player, { x, z, mode: 'idle', use: null, act: null }); }, [x, z]); await frames(700); };
+      // The player is put there (the check's shortcut for the walk) and the view looks at him, as the walk's follow would
+      // (integrator: the closer default view leaves far places off screen, and a jump is not a walk).
+      const goTo = async (x, z) => { await ev(([x, z]) => { const R = window.__railhead, S = R.state; Object.assign(S.player, { x, z, mode: 'idle', use: null, act: null }); R.pix.pixLookAt(x, z); }, [x, z]); await frames(700); };
       const actBtn = async (re) => {
         const r = await ev((src) => { const re = new RegExp(src); const b = [...document.querySelectorAll('.pdAct')].find(e => !e.hidden && e.style.visibility !== 'hidden' && re.test(e.textContent)); if (!b) return null; const q = b.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2, w: q.width, h: q.height, text: b.textContent }; }, re.source);
         return r;

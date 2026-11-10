@@ -164,7 +164,7 @@ class Car:
         a, b = s.X(u0, u1)
         box(a, s.yc + y0, RAIL + z0, b, s.yc + y1, RAIL + z1, ramp, **kw)
     def wheel(s, u, r, ramp='red', kind='wheel', y=5.0, oid=0, spokes=8):
-        disc_y(s.x(u), RAIL + r, r, s.yc + y, ramp, kind=kind, oid=oid, spokes=spokes)
+        disc_y(s.x(u), E.wheel_zc(RAIL, r), r, s.yc + y, ramp, kind=kind, oid=oid, spokes=spokes)
 
 def loco(xr, yc, d, body='green', boiler='green', cab='green', oid=None):
     c = Car(xr, 24, yc, d)

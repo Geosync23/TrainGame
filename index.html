@@ -9,6 +9,10 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #b9d3d8; touch-action: none;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; font-family: Georgia, "Times New Roman", serif; }
   canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  /* D25: the prototype's pixel view over the WebGL canvas (which still takes the touches), and what is parked there. */
+  #pix { position: fixed; inset: 0; z-index: 1; pointer-events: none; image-rendering: pixelated; image-rendering: crisp-edges; }
+  body.proto #cash, body.proto #rotL, body.proto #rotR, body.proto #tgBtn, body.proto #buildBtn, body.proto #officeBtn, body.proto #workBtn,
+  body.proto #alerts, body.proto #tgSlide { display: none !important; }
   .hud { position: fixed; z-index: 2; }
   [hidden] { display: none !important; }
   button { font: 600 15px/1 Georgia, serif; color: var(--ink); background: var(--paper); border: 2px solid var(--edge);
@@ -398,7 +402,7 @@ function scaleDeep(o) {
   return o;
 }
 const CFG = {
-  SCHEMA_VERSION: 17,
+  SCHEMA_VERSION: 18,
   SEED: 1866,
   SCALE: SC,                 // D15: the world (track, trains, buildings, distances) is 1.6x the M1 sizes; people keep theirs
   TICK_GAME_S: 8,            // one sim tick = 8 game seconds (section 19)
@@ -891,6 +895,90 @@ function buildHubWorld() {
   return T;
 }
 
+// ---- D25 (back up and streamline): the prototype station ('proto'), every new game's world since 2026-11-10 ----
+// The designer's layout (plans/proto-tech.md section 1): from north (the town side, up and to the right on the screen)
+// to south (nearest the viewer): the town's main street, running away from the station at right angles to the tracks
+// (the lead's change, 2026-11-10: not parallel to them as in the mockup), with the three shops facing each other across
+// it; the station building with PLATFORM 1, TRACK 1 (the
+// passenger trains' pull-over), TRACK 2 (the through line, z = 0, running off the map at both ends), PLATFORM 2 (an
+// island) and TRACK 3 on its far side (the freight trains' pull-over, beside the storage shed on platform 2). At each
+// end, two switches on track 2 a few steps apart: the inner one turns off north to track 1, the outer one south to
+// track 3 (crossover legs: radius 12.8u arcs of 30 degrees with a straight between them). Every switch is set by hand
+// for every train, in and out (D25 (5)). A plank walkway crosses tracks 1 and 2 at the platforms' east end, so
+// platform 2 is a few steps from platform 1 (provisional: the only place the player crosses the track).
+// Switch ids, west to east: 0 W3 (west, to track 3), 1 W1 (west, to track 1), 2 E1 (east, to track 1), 3 E3 (east, to
+// track 3). Pure data and math: no three.js.
+const PROTO = (() => {
+  const R = 12.8, A = Math.PI / 6, arcs = 2 * R * (1 - Math.cos(A)), PAR = 20, EDGE = 1.44;   // EDGE: a deck's track-side edge from the track centre (0.9 x SC)
+  const D1 = arcs + 3.2 * Math.sin(A), PROTO_D1_ = D1;   // track 1: 5.03u north of track 2 (3.2u straight between the arcs)
+  const W2 = 6.4, D3 = W2 + 2 * EDGE;             // track 3: 9.28u south, platform 2 (6.4u wide) between
+  const L3 = (D3 - arcs) / Math.sin(A);           // the straight between track 3's arcs
+  const dx = L => 2 * R * Math.sin(A) + L * Math.cos(A);
+  return {
+    R, ANG: 30, PAR, EDGE, D1, D3, W2, L1: 3.2, L3,
+    BOUNDS: { x0: -56, x1: 56, z0: -62, z1: 20 },   // the map: 112u x 82u (walk grid 224 x 164 cells)
+    LINE: { x0: -120, x1: 120 },                    // track 2 runs 64u past each map edge (trains stand out of sight there)
+    SW: { W3: -(PAR + dx(L3)), W1: -(PAR + dx(3.2)), E1: PAR + dx(3.2), E3: PAR + dx(L3) },   // switch nodes on track 2 (x)
+    LIM_ST: 2.0 * SC,                               // speed limit through the station (u per game minute)
+    // Decks (x0, x1, z0, z1): platform 1 (6.4u deep, behind track 1), platform 2 (the island between tracks 2 and 3).
+    P1: { x0: -18, x1: 16, z0: -D1 - EDGE - 6.4, z1: -D1 - EDGE },
+    P2: { x0: -18, x1: 20, z0: EDGE, z1: D3 - EDGE },
+    WALKWAY: { x: 18.5, z0: -D1 - EDGE - 0.6, z1: EDGE + 0.6 },   // the plank walkway across tracks 1 and 2 (pads XING.W wide)
+    // Where trains stand (the engine's front, x on its track): short of the walkway on track 1, clear of the switch legs.
+    STOP: { t1: { E: 15.6, W: -19.1 }, t3: { E: 19.1, W: -19.1 } },
+    // The main street (drawn only: open ground), 6.4u wide, from behind the station building north to the map's edge.
+    STREET: { x0: -3.2, x1: 3.2, z0: -60, z1: -PROTO_D1_ - 1.44 - 6.4 - 5.6 },
+    TOWN_EXITS: [[-1.5, -59], [1.5, -59]],                      // the street's far end: where travellers come from and go to
+    // Switch stands [post x, z, use spot x, z] (provisional): the track 1 levers north of track 1 by the platform's ends,
+    // rodded to their points; the track 3 levers in the vee between track 2 and track 3's leg, past platform 2's ends.
+    STANDS: { W3: [-31.5, 2.0, -31.5, 2.6], W1: [-22.5, -D1 - 1.6, -22.5, -D1 - 2.6], E1: [22.5, -D1 - 1.6, 22.5, -D1 - 2.6], E3: [31.5, 2.0, 31.5, 2.6] },
+    PLAYER: { x: 9.5, z: -D1 - EDGE - 5.2 },        // a new day: on platform 1, in front of the schedule board
+    SCHEDBOARD: { x: 9.5, z: -D1 - EDGE - 6.1 },    // the public schedule board on its posts at platform 1's back edge
+    EDGE_W: 0,                                      // the westmost edge of track 2 (built first): where empty train slots are kept
+  };
+})();
+const PROTO_SW = { W3: 0, W1: 1, E1: 2, E3: 3 };
+// Builds the prototype's track (D25). Edge 0 is track 2's west end (off the map), so s = x - LINE.x0 on it.
+function buildProtoWorld() {
+  const T = trackNew(), L = CFG.LIM, P = PROTO, X = P.SW, ST = P.LIM_ST, n = x => trackNode(T, x, 0);
+  T.world = 'proto';
+  // A crossover leg from a switch node on track 2 heading hx (+1 east, -1 west) to the parallel track dz away (north
+  // -1, south +1): a 30 degree arc (the switch's diverging leg), a straight, an arc back. Returns the leg and the end node.
+  const leg = (node, hx, south, Lmid) => {
+    const turn = (south ? -1 : 1) * hx;
+    const d = trackArc(T, node, hx, 0, P.R, turn, P.ANG, 'switch', L.diverge);
+    const a = trackNode(T, T.nodes[d.node].x + d.hx * Lmid, T.nodes[d.node].z + d.hz * Lmid);
+    trackStraight(T, d.node, a, 'yard', L.diverge);
+    const b = trackArc(T, a, d.hx, d.hz, P.R, -turn, P.ANG, 'yard', L.diverge);
+    return { e: d.e, node: b.node };
+  };
+  const nW = n(P.LINE.x0), w3 = n(X.W3), wm = n((X.W3 + X.W1) / 2), w1 = n(X.W1), w1n = n(X.W1 + 3);
+  const e1n = n(X.E1 - 3), e1 = n(X.E1), em = n((X.E1 + X.E3) / 2), e3 = n(X.E3), nE = n(P.LINE.x1);
+  const eW = trackStraight(T, nW, w3, 'main', L.main);              // edge 0: in from the west end
+  const eW3n = trackStraight(T, w3, wm, 'switch', ST);              // switch 0's straight leg
+  const eWm = trackStraight(T, wm, w1, 'main', ST);                 // between the west switches: trunk of switch 1
+  const eW1n = trackStraight(T, w1, w1n, 'switch', ST);             // switch 1's straight leg
+  trackStraight(T, w1n, e1n, 'main', ST);                           // track 2 through the station
+  const eE1n = trackStraight(T, e1, e1n, 'switch', ST);             // switch 2's straight leg
+  const eEm = trackStraight(T, e1, em, 'main', ST);                 // between the east switches: trunk of switch 2
+  const eE3n = trackStraight(T, e3, em, 'switch', ST);              // switch 3's straight leg
+  const eE = trackStraight(T, e3, nE, 'main', L.main);              // out to the east end
+  const l3w = leg(w3, 1, true, P.L3), l1w = leg(w1, 1, false, P.L1), l1e = leg(e1, -1, false, P.L1), l3e = leg(e3, -1, true, P.L3);
+  trackStraight(T, l1w.node, l1e.node, 'yard', ST);                 // track 1, beside platform 1
+  trackStraight(T, l3w.node, l3e.node, 'yard', ST);                 // track 3, beside platform 2
+  trackSwitch(T, w3, eW, eW3n, l3w.e);    // 0 W3
+  trackSwitch(T, w1, eWm, eW1n, l1w.e);   // 1 W1
+  trackSwitch(T, e1, eEm, eE1n, l1e.e);   // 2 E1
+  trackSwitch(T, e3, eE, eE3n, l3e.e);    // 3 E3
+  // The stands where PROTO.STANDS puts them (the hub's rule, beside the trunk, would put two of them between tracks).
+  for (const [k, id] of Object.entries(PROTO_SW)) {
+    const W = T.switches[id], [x, z, ux, uz] = P.STANDS[k];
+    Object.assign(W.stand, { x, z, ux, uz });
+  }
+  T.crossings = xingFixed(T); // the walkway's pads (XING_FIXED.proto)
+  return T;
+}
+
 // The worlds. terrain: the heightmap (tiles of `tile` u from x0, z0); walk: the player's walk grid (0.5u cells);
 // bounds: where the player, items and plans may be (and the camera looks); flat: areas held at height 0;
 // hub: the hub boundary (track may be planned only inside it), or null; crowd: where test walkers roam.
@@ -934,8 +1022,26 @@ const WORLDS = {
     train: T => ({ e: HUBW.EDGE_W, s: 8, d: 1 }),   // No. 1 is parked off the map (D24): she is kept, away
     parked: { overland: true, interchange: true, willow: true, no1: true, counter: true },
   },
+  // D25: the prototype station, every new game's world (see PROTO). Everything not in the prototype is parked (design-doc
+  // D25 (1); the code is kept and still runs in the older worlds): besides the hub world's, the money (cash, fares,
+  // prices, the ledger), the work board and contracts, ordering, building track, telegrams and alerts, wood and water,
+  // the tutorial's telegrams, the town's businesses using goods and offering work, the D22 first-time cards and the D24
+  // hub's screens (each rewritten for the prototype by its builder, plans/proto-tech.md).
+  proto: {
+    id: 'proto', build: buildProtoWorld,
+    terrain: { x0: PROTO.BOUNDS.x0, z0: PROTO.BOUNDS.z0, nx: 35, nz: 26, tile: 2 * SC, flat: [PROTO.BOUNDS] },
+    walk: { x0: PROTO.BOUNDS.x0, z0: PROTO.BOUNDS.z0, nx: 224, nz: 164 },
+    bounds: PROTO.BOUNDS,
+    hub: null,
+    crowd: { x0: -20, x1: 20, z0: -56, z1: -8 },
+    player: PROTO.PLAYER,
+    train: T => ({ e: PROTO.EDGE_W, s: 8, d: 1 }),   // No. 1 is parked off the map, as in the hub world
+    parked: { overland: true, interchange: true, willow: true, no1: true, counter: true, money: true, workboard: true, contracts: true, ordering: true,
+      building: true, telegrams: true, fuel: true, tutorial: true, town: true, cards: true, hubui: true },
+  },
 };
-const worldId = T => (T && (T.world === 'start' || T.world === 'hub') ? T.world : 'yard');
+const worldId = T => (T && (T.world === 'start' || T.world === 'hub' || T.world === 'proto') ? T.world : 'yard');
+const protoWorld = T => worldId(T) === 'proto';
 // D24: is this system parked (switched off, its code kept) in the world of track T? 'overland', 'interchange',
 // 'willow', 'no1' (No. 1's Willow Ford runs), 'counter' (selling tickets at the ticket window).
 const worldParked = (T, what) => !!(WORLDS[worldId(T)].parked || {})[what];
@@ -988,6 +1094,17 @@ const STATIONS = {
       },
       stops: ['platform'] },
   ],
+  // D25: the prototype's one station. Its tracks are the stopping spans: track 1 beside platform 1 (passenger trains),
+  // track 3 beside platform 2 (freight trains), and track 2 through the station (through trains do not stop).
+  proto: [
+    { id: 'hub', name: 'Hub', town: 0, staffed: true, depot: 'station', platforms: ['platform1', 'platform2'],
+      tracks: {
+        t1: { x0: PROTO.P1.x0, z0: -PROTO.D1, x1: PROTO.P1.x1, z1: -PROTO.D1 },
+        t2: { x0: PROTO.P1.x0, z0: 0, x1: PROTO.P1.x1, z1: 0 },
+        t3: { x0: PROTO.P2.x0, z0: PROTO.D3, x1: PROTO.P2.x1, z1: PROTO.D3 },
+      },
+      stops: ['t1'] },
+  ],
 };
 const stationsOf = T => STATIONS[worldId(T)];
 // The fixed plank crossings (D15), as segments [x0, z0, x1, z1] drawn across the tracks: a pad is laid where a segment
@@ -1002,6 +1119,7 @@ const stationsOf = T => STATIONS[worldId(T)];
 const XING_FIXED = {
   yard: [[-6.25 * SC, 13 * SC, -6.25 * SC, 17 * SC], [6.25 * SC, 13 * SC, 6.25 * SC, 21.3 * SC]], // just clear of No. 1's place
   hub: [],   // D24: none; the stands, platform, dock, yard and town are all on the north side of the line
+  proto: [[PROTO.WALKWAY.x, PROTO.WALKWAY.z0, PROTO.WALKWAY.x, PROTO.WALKWAY.z1]],   // D25: the plank walkway over tracks 1 and 2 (provisional)
   start: [
     [-5.8, -TURN_OFF - 2 * SC, -5.8, 1.6 * SC],                          // the platform's west end, between it and the freight shed
     [31, -TURN_OFF - 2 * SC, 31, 1.6 * SC],                              // the platform's east end, short of the water tower
@@ -1021,7 +1139,7 @@ const COUPLER_GAP = 0.1 * SC;  // D15: vehicle lengths and the coupled pitch gro
 // world: 'hub' (D24, the page's new game: PAGE_WORLD), 'start' (the M1 real start, the default here, so the
 // checks and debug scenarios written for it keep it) or 'yard' (the M0 test yard, a debug scenario).
 function newState(seed, world) {
-  const wid = WORLDS[world] ? world : 'start', hub = wid === 'hub', Wd = WORLDS[wid], T = Wd.build();
+  const wid = WORLDS[world] ? world : 'start', proto = wid === 'proto', hub = wid === 'hub' || proto, Wd = WORLDS[wid], T = Wd.build();   // D25: the prototype starts as the hub world does, then its own (below)
   worldUse(T);
   // D24: in the hub world No. 1 is parked (kept, away off the map: not drawn, blocking nothing); the Overland and its
   // set-out cars keep their entries (away, empty), and the railroad's train slots follow them (section "railroad trains").
@@ -1046,7 +1164,19 @@ function newState(seed, world) {
     tg: tgNewStore(),                // the telegram inbox (section "telegrams and alerts")
     tut: tutNewState(wid === 'yard'), // the investor's tutorial, days 1 and 2 (section "tutorial"); none in the test yard; D24: the hub world has its own steps (TUT_HUB_STEPS)
     rr: rrNewStore(wid),             // D24: the railroad's trains and their daily schedule (section "railroad trains"); switched on in the hub world only
+    pd: pdNewStore(wid),             // D25: the prototype's day: its phase and the day's figures for the summary (section "prototype day"); off elsewhere
   };
+  if (proto) {
+    // D25: the prototype. Every switch lies straight (for track 2); the player sets them for each train, in and out. The
+    // day opens at 06:00 with the player at the schedule board (PROTO.PLAYER). The investor's tutorial, telegrams,
+    // money and the rest are parked (WORLDS.proto.parked); a first-day guide is U's.
+    st.tt.services = [];
+    st.tut.done = true;
+    st.time = PD.OPEN_S - CFG.DAY_START_S;
+    st.pd.day = 0;
+    pgNewDay(st, 0, null);   // the goods waiting in storage at dawn (F)
+    return st;
+  }
   if (hub) {
     // D24: No. 1's Willow Ford runs are parked (no services); Willow Ford does not exist here. The first passenger
     // train comes in from the west, so its way into the platform track is set against it: the player throws switch 2
@@ -1280,6 +1410,9 @@ function applyCommand(S, c, ev) {
     case 'staffWindow': if (worldParked(S.track, 'counter')) ev.push({ t: 'deskLeft', why: 'The ticket counter is closed: tickets are checked on the train' }); else paxStaffCmd(S, c, ev); break;   // passengers: staff a station's ticket window (D24: parked in the hub world)
     case 'rrWaveOff': rrWaveOffCmd(S, c, ev); break;    // D24: send a railroad train off (section "railroad trains")
     case 'checkTickets': pxCheckCmd(S, c, ev); break;   // D24: check the tickets in one car (section "tickets on board")
+    case 'punch': ppPunchCmd(S, c, ev); break;          // D25: punch the next ticket in a coach door's line (section "prototype passengers")
+    case 'pgDeliver': pgDeliverCmd(S, c, ev); break;    // D25: hand the goods for a shop in at its door (section "prototype goods")
+    case 'pdStart': case 'pdEndDay': case 'pdNextDay': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day (section "prototype day")
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
     case 'stepOff': rideStepOffCmd(S, ev); break;
@@ -2765,24 +2898,59 @@ const RR_SCHEDULE = [
   { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 'cargo', arr: RR_H(18, 0), dep: RR_H(19, 30), cars: 4 },
   { id: 'p6', kind: 'pax', from: 'E', to: 'W', track: 'platform', arr: RR_H(19, 30), dep: RR_H(19, 50), cars: 4 },
 ];
+// D25: the prototype's day (plans/proto-tech.md section 2; provisional, for the designer): the same every day, about 5
+// passenger and 3 freight trains that stop, and 2 that run through on track 2 without stopping (the player still sets
+// the switches for them). track: 't1' (passenger trains, at platform 1), 't3' (freight trains, at platform 2's far
+// side), 't2' (through; arr = dep = the time it passes the station). unload / load: goods put off at and taken on
+// here (F makes them: pgConsist, pgLoad). Each end of the line is single track beyond the switches, so a train leaving
+// towards an end and one coming in from it are kept about 30 game minutes apart.
+const PROTO_SCHEDULE = [
+  { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(6, 40), dep: RR_H(6, 55), cars: 3 },
+  { id: 'x1', kind: 'freight', from: 'W', to: 'E', track: 't2', arr: RR_H(7, 45), dep: RR_H(7, 45), cars: 4, through: true },
+  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 40), dep: RR_H(10, 30), cars: 4, unload: 6, load: 0 },
+  { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(9, 15), dep: RR_H(9, 30), cars: 3 },
+  { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(11, 30), dep: RR_H(11, 45), cars: 3 },
+  { id: 'x2', kind: 'pax', from: 'E', to: 'W', track: 't2', arr: RR_H(12, 45), dep: RR_H(12, 45), cars: 3, through: true },
+  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 't3', arr: RR_H(13, 40), dep: RR_H(15, 0), cars: 3, unload: 0, load: 4 },
+  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(14, 15), dep: RR_H(14, 30), cars: 3 },
+  { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(16, 0), dep: RR_H(16, 15), cars: 3 },
+  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(17, 15), dep: RR_H(18, 30), cars: 4, unload: 4, load: 2 },
+];
+// D25: the prototype's stock, drawn as pixel art in the mockup's proportions (bigger than the hub's: a person is 1.75u,
+// a coach 5.6u). Engine and tender are one vehicle, as RR.LOCO. Provisional sizes (plans/proto-sprites.md).
+const PROTO_STOCK = {
+  loco: { k: 'loco', len: 8.8, mass: 2.5, power: 8, look: 'rr' },
+  cars: { coach: { k: 'coach', len: 5.6, mass: 0.5 }, boxcar: { k: 'boxcar', len: 5.0, mass: 0.5 }, flatcar: { k: 'flatcar', len: 5.0, mass: 0.5 } },
+};
+// D25: what differs between the worlds the railroad's trains run in. LINE, BOUNDS, EDGE_W: the through line's ends, the
+// map, the edge where empty slots are kept; SLOTS: the train ids kept for them (the prototype can have three at the
+// station: one at each platform and one running through); LOCO, CARS: the stock; schedule; wait: trains never give up
+// (D25 (6): no crew leaving by itself, no cancelling: a train waits for the player and is shown late).
+const RR_WORLDS = {
+  hub: { LINE: HUBW.LINE, BOUNDS: HUBW.BOUNDS, EDGE_W: HUBW.EDGE_W, SLOTS: RR.SLOTS, LOCO: RR.LOCO, CARS: RR.CARS, schedule: RR_SCHEDULE, wait: false },
+  proto: { LINE: PROTO.LINE, BOUNDS: PROTO.BOUNDS, EDGE_W: PROTO.EDGE_W, SLOTS: [3, 4, 5], LOCO: PROTO_STOCK.loco, CARS: PROTO_STOCK.cars, schedule: PROTO_SCHEDULE, wait: true },
+};
+const rrW = T => RR_WORLDS[worldId(T)] || RR_WORLDS.hub;
 // The hub's switches by name (switch ids, buildHubWorld): CW cargo west (a spring switch lying for the cargo track,
 // provisional), CE cargo east, PW platform west, PE platform east.
 const HUB_SW = { CW: 0, CE: 1, PW: 2, PE: 3 };
 function rrNewStore(world) {
-  return { on: world === 'hub', day: -1, runs: [], next: 0, nextStock: RR.FIRST_STOCK,
+  return { on: world === 'hub' || world === 'proto', day: -1, runs: [], next: 0, nextStock: RR.FIRST_STOCK,
     tk: { checked: 0, cents: 0, missed: 0, missedCents: 0 }, cg: {} };
 }
 // The empty train slots of a new hub game (ids firstId, firstId + 1), parked on the line's west end, off the map.
 function rrNewTrains(T, firstId) {
-  return RR.SLOTS.map((id, i) => ({ id: firstId + i, name: 'Railroad train', owner: 'rr', away: true, front: { e: HUBW.EDGE_W, s: 4 + 40 * i, d: 1 },
+  const W = rrW(T);
+  return W.SLOTS.map((id, i) => ({ id: firstId + i, name: 'Railroad train', owner: 'rr', away: true, front: { e: W.EDGE_W, s: 4 + 40 * i, d: 1 },
     v: 0, mode: 'idle', m: 1, route: null, status: 'Away', consist: [] }));
 }
 // Where a train of the railroad first appears for an end of the line: its leading end 2u from the line's end, facing in
 // (off the map: the line runs 64u past each edge).
 function rrEntry(T, end) {
-  if (end === 'W') return { e: HUBW.EDGE_W, s: 2 + 32, d: 1 };   // room behind it for the longest train
-  const E = T.edges.find(E => T.nodes[E.b].x === HUBW.LINE.x1 || T.nodes[E.a].x === HUBW.LINE.x1);
-  return T.nodes[E.b].x === HUBW.LINE.x1 ? { e: E.id, s: E.len - 34, d: -1 } : { e: E.id, s: 34, d: 1 };
+  const W = rrW(T);
+  if (end === 'W') return { e: W.EDGE_W, s: 2 + 32, d: 1 };   // room behind it for the longest train
+  const E = T.edges.find(E => T.nodes[E.b].x === W.LINE.x1 || T.nodes[E.a].x === W.LINE.x1);
+  return T.nodes[E.b].x === W.LINE.x1 ? { e: E.id, s: E.len - 34, d: -1 } : { e: E.id, s: 34, d: 1 };
 }
 // A point on the through line (z = 0) at x, as a track position {e, s, d} (the line's own edges only, not a bypass);
 // d faces east (dirX +1, the default) or west (dirX -1) whichever way the edge was built.
@@ -2852,15 +3020,35 @@ const rrSod = t => (((t + CFG.DAY_START_S) % 86400) + 86400) % 86400;
 // Where a run's engine stops at its track: the far end of the section's straight between its two switches' legs
 // (each leg runs 5 x SC into the section), RR.CLEAR inside it, facing the way it travels. A whole train fits there.
 function rrStopPos(T, run) {
+  if (protoWorld(T)) return protoStopPos(T, run);   // D25
   const X = HUBW.SW, east = run.to === 'E', leg = 5 * SC + RR.CLEAR;
   const x = run.track === 'platform' ? (east ? X.PE - leg : X.PW + leg) : (east ? X.CE - leg : X.CW + leg);
   return hubLineAt(T, x, east ? 1 : -1);
 }
 // Where a leaving train runs to: 2u short of the far end of the line, off the map (it is gone long before).
-function rrExitPos(T, to) { return to === 'E' ? hubLineAt(T, HUBW.LINE.x1 - 2, 1) : hubLineAt(T, HUBW.LINE.x0 + 2, -1); }
+function rrExitPos(T, to) { const L = rrW(T).LINE; return to === 'E' ? hubLineAt(T, L.x1 - 2, 1) : hubLineAt(T, L.x0 + 2, -1); }
+// D25: where a prototype run's engine stops (PROTO.STOP: on track 1 short of the walkway, on track 3 inside its
+// switch legs), facing the way it travels; a through run (track 't2') has no stop: null.
+function protoStopPos(T, run) {
+  const st = PROTO.STOP[run.track];
+  if (!st) return null;
+  return protoTrackAt(T, run.track === 't1' ? -PROTO.D1 : PROTO.D3, st[run.to], run.to === 'E' ? 1 : -1);
+}
+// A point on the straight of a prototype track (z: -D1 track 1, 0 track 2, D3 track 3) at x, as {e, s, d}, d facing
+// east (dirX +1) or west (-1). Null if no straight of that track covers x.
+function protoTrackAt(T, z, x, dirX) {
+  for (const E of T.edges) {
+    if (E.k !== 'S') continue;
+    const A = T.nodes[E.a], B = T.nodes[E.b];
+    if (Math.abs(A.z - z) > 1e-6 || Math.abs(B.z - z) > 1e-6) continue;
+    const lo = Math.min(A.x, B.x), hi = Math.max(A.x, B.x);
+    if (x >= lo - 1e-9 && x <= hi + 1e-9) return { e: E.id, s: Math.abs(x - A.x), d: (B.x > A.x ? 1 : -1) * (dirX === -1 ? -1 : 1) };
+  }
+  return null;
+}
 const rrNcars = run => (Number.isInteger(run.ncars) ? run.ncars : Array.isArray(run.cars) ? run.cars.length : run.cars || 0);
-const rrLenOf = run => RR.LOCO.len + rrNcars(run) * (RR.CARS.coach.len + COUPLER_GAP);
-const rrAccelOf = run => CFG.ACCEL_K * RR.LOCO.power / (RR.LOCO.mass + rrNcars(run) * RR.CARS.coach.mass);
+const rrLenOf = (run, T) => { const W = rrW(T); return W.LOCO.len + rrNcars(run) * (W.CARS.coach.len + COUPLER_GAP); };
+const rrAccelOf = (run, T) => { const W = rrW(T); return CFG.ACCEL_K * W.LOCO.power / (W.LOCO.mass + rrNcars(run) * W.CARS.coach.mass); };
 const rrTrainAccel = tr => CFG.ACCEL_K * trainPower(tr) / tr.consist.reduce((s, c) => s + c.mass, 0);
 // The time (s, whole ticks) a train of length L takes along route r (from findRoute) from a standstill at start to a
 // stop at its end, driven as trainTick drives it: speed limits under the whole train and ahead, braking to the end.
@@ -2956,12 +3144,13 @@ function rrTrackFree(S, run) {
 // Today's runs from RR_SCHEDULE, appended to S.rr.runs (none twice), in due order. Returns the new ones.
 function rrPlanDay(S, day) {
   const R = S.rr, T = S.track, out = [];
-  for (const sv of RR_SCHEDULE) {
+  for (const sv of rrW(T).schedule) {
     if (R.runs.some(r => r.day === day && r.svc === sv.id)) continue;
     const run = { id: R.next++, svc: sv.id, day, kind: sv.kind, name: (sv.kind === 'pax' ? 'Passenger ' : 'Freight ') + sv.id.slice(1), from: sv.from, to: sv.to,
       track: sv.track, arr: day * 86400 + sv.arr - CFG.DAY_START_S, dep: day * 86400 + sv.dep - CFG.DAY_START_S, slot: null, ph: 'due',
       tIn: null, tArr: null, tWave: null, tGone: null, cars: sv.cars, ncars: sv.cars, lead: 0, warned: false };
-    const go = rrRoute(S, rrEntry(T, run.from), rrStopPos(T, run), new Set(), rrLenOf(run), rrAccelOf(run));
+    if (sv.through) run.through = true;   // D25: runs through on track 2 (T builds how; plans/proto-tech.md section 2)
+    const go = rrRoute(S, rrEntry(T, run.from), run.through ? rrExitPos(T, run.to) : rrStopPos(T, run), new Set(), rrLenOf(run, T), rrAccelOf(run, T));
     run.lead = go ? go.time : 3600;
     R.runs.push(run); out.push(run);
   }
@@ -2983,11 +3172,12 @@ function rrTick(S, ev) {
   for (const run of R.runs.slice()) rrRunTick(S, run, ev);
 }
 function rrRunTick(S, run, ev) {
-  const T = S.track;
+  const T = S.track, wait = rrW(T).wait;
+  if (run.through) { rrThroughTick(S, run, ev); return; }   // D25: through trains (T)
   if (run.ph === 'due') {
     const at = rrEnterAt(run);
     if (!run.warned && S.time >= at - RR.WARN_S) { run.warned = true; ev.push({ t: 'rrDue', run: run.id, mins: Math.max(0, Math.round((at - S.time) / 60)) }); }
-    if (S.time >= run.arr + RR.CANCEL_S) { run.ph = 'cxl'; ev.push({ t: 'rrCancelled', run: run.id, why: `${run.name} could not come in for 6 hours` }); cgOnCancel(S, run, ev); return; }
+    if (!wait && S.time >= run.arr + RR.CANCEL_S) { run.ph = 'cxl'; ev.push({ t: 'rrCancelled', run: run.id, why: `${run.name} could not come in for 6 hours` }); cgOnCancel(S, run, ev); return; }
     if (S.time >= at - 1200) rrTryEnter(S, run, ev);   // from 20 minutes early: a route round a standing train is slower
     return;
   }
@@ -3002,23 +3192,28 @@ function rrRunTick(S, run, ev) {
   } else if (run.ph === 'stand') {
     const ok = S.time - run.tArr >= RR.DWELL_S && (run.kind === 'pax' ? pxReady(S, run, tr) : cgReady(S, run, tr));
     if (ok && !run.ready) { run.ready = true; ev.push({ t: 'rrReady', run: run.id, tr: tr.id }); }
-    if (S.time >= run.dep + RR.AUTO_S && cgReady(S, run, tr)) rrDepart(S, run, tr, ev, true);
+    if (!wait && S.time >= run.dep + RR.AUTO_S && cgReady(S, run, tr)) rrDepart(S, run, tr, ev, true);   // D25: never in the prototype (trains wait)
   } else if (run.ph === 'out') {
     if (!run.go) { rrStartOut(S, run, tr); return; }
-    const rear = leadPos(T, tr, -1), x = edgeAt(T, T.edges[rear.e], rear.s).x, B = HUBW.BOUNDS;
+    const rear = leadPos(T, tr, -1), x = edgeAt(T, T.edges[rear.e], rear.s).x, B = rrW(T).BOUNDS;
     if ((run.to === 'E' ? x > B.x1 + RR.GONE_U : x < B.x0 - RR.GONE_U) || (tr.mode === 'idle' && !tr.route)) rrGone(S, run, tr, ev);
   }
 }
+// D25 (owner T): a through run (track 't2', run.through) comes in from its end at its time, runs along track 2 without
+// stopping and leaves by the other end, stopping short of any switch set against it (the player sets them, in and out)
+// and waiting there for as long as it takes (it is then late). Phases: 'due' > 'out' (on its way, go true) > 'gone';
+// tArr: when its front passed the station's middle (x 0), its lateness = tArr - arr. Foundation stub: it stays 'due'.
+function rrThroughTick(S, run, ev) { }
 // Bring a due run in, when it is time and its slot, track and line are free. Returns true if it came in.
 function rrTryEnter(S, run, ev) {
   const T = S.track, R = S.rr;
-  const slot = RR.SLOTS.find(id => S.trains[id] && S.trains[id].owner === 'rr' && trainOff(S.trains[id]) && !R.runs.some(o => o.slot === id && o.ph !== 'gone' && o.ph !== 'cxl'));
+  const W = rrW(T), slot = W.SLOTS.find(id => S.trains[id] && S.trains[id].owner === 'rr' && trainOff(S.trains[id]) && !R.runs.some(o => o.slot === id && o.ph !== 'gone' && o.ph !== 'cxl'));
   if (slot === undefined || !rrTrackFree(S, run)) return false;
-  const start = rrEntry(T, run.from), go = rrRoute(S, start, rrStopPos(T, run), rrAvoid(S, run), rrLenOf(run), rrAccelOf(run));
+  const start = rrEntry(T, run.from), go = rrRoute(S, start, rrStopPos(T, run), rrAvoid(S, run), rrLenOf(run, T), rrAccelOf(run, T));
   if (!go || S.time < run.arr - go.time - RR.EARLY_S || !rrLineClear(S, run, go.r.path)) return false;
   const tr = S.trains[slot];
-  const cars = run.kind === 'pax' ? Array.from({ length: rrNcars(run) }, () => ({ ...RR.CARS.coach })) : cgConsist(S, run);
-  tr.consist = [{ ...RR.LOCO }].concat(cars).map(c => ({ ...c, id: R.nextStock++ }));
+  const cars = run.kind === 'pax' ? Array.from({ length: rrNcars(run) }, () => ({ ...W.CARS.coach })) : cgConsist(S, run);
+  tr.consist = [{ ...W.LOCO }].concat(cars).map(c => ({ ...c, id: R.nextStock++ }));
   Object.assign(tr, { away: false, front: { ...start }, v: 0, m: 1, mode: 'route', route: routeNew(go.r), status: 'Coming in', name: run.name });
   delete tr.swWait;
   run.slot = slot; run.ncars = tr.consist.length - 1; run.cars = tr.consist.slice(1).map(c => c.id); run.ph = 'in'; run.tIn = S.time; run.path = go.r.path.slice();
@@ -3045,8 +3240,8 @@ function rrStartOut(S, run, tr) {
 // while goods for the hub are aboard and sells the ones for Outside); any left anyway are used up so none is lost.
 function rrGone(S, run, tr, ev) {
   for (const c of tr.consist) for (const id of itemsAt(S, { kind: 'CAR', stockId: c.id })) itemConsume(S, id, 'soldOutside', ev);
-  const i = Math.max(0, RR.SLOTS.indexOf(tr.id));
-  Object.assign(tr, { away: true, consist: [], v: 0, mode: 'idle', m: 1, route: null, status: 'Away', name: 'Railroad train', front: { e: HUBW.EDGE_W, s: 4 + 40 * i, d: 1 } });
+  const W = rrW(S.track), i = Math.max(0, W.SLOTS.indexOf(tr.id));
+  Object.assign(tr, { away: true, consist: [], v: 0, mode: 'idle', m: 1, route: null, status: 'Away', name: 'Railroad train', front: { e: W.EDGE_W, s: 4 + 40 * i, d: 1 } });
   delete tr.swWait;
   run.ph = 'gone'; run.tGone = S.time; run.slot = null;
   ev.push({ t: 'rrLeft', run: run.id, late: rrDepLate(run) });
@@ -3109,7 +3304,8 @@ function rrSwitchNeeds(S) {
   };
   for (const run of R.runs) {
     if (run.ph === 'gone' || run.ph === 'cxl' || (run.day !== today && run.ph === 'due')) continue;
-    const tr = rrTrainOf(S, run), L = tr && !trainOff(tr) ? trainLength(tr) : rrLenOf(run), acc = tr && !trainOff(tr) ? rrTrainAccel(tr) : rrAccelOf(run);
+    if (run.through) continue;   // D25: T lists a through run's switches (rrThroughTick's route)
+    const tr = rrTrainOf(S, run), L = tr && !trainOff(tr) ? trainLength(tr) : rrLenOf(run, T), acc = tr && !trainOff(tr) ? rrTrainAccel(tr) : rrAccelOf(run, T);
     const stop = rrStopPos(T, run);
     if (run.ph === 'due') {
       const go = rrRoute(S, rrEntry(T, run.from), stop, rrAvoid(S, run, run.arr), L, acc);
@@ -3183,7 +3379,7 @@ function rrCheckSaveShape(st) {
   if (!R || typeof R !== 'object' || typeof R.on !== 'boolean' || !Number.isInteger(R.day) || !Array.isArray(R.runs) || !Number.isInteger(R.next) || !Number.isInteger(R.nextStock)) bad();
   if (!R.tk || typeof R.tk !== 'object' || !R.cg || typeof R.cg !== 'object') bad('parts');
   for (const r of R.runs) if (!r || !Number.isInteger(r.id) || (r.slot !== null && !(st.trains[r.slot] && st.trains[r.slot].owner === 'rr'))) bad('run');
-  if (R.on && worldId(st.track) !== 'hub') bad('switched on outside the hub world');
+  if (R.on && worldId(st.track) !== 'hub' && worldId(st.track) !== 'proto') bad('switched on outside the hub and prototype worlds');
 }
 
 // ==== Section: cargo (items and waybills) ====
@@ -4131,7 +4327,8 @@ function townPlaced() {
   if (townLotCache && townLotCache.w === w) return townLotCache.list;
   // D24: a lot marked parked (Willow Ford's store) is left out of a world where that system is parked (the hub world).
   const off = what => !!what && !!(WORLDS[w] && WORLDS[w].parked && WORLDS[w].parked[what]);
-  const list = TOWN_LOTS.filter(L => !off(L.parked)).map(L => { const A = townAnchor(L.townId), o = L[w] || L, p = townWorld(A, o.dx, o.dz); return { ...L, x: p.x, z: p.z, yaw: A.yaw + L.yaw }; });
+  // D25: in the prototype the town's businesses are parked (its three shops are PROTO_SHOPS, only doors for deliveries).
+  const list = off('town') ? [] : TOWN_LOTS.filter(L => !off(L.parked)).map(L => { const A = townAnchor(L.townId), o = L[w] || L, p = townWorld(A, o.dx, o.dz); return { ...L, x: p.x, z: p.z, yaw: A.yaw + L.yaw }; });
   townLotCache = { w, list };
   return list;
 }
@@ -4193,7 +4390,7 @@ function townUseOne(S, bizId, c, ev) {
 }
 // Step 8b of the sim tick: once a game hour, use goods; at 07:00, offer contracts for goods running low.
 function townTick(S, ev) {
-  if (!S.town || S.time % 3600 !== 0) return;
+  if (!S.town || S.time % 3600 !== 0 || worldParked(S.track, 'town')) return;   // D25: parked in the prototype
   const abs = S.time + CFG.DAY_START_S, day = Math.floor(abs / 86400), winter = townWinter(day);
   for (const B of TOWN_BUSINESSES) {
     const st = S.town.biz[B.id];
@@ -4518,6 +4715,7 @@ function econSoldOutside(S, id, ev) {
 // When the buildings section gives use spots (buildingSpots(), builder C2), the hub depot's 'telegraph' spot is
 // used; otherwise the spot is worked out from the depot's footprint (the layout before C2).
 function econTelegraphKey() {
+  if (!BLD_LAYOUT.some(a => a.id === 'depot')) return { x: 1e4, z: 1e4, wx: 1e4, wy: 0, wz: 1e4 };   // D25: none in the prototype (money and telegrams parked): far off the map
   const at = BLD_LAYOUT.find(a => a.id === 'depot'), ext = BLD_EXTENTS.depot, c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
   const w = (lx, lz) => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c });
   const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'telegraph') : null;
@@ -4528,6 +4726,7 @@ function econTelegraphKey() {
 // The office desk (D13, builder D1): the hub depot's 'desk' use spot from buildingSpots(), else worked out from the
 // depot's layout. x, z: where the player stands; wx, wy, wz: the depot wall behind it (the spot to tap).
 function econDeskSpot() {
+  if (!BLD_LAYOUT.some(a => a.id === 'depot')) return { x: 1e4, z: 1e4, wx: 1e4, wy: 0, wz: 1e4 };   // D25: none in the prototype (money and telegrams parked): far off the map
   const at = BLD_LAYOUT.find(a => a.id === 'depot'), ext = BLD_EXTENTS.depot, c = Math.cos(at.yaw || 0), s = Math.sin(at.yaw || 0);
   const sp = typeof buildingSpots === 'function' ? buildingSpots().find(p => p.building === 'depot' && p.kind === 'desk') : null;
   const stand = sp ? { x: sp.x, z: sp.z } : { x: at.x - 1.3 * SC * c + (ext[3] + 0.52) * s, z: at.z + 1.3 * SC * s + (ext[3] + 0.52) * c };
@@ -4713,7 +4912,7 @@ function econCreditCmd(S, c, ev, draw) {
 function econTelBefore(S, ev) { const P = S.player; return P.use && (P.use.k === 'tel' || P.use.k === 'desk') ? { from: ev.length, k: P.use.k } : null; }
 function econTick(S, ev, tel) {
   const E = S.econ, P = S.player;
-  if (!E) return;
+  if (!E || worldParked(S.track, 'money')) return;   // D25: money, contracts and orders are parked in the prototype
   if (tel && P.use === null && P.mode === 'idle' && !P.act) {
     const desk = tel.k === 'desk', d = desk ? econDeskSpot() : econTelegraphKey();
     if (Math.hypot(P.x - d.x, P.z - d.z) <= CFG.REACH) {
@@ -4824,6 +5023,7 @@ const cgRunCars = run => Number.isInteger(run.cars) ? run.cars : ((RR_SCHEDULE.f
 // What a freight run brings: the orders due by its arrival that fit its cars (oldest first, whole orders), one entry
 // per item ({ c, n, contract, order }), and the cars they need (econPack). Changes nothing.
 function cgPlan(S, run) {
+  if (protoWorld(S.track)) return pgPlan(S, run);   // D25: the prototype's goods (F)
   const E = S.econ, cap = cgRunCars(run), arr = cgRunArr(S, run), take = [];
   let lines = [];
   if (E) for (const o of E.orders) {
@@ -4839,6 +5039,7 @@ function cgPlan(S, run) {
 // The cars of a freight run, front to back after the engine, as consist entries without ids ({ k, len, mass }) (called by
 // TR when the run's train is made up; TR gives the stock ids, then calls cgLoad).
 function cgConsist(S, run) {
+  if (protoWorld(S.track)) return pgConsist(S, run);   // D25 (F)
   const need = cgPlan(S, run).cars.map(c => ({ ...RR.CARS[c.k] }));
   while (need.length < cgRunCars(run)) need.push({ ...RR.CARS.boxcar });
   return need;
@@ -4847,6 +5048,7 @@ function cgStore(S) { return S.rr.cg; }
 const cgKeep = (S, list) => list.filter(id => S.rr.runs.some(r => r.id === id));   // only the runs still listed
 // Put the orders due into the train's cars (once per run): events itemCreated, orderDelivered (each order), cgLoaded.
 function cgLoad(S, run, tr, ev) {
+  if (protoWorld(S.track)) return pgLoad(S, run, tr, ev);   // D25 (F)
   const C = cgStore(S);
   tr = tr || rrTrainOf(S, run);
   if (!tr || !S.econ) return { cars: 0, items: 0 };
@@ -4882,7 +5084,7 @@ function cgHubAboard(S, tr) {
   for (let i = 0; i < I.next; i++) { const w = I.where[i]; if (w && w.kind === 'CAR' && cars.has(w.stockId) && itemTag(I.waybill[i]) !== 'OUTSIDE') n++; }
   return n;
 }
-function cgReady(S, run, tr) { tr = tr || rrTrainOf(S, run); return !tr || cgHubAboard(S, tr) === 0; }
+function cgReady(S, run, tr) { if (protoWorld(S.track)) return pgReady(S, run, tr); tr = tr || rrTrainOf(S, run); return !tr || cgHubAboard(S, tr) === 0; }
 // A free spot in the cargo yard for the crew to set an item down (rows from the dock's back edge, west to east), in
 // hundredths of a u: no living item on the ground within 0.35u.
 function cgYardSpot(S) {
@@ -4897,6 +5099,7 @@ function cgYardSpot(S) {
 // The train is leaving (waved off, or its crew left by itself): goods for Outside are sold; goods for the hub still
 // aboard are set down in the cargo yard. Events cgSold { run, items, paid }, cgSetDown { run, items }.
 function cgOnDepart(S, run, tr, ev) {
+  if (protoWorld(S.track)) return pgOnDepart(S, run, tr, ev);   // D25 (F)
   tr = tr || rrTrainOf(S, run);
   if (!tr) return { sold: 0, paid: 0, setDown: 0 };
   const C = cgStore(S), rid = run && run.id !== undefined ? run.id : null;
@@ -4914,6 +5117,7 @@ function cgOnDepart(S, run, tr, ev) {
 // For the car panel and the UI: what is in a car and whether the player may work it now, or null for no such car.
 // { stock, k, run (run id, or null), items, hub (goods for the hub), out (goods for Outside), used, cap (slot units), why }
 function cgCarStatus(S, stock) {
+  if (protoWorld(S.track)) return pgCarStatus(S, stock);   // D25 (F)
   const f = carryCarOf(S, stock);
   if (!f) return null;
   const R = CARGO_CAR_RULES[f.car.k], ids = itemsAt(S, { kind: 'CAR', stockId: stock }), run = f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
@@ -4925,6 +5129,7 @@ function cgCarStatus(S, stock) {
 // (or still waiting from before it) move to the next freight train with room (cgBook from now, no lead: the goods
 // are on their way), else the next freight train (it brings them as room allows). Events cgRebooked { run, order, due }.
 function cgOnCancel(S, run, ev) {
+  if (protoWorld(S.track)) return 0;   // D25: the prototype's trains are never cancelled (they wait)
   if (!S.econ || run.kind !== 'freight') return 0;
   const moved = S.econ.orders.filter(o => o.due <= run.arr).sort((a, b) => a.due - b.due || a.id - b.id);
   for (const o of moved) {
@@ -4937,6 +5142,7 @@ function cgOnCancel(S, run, ev) {
 }
 // After the economy, each tick: cgUnloaded once per standing freight run with no goods for the hub left aboard.
 function cgTick(S, ev) {
+  if (protoWorld(S.track)) { pgTick(S, ev); return; }   // D25 (F)
   if (!S.rr || !S.rr.on) return;
   for (const run of S.rr.runs) {
     if (run.kind !== 'freight' || run.ph !== 'stand') continue;
@@ -5528,6 +5734,11 @@ const TOOL_PARKS = {
   hub: [
     { id: 0, k: 'truck', x: -1700, z: -1000, yaw: 192 },
     { id: 1, k: 'cart', x: -2000, z: -1020, yaw: 192 },
+  ],
+  // D25: the prototype: the hand truck and the handcart on platform 2, west of the storage shed (F may move them).
+  proto: [
+    { id: 0, k: 'truck', x: -1000, z: Math.round((PROTO.P2.z0 + 4.4) * 100), yaw: 192 },
+    { id: 1, k: 'cart', x: -1200, z: Math.round((PROTO.P2.z0 + 4.4) * 100), yaw: 192 },
   ],
 };
 let TOOL_PARK = TOOL_PARKS.yard;
@@ -6465,6 +6676,7 @@ function pxAdd(S, to, x, z, ev) {
 // Called by TR when a passenger train stands at the platform (and by pxTick for a standing run it has not seen):
 // its riders for the hub are aboard its coaches, to step off. Returns how many.
 function pxOnArrive(S, run, tr, ev) {
+  if (protoWorld(S.track)) return ppOnArrive(S, run, tr, ev);   // D25: the line and the punch (P)
   if (!S.pax || !S.rr || !run || !tr) return 0;
   const X = S.pax, tk = pxTk(S);
   if (tk.seen.includes(run.id)) return 0;
@@ -6483,6 +6695,7 @@ function pxOnArrive(S, run, tr, ev) {
 // Called by TR as a train is waved off (before it moves): everyone still unchecked aboard rides free; everyone aboard
 // leaves with the train. Returns { missed, cents }.
 function pxOnDepart(S, run, tr, ev) {
+  if (protoWorld(S.track)) return ppOnDepart(S, run, tr, ev);   // D25 (P)
   if (!S.pax || !S.rr || !tr) return { missed: 0, cents: 0 };
   const X = S.pax, tk = pxTk(S), stocks = new Set(tr.consist.map(c => c.id)), keep = [];
   let n = 0;
@@ -6506,6 +6719,7 @@ function pxOnDepart(S, run, tr, ev) {
 // Nobody is still stepping off this train, nobody is walking up to board it, and nobody waiting for its way is left
 // behind while it has a free seat. False until its arrival is done.
 function pxReady(S, run, tr) {
+  if (protoWorld(S.track)) return ppReady(S, run, tr);   // D25 (P)
   if (!S.pax || !S.rr || !run || !tr) return true;
   const tk = pxTk(S), stocks = new Set(tr.consist.filter(c => c.k === 'coach').map(c => c.id));
   if (!stocks.size) return true;
@@ -6520,6 +6734,7 @@ function pxReady(S, run, tr) {
 // checking it now), at (standing at the platform: it can be checked), spot: [x, z] (u) or null }. null: not one of
 // the railroad's coaches.
 function pxCarStatus(S, stock) {
+  if (protoWorld(S.track)) return ppCarStatus(S, stock);   // D25 (P)
   if (!S.pax || !S.rr) return null;
   const f = rideCarOf(S, stock);
   if (!f || f.tr.owner !== 'rr' || f.car.k !== 'coach') return null;
@@ -6533,6 +6748,7 @@ function pxCarStatus(S, stock) {
 // A run's travellers, for the boards (TR's rrBoardRows): { off (still to step off), on (aboard, boarded here),
 // waiting (on the platform or coming, for its way), checked, unchecked }.
 function pxRunStatus(S, run) {
+  if (protoWorld(S.track)) return ppRunStatus(S, run);   // D25 (P)
   const out = { off: 0, on: 0, waiting: 0, checked: 0, unchecked: 0 };
   if (!S.pax || !S.rr || !run) return out;
   const tr = rrTrainOf(S, run), stocks = new Set(tr ? tr.consist.map(c => c.id) : []);
@@ -6594,6 +6810,7 @@ function pxCheckTick(S, ev, cars) {
 // Step 8 of the sim tick in the hub world (from paxTick): travellers coming, stepping off, boarding, leaving, and the
 // ticket check in hand.
 function pxTick(S, ev, poseCache) {
+  if (protoWorld(S.track)) { ppTick(S, ev, poseCache); return; }   // D25 (P)
   const X = S.pax, R = S.rr;
   if (!X || !R || !R.on) return;
   const tk = pxTk(S), K = pxHub(S);
@@ -6667,6 +6884,107 @@ function pxTick(S, ev, poseCache) {
     keep.push(p);
   }
   X.list = keep;
+}
+
+// ==== Section: prototype passengers (D25) ====
+// Owner: builder P (plans/proto-tech.md section 3). Travellers line up on platform 1 at the coach door positions
+// before a passenger train comes in; when it stands, each punch (command { t: 'punch', tr, car }) punches one ticket
+// (PP.PUNCH_S) and that traveller boards; riders for the Hub step off first and walk into town. No money (parked).
+// Reuses S.pax.list for the travellers (their states are P's: 'come', 'line', 'board', 'aboard', 'off', ...).
+// The foundation's stubs keep the railroad's trains working with no travellers: ready at once, nothing to punch.
+// Events (agreed names, for U): ppLine { run, n } (travellers lining up for a run), ppPunched { run, tr, car, id },
+// ppBoarded { run, id }, ppMissed { run, n } (left on the platform when the train was sent off), ppOff { run, n }.
+// Figures for the summary: pdCount(S, 'punched' | 'missed', n).
+const PP = {
+  PUNCH_S: 8,        // game seconds to punch one ticket (provisional)
+  LINE_S: 3600,      // travellers start to come to the line this long before a run's arrival
+  PER_TRAIN: [3, 7], // travellers boarding per passenger train, at least and at most (provisional)
+  OFF: [2, 5],       // riders for the Hub stepping off per train (provisional)
+};
+function ppTick(S, ev, poseCache) { }
+function ppOnArrive(S, run, tr, ev) { return 0; }
+function ppReady(S, run, tr) { return true; }
+function ppOnDepart(S, run, tr, ev) { return { missed: 0 }; }
+// { stock, tr, line (travellers waiting at its doors), punched, aboard, spot: { x, z } (where the player stands to punch) } or null.
+function ppCarStatus(S, stock) { return null; }
+function ppRunStatus(S, run) { return { off: 0, on: 0, waiting: 0, checked: 0, unchecked: 0, line: 0, punched: 0 }; }
+// The places on platform 1 where a run's travellers line up: [{ car (index behind the engine), door (0 or 1), x, z }].
+function ppLineSpots(S, run) { return []; }
+function ppPunchCmd(S, c, ev) { ev.push({ t: 'ppRefused', why: 'Nobody is waiting to have a ticket punched' }); }
+
+// ==== Section: prototype goods (D25) ====
+// Owner: builder F (plans/proto-tech.md section 4). Freight trains stand at track 3 beside platform 2: goods for the
+// town are unloaded into the storage shed's bays (tagged by shop: STORE, SMITHY, SALOON), goods waiting in storage
+// for the railroad (tag OUT) are loaded into the cars. In the evening the day's goods are sorted by shop into the
+// handcart and handed in at the three shops' doors (command { t: 'pgDeliver', shop }). No money, no orders (parked).
+// Reuses the item store (S.items: crates, sacks, barrels in cars, bays, carried, on the ground), the carrying
+// commands, the hand truck and the handcart. The foundation's stubs: empty boxcars, nothing to unload or load.
+// Events (agreed names): pgUnloaded { run, id }, pgLoaded { run, id }, pgDelivered { shop, id }, pgRefused { why }.
+// Figures for the summary: pdCount(S, 'unloaded' | 'loaded' | 'delivered', n).
+const PG = {
+  TAGS: { STORE: 'store', SMITHY: 'smithy', SALOON: 'saloon', OUT: null },   // goods tags to PROTO_SHOPS ids (OUT: for the railroad)
+};
+function pgNewDay(S, day, ev) { }                       // the goods for the railroad waiting in storage at dawn
+function pgPlan(S, run) { return { cars: [], units: [], lines: [] }; }
+function pgConsist(S, run) { const n = Number.isInteger(run.cars) ? run.cars : (PROTO_SCHEDULE.find(v => v.id === run.svc) || {}).cars || 3; return Array.from({ length: n }, () => ({ ...PROTO_STOCK.cars.boxcar })); }
+function pgLoad(S, run, tr, ev) { return { cars: 0, items: 0 }; }
+function pgReady(S, run, tr) { return true; }
+function pgOnDepart(S, run, tr, ev) { return { sold: 0, paid: 0, setDown: 0 }; }
+function pgCarStatus(S, stock) { return null; }
+function pgTick(S, ev) { }
+// Goods still to deliver today, by shop id: { store: n, smithy: n, saloon: n }.
+function pgToDeliver(S) { return { store: 0, smithy: 0, saloon: 0 }; }
+function pgDeliverCmd(S, c, ev) { ev.push({ t: 'pgRefused', why: 'Nothing to hand in here' }); }
+
+// ==== Section: prototype day (D25) ====
+// Owner: builder U (the sim side of the day is small; plans/proto-tech.md section 5). The prototype's day, the same
+// every day (D25 (3)): 'morning' (06:00, the player at the schedule board; U opens the board and the clock waits for
+// the player: command pdStart), 'day' (the trains), 'evening' (once every one of today's trains has left: sort and
+// deliver the day's goods), 'summary' (command pdEndDay, or every good delivered, or PD.LATE_S: the day's figures in
+// S.pd.sum), then command pdNextDay starts the next morning (the clock jumps to 06:00 the next day).
+// S.pd = { on, day, ph ('morning' | 'day' | 'evening' | 'summary'), stats: { trains, onTime, late, worstLate (s),
+// punched, missed, unloaded, loaded, delivered }, sum (the summary's copy of stats, or null) }. A builder adds a figure
+// with pdCount(S, key, n). Events: pdMorning { day }, pdEvening, pdSummary { sum }.
+const PD = {
+  OPEN_S: 6 * 3600,     // the day opens at 06:00 (seconds of the day)
+  START_BY_S: 6 * 3600 + 1800,   // the morning becomes the day by itself at 06:30 (the first train is due 06:40)
+  LATE_S: 22 * 3600,    // at 22:00 the day ends by itself (provisional)
+};
+function pdNewStats() { return { trains: 0, onTime: 0, late: 0, worstLate: 0, punched: 0, missed: 0, unloaded: 0, loaded: 0, delivered: 0 }; }
+function pdNewStore(world) { return { on: world === 'proto', day: -1, ph: 'morning', stats: pdNewStats(), sum: null }; }
+function pdCount(S, key, n) { if (S.pd && S.pd.on) S.pd.stats[key] = (S.pd.stats[key] || 0) + (n === undefined ? 1 : n); }
+// Step 9c of the sim tick: the day's phases.
+function pdTick(S, ev) {
+  const D = S.pd;
+  if (!D || !D.on) return;
+  for (const e of ev) {
+    if (e.t === 'rrArrived' || (e.t === 'rrLeft' && e.through)) { D.stats.trains++; const late = e.late || 0; if (late > RR.LATE_S) D.stats.late++; else D.stats.onTime++; D.stats.worstLate = Math.max(D.stats.worstLate, late); }
+  }
+  const sod = rrSod(S.time);
+  if (D.ph === 'morning' && sod >= PD.START_BY_S) { D.ph = 'day'; ev.push({ t: 'pdDay', day: D.day }); }   // the day starts by itself if the player has not
+  if (D.ph === 'day' && S.rr && S.rr.on && rrDayOf(S) === D.day && S.rr.runs.filter(r => r.day === D.day).every(r => r.ph === 'gone' || r.ph === 'cxl')) { D.ph = 'evening'; ev.push({ t: 'pdEvening' }); }
+  if ((D.ph === 'evening' || D.ph === 'day') && (sod >= PD.LATE_S || rrDayOf(S) > D.day)) pdSummary(S, ev);
+}
+function pdSummary(S, ev) { const D = S.pd; D.ph = 'summary'; D.sum = { day: D.day, ...D.stats }; ev.push({ t: 'pdSummary', sum: D.sum }); }
+function pdCmd(S, c, ev) {
+  const D = S.pd;
+  if (!D || !D.on) return;
+  if (c.t === 'pdStart' && D.ph === 'morning') { D.ph = 'day'; ev.push({ t: 'pdDay', day: D.day }); }
+  else if (c.t === 'pdEndDay' && D.ph === 'evening') pdSummary(S, ev);
+  else if (c.t === 'pdNextDay' && D.ph === 'summary') {
+    // The next morning: the clock jumps to 06:00 the next day (the night passes), the figures start again.
+    const day = rrDayOf(S) + 1;
+    S.time = day * 86400 + PD.OPEN_S - CFG.DAY_START_S - CFG.TICK_GAME_S;   // this tick's step 2 brings it to 06:00
+    D.day = day; D.ph = 'morning'; D.stats = pdNewStats(); D.sum = null;
+    Object.assign(S.player, { x: PROTO.PLAYER.x, z: PROTO.PLAYER.z, f: Math.PI, mode: 'idle', use: null, act: null });
+    pgNewDay(S, day, ev);
+    ev.push({ t: 'pdMorning', day });
+  }
+}
+function pdCheckSaveShape(st) {
+  const D = st.pd, bad = why => { throw new Error('damaged save: the prototype\'s day' + (why ? ' (' + why + ')' : '')); };
+  if (!D || typeof D !== 'object' || typeof D.on !== 'boolean' || !Number.isInteger(D.day) || typeof D.ph !== 'string' || !D.stats || typeof D.stats !== 'object') bad();
+  if (D.on && worldId(st.track) !== 'proto') bad('switched on outside the prototype');
 }
 
 // ==== Section: telegrams and alerts ====
@@ -6814,7 +7132,7 @@ function alertsOf(S) {
 // Step 9 of the sim tick: telegrams for this tick's events, and for alerts that have just started.
 function tgTick(S, ev) {
   const G = S.tg;
-  if (!G) return;
+  if (!G || worldParked(S.track, 'telegrams')) return;   // D25: telegrams and alerts are parked in the prototype
   const n = ev.length;
   for (let i = 0; i < n; i++) { const f = TG_FROM_EVENT[ev[i].t]; if (f) { const m = f(S, ev[i]); if (m) telegramSend(S, m, ev); } }
   if (S.tick % TG.ALERT_EVERY !== 0) return;
@@ -7041,7 +7359,7 @@ function tutSend(S, i, ev) {
 // Step 9b of the sim tick (after the telegrams): record the goals met this tick, then move on when the step's is met.
 function tutTick(S, ev) {
   const U = S.tut;
-  if (!U || U.done || !S.tg) return;
+  if (!U || U.done || !S.tg || worldParked(S.track, 'tutorial')) return;   // D25: parked in the prototype (a first-day guide instead, U)
   const steps = tutSteps(S), hub = steps === TUT_HUB_STEPS;
   for (const e of ev) {
     // D24 (hub): switch 2 thrown for the platform; a car's tickets checked; a passenger or freight train sent off.
@@ -7148,6 +7466,7 @@ function simTick(S, cmds) {
   paxTick(S, ev, poseCache);                            // 8. travellers: arriving, the ticket queue, boarding and stepping off (section "passengers")
   tgTick(S, ev);                                        // 9. telegrams for this tick's events and new alerts (section "telegrams and alerts")
   tutTick(S, ev);                                       // 9b. the investor's tutorial: goals met, the next telegram (section "tutorial")
+  pdTick(S, ev);                                        // 9c. D25: the prototype's day: morning, day, evening, summary (section "prototype day")
   if (S.time % 3600 === 0) ev.push({ t: 'hour' });
   return ev;
 }
@@ -7181,6 +7500,9 @@ function migrate(save) {
   if (!save || typeof save !== 'object' || !save.state || typeof save.state !== 'object') throw new Error('not a Railhead save');
   // Each step takes a save from one version to the next. Keep every step: old saves pass through all of them.
   const st = save.state;
+  // D25: the steps that read the layout tables (the bay tags of 1 -> 2) read the save's own world's, whatever world the
+  // page opened in (a save from before 6 -> 7 has no world on its track: the test yard).
+  worldUse(st.track && typeof st.track === 'object' ? st.track : null);
   if (st.schemaVersion === 1) {
     // 1 -> 2 (cargo): every car gets a stock id, and the game gets an empty item store and the default bay tags.
     let id = 0;
@@ -7286,6 +7608,12 @@ function migrate(save) {
     st.rr = rrNewStore(st.track && typeof st.track === 'object' ? st.track.world : null);
     st.schemaVersion = 17;
   }
+  if (st.schemaVersion === 17) {
+    // 17 -> 18 (the prototype, D25): an old save keeps its world ('start', 'yard' or 'hub') and everything in it, and runs
+    // there exactly as before; it gets the prototype's day store switched off. Only a new game is in the prototype.
+    st.pd = pdNewStore(null);
+    st.schemaVersion = 18;
+  }
   if (st.schemaVersion !== CFG.SCHEMA_VERSION) throw new Error('unknown save version ' + st.schemaVersion);
   checkSaveShape(st);
   tutRealign(st);   // D20 (6): a mid-tutorial save from before the steps' new order
@@ -7359,7 +7687,7 @@ function checkSaveShape(st) {
   if (!arr(st.rng) || st.rng.length !== 4) bad('random numbers');
   const T = st.track;
   if (!T || !arr(T.nodes) || !arr(T.edges) || !arr(T.switches)) bad('track');
-  if (T.world !== 'yard' && T.world !== 'start' && T.world !== 'hub') bad('track world');
+  if (T.world !== 'yard' && T.world !== 'start' && T.world !== 'hub' && T.world !== 'proto') bad('track world');
   for (const N of T.nodes) if (!N || !num(N.x) || !num(N.z)) bad('track node');
   const nodeOk = i => Number.isInteger(i) && i >= 0 && i < T.nodes.length;
   const edgeOk = i => Number.isInteger(i) && i >= 0 && i < T.edges.length;
@@ -7386,6 +7714,7 @@ function checkSaveShape(st) {
   tgCheckSaveShape(st);
   tutCheckSaveShape(st);
   rrCheckSaveShape(st);
+  pdCheckSaveShape(st);   // D25
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -9252,6 +9581,29 @@ BLD_LAYOUTS.hub = BLD_LAYOUTS.start
     { id: 'lamp5', kind: 'lamp', x: -28.0, z: -7.2, yaw: 0 },
     { id: 'lamp6', kind: 'lamp', x: -44.0, z: -7.2, yaw: 0 },
   ]);
+// D25: the prototype station (PROTO, "starting world layout"; plans/proto-tech.md section 1). Local +z faces the track
+// (south) for the decks and the station; the shops face the street (south) too. The schedule board is drawn only.
+BLD_LAYOUTS.proto = [
+  { id: 'platform1', kind: 'p1deck', x: (PROTO.P1.x0 + PROTO.P1.x1) / 2, z: (PROTO.P1.z0 + PROTO.P1.z1) / 2, yaw: 0 },
+  { id: 'platform2', kind: 'p2deck', x: (PROTO.P2.x0 + PROTO.P2.x1) / 2, z: (PROTO.P2.z0 + PROTO.P2.z1) / 2, yaw: 0 },
+  { id: 'station', kind: 'station', x: 0, z: PROTO.P1.z0 - 2.8, yaw: 0 },
+  { id: 'storage', kind: 'storage', x: -1, z: PROTO.P2.z0 + 2.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  // The shops along the main street (x 0, running north), their fronts on it: the store (west side, facing east) and
+  // the saloon (east side, facing west) face each other; the blacksmith further up on the west side (provisional).
+  { id: 'shop_store', kind: 'shop', x: -8.2, z: -30, yaw: Math.PI / 2 },
+  { id: 'shop_saloon', kind: 'shop', x: 8.2, z: -30, yaw: -Math.PI / 2 },
+  { id: 'shop_smithy', kind: 'shop', x: -8.2, z: -44, yaw: Math.PI / 2 },
+  { id: 'schedboard1', kind: 'schedboard', x: PROTO.SCHEDBOARD.x, z: PROTO.SCHEDBOARD.z, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp1', kind: 'lamp', x: -12, z: PROTO.P1.z0 + 0.6, yaw: 0, y: BLD_PLATFORM_TOP },
+  { id: 'lamp2', kind: 'lamp', x: 13, z: PROTO.P1.z0 + 0.6, yaw: 0, y: BLD_PLATFORM_TOP },
+];
+// D25: the prototype's shops (F owns the delivery rules): id, the building, the name on its sign, the tag on goods for
+// it, and the door spot (where the player stands to hand goods in: 0.9u out from the front's middle, the first open walk cell).
+const PROTO_SHOPS = [
+  { id: 'store', bld: 'shop_store', name: 'General Store', sign: 'STORE', tag: 'STORE' },
+  { id: 'smithy', bld: 'shop_smithy', name: 'Blacksmith', sign: 'SMITHY', tag: 'SMITHY' },
+  { id: 'saloon', bld: 'shop_saloon', name: 'Saloon', sign: 'SALOON', tag: 'SALOON' },
+].map(sh => { const at = BLD_LAYOUTS.proto.find(a => a.id === sh.bld), o = 4 + 0.9; return { ...sh, door: { x: at.x + o * Math.sin(at.yaw), z: at.z + o * Math.cos(at.yaw) } }; });
 let BLD_LAYOUT = BLD_LAYOUTS.yard;
 function bldKindOf(at) { return at.kind || bldKind(at.id); }
 // The platform kinds (flush with the track, a deck people stand on): the hub's, Willow Ford's and the test yard's.
@@ -9262,13 +9614,15 @@ function bldIsPlatform(kind) { return kind === 'platform' || kind === 'wfplatfor
 // x, z: the bay centre in world units; yaw: the shed's yaw (local +z faces the track); y: the dock top.
 function bldBaysOf(layout) {
   const out = {};
+  // D25: the storage shed on platform 2: 4 bays in a row on its track 3 side (south), on the deck.
+  for (const at of layout.filter(a => bldKindOf(a) === 'storage')) out[at.id] = { yaw: 0, y: BLD_PLATFORM_TOP, bays: [-3.75, -1.25, 1.25, 3.75].map(lx => ({ x: at.x + lx, z: at.z + 2.05 })) };
   for (const at of layout.filter(a => bldKindOf(a) === 'freightshed')) {
     const c = Math.cos(at.yaw), s = Math.sin(at.yaw), lz = 1.21 * WS;
     out[at.id] = { yaw: at.yaw, y: BLD_PLATFORM_TOP, bays: [-1.6 * WS, -0.55 * WS, 0.55 * WS, 1.6 * WS].map(lx => ({ x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c })) };
   }
   return out;
 }
-const BLD_BAYS_BY = { yard: bldBaysOf(BLD_LAYOUTS.yard), start: bldBaysOf(BLD_LAYOUTS.start), hub: bldBaysOf(BLD_LAYOUTS.hub) };
+const BLD_BAYS_BY = { yard: bldBaysOf(BLD_LAYOUTS.yard), start: bldBaysOf(BLD_LAYOUTS.start), hub: bldBaysOf(BLD_LAYOUTS.hub), proto: bldBaysOf(BLD_LAYOUTS.proto) };
 let BLD_BAYS = BLD_BAYS_BY.yard;
 // Points the plain layout tables at a world's (called by worldUse in "starting world layout").
 function bldUseWorld(id) {
@@ -9355,12 +9709,23 @@ const BLD_EXT_M1 = {
   hitchrail: [-1.4, 1.4, -0.6, 0.6].map(v => v / WS),
   schedboard: [-1.35, 1.35, -0.12, 0.12].map(v => v / WS),   // D22 (3): drawn only, never a footprint
   cargodock: [-8.5, 8.5, -1.5, 1.5],    // D24: the hub world's open cargo dock beside the cargo track: 27.2u x 4.8u, flush, a plank deck
+  // D25: the prototype's buildings (plans/proto-tech.md), given in true units here / WS like the props. Drawn by the pixel
+  // renderer; the 3D renderer draws each as a plain box (bldBoxRecipe) for ?world=proto&view=3d.
+  p1deck: [-17, 17, -3.2, 3.2].map(v => v / WS),          // platform 1: 34u x 6.4u, flush
+  p2deck: [-19, 19, -3.2, 3.2].map(v => v / WS),          // platform 2, the island: 38u x 6.4u, flush on both sides
+  station: [-6, 6, -2.8, 2.8].map(v => v / WS),           // the station building behind platform 1
+  shop: [-5, 5, -4, 4].map(v => v / WS),                  // the general store, the blacksmith, the saloon: 10u along the street, 8u deep, the front (local +z) on the street
+  storage: [-5, 5, -1.2, 1.2].map(v => v / WS),           // the storage shed on platform 2
 };
 // D22 (3): the public schedule board on its own posts (true units, the board's local frame: x along it, +z its face
 // towards the track): the painted face w x h with its bottom edge y0 above the deck, on two posts at +-post.
 const BLD_SCHED_POST = { w: 2.4, h: 2.2, y0: 0.9, post: 1.12, face: 0.07 };
 // The station props (D19): small, human-sized things that block walking; their footprints carry prop: true.
 const BLD_PROPS = new Set(['freightpile', 'crates', 'baggagewagon', 'freightscale', 'planter', 'waterbarrel', 'hitchrail']);
+// D25: kinds walked on like a platform (flush with the track) without the platforms' canopy, end steps and handcart ban.
+const BLD_DECKS = new Set(['cargodock', 'p1deck', 'p2deck']);
+// D25: the prototype's kinds have no 3D recipe of their own: a plain box (decks: a plank deck) for the 3D view.
+const BLD_PROTO_KINDS = { p1deck: 0, p2deck: 0, station: 4.5, shop: 5, storage: 3 };
 const BLD_EXTENTS = Object.fromEntries(Object.entries(BLD_EXT_M1).map(([k, e]) => [k, e.map(v => v * WS)]));
 // Use spots in a building's local frame [x, z] (local +z faces the track): where a person stands to use
 // something inside. Just outside the walk grid's block (the footprint grown by 0.25u), on the platform.
@@ -9647,6 +10012,16 @@ const BLD_RECIPES = {
   },
 };
 function bldKind(id) { return id.replace(/\d+$/, ''); }
+// D25: a kind with no recipe (the prototype's, drawn by the pixel renderer): a deck at platform height, or a plain box
+// BLD_PROTO_KINDS[kind] high, filling its plan extent. Only the 3D view (?view=3d) shows it.
+function bldBoxRecipe(kind) {
+  return b => {
+    const e = BLD_EXTENTS[kind], r = b.raw(), h = BLD_PROTO_KINDS[kind] || 0;
+    if (!h) bldDeck(r, e[0], e[1], e[2], e[3], BLD_PLATFORM_TOP, bldSeedOf(b.at), { ends: true, back: true });
+    else r.add(box(e[1] - e[0], h, e[3] - e[2]), kind === 'shop' ? '#a8774b' : '#8a6a48', (e[0] + e[1]) / 2, h / 2, (e[2] + e[3]) / 2);
+    return e;
+  };
+}
 // ---- Station props and the depot's detail (D19) ----
 const BLD_PROP_COL = { crate: '#8d6b45', crateDark: '#5e4329', barrel: '#7a5634', hoop: '#3a3633', sack: '#cdbb92', can: '#a3a39b',
   iron: '#3a3836', wood: '#8a6a48', leaf: '#4b6e2e', leaf2: '#5d8236', water: '#5f7a86', batten: '#9c7049',
@@ -9869,7 +10244,7 @@ function buildingFootprints() {
     };
     if (kind === 'schedboard') continue;   // D22 (3): the schedule board's thin posts do not block walking
     if (kind === 'freightshed') { rect(at.id, [ext[0], ext[1], ext[2], 0.95 * WS], false); rect('freightdock', [-2.3 * WS, 2.3 * WS, 0.95 * WS, ext[3]], true); }
-    else rect(at.id, ext, bldIsPlatform(kind) || kind === 'cargodock');   // D24: the cargo dock is walked on, as the platforms
+    else rect(at.id, ext, bldIsPlatform(kind) || BLD_DECKS.has(kind));   // D24: the cargo dock is walked on, as the platforms (D25: and the prototype's decks)
   }
   return out.concat(townFootprints()); // the town's businesses and homes (section "town")
 }
@@ -9987,7 +10362,7 @@ function buildBuildings(G) {
     const kind = bldKindOf(at);
     const vary = kind === 'lamp' ? null : bldVary(rngSeed(CFG.SEED * 31 + 101 * (i + 1)));
     const p0 = bldDeck.planks;
-    BLD_RECIPES[kind](bldPlacer(kit, glow, at, vary, undefined, 0, roof, shell));
+    (BLD_RECIPES[kind] || bldBoxRecipe(kind))(bldPlacer(kit, glow, at, vary, undefined, 0, roof, shell));
     if (bldDeck.planks > p0) bldPlankCount[at.id] = bldDeck.planks - p0;
   });
   if (BLD_LAYOUT === BLD_LAYOUTS.start) bldHubBoundary(kit, HUB);
@@ -12149,7 +12524,9 @@ function debugUpdate(dt) {
 // The world a new game starts in (a save always keeps its own world): the hub world (D24, the station rework), or
 // with ?world=start the M1 real start (the hub, the spur and Willow Ford: the checks written before D24 open it, see
 // tests/browser.js), or with ?world=yard the M0 test yard (the checks written for the test yard's layout).
-const PAGE_WORLD = (w => (w === 'yard' || w === 'start' ? w : 'hub'))(new URLSearchParams(location.search).get('world'));
+// D25: a new game is in the prototype ('proto'); ?world=hub (the D24 station rework), ?world=start (the M1 real start)
+// and ?world=yard (the M0 test yard) still open the older worlds, unchanged, in 3D.
+const PAGE_WORLD = (w => (w === 'yard' || w === 'start' || w === 'hub' ? w : 'proto'))(new URLSearchParams(location.search).get('world'));
 let S = newState(CFG.SEED, PAGE_WORLD);
 let pending = [];             // commands waiting for the next tick
 let speed = 1, lastSpeed = 1;
@@ -12207,6 +12584,7 @@ function handleEvent(e) {
   else if (/^(econRefused|reachedTelegraph|order|contract|credit)/.test(e.t)) econOnEvent(e);
   else if (/^(telegram|tg|reachedDesk)/.test(e.t)) officeOnEvent(e);
   else if (e.t === 'reachedBiz' || e.t === 'bizDelivered') townOnEvent(e);
+  else if (protoWorld(S.track) && /^(rr|pp|pg|pd)/.test(e.t)) pdOnEvent(e);   // D25 (U): the prototype's trains, tickets, goods and day
   else if (/^(rr|px|cg|ticketChecked|carChecked|fareMissed)/.test(e.t)) rrOnEvent(e);   // D24 (UI)
   else if (/^(desk|pax)/.test(e.t)) paxOnEvent(e);
   else if (/^ride/.test(e.t)) rideOnEvent(e);
@@ -12698,6 +13076,7 @@ function updateHud() {
   workCardUpdate();    // the work board's card (D20)
   workBtnHud();
   rrHud();             // D24: the railroad's trains on screen (Send off, Check tickets): builder UI's ("HUD and panels", block "Station rework")
+  pdHud();             // D25: the prototype's screens (builder U, block "Prototype (D25)")
   inboxUpdate();
   tgBtnHud();
   nextJobHud();        // the Next job line (D21): after the telegraph button (it ends at its left edge), before the slide-in (which goes below it)
@@ -13963,7 +14342,7 @@ function cardTut(c) {
 }
 // Called from doTick with the tick's events: each card not shown yet whose moment came is put in the queue.
 function cardsTick(ev) {
-  if (!cardsOn() || !S.tg) return;
+  if (!cardsOn() || !S.tg || worldParked(S.track, 'cards')) return;   // D25: the D22 cards are parked in the prototype
   if (cardUi.S !== S) { cardUi.S = S; cardUi.queue = []; }
   const look = S.tick % CARD.STATE_TICKS === 0;
   for (const [id, c] of Object.entries(CARDS)) {
@@ -14068,6 +14447,15 @@ function warnTick() {
   for (const w of rows) if (!warnUi.done[w.key]) { warnUi.done[w.key] = true; toast(w.text, WARN.MS); }
 }
 
+// ---- Prototype (D25): the page side of the prototype's day (owner: builder U, plans/proto-tech.md section 5) ----
+// The schedule board card at the morning, the Next job line and the helper arrows' target for the prototype, the
+// buttons over the world (Punch, Send off, Hand in), the summary card and the first-day guide. Foundation: refusals
+// show as a message; nothing else yet.
+function pdHud() { }
+function pdOnEvent(e) {
+  if (e.t === 'rrRefused' || e.t === 'ppRefused' || e.t === 'pgRefused') toast(e.why + '.');
+}
+
 // ---- Station rework (D24): the page side of the railroad's trains, tickets on board and the cargo track ----
 // Owner: builder UI (plans/rework-tech.md): the Send off button and the Check tickets button over a car door (both
 // 48 px or more), the work board's and the schedule board's rows from rrBoardRows, the Next job line and the helper
@@ -14080,7 +14468,7 @@ function warnTick() {
 const RRUI = { NEAR: 9, WAVE_REACH: 3, MSG_PREF: 'railhead-trainmsgs', SHOW_LEFT_S: 20 * 60, DUE_S: 30 * 60, NEED_S: 60 * 60 };
 const rrUi = { el: null, btns: {}, wave: null, panelSig: '', msgPref: null, ready: {} };
 try { const v = localStorage.getItem(RRUI.MSG_PREF); if (v === 'on' || v === 'off') rrUi.msgPref = v; } catch (e) { /* no storage: the default */ }
-const rrHubOn = () => !!(S && S.rr && S.rr.on);
+const rrHubOn = () => !!(S && S.rr && S.rr.on && !worldParked(S.track, 'hubui'));   // D25: the D24 hub's screens are parked in the prototype
 const rrClock = t => wbClockOf(t);
 const rrEndName = e => (e === 'W' ? 'the west' : e === 'E' ? 'the east' : 'the line');
 const rrEndWord = e => (e === 'W' ? 'West' : e === 'E' ? 'East' : '');
@@ -14489,6 +14877,7 @@ Object.assign(CARDS, {
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ndc(px, py) { return new THREE.Vector2(px / window.innerWidth * 2 - 1, -(py / window.innerHeight) * 2 + 1); }
 function groundAt(px, py) {
+  if (pixOn()) return pixGroundAt(px, py, 0);   // D25: the pixel view's fixed projection
   raycaster.setFromCamera(ndc(px, py), camera);
   const out = new THREE.Vector3();
   return raycaster.ray.intersectPlane(groundPlane, out) ? out : null;
@@ -14500,6 +14889,7 @@ function deckGroundAt(px, py) {
   return d && bldDeckInside(d.x, d.z) > 0 ? d : groundAt(px, py);
 }
 function toScreen(x, y, z) {
+  if (pixOn()) return pixToScreen(x, y, z);   // D25
   const v = new THREE.Vector3(x, y, z).project(camera);
   return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight };
 }
@@ -14511,6 +14901,7 @@ function pickAt(px, py) {
     if (d < 34 && (!best || d < best.d)) best = { k: 'sw', id: W.id, d };
   }
   if (best) return best;
+  if (pixOn()) return pixPickTrain(px, py);   // D25
   raycaster.setFromCamera(ndc(px, py), camera);
   const hits = raycaster.intersectObjects(view.trainGroup.children, false).filter(h => h.object.visible);
   if (hits.length) return { k: 'tr', id: hits[0].object.userData.train, stock: hits[0].object.userData.stock };
@@ -14721,6 +15112,7 @@ function econTelTap(px, py) {
   return true;
 }
 function groundAtY(px, py, y) {
+  if (pixOn()) return pixGroundAt(px, py, y === BLD_PLATFORM_TOP ? pixDeckY() : y);   // D25: a deck is drawn DECK px high
   raycaster.setFromCamera(ndc(px, py), camera);
   const out = new THREE.Vector3();
   return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), out) ? out : null;
@@ -14777,6 +15169,7 @@ canvas.addEventListener('pointercancel', pointerEnd);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = Math.max(CFG.ZOOM_MIN, Math.min(CFG.ZOOM_MAX, cam.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); }, { passive: false });
 function panBy(dx, dy) {
+  if (pixOn()) { pixPanBy(dx, dy); return; }   // D25
   const wpp = (camera.right - camera.left) / window.innerWidth, s = Math.sin(CFG.ISO_EL);
   const rx = Math.cos(cam.yaw), rz = -Math.sin(cam.yaw), fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw);
   cam.ox += -rx * dx * wpp + fx * dy * wpp / s;
@@ -14839,6 +15232,372 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 
+// ==== Section: pixel renderer (D25) ====
+// Owner: builder R (plans/proto-tech.md section 6). The prototype ('proto') is drawn as pixel art from ONE fixed
+// isometric view (D25 (8)): no camera turning, zoom in whole steps. The 3D renderer stays for the older worlds (and for
+// ?world=proto&view=3d, a debug view of the same sim). Drawn on its own 2D canvas (#pix, over the WebGL canvas, which
+// still takes the touches: #pix lets them through) in NATIVE pixels on a small buffer, then scaled up by a whole number
+// (PIX.scale device pixels per native pixel) with no smoothing.
+// The projection (fixed, shared with the art pipeline, plans/proto-sprites.md): world +x (along the main line) moves
+// 8 px right and 4 px down, +z 8 px left and 4 px down, +y 8 px up: sx = OX + 8 (x - z), sy = OY + 4 (x + z) - 8 y, in
+// the ground layer's pixels (world (0, 0, 0) at OX, OY). The camera is a native pixel position in that layer (whole
+// pixels only, so nothing shimmers when it pans).
+// Layers: (1) the ground (PIX.ground, drawn once per track: grass, street, ballast, ties, rails, decks with their front
+// faces, the walkway: everything no higher than a deck), then (2) everything that stands up (buildings, the canopy,
+// switch stands, lamps, the schedule board, trains, people, goods) as one list in painter's order: each thing has a
+// world box (x0..x1, z0..z1, y0..y1) and pixSort orders the overlapping ones by the boxes (the usual isometric rule),
+// so a person beside a long train or under the canopy is drawn on the right side of it. The foundation draws flat
+// placeholder shapes (pixBox); R replaces them with the sprites of PIX_ATLAS (plans/proto-sprites.md) as they come.
+// Text (sign names, the schedule board's rows) is drawn in a 3 x 5 pixel font (pixText), crisp at every zoom.
+const PIX_PROJ = (() => {
+  const B = PROTO.BOUNDS, PAD = 24, TOP = 64;   // TOP: room above the map's far corner for tall things
+  const OX = 8 * (B.z1 - B.x0) + PAD, OY = -4 * (B.x0 + B.z0) + TOP;
+  return { PX: 8, PY: 4, PH: 8, OX, OY, W: 8 * ((B.x1 - B.z0) - (B.x0 - B.z1)) + 2 * PAD, H: 4 * ((B.x1 + B.z1) - (B.x0 + B.z0)) + TOP + PAD, DECK: 3 };
+})();
+const PIX = {
+  canvas: null, ctx: null, buf: null, bctx: null, ground: null, groundT: null,
+  scale: 3, vx: 0, vy: 0, nw: 0, nh: 0, dpr: 1,
+  stats: { frames: 0, items: 0, fills: 0, ms: 0 },
+  // Placeholder colours (the mockup's palette, engine.py): R replaces the shapes with sprites.
+  COL: { grass: ['#9fae55', '#7a9244', '#c4c66e'], dirt: ['#d9bf96', '#bb9c76'], ballast: ['#a8a397', '#8b867b'], tie: '#764d33', rail: '#4c4a55', railHi: '#aeaaa3',
+    deck: ['#d4a66c', '#a8774b'], deckFace: '#764d33', deckSide: '#4a3027', walk: '#c39257', wall: ['#e6cf9e', '#c3a376', '#a8774b'], roof: ['#aeaaa3', '#77757c', '#4c4a55'],
+    green: ['#4b8a5f', '#2f6449', '#1f4337'], ochre: ['#efb45c', '#c9863b', '#93592d'], red: ['#e07a58', '#b84a35', '#7c2e2a'], iron: ['#77757c', '#4c4a55', '#2b2026'],
+    navy: ['#6474a6', '#3b4878', '#262c4c'], skin: '#f5d0a6', ink: '#2b2026', paper: '#f0cf98', sw: { N: '#e6e3da', R: '#e07a58' } },
+};
+// World point to ground-layer pixels (not rounded).
+function pixProject(x, y, z) { return { x: PIX_PROJ.OX + 8 * (x - z), y: PIX_PROJ.OY + 4 * (x + z) - 8 * y }; }
+// Ground-layer pixel to the world point at height y.
+function pixUnproject(sx, sy, y) {
+  const a = (sx - PIX_PROJ.OX) / 8, b = (sy - PIX_PROJ.OY + 8 * (y || 0)) / 4;
+  return { x: (a + b) / 2, z: (b - a) / 2 };
+}
+// Is the pixel renderer drawing this page? The prototype, unless ?view=3d.
+const PIX_VIEW3D = new URLSearchParams(location.search).get('view') === '3d';
+function pixOn() { return !PIX_VIEW3D && !!S && protoWorld(S.track); }
+// The deck's drawn height in world units (DECK px), where taps on a deck are unprojected.
+const pixDeckY = () => PIX_PROJ.DECK / PIX_PROJ.PH;
+// The default zoom: device pixels per native pixel, so a portrait phone shows about 300 native pixels across (the
+// mockup's 270 at 3x). cam.zoom (pinch, wheel) moves it in whole steps (PIX.MIN to PIX.MAX).
+PIX.MIN = 1; PIX.MAX = 8;
+function pixScale() {
+  const dpr = window.devicePixelRatio || 1, short = Math.min(window.innerWidth, window.innerHeight) * dpr;
+  const base = Math.max(1, Math.round(short / 300));
+  return Math.max(PIX.MIN, Math.min(PIX.MAX, Math.round(base * cam.zoom / 1.5)));
+}
+// CSS pixels to the world (on the ground, or at height y) and back, through the current camera.
+function pixToNative(px, py) { return { x: PIX.vx + px * PIX.dpr / PIX.scale, y: PIX.vy + py * PIX.dpr / PIX.scale }; }
+function pixToScreen(x, y, z) { const p = pixProject(x, y, z); return { x: (p.x - PIX.vx) * PIX.scale / PIX.dpr, y: (p.y - PIX.vy) * PIX.scale / PIX.dpr }; }
+function pixGroundAt(px, py, y) { const n = pixToNative(px, py), w = pixUnproject(n.x, n.y, y || 0); return new THREE.Vector3(w.x, y || 0, w.z); }
+// A tap on a train (the prototype): the vehicle whose box holds the tap's ray at some height, the nearest the viewer.
+function pixPickTrain(px, py) {
+  let best = null;
+  const n = pixToNative(px, py);
+  S.trains.forEach((tr, ti) => (curPoses && curPoses[ti] || []).forEach((p, vi) => {
+    for (const h of [0.4, 1.2, 2.0, 2.6]) {
+      const w = pixUnproject(n.x, n.y, h), c = Math.cos(p.yaw), s = Math.sin(p.yaw), dx = w.x - p.x, dz = w.z - p.z;
+      if (Math.abs(dx * c - dz * s) <= p.len / 2 && Math.abs(dx * s + dz * c) <= 1.0) {
+        const d = p.x + p.z;
+        if (!best || d > best.d) best = { k: 'tr', id: tr.id, stock: tr.consist[vi] && tr.consist[vi].id, d };
+        break;
+      }
+    }
+  }));
+  return best;
+}
+// Pans the view by a drag of (dx, dy) CSS pixels: the ground follows the finger.
+function pixPanBy(dx, dy) {
+  const ax = -dx * PIX.dpr / PIX.scale / 8, by = -dy * PIX.dpr / PIX.scale / 4;
+  cam.ox += (ax + by) / 2; cam.oz += (by - ax) / 2;
+}
+
+// ---- Drawing helpers (native pixels, crisp: spans of whole pixels, no anti-aliasing) ----
+// A convex polygon [[x, y], ...] (native pixels) filled by rows.
+function pixPoly(g, pts, col) {
+  let y0 = Infinity, y1 = -Infinity;
+  for (const p of pts) { if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  y0 = Math.round(y0); y1 = Math.round(y1);
+  g.fillStyle = col;
+  for (let y = y0; y < y1; y++) {
+    const yc = y + 0.5;
+    let a = Infinity, b = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      if ((p[1] <= yc && q[1] > yc) || (q[1] <= yc && p[1] > yc)) { const x = p[0] + (yc - p[1]) / (q[1] - p[1]) * (q[0] - p[0]); if (x < a) a = x; if (x > b) b = x; }
+    }
+    if (b > a) { const xa = Math.round(a), xb = Math.round(b); if (xb > xa) { g.fillRect(xa, y, xb - xa, 1); PIX.stats.fills++; } }
+  }
+}
+// A box standing in the world (centre x, z, heading yaw, length along it len, width wid, from y0 to y1), drawn as its
+// visible faces: top, and the sides that face the viewer. cols: [top, lit side, shaded side]. ox, oy: the camera.
+function pixBox(g, x, z, yaw, len, wid, y0, y1, cols) {
+  const c = Math.cos(yaw), s = -Math.sin(yaw), hl = len / 2, hw = wid / 2;
+  // Corners in plan: along (c, s), across (-s, c) (yaw: atan2(-dz, dx), so the heading is (cos yaw, -sin yaw)).
+  const P = [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([a, b]) => [x + a * c - b * s, z + a * s + b * c]);
+  const scr = (p, y) => { const q = pixProject(p[0], y, p[1]); return [q.x - PIX.vx, q.y - PIX.vy]; };
+  for (let i = 0; i < 4; i++) {
+    const p = P[i], q = P[(i + 1) % 4], nx = q[1] - p[1], nz = -(q[0] - p[0]);   // outward normal of edge p > q (corners go round clockwise in plan)
+    if (nx + nz <= 1e-9) continue;   // faces away from the viewer
+    pixPoly(g, [scr(p, y0), scr(q, y0), scr(q, y1), scr(p, y1)], nz > nx ? cols[1] : cols[2]);
+  }
+  pixPoly(g, P.map(p => scr(p, y1)), cols[0]);
+}
+// The 3 x 5 pixel font: capitals, digits and a few signs (rows top to bottom, 3 bits each).
+const PIX_FONT = (() => {
+  const G = { A: '010101111101101', B: '110101110101110', C: '011100100100011', D: '110101101101110', E: '111100110100111', F: '111100110100100',
+    G: '011100101101011', H: '101101111101101', I: '111010010010111', J: '001001001101010', K: '101101110101101', L: '100100100100111',
+    M: '101111111101101', N: '110101101101101', O: '010101101101010', P: '110101110100100', Q: '010101101110011', R: '110101110101101',
+    S: '011100010001110', T: '111010010010010', U: '101101101101111', V: '101101101101010', W: '101101111111101', X: '101101010101101',
+    Y: '101101010010010', Z: '111001010100111', 0: '111101101101111', 1: '010110010010111', 2: '110001010100111', 3: '110001010001110',
+    4: '101101111001001', 5: '111100110001110', 6: '011100111101111', 7: '111001010010010', 8: '111101111101111', 9: '111101111001110',
+    ':': '000010000010000', '.': '000000000000010', '-': '000000111000000', '+': '000010111010000', '/': '001001010100100', ' ': '000000000000000' };
+  return G;
+})();
+// Text in the pixel font at native (x, y) (top left), one colour; returns its width. Lower case is drawn as capitals.
+function pixText(g, text, x, y, col) {
+  g.fillStyle = col;
+  let cx = Math.round(x);
+  for (const ch of String(text).toUpperCase()) {
+    const bits = PIX_FONT[ch] || PIX_FONT[' '];
+    for (let i = 0; i < 15; i++) if (bits[i] === '1') g.fillRect(cx + i % 3, Math.round(y) + (i / 3 | 0), 1, 1);
+    cx += 4;
+  }
+  return cx - Math.round(x) - 1;
+}
+
+// ---- The ground layer: worked out pixel by pixel from the world (exact track, decks and street) ----
+// Each pixel is unprojected to the ground and classed: a deck's top (at DECK px) or front faces, rails, the walkway's
+// planks, ties, ballast, the street, grass. Small ordered-dither noise gives the grass and ballast a texture.
+// R may replace it with the art pipeline's baked ground image (PIX_ATLAS 'ground') when it exists.
+function pixBuildGround(T) {
+  const W = PIX_PROJ.W, H = PIX_PROJ.H, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'), img = g.createImageData(W, H), d = img.data, C = PIX.COL;
+  const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const pal = {}; for (const k of ['grass0', 'grass1', 'grass2', 'dirt0', 'dirt1', 'bal0', 'bal1', 'tie', 'rail', 'railHi', 'deck0', 'deck1', 'face', 'side', 'walk', 'edge']) pal[k] = null;
+  Object.assign(pal, { grass0: hex(C.grass[0]), grass1: hex(C.grass[1]), grass2: hex(C.grass[2]), dirt0: hex(C.dirt[0]), dirt1: hex(C.dirt[1]), bal0: hex(C.ballast[0]), bal1: hex(C.ballast[1]),
+    tie: hex(C.tie), rail: hex(C.rail), railHi: hex(C.railHi), deck0: hex(C.deck[0]), deck1: hex(C.deck[1]), face: hex(C.deckFace), side: hex(C.deckSide), walk: hex(C.walk) });
+  const BAY = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const hash = (i, j) => { let h = (i * 374761393 + j * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  // The track: per edge, its plan bounding box grown by the ballast's half width, for a quick test per pixel.
+  const BW = 1.2, edges = T.edges.map(E => {
+    const pts = []; for (let i = 0; i <= 8; i++) pts.push(edgeAt(T, E, E.len * i / 8));
+    const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+    return { E, x0: Math.min(...xs) - BW - 0.2, x1: Math.max(...xs) + BW + 0.2, z0: Math.min(...zs) - BW - 2, z1: Math.max(...zs) + BW + 2 };
+  });
+  // Along-track distance s and offset t (left +) of a plan point from an edge's centre line, or null if off its ends.
+  const st = (E, x, z) => {
+    if (E.k === 'S') {
+      const A = T.nodes[E.a], B = T.nodes[E.b], ux = (B.x - A.x) / E.len, uz = (B.z - A.z) / E.len, dx = x - A.x, dz = z - A.z, s = dx * ux + dz * uz;
+      return s < -0.05 || s > E.len + 0.05 ? null : { s, t: dx * -uz + dz * ux };
+    }
+    const dx = x - E.cx, dz = z - E.cz, r = Math.hypot(dx, dz);
+    let th = Math.atan2(dz, dx) - E.th0;
+    while (th > Math.PI) th -= 2 * Math.PI; while (th < -Math.PI) th += 2 * Math.PI;
+    const f = th / E.sweep;
+    return f < -0.01 || f > 1.01 ? null : { s: f * E.len, t: (r - E.R) * (E.sweep > 0 ? -1 : 1) };
+  };
+  const decks = buildingFootprints().filter(f => f.flush).map(f => ({ x0: f.x - f.w / 2, x1: f.x + f.w / 2, z0: f.z - f.d / 2, z1: f.z + f.d / 2 }));
+  const dy = pixDeckY(), P = PROTO, ST = P.STREET, WK = P.WALKWAY, wkX0 = WK.x - XING.W / 2, wkX1 = WK.x + XING.W / 2;
+  const put = (i, c) => { d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255; };
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const i = (py * W + px) * 4, sx = px + 0.5, sy = py + 0.5, n = BAY[(py & 3) * 4 + (px & 3)] / 16, h = hash(px >> 1, py);
+    // Decks: the top at deck height, then the two faces towards the viewer (+z lit, +x shaded).
+    const top = pixUnproject(sx, sy, dy);
+    let done = false;
+    for (const k of decks) {
+      if (top.x >= k.x0 && top.x <= k.x1 && top.z >= k.z0 && top.z <= k.z1) {
+        const seam = ((top.z - k.z0) % 0.8) < 0.1, end = Math.abs((top.x + 0.37 * Math.floor((top.z - k.z0) / 0.8) * 3) % 2.4) < 0.08;
+        put(i, seam || end ? pal.deck1 : h < 0.12 ? pal.deck1 : pal.deck0); done = true; break;
+      }
+      const fx = (sx - PIX_PROJ.OX) / 8 + k.z1, fh = (PIX_PROJ.OY + 4 * (fx + k.z1) - sy) / 8;   // the +z face (z = z1)
+      if (fx >= k.x0 && fx <= k.x1 && fh >= 0 && fh <= dy) { put(i, pal.face); done = true; break; }
+      const fz = k.x1 - (sx - PIX_PROJ.OX) / 8, gh = (PIX_PROJ.OY + 4 * (k.x1 + fz) - sy) / 8;   // the +x face (x = x1)
+      if (fz >= k.z0 && fz <= k.z1 && gh >= 0 && gh <= dy) { put(i, pal.side); done = true; break; }
+    }
+    if (done) continue;
+    const w = pixUnproject(sx, sy, 0);
+    let rail = false, plank = false, tie = false, bal = false;
+    for (const q of edges) {
+      if (w.x < q.x0 || w.x > q.x1 || w.z < q.z0 || w.z > q.z1) continue;
+      const r = st(q.E, w.x, w.z);
+      if (!r || Math.abs(r.t) > BW) continue;
+      bal = true;
+      const at = Math.abs(Math.abs(r.t) - CFG.GAUGE_HALF);
+      if (at < 0.09) rail = true;
+      else if (Math.abs(r.t) < 1.15 && (r.s % 0.75) < 0.3) tie = true;
+    }
+    if (w.x >= wkX0 && w.x <= wkX1 && w.z >= WK.z0 && w.z <= WK.z1 && bal) plank = true;
+    if (rail) put(i, pal.rail);
+    else if (plank) put(i, (w.x - wkX0) % 0.37 < 0.06 ? pal.face : pal.walk);
+    else if (tie) put(i, pal.tie);
+    else if (bal) put(i, n + h * 0.5 < 0.55 ? pal.bal0 : pal.bal1);
+    else if (w.x >= ST.x0 && w.x <= ST.x1 && w.z >= ST.z0 && w.z <= ST.z1) put(i, n * 0.6 + h * 0.4 < 0.6 ? pal.dirt0 : pal.dirt1);
+    else if (w.x < P.BOUNDS.x0 || w.x > P.BOUNDS.x1 || w.z < P.BOUNDS.z0 || w.z > P.BOUNDS.z1) put(i, pal.grass1);
+    else put(i, h > 0.99 ? pal.grass2 : n * 0.35 + h * 0.65 < 0.2 ? pal.grass1 : pal.grass0);
+  }
+  g.putImageData(img, 0, 0);
+  return cv;
+}
+
+// ---- The things that stand up, in painter's order ----
+// One drawable: its world box and a draw function (g, the buffer's context). pixSort orders a list so that a thing
+// is drawn after everything its box stands in front of: for two boxes that overlap on screen, the one entirely on the
+// far side in x, else in z, else below in y, goes first; boxes that intersect fall back to their centres' depth.
+function pixItem(x0, x1, z0, z1, y0, y1, draw) { return { x0, x1, z0, z1, y0, y1, draw, d: (x0 + x1) / 2 + (z0 + z1) / 2 + (y0 + y1) / 2 }; }
+function pixScreenRect(it) {
+  const a = pixProject(it.x0, it.y1, it.z1), b = pixProject(it.x1, it.y1, it.z0), c = pixProject(it.x0, it.y1, it.z0), e = pixProject(it.x1, it.y0, it.z1);
+  return { l: a.x, r: b.x, t: c.y, b: e.y };
+}
+function pixBehind(a, b) {   // true: a is drawn before b
+  const E = 1e-6;
+  if (a.x1 <= b.x0 + E) return true; if (b.x1 <= a.x0 + E) return false;
+  if (a.z1 <= b.z0 + E) return true; if (b.z1 <= a.z0 + E) return false;
+  if (a.y1 <= b.y0 + E) return true; if (b.y1 <= a.y0 + E) return false;
+  return a.d < b.d;
+}
+function pixSort(list) {
+  const n = list.length, rs = list.map(pixScreenRect), after = list.map(() => []), deg = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const A = rs[i], B = rs[j];
+    if (A.r <= B.l || B.r <= A.l || A.b <= B.t || B.b <= A.t) continue;
+    if (pixBehind(list[i], list[j])) { after[i].push(j); deg[j]++; } else { after[j].push(i); deg[i]++; }
+  }
+  // Kahn's order, nearest-last among the free ones (by depth, then index: the same order every frame).
+  const out = [], free = [];
+  for (let i = 0; i < n; i++) if (!deg[i]) free.push(i);
+  while (out.length < n) {
+    if (!free.length) { let k = -1; for (let i = 0; i < n; i++) if (deg[i] > 0 && (k < 0 || list[i].d < list[k].d)) k = i; deg[k] = 0; free.push(k); }   // a cycle: break it at the farthest
+    free.sort((a, b) => list[a].d - list[b].d || a - b);
+    const i = free.shift();
+    if (deg[i] < 0) continue;
+    deg[i] = -1; out.push(list[i]);
+    for (const j of after[i]) if (deg[j] > 0 && --deg[j] === 0) free.push(j);
+  }
+  return out;
+}
+// The foundation's placeholder shapes for what stands up: buildings (by kind), the canopy, stands, lamps, the
+// schedule board, trains, the player, goods in bays and on the ground. R replaces each with its sprite.
+const PIX_BLD_H = { station: 4.5, shop: 5, storage: 3, lamp: 2.4, schedboard: 2.6 };
+function pixScene(alpha) {
+  const C = PIX.COL, out = [], dy = pixDeckY();
+  for (const f of buildingFootprints()) {
+    if (f.flush) continue;
+    const h = PIX_BLD_H[f.kind] || 1.2, lift = f.kind === 'storage' || f.kind === 'lamp' ? dy : 0, turned = Math.abs(Math.sin(f.yaw || 0)) > 0.5;
+    const ww = turned ? f.d : f.w, dd = turned ? f.w : f.d, x0 = f.x - ww / 2, z0 = f.z - dd / 2;
+    const cols = f.kind === 'shop' ? C.wall : f.kind === 'lamp' ? C.iron : [C.wall[1], C.wall[2], C.deckFace];
+    out.push(pixItem(x0, x0 + ww, z0, z0 + dd, lift, lift + h, g => {
+      pixBox(g, f.x, f.z, f.yaw || 0, f.w, f.d, lift, lift + h * (f.kind === 'lamp' ? 1 : 0.62), cols);
+      if (f.kind !== 'lamp') pixBox(g, f.x, f.z, f.yaw || 0, f.w, f.d * 0.98, lift + h * 0.62, lift + h, C.roof);   // a flat roof band (placeholder)
+      const sh = PROTO_SHOPS.find(q => q.bld === f.id);
+      if (sh || f.kind === 'station') {   // the sign on the front (local +z), in the pixel font
+        const yw = f.yaw || 0, p = pixProject(f.x + Math.sin(yw) * f.d / 2, lift + h * 0.5, f.z + Math.cos(yw) * f.d / 2), t = sh ? sh.sign : 'HUB';
+        g.fillStyle = C.paper; g.fillRect(Math.round(p.x - PIX.vx - t.length * 2 - 2), Math.round(p.y - PIX.vy - 4), t.length * 4 + 3, 8);
+        pixText(g, t, p.x - PIX.vx - t.length * 2, p.y - PIX.vy - 2, C.ink);
+      }
+    }));
+  }
+  // Platform 1's canopy (drawn only: posts thin, people walk under it).
+  const P1 = PROTO.P1, cz = (P1.z0 + P1.z1) / 2 - 0.8;
+  out.push(pixItem(-8, 8, cz - 2, cz + 2, dy + 2.6, dy + 2.9, g => pixBox(g, 0, cz, 0, 16, 4, dy + 2.6, dy + 2.9, C.red)));
+  // The schedule board on its posts.
+  const sb = PROTO.SCHEDBOARD;
+  out.push(pixItem(sb.x - 1.2, sb.x + 1.2, sb.z - 0.1, sb.z + 0.1, dy, dy + 2.5, g => {
+    pixBox(g, sb.x, sb.z, 0, 2.4, 0.15, dy + 0.9, dy + 2.5, [C.ink, C.ink, C.ink]);
+    const p = pixProject(sb.x - 1.0, dy + 2.3, sb.z + 0.1);
+    pixText(g, 'TRAINS', p.x - PIX.vx + 2, p.y - PIX.vy + 1, C.paper);
+  }));
+  // Switch stands: a post and a disc (white straight, red turned off).
+  for (const W of S.track.switches) {
+    const st = W.stand, col = C.sw[W.spring ? W.lever : W.state];
+    out.push(pixItem(st.x - 0.2, st.x + 0.2, st.z - 0.2, st.z + 0.2, 0, 1.3, g => { pixBox(g, st.x, st.z, 0, 0.25, 0.25, 0, 1.0, C.iron); pixBox(g, st.x, st.z, 0, 0.5, 0.15, 1.0, 1.4, [col, col, col]); }));
+  }
+  // Trains: each vehicle a box, coloured by kind.
+  S.trains.forEach((tr, ti) => (curPoses && curPoses[ti] || []).forEach((b, vi) => {
+    const pa = prevPoses && prevPoses[ti] && prevPoses[ti].length === curPoses[ti].length ? prevPoses[ti][vi] : b;
+    const x = lerp(pa.x, b.x, alpha), z = lerp(pa.z, b.z, alpha), yaw = lerpAngle(pa.yaw, b.yaw, alpha), k = b.k;
+    const cols = k === 'loco' ? C.iron : k === 'coach' ? C.green : k === 'flatcar' ? C.ochre : C.ochre, h = k === 'loco' ? 3.0 : k === 'flatcar' ? 0.9 : 2.7;
+    const c = Math.abs(Math.cos(yaw)), s = Math.abs(Math.sin(yaw)), hx = (b.len * c + 2 * s) / 2, hz = (b.len * s + 2 * c) / 2;
+    out.push(pixItem(x - hx, x + hx, z - hz, z + hz, 0, h, g => {
+      pixBox(g, x, z, yaw, b.len, 2.0, 0.3, h, cols);
+      if (k === 'loco') { const f = Math.cos(yaw) >= 0 ? 1 : -1; pixBox(g, x + f * b.len * 0.38 * Math.cos(yaw), z - f * b.len * 0.38 * Math.sin(yaw), yaw, 0.5, 0.5, h, h + 0.9, C.iron); }   // the stack, at the front
+    }));
+  }));
+  // The player: a small figure (body and head), on a deck 3 px up.
+  const Pl = S.player, px = lerp(prevPlayer.x, Pl.x, alpha), pz = lerp(prevPlayer.z, Pl.z, alpha), py = bldDeckInside(px, pz) > 0 ? dy : 0;
+  out.push(pixItem(px - 0.25, px + 0.25, pz - 0.25, pz + 0.25, py, py + 1.75, g => { pixBox(g, px, pz, 0, 0.5, 0.4, py, py + 1.35, C.navy); pixBox(g, px, pz, 0, 0.36, 0.36, py + 1.35, py + 1.75, [C.skin, C.skin, C.skin]); }));
+  // Goods: in the storage bays and on the ground, a small crate each.
+  const I = S.items;
+  for (let id = 0; id < I.next; id++) {
+    const w = I.where[id];
+    if (!w || !I.alive[id]) continue;
+    let x, z, y = 0;
+    if (w.kind === 'GROUND') { x = w.x / 100; z = w.z / 100; y = bldDeckInside(x, z) > 0 ? dy : 0; }
+    else if (w.kind === 'BAY' && BLD_BAYS[w.buildingId]) { const b = BLD_BAYS[w.buildingId].bays[w.bay]; x = b.x; z = b.z; y = dy + 0.6 * (itemsAt(S, { kind: 'BAY', buildingId: w.buildingId, bay: w.bay }).indexOf(id)); }
+    else continue;
+    out.push(pixItem(x - 0.35, x + 0.35, z - 0.35, z + 0.35, y, y + 0.6, g => pixBox(g, x, z, 0, 0.7, 0.7, y, y + 0.6, C.ochre)));
+  }
+  return out;
+}
+// The layout as plain data for the art pipeline (tools/pixelart/export-layout.js writes it to
+// tools/pixelart/proto-layout.json): the projection, every track edge sampled every 0.25u (with its heading), the
+// switches (node, legs' first samples, stand and use spot), the decks, buildings and shops, the walkway, the street.
+function protoLayoutExport() {
+  const T = buildProtoWorld(), r3 = v => Math.round(v * 1000) / 1000;
+  const prev = worldCur; worldUse(T);
+  const edges = T.edges.map(E => {
+    const n = Math.max(1, Math.ceil(E.len / 0.25)), pts = [];
+    for (let i = 0; i <= n; i++) { const q = edgeAt(T, E, E.len * i / n); pts.push([r3(q.x), r3(q.z), r3(Math.atan2(-q.tz, q.tx))]); }
+    return { id: E.id, kind: E.k === 'S' ? 'straight' : 'arc', cls: E.cls, len: r3(E.len), pts };
+  });
+  const sw = T.switches.map(W => ({ id: W.id, name: Object.keys(PROTO_SW).find(k => PROTO_SW[k] === W.id), node: [r3(T.nodes[W.node].x), r3(T.nodes[W.node].z)],
+    trunk: W.trunk, normal: W.normal, reverse: W.reverse, stand: [r3(W.stand.x), r3(W.stand.z)], use: [r3(W.stand.ux), r3(W.stand.uz)] }));
+  const bld = buildingFootprints().map(f => ({ id: f.id, kind: f.kind, x: r3(f.x), z: r3(f.z), w: r3(f.w), d: r3(f.d), yaw: r3(f.yaw || 0), deck: !!f.flush }));
+  const out = { v: 1, note: 'D25 prototype layout, world units (u); see plans/proto-sprites.md', proj: PIX_PROJ, bounds: PROTO.BOUNDS, line: PROTO.LINE,
+    tracks: { t1z: r3(-PROTO.D1), t2z: 0, t3z: r3(PROTO.D3), gaugeHalf: CFG.GAUGE_HALF }, edges, switches: sw, buildings: bld,
+    shops: PROTO_SHOPS.map(q => ({ id: q.id, bld: q.bld, name: q.name, sign: q.sign, door: [r3(q.door.x), r3(q.door.z)] })),
+    walkway: { ...PROTO.WALKWAY, w: XING.W }, street: PROTO.STREET, schedboard: PROTO.SCHEDBOARD, canopy: { x0: -8, x1: 8, z0: r3((PROTO.P1.z0 + PROTO.P1.z1) / 2 - 2.8), z1: r3((PROTO.P1.z0 + PROTO.P1.z1) / 2 + 1.2), y0: 2.6 },
+    stock: PROTO_STOCK, stops: PROTO.STOP };
+  if (prev) worldUse({ world: prev });
+  return out;
+}
+// One frame of the pixel view (called by render() in place of the 3D drawing).
+function pixFrame(alpha, dt) {
+  const t0 = performance.now();
+  if (!PIX.canvas) {
+    const cv = document.createElement('canvas');
+    cv.id = 'pix'; cv.setAttribute('aria-hidden', 'true');
+    document.body.insertBefore(cv, canvas.nextSibling);
+    PIX.canvas = cv; PIX.ctx = cv.getContext('2d');
+    PIX.buf = document.createElement('canvas'); PIX.bctx = PIX.buf.getContext('2d');
+  }
+  document.body.classList.add('proto'); PIX.canvas.hidden = false;
+  if (PIX.groundT !== S.track) { const g0 = performance.now(); PIX.ground = pixBuildGround(S.track); PIX.groundT = S.track; PIX.stats.groundMs = Math.round(performance.now() - g0); }
+  // Size: the visible canvas in device pixels; the buffer in native pixels (a whole number of device pixels each).
+  const dpr = window.devicePixelRatio || 1, dw = Math.round(window.innerWidth * dpr), dh = Math.round(window.innerHeight * dpr);
+  PIX.dpr = dpr; PIX.scale = pixScale();
+  const nw = Math.ceil(dw / PIX.scale), nh = Math.ceil(dh / PIX.scale);
+  if (PIX.canvas.width !== dw || PIX.canvas.height !== dh) { PIX.canvas.width = dw; PIX.canvas.height = dh; }
+  if (PIX.buf.width !== nw || PIX.buf.height !== nh) { PIX.buf.width = nw; PIX.buf.height = nh; }
+  PIX.nw = nw; PIX.nh = nh;
+  // The camera follows the player with the 3D view's soft lag; a drag pans away (cam.ox, oz), held on the map.
+  const P = S.player, px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha), k = 1 - Math.exp(-dt / CFG.CAM_LAG_S);
+  cam.fx += (px - cam.fx) * k; cam.fz += (pz - cam.fz) * k;
+  cam.ox = clampX(cam.fx + cam.ox) - cam.fx; cam.oz = clampZ(cam.fz + cam.oz) - cam.fz;
+  const c = pixProject(cam.fx + cam.ox, 0, cam.fz + cam.oz);
+  PIX.vx = Math.round(c.x - nw / 2); PIX.vy = Math.round(c.y - nh / 2);
+  const g = PIX.bctx;
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = PIX.COL.grass[1]; g.fillRect(0, 0, nw, nh);
+  g.drawImage(PIX.ground, -PIX.vx, -PIX.vy);
+  PIX.stats.fills = 0;
+  const list = pixSort(pixScene(alpha).filter(it => { const r = pixScreenRect(it); return r.r >= PIX.vx - 8 && r.l <= PIX.vx + nw + 8 && r.b >= PIX.vy - 8 && r.t <= PIX.vy + nh + 8; }));
+  for (const it of list) it.draw(g);
+  const v = PIX.ctx;
+  v.imageSmoothingEnabled = false;
+  v.drawImage(PIX.buf, 0, 0, nw, nh, 0, 0, nw * PIX.scale, nh * PIX.scale);
+  PIX.stats.frames++; PIX.stats.items = list.length; PIX.stats.ms = performance.now() - t0;
+}
+
 // ==== Section: drawing each frame ====
 const lerp = (a, b, f) => a + (b - a) * f;
 function lerpAngle(a, b, f) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * f; }
@@ -14891,6 +15650,8 @@ function cutawaySeat(k) {
 function render(alpha, dt) {
   animT += dt;
   worldUse(S.track);
+  if (pixOn()) { pixFrame(alpha, dt); debugUpdate(dt); return; }   // D25: the prototype is drawn as pixel art (section "pixel renderer")
+  if (PIX.canvas) { PIX.canvas.hidden = true; document.body.classList.remove('proto'); }
   // Arrow keys look away from the player.
   const pan = 12 * dt * 60;
   if (keys.has('ArrowLeft')) panBy(pan, 0); if (keys.has('ArrowRight')) panBy(-pan, 0);
@@ -15087,6 +15848,12 @@ window.__railhead = {
   hubui: { rows: () => rrRowsUi(), schedRows: () => rrSchedRows(), workLines: () => rrWorkLines(), hint: () => rrHintTarget(), urgent: () => rrUrgent(), ttCard: () => rrTtCard(),
     get ui() { return rrUi; }, sendOff: rrSendOff, tap: rrTap, onEvent: rrOnEvent, msgOn: rrMsgOn, msgSetPref: rrMsgSetPref, RRUI,
     carPax: stock => rrUiCarPax(S, stock), carGoods: stock => rrUiCarGoods(S, stock), standing: () => rrUiStanding(S), ready: (run, tr) => rrUiReady(S, run, tr), tutHubTarget: c => tutHubTarget(S, c) },
+  // D25: the prototype (its layout, schedule, stubs and the day) and the pixel renderer.
+  proto: { PROTO, PROTO_SW, PROTO_SCHEDULE, PROTO_STOCK, PROTO_SHOPS, RR_WORLDS, rrW, protoStopPos, protoTrackAt, buildProtoWorld, protoLayoutExport,
+    PP, PG, PD, pdCount, pdNewStore, ppLineSpots, ppCarStatus, pgToDeliver, rrThroughTick },
+  pix: { PIX, PIX_PROJ, PIX_FONT, pixOn, pixProject, pixUnproject, pixToScreen, pixGroundAt, pixPickTrain, pixSort, pixItem, pixScale, pixScene, pixScreenRect, pixBehind, get stats() { return PIX.stats; },
+    get view() { return { vx: PIX.vx, vy: PIX.vy, nw: PIX.nw, nh: PIX.nh, scale: PIX.scale, dpr: PIX.dpr }; },
+    get canvas() { return PIX.canvas; }, get ground() { return PIX.ground; } },
   world: { WORLDS, HUB, HUBW, WFORD, STATIONS, TURN_OFF, worldOf, worldId, worldParked, stationsOf, buildingSpots, buildStartWorld, buildHubWorld, buildingFootprints, BLD_LAYOUTS, BLD_EXTENTS, PAGE_WORLD,
     get layout() { return BLD_LAYOUT; }, walkGrid, walkGridBuild, terrainHeight, get walk() { return WALK; } },
 };

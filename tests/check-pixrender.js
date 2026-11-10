@@ -2,8 +2,8 @@
 // - The atlas is decoded and drawn: the baked ground, the buildings, switch stands and points, trains by heading,
 //   people (all four facings, never mirrored), goods with tags, the handcart; no placeholder shapes for anything the
 //   art has.
-// - The default view at phone size, portrait and landscape: a whole scale that shows the station (both platforms and a
-//   train at each), the player on screen; the town reachable by panning.
+// - The default view at phone size, portrait and landscape: a whole scale (3 in portrait since the integration, the
+//   lead's request) that shows the station, platform 1, platform 2's east half and the player; the town by panning.
 // - A busy moment: a passenger train standing at platform 1 with travellers queueing at its doors, a freight train at
 //   track 3, goods in the storage bays and on platform 2, the player carrying a crate.
 // - Painter's order in the tricky cases: travellers behind the passenger train and behind / in front of the freight
@@ -49,7 +49,9 @@ async function busy(page) {
     window.__pixPeople = people;
     if (!window.__pixOrigDrawList) window.__pixOrigDrawList = typeof window.ppDrawList === 'function' ? window.ppDrawList : null;
     window.ppDrawList = () => window.__pixPeople;
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // the loaded game's first frame sets its own view first
     R.pix.pixLookAt(0, -1);
+    if (innerHeight > innerWidth) R.camera.zoom = 1.0;   // portrait: one step out (scale 2) so both trains and the people by them are in view
     await new Promise(r => setTimeout(r, 500));
     return { stand: [runOf('p1').ph, runOf('f1').ph], p1: tr.id, coach: tr.consist[2].id, f1: R.state.trains[runOf('f1').slot].id, people: people.length };
   });
@@ -71,7 +73,7 @@ module.exports = async function checkPixRender() {
         const on = (x, z, y, m) => { const p = R.toScreen(x, z, y || 0); return p.x >= -m && p.x <= innerWidth + m && p.y >= -m && p.y <= innerHeight + m; };
         const S = R.state, P = R.proto.PROTO;
         if (!on(S.player.x, S.player.z, 0, 0)) B('the player is not on the screen');
-        for (const [nm, x, z] of [['platform 1', 0, (P.P1.z0 + P.P1.z1) / 2], ['platform 2', 0, (P.P2.z0 + P.P2.z1) / 2], ['track 1 at the stop', 10, -P.D1], ['track 3', -10, P.D3], ['the station', 0, -15.7]])
+        for (const [nm, x, z] of [['platform 1', 0, (P.P1.z0 + P.P1.z1) / 2], ['platform 2 (east half)', 10, (P.P2.z0 + P.P2.z1) / 2], ['track 1 at the stop', 10, -P.D1], ['track 3 (east half)', 10, P.D3], ['the station\'s front', -9, P.STATION.z + 2.5]])
           if (!on(x, z, 0, 0)) B(`${nm} is not on the screen`);
         const keys = X.drawn.map(r => r.key || '');
         for (const k of ['bld/station', 'bld/canopy', 'bld/storage', 'bld/schedboard', 'bld/footbridge/deck', 'ppl/agent/']) if (!keys.some(q => q.startsWith(k))) B(`nothing drawn from ${k}`);
@@ -196,7 +198,7 @@ module.exports = async function checkPixRender() {
       const fb = await page.evaluate(async () => {
         const R = window.__railhead, X = R.pix, out = { bad: [], ys: [] }, B = m => out.bad.push(m), frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         const [W, E] = X.pixBridges().sort((a, b) => a.x - b.x);
-        const sx = E.p1 === 'e' ? 1 : -1, zs = -7.625;
+        const sx = E.p1 === 'e' ? 1 : -1, F = R.proto.PROTO_FB, zs = (F.Z1[0] + F.Z1[1]) / 2;   // the middle of T's platform 1 flight
         X.placePlayer(E.x + sx * 7.5, zs); await frame();
         for (let i = 0; i <= 14; i++) { X.placePlayer(E.x + sx * (6.6 - i * 0.45), zs); await frame(); out.ys.push(+X.PIX.wy.player.toFixed(2)); }
         for (const z of [-6.5, -5, -3.5]) { X.placePlayer(E.x, z); await frame(); }
@@ -221,14 +223,16 @@ module.exports = async function checkPixRender() {
         const R = window.__railhead, X = R.pix, frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         const E = X.pixBridges().sort((a, b) => a.x - b.x)[1];
         const P1 = R.proto.PROTO.P1;
-        X.PIX.wy.player = 0; X.placePlayer(E.x, P1.z1 - 0.3); await frame();
+        // Beside the deck on platform 1's edge (the strip under the deck itself is the bridge on T's walk grid, so nobody
+        // walks under it: integrator, 2026-11-10).
+        X.PIX.wy.player = 0; X.placePlayer(E.x + 1.2, P1.z1 - 0.3); await frame();
         const y = X.PIX.wy.player;
         // Under the canopy: the canopy is drawn after the player, see-through.
         X.placePlayer(0, (P1.z0 + P1.z1) / 2 - 0.8); await frame(); await frame();
         const o = X.order;
         return { y, canopy: X.canopyFade, order: o.indexOf('player') < o.indexOf('canopy') };
       });
-      if (Math.abs(below.y - 0.375) > 0.01) P(`the player under a deck on platform 1 is drawn at y ${below.y} (expected the platform's 0.375)`);
+      if (Math.abs(below.y - 0.375) > 0.01) P(`the player beside a deck on platform 1 is drawn at y ${below.y} (expected the platform's 0.375)`);
       if (!below.canopy || !below.order) P(`under the canopy: see-through ${below.canopy}, drawn after the player ${below.order}`);
       await page.screenshot({ path: screenshotPath(`pixrender-canopy-${orient}`) });
       // 5. The schedule board's text: U's rows through pixBoardDraw.

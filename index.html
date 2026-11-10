@@ -7602,9 +7602,13 @@ function ppTick(S, ev, poseCache) {
   }
   X.list = keep;
 }
-// The walking surface's height under a traveller (u): a deck is drawn PIX_PROJ.DECK px high (R; a footbridge, when T's
-// PROTO_BRIDGES lands, its height: the integrator wires it here).
-function ppSurfY(x, z) { return typeof bldDeckInside === 'function' && bldDeckInside(x, z) > 0 && typeof PIX_PROJ !== 'undefined' ? PIX_PROJ.DECK / PIX_PROJ.PH : 0; }
+// The walking surface's height under a traveller (u): on a footbridge T's walkBridgeY, else a deck is drawn
+// PIX_PROJ.DECK px high (R), else the ground.
+function ppSurfY(S, x, z) {
+  const b = walkBridgeY(S.track, x, z);
+  if (b !== null) return b;
+  return typeof bldDeckInside === 'function' && bldDeckInside(x, z) > 0 && typeof PIX_PROJ !== 'undefined' ? PIX_PROJ.DECK / PIX_PROJ.PH : 0;
+}
 // A facing as the atlas' four screen diagonals: se +x, ne -z, sw +z, nw -x.
 function ppDir(dx, dz) { return Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 'se' : 'nw') : (dz >= 0 ? 'sw' : 'ne'); }
 const ppDirOf = f => { const a = f / 256 * Math.PI * 2; return ppDir(Math.sin(a), Math.cos(a)); };
@@ -7623,7 +7627,7 @@ function ppDrawList(S) {
     else if (p.s === 'board' && paxAt(p)) { act = 'board'; t = Math.min(1, p.bt / PP.BOARD_S); frame = Math.min(2, Math.floor(t * 3)); dir = 'sw'; }
     else if (p.path.length) { act = 'walk'; frame = (S.tick + p.id) % 4; }
     else if (J && J.on && J.head === p.id) { act = 'ticket'; t = Math.min(1, J.acc / PP.PUNCH_S); frame = t >= 0.5 ? 1 : 0; dir = ppDir(P.x - x, P.z - z); }
-    out.push({ id: p.id, who, x, z, y: ppSurfY(x, z), f: p.f, dir, act, frame, t, s: p.s, key: `ppl/${who}/${act}/${dir}/${frame}` });
+    out.push({ id: p.id, who, x, z, y: ppSurfY(S, x, z), f: p.f, dir, act, frame, t, s: p.s, key: `ppl/${who}/${act}/${dir}/${frame}` });
   }
   return out;
 }
@@ -7932,73 +7936,6 @@ function pgShedOpen(S) {
   const B = BLD_BAYS[PG.SHED];
   return !!B && B.bays.some(b => Math.hypot(b.x - S.player.x, b.z - S.player.z) < PG.SHED_NEAR);
 }
-// Placeholder drawing for the goods, the hand truck, the handcart and the storage shed in the pixel view, with the
-// atlas' sprites where they exist (called by pixScene; R may replace it with its own drawing from pgDrawList,
-// pgCartPose and pgShedOpen). Returns pixItems.
-const PG_IMG = {};
-function pgSprite(g, key, x, y, z, dx, dy) {
-  const A = typeof PIX_ATLAS !== 'undefined' ? PIX_ATLAS : null, f = A && A.frames[key];
-  if (!f) return false;
-  let img = PG_IMG[f[0]];
-  if (!img) { img = PG_IMG[f[0]] = new Image(); img.src = A.sheets[f[0]]; }
-  if (!img.complete || !img.naturalWidth) return false;
-  const p = pixProject(x, y, z);
-  g.drawImage(img, f[1], f[2], f[3], f[4], Math.round(p.x - PIX.vx - f[5] + (dx || 0)), Math.round(p.y - PIX.vy - f[6] + (dy || 0)), f[3], f[4]);
-  return true;
-}
-function pgPixItems(S, alpha) {
-  const out = [], C = PIX.COL, dy = pixDeckY(), deck = (x, z) => (bldDeckInside(x, z) > 0 ? dy : 0);
-  const TAGC = { store: '#e69f00', smithy: '#56b4e9', saloon: '#cc79a7', out: '#0072b2', any: '#9a9a9a' };
-  const Pl = S.player, px = lerp(prevPlayer.x, Pl.x, alpha), pz = lerp(prevPlayer.z, Pl.z, alpha);
-  const ex = k => (typeof PIX_ATLAS !== 'undefined' && PIX_ATLAS.extra && PIX_ATLAS.extra[k]) || {};
-  const good = (g, o, x, y, z, sx, sy) => {
-    if (pgSprite(g, 'goods/' + o.kind, x, y, z, sx, sy)) { const t = ex('goods/' + o.kind).tag_at || [-2, -2]; pgSprite(g, 'tag/' + o.tag, x, y, z, (sx || 0) + t[0], (sy || 0) + t[1]); return; }
-    const p = pixProject(x, y, z), X = Math.round(p.x - PIX.vx + (sx || 0)), Y = Math.round(p.y - PIX.vy + (sy || 0));
-    pixBox(g, x + (sx || 0) / 16, z - (sx || 0) / 16, 0, 0.6, 0.6, y - (sy || 0) / 8, y - (sy || 0) / 8 + 0.5, C.ochre);
-    g.fillStyle = TAGC[o.tag]; g.fillRect(X - 1, Y - 5, 3, 3);
-  };
-  // The storage shed (closed or open) on platform 2.
-  const shed = buildingFootprints().find(f => f.id === PG.SHED), open = pgShedOpen(S);
-  if (shed) {
-    const x0 = shed.x - shed.w / 2, x1 = shed.x + shed.w / 2, z0 = shed.z - shed.d / 2, z1 = shed.z + shed.d / 2;
-    out.push(pixItem(x0, x1, z0, z1, dy, dy + 3.2, g => {
-      if (pgSprite(g, open ? 'bld/storage_open' : 'bld/storage', shed.x, dy, shed.z) || pgSprite(g, 'bld/storage', shed.x, dy, shed.z)) return;
-      pixBox(g, shed.x, shed.z, 0, x1 - x0, z1 - z0, dy, dy + 1.9, [C.wall[1], C.wall[2], C.deckFace]);
-      pixBox(g, shed.x, shed.z, 0, x1 - x0, (z1 - z0) * 0.98, dy + 1.9, dy + 3, C.roof);
-      if (open) for (const b of BLD_BAYS[PG.SHED].bays) pixBox(g, b.x, z1 - 0.02, 0, 1.2, 0.04, dy, dy + 1.6, [C.ink, C.ink, C.ink]);
-    }));
-  }
-  // The hand truck and the handcart, with what they carry.
-  const list = pgDrawList(S);
-  for (const t of pgCartPose(S, px, pz)) {
-    const ty = deck(t.x, t.z), load = t.pushed ? list.filter(o => o.at === (t.k === 'cart' ? 'cart' : 'truck')) : [];
-    out.push(pixItem(t.x - 0.8, t.x + 0.8, t.z - 0.8, t.z + 0.8, ty, ty + 1, g => {
-      if (t.k === 'cart') {
-        if (!pgSprite(g, 'cart/' + t.dir + (load.length ? '/loaded' : ''), t.x, ty, t.z) && !pgSprite(g, 'cart/' + t.dir, t.x, ty, t.z)) pixBox(g, t.x, t.z, t.dir === 'se' || t.dir === 'nw' ? 0 : Math.PI / 2, 1.6, 1.0, ty + 0.3, ty + 0.7, C.red);
-        const slots = ex('cart/' + t.dir).cartSlots || [[2, -2], [6, -4], [-2, -4], [2, -6], [-6, -6], [-2, -8]];
-        for (const o of load.sort((a, b) => b.slot - a.slot)) { const s = slots[o.slot] || [0, -4]; good(g, o, t.x, ty, t.z, s[0], s[1]); }
-      } else {
-        pixBox(g, t.x, t.z, 0, 0.5, 0.5, ty, ty + 1.0, C.iron);
-        load.forEach(o => good(g, o, t.x, ty + 0.15 + o.slot * 0.5, t.z));
-      }
-    }));
-  }
-  // Goods in the bays, on the ground and in the player's hands.
-  for (const o of list) {
-    if (o.at === 'bay' || o.at === 'ground') {
-      const y = deck(o.x, o.z) + o.y;
-      out.push(pixItem(o.x - 0.35, o.x + 0.35, o.z - 0.35, o.z + 0.35, y, y + 0.6, g => good(g, o, o.x, y, o.z)));
-    } else if (o.at === 'hand') {
-      const y = deck(px, pz);
-      out.push(pixItem(px - 0.25, px + 0.27, pz - 0.25, pz + 0.27, y, y + 1.76, g => {   // the player's box, a hair nearer the viewer: drawn over the body
-        if (pgSprite(g, 'goods/' + o.kind + '/carried' + (o.tag === 'out' || o.tag === 'any' ? '' : '/' + o.tag), px, y, pz, 0, -9) || pgSprite(g, 'goods/' + o.kind + '/carried', px, y, pz, 0, -9)) return;
-        good(g, o, px, y + 0.9, pz);
-      }));
-    }
-  }
-  return out;
-}
-
 // ==== Section: prototype day (D25) ====
 // Owner: builder U (the sim side of the day is small; plans/proto-tech.md section 5). The prototype's day, the same
 // every day (D25 (3)): 'morning' (06:00, the player at the schedule board; U opens the board and the clock waits for
@@ -16857,11 +16794,12 @@ const PIX_VIEW3D = new URLSearchParams(location.search).get('view') === '3d';
 function pixOn() { return !PIX_VIEW3D && !!S && protoWorld(S.track); }
 // The deck's drawn height in world units (DECK px), where taps on a deck are unprojected.
 const pixDeckY = () => PIX_PROJ.DECK / PIX_PROJ.PH;
-// The default zoom (R, provisional): device pixels per native pixel, the largest whole number that shows the station
-// (both platforms with a train at each: about PIX.FIT_W x PIX.FIT_H native pixels) on the screen: 2 on a 390 x 844
-// phone at 2x (390 native pixels across), 4 in landscape. cam.zoom (pinch, wheel; 1.5 at the start) moves it in whole
+// The default zoom (R, provisional; integrator 2026-11-10: one step closer in portrait, the lead's request): device
+// pixels per native pixel, the largest whole number that shows about PIX.FIT_W x PIX.FIT_H native pixels: 3 on a
+// 390 x 844 phone at 2x (260 native pixels across: the platforms between the two footbridges, people big enough to
+// read), 4 in landscape. cam.zoom (pinch, wheel; 1.5 at the start) moves it in whole
 // steps (PIX.MIN to PIX.MAX).
-PIX.MIN = 1; PIX.MAX = 8; PIX.FIT_W = 380; PIX.FIT_H = 180; PIX.Z0 = 1.5;
+PIX.MIN = 1; PIX.MAX = 8; PIX.FIT_W = 260; PIX.FIT_H = 180; PIX.Z0 = 1.5;
 function pixBaseScale(dw, dh) { return Math.max(1, Math.floor(Math.min(dw / PIX.FIT_W, dh / PIX.FIT_H))); }
 function pixScale() {
   const dpr = window.devicePixelRatio || 1, base = pixBaseScale(window.innerWidth * dpr, window.innerHeight * dpr);
@@ -17365,7 +17303,7 @@ function pixScene(alpha) {
   const sod = rrSod(S.time), night = sod > 19.5 * 3600 || sod < 6.25 * 3600;
   // Buildings from the layout: the station, the storage shed, the shops (by parts), the lamps.
   for (const f of buildingFootprints()) {
-    if (f.flush || f.kind === 'storage') continue;   // the storage shed: pgPixItems (F) draws it, open or closed
+    if (f.flush) continue;
     const h = PIX_BLD_H[f.kind] || 1.2, lift = f.kind === 'storage' || f.kind === 'lamp' ? dy : 0, turned = Math.abs(Math.sin(f.yaw || 0)) > 0.5;
     const ww = turned ? f.d : f.w, dd = turned ? f.w : f.d, x0 = f.x - ww / 2, z0 = f.z - dd / 2;
     const sh = PROTO_SHOPS.find(q => q.bld === f.id), pick = { k: 'bld', id: f.id, ...(sh ? { shop: sh.id, door: sh.door } : {}) };
@@ -17490,16 +17428,17 @@ function pixScene(alpha) {
   }
   // The player (the station agent), unless riding inside a car.
   if (!Pl.ride) {
-    const wy = pixWalkerY('player', px, pz, Pl.y), moving = Math.hypot(Pl.x - prevPlayer.x, Pl.z - prevPlayer.z) > 1e-4;
-    const act = Pl.act && Pl.act.k, walkFr = pixCycle(7, 4);
-    let anim = 'idle', fr = pixCycle(0.6, 2);
-    if (act === 'throw') { anim = 'throw'; fr = Math.max(0, Math.min(2, Math.floor((1 - Pl.act.left / CFG.THROW_S) * 3))); }
+    const wy = pixWalkerY('player', px, pz, typeof Pl.y === 'number' ? Pl.y : pixSimY(px, pz)), moving = Math.hypot(Pl.x - prevPlayer.x, Pl.z - prevPlayer.z) > 1e-4;
+    const act = Pl.act && Pl.act.k, walkFr = pixCycle(7, 4), punch = typeof ppPlayerAct === 'function' ? ppPlayerAct(S) : null;
+    let anim = 'idle', fr = pixCycle(0.6, 2), dirP = pDir;
+    if (punch) { anim = 'punch'; fr = punch.frame; dirP = punch.dir; }   // P's punch (the ticket in hand)
+    else if (act === 'throw') { anim = 'throw'; fr = Math.max(0, Math.min(2, Math.floor((1 - Pl.act.left / CFG.THROW_S) * 3))); }
     else if (act === 'punch') { anim = 'punch'; fr = pixCycle(4, 3); }
     else if (act === 'wave') { anim = 'wave'; fr = pixCycle(3, 2); }
     else if (!hand) { anim = 'push'; fr = moving ? walkFr : 0; }
     else if (held.length) { anim = 'carry'; fr = moving ? walkFr : 0; }
     else if (moving) { anim = 'walk'; fr = walkFr; }
-    const key = pixPersonKey('agent', anim, pDir, fr), carried = hand && held.length ? held[held.length - 1] : null, back = pDir === 'ne' || pDir === 'nw';
+    const key = pixPersonKey('agent', anim, dirP, fr), carried = hand && held.length ? held[held.length - 1] : null, back = pDir === 'ne' || pDir === 'nw';
     const it = pixItem(px - 0.25, px + 0.25, pz - 0.25, pz + 0.25, wy.y, wy.y + 1.75, g => {
       const p = pixProject(px, wy.y, pz), bx = Math.round(p.x) - PIX.vx, by = Math.round(p.y) - PIX.vy, hd = (pixX('ppl/agent/carry/' + pDir) || {}).hands || PIX_HANDS[pDir];   // the art's hands offset when the atlas carries it
       const goods = () => carried !== null && pixGoodsDraw(g, S, carried, bx + hd[0], by + hd[1], true, px, wy.y + 0.8, pz);
@@ -17516,11 +17455,11 @@ function pixScene(alpha) {
   // Travellers (P's ppDrawList; until it lands, any in S.pax.list with a place), smoothed between ticks.
   for (const q of pixPeople()) {
     const pv = PIX.ppPrev[q.id], x = pv && Math.hypot(pv.x - q.x, pv.z - q.z) < 2 ? lerp(pv.x, q.x, alpha) : q.x, z = pv && Math.hypot(pv.x - q.x, pv.z - q.z) < 2 ? lerp(pv.z, q.z, alpha) : q.z;
-    const who = q.who || PIX_WHO[Math.abs(q.id | 0) % PIX_WHO.length], dir = pixDirOf(q.f), act = q.act || 'idle', ph = (q.id | 0) * 0.37;
+    const who = q.who || PIX_WHO[Math.abs(q.id | 0) % PIX_WHO.length], dir = q.dir || pixDirOf(q.f), act = q.act || 'idle', ph = (q.id | 0) * 0.37;
     if (act !== 'walk') PIX.lineIds.add('pp' + q.id);   // standing (in a line): what stands in front turns see-through
     const anim = act === 'walk' ? 'walk' : act === 'ticket' ? 'ticket' : act === 'board' ? 'board' : 'idle';
-    const fr = Number.isInteger(q.fr) ? q.fr : anim === 'walk' ? pixCycle(7, 4, ph) : anim === 'ticket' ? pixCycle(2, 2, ph) : anim === 'board' ? pixCycle(3, 3) : pixCycle(0.6, 2, ph);
-    const wy = pixWalkerY('pp' + q.id, x, z, q.y), key = pixPersonKey(who, anim, dir, fr), pick = { k: 'pp', id: q.id, who };
+    const fr = Number.isInteger(q.frame) ? q.frame : Number.isInteger(q.fr) ? q.fr : anim === 'walk' ? pixCycle(7, 4, ph) : anim === 'ticket' ? pixCycle(2, 2, ph) : anim === 'board' ? pixCycle(3, 3) : pixCycle(0.6, 2, ph);
+    const wy = pixWalkerY('pp' + q.id, x, z, typeof q.y === 'number' && !pv ? q.y : pixSimY(x, z)), key = pixPersonKey(who, anim, dir, fr), pick = { k: 'pp', id: q.id, who };
     const it = pixItem(x - 0.25, x + 0.25, z - 0.25, z + 0.25, wy.y, wy.y + 1.75, g => {
       if (key && pixSprite(g, key, x, wy.y, z, pick)) return;
       const col = [C.green, C.red, C.ochre, C.navy][Math.abs(q.id | 0) % 4];
@@ -17545,11 +17484,15 @@ function pixScene(alpha) {
   }
   return out;
 }
-// Is the storage shed open? While goods are in its bays or a freight train stands at track 3.
+// Is the storage shed open? F's pgShedOpen (a freight train standing at track 3, or the player near its bays).
 function pixStorageOpen() {
+  if (typeof pgShedOpen === 'function') return pgShedOpen(S);   // F's rule (integrator): a freight train at track 3, or the player near the bays
   if (S.items && Object.keys(BLD_BAYS).some(b => itemsAt(S, { kind: 'BAY', buildingId: b }).length)) return true;
   return !!(S.rr && S.rr.runs && S.rr.runs.some(r => r.ph === 'stand' && r.kind !== 'pax'));
 }
+// The height a walker stands at (u), from the sim: on a footbridge T's walkBridgeY (the walk grid's bridge cells),
+// else a platform deck's drawn height, else the ground (integrator).
+function pixSimY(x, z) { const b = typeof walkBridgeY === 'function' ? walkBridgeY(S.track, x, z) : null; return b !== null ? b : bldDeckInside(x, z) > 0 ? pixDeckY() : 0; }
 // The travellers to draw: P's ppDrawList(S) ([{ id, x, z, f, act, who, y?, fr? }]) once it exists, else anyone in
 // S.pax.list with a place (none in the prototype until P lands). Kept per tick for the smoothing between ticks.
 PIX.ppPrev = {}; PIX.ppCur = {}; PIX.ppTick = -1;
@@ -17665,7 +17608,12 @@ function protoLayoutExport() {
 // the trains at them fill the screen; the town is up and to the right (drag to see it).
 PIX.STACK = 3.0; PIX.PUFF_LIFE = 1.4;
 // The station's middle, from the layout (between the two platforms, a little towards platform 1 and the station).
-function pixHome() { const P = PROTO; return { x: (Math.max(P.P1.x0, P.P2.x0) + Math.min(P.P1.x1, P.P2.x1)) / 2, z: (P.P1.z0 + P.P2.z1) / 2 - 0.5 }; }
+// In portrait (a tall screen: integrator) at platform 1's back edge, so the station and the start of the street
+// fill the top half and the platforms the bottom, instead of empty grass below track 3.
+function pixHome(tall) {
+  const P = PROTO, x = (Math.max(P.P1.x0, P.P2.x0) + Math.min(P.P1.x1, P.P2.x1)) / 2;
+  return { x, z: tall ? P.P1.z0 - 1 : (P.P1.z0 + P.P2.z1) / 2 - 0.5 };
+}
 // The see-through rule (the designer, 2026-11-10): a train, building, canopy or bridge part drawn over the agent or a
 // traveller standing in a line (their own pixels, at least PIX.SEE_PX of them) is drawn again as a checker with its
 // outline (pixDithered), so they show through. Returns the ids of those items.
@@ -17729,8 +17677,13 @@ function pixFrame(alpha, dt) {
   const P = S.player, px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
   if (PIX.camS !== S) {
     PIX.camS = S; PIX.smoke = []; PIX.wy = {};
-    const H = pixHome(), home = Math.hypot(px - H.x, pz - H.z) < 20;
+    const H = pixHome(nh > nw), home = Math.hypot(px - H.x, pz - H.z) < 20;
     pixLookAt(home ? H.x : px, home ? H.z : pz);
+    if (home) {   // integrator: centred on the platforms, nudged just enough to keep the agent on screen (the morning board)
+      const a = 8 * ((px - pz) - (H.x - H.z)), b = 4 * ((px + pz) - (H.x + H.z)) - 8 * (PIX.wy.player || 0), mx = nw / 2 - 20, my = nh / 2 - 36;
+      const ea = (Math.max(0, a - mx) + Math.min(0, a + mx)) / 8, eb = (Math.max(0, b - my) + Math.min(0, b + my)) / 4;
+      pixLookAt(H.x + (ea + eb) / 2, H.z + (eb - ea) / 2);
+    }
   }
   const pan = 12 * dt * 60;   // arrow keys look away
   if (keys.has('ArrowLeft')) pixPanBy(pan, 0); if (keys.has('ArrowRight')) pixPanBy(-pan, 0);

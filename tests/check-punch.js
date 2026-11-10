@@ -11,9 +11,7 @@
 //   pdCount's punched and missed match; the left-behind alternative (ppOnDepart with travellers in line) counts them
 //   as missed and they walk home.
 // - Through runs carry nobody; travellers use the atlas' people types; the same script twice gives the same hash.
-// - Screenshots (portrait and landscape): lines at the coaches, and the agent punching. The pixel renderer (R) does not
-//   draw travellers yet in this branch, so for the pictures only this check adds them (and the agent) to the scene
-//   from ppDrawList and ppPlayerAct with the atlas' sprites; R's real drawing replaces this.
+// - Screenshots (portrait and landscape): lines at the coaches, and the agent punching, drawn by the pixel renderer.
 
 const { openGame, screenshotPath } = require('./browser');
 
@@ -62,7 +60,7 @@ function script() {
   // Each traveller in line stands at its door's line, one behind another.
   for (const p of mine) {
     const sp = spots.find(q => q.car * 2 + q.door === p.ln);
-    if (!sp || Math.abs(p.x / 100 - sp.x) > 0.05 || p.z / 100 > sp.z + 0.05 || (sp.z - p.z / 100) % Pp.PP.GAP > 0.05) B(`traveller ${p.id} is not in its line (${p.x / 100}, ${p.z / 100})`);
+    if (!sp || Math.abs(p.x / 100 - sp.x) > 0.05 || p.z / 100 > sp.z + 0.05 || Math.abs((sp.z - p.z / 100) / Pp.PP.GAP - Math.round((sp.z - p.z / 100) / Pp.PP.GAP)) * Pp.PP.GAP > 0.05) B(`traveller ${p.id} is not in its line (${p.x / 100}, ${p.z / 100})`);
   }
   out.notes.lines = spots.map(sp => mine.filter(p => p.ln === sp.car * 2 + sp.door).length).join(' ');
   out.standState = JSON.stringify(s);   // for the screenshot: the lines at the standing coaches
@@ -123,7 +121,7 @@ function script() {
   const st = Pp.ppRunStatus(s, p1);
   if (st.on !== mine.length || st.line || st.waiting || st.off) B(`p1's run status: ${JSON.stringify(st)}`);
   s.track.switches[SW.W1].state = 'N'; s.track.switches[SW.E1].state = 'R';
-  const en = poses[0]; Object.assign(s.player, { x: en.x, z: en.z - 2.2, mode: 'idle' });
+  const ws = R.rr.rrWaveSpot(s, tr.id); Object.assign(s.player, { x: ws.x, z: ws.z, mode: 'idle' });   // beside the engine, clear of the footbridge's stair (T's wave spot)
   const before = L().length;
   tick([{ t: 'rrWaveOff', tr: tr.id }]);
   if (!evs.some(e => e.t === 'rrWavedOff' && e.run === p1.id)) B(`p1 was not sent off: ${JSON.stringify(evs.filter(e => e.t === 'rrRefused').slice(-1))}`);
@@ -164,32 +162,6 @@ function script() {
   return out;
 }
 
-// Test-only drawing for the screenshots: the travellers from ppDrawList and the agent (ppPlayerAct) as atlas sprites,
-// added to the pixel renderer's scene so its painter's order holds. R's own drawing replaces this.
-async function overlay(page) {
-  await page.evaluate(async () => {
-    /* global PIX_ATLAS, PIX, pixScene, pixItem, pixProject, ppDrawList, ppPlayerAct, prevPlayer, S, bldDeckInside */
-    if (window.__ppOverlay) return;
-    const imgs = await Promise.all(PIX_ATLAS.sheets.map(src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.src = src; })));
-    const sprite = (g, key, x, y, z) => {
-      const f = PIX_ATLAS.frames[key]; if (!f) return;
-      const p = pixProject(x, y, z);
-      g.drawImage(imgs[f[0]], f[1], f[2], f[3], f[4], Math.round(p.x - PIX.vx - f[5]), Math.round(p.y - PIX.vy - f[6]), f[3], f[4]);
-    };
-    const orig = window.pixScene;
-    window.pixScene = alpha => {
-      const Pl = S.player, px = prevPlayer.x + (Pl.x - prevPlayer.x) * alpha, pz = prevPlayer.z + (Pl.z - prevPlayer.z) * alpha;
-      const list = orig(alpha).filter(it => !(Math.abs(it.x0 - (px - 0.25)) < 1e-9 && Math.abs(it.z0 - (pz - 0.25)) < 1e-9 && it.y1 - it.y0 === 1.75));
-      for (const d of ppDrawList(S)) list.push(pixItem(d.x - 0.25, d.x + 0.25, d.z - 0.25, d.z + 0.25, d.y, d.y + 1.75, g => sprite(g, d.key, d.x, d.y, d.z)));
-      const a = ppPlayerAct(S), py = bldDeckInside(px, pz) > 0 ? 3 / 8 : 0, f = Pl.f, dir = Math.abs(Math.sin(f)) >= Math.abs(Math.cos(f)) ? (Math.sin(f) >= 0 ? 'se' : 'nw') : (Math.cos(f) >= 0 ? 'sw' : 'ne');
-      const key = a ? `ppl/agent/punch/${a.dir}/${Math.max(1, a.frame)}` : `ppl/agent/idle/${dir}/0`;
-      list.push(pixItem(px - 0.25, px + 0.25, pz - 0.25, pz + 0.25, py, py + 1.75, g => sprite(g, key, px, py, pz)));
-      return list;
-    };
-    window.__ppOverlay = true;
-  });
-}
-
 module.exports = async function checkPunch() {
   const problems = [];
   let shared = null;
@@ -205,7 +177,6 @@ module.exports = async function checkPunch() {
         shared = { line: a.lineState, stand: a.standState, punch: a.punchState };
       }
       if (!shared || !shared.line || !shared.punch) { problems.push(`${orient}: no states for the screenshots`); continue; }
-      await overlay(page);
       const shot = async (name, json, zoom, fx, fz) => {
         await page.evaluate(([json, zoom, fx, fz]) => {
           const R = window.__railhead; R.importSave(JSON.stringify({ state: JSON.parse(json) }));

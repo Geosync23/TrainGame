@@ -6898,26 +6898,421 @@ function pxTick(S, ev, poseCache) {
 // before a passenger train comes in; when it stands, each punch (command { t: 'punch', tr, car }) punches one ticket
 // (PP.PUNCH_S) and that traveller boards; riders for the Hub step off first and walk into town. No money (parked).
 // Reuses S.pax.list for the travellers (their states are P's: 'come', 'line', 'board', 'aboard', 'off', ...).
-// The foundation's stubs keep the railroad's trains working with no travellers: ready at once, nothing to punch.
 // Events (agreed names, for U): ppLine { run, n } (travellers lining up for a run), ppPunched { run, tr, car, id },
-// ppBoarded { run, id }, ppMissed { run, n } (left on the platform when the train was sent off), ppOff { run, n }.
+// ppBoarded { run, id }, ppMissed { run, n } (left on the platform when the train was sent off), ppOff { run, id, n: 1 }
+// (a rider for the Hub steps down), ppStarted { tr, car, door } (the player starts punching at a door), ppStopped { tr,
+// car, why } (the punch in hand stopped), ppRefused { why }.
 // Figures for the summary: pdCount(S, 'punched' | 'missed', n).
+//
+// How it goes (P, 2026-11-10):
+// - Coming. From PP.LINE_S before a passenger run's arrival (run.arr) ppPlan picks how many travellers want it
+//   (PP.PER_TRAIN, the travellers' own random numbers S.pax.rng), the coach door each lines up at, who each is (a
+//   people type of the atlas, PP.WHO) and when each sets off from the street's far end (PROTO.TOWN_EXITS), between
+//   LINE_S and LAST_S before the arrival (planned late, as the morning's first train: from now while there is time to
+//   walk in, PP.WALK_S). They walk ('come') to their door's line (ppLineSpots: each coach has two
+//   doors, at 1/4 and 3/4 of its length, worked out from protoStopPos' stopping place and the stock lengths, so the
+//   lines are where the doors will stop) and stand in it ('line'), one behind another away from the track, in the
+//   order they reached it (q). A run planned late (a loaded game, a debug jump) puts those who would have set off
+//   already straight into their lines.
+// - Arriving. When the train stands (T calls pxOnArrive, ppTick also does for a standing run it has not seen), PP.OFF
+//   riders for the Hub are aboard its coaches ('aboard', to 'hub'). At each door one at a time steps down ('step',
+//   PP.STEP_S, the board animation backwards) and walks off up the street ('off'), where they leave the map (paxGone).
+// - Punching. { t: 'punch', tr, car, door? } (car: the coach's stock id; door 0 or 1, else the door of that coach with
+//   the longer line; no car: the nearest door with a line): the player walks to the punch spot beside that door (the
+//   other side of the door from the line) and punches the first ticket in the line (PP.PUNCH_S; the agent's punch
+//   animation, the traveller's ticket animation); that traveller walks the step to the door and boards ('board',
+//   PP.BOARD_S, the board animation) and is then 'aboard'. One command, one ticket. Refused until the train stands
+//   and while riders are still to step off that coach. Walking away (or any other command) stops it (ppStopped).
+// - ppReady: the run's arrival is done and nobody is coming to its lines, in them, boarding, aboard for the Hub or
+//   stepping off. T's wave-off refuses while it is false.
+// - Leaving. ppOnDepart (T, at the wave-off): everyone aboard leaves with the train (paxGone); anyone still walking
+//   in to board boards; anyone still coming or in line is left behind ('left': walks back up the street; ppMissed,
+//   pdCount 'missed'): the provisional alternative to refusing the wave-off, kept for the designer.
+// Through runs (x1, x2 on track 2) carry nobody for the Hub: no lines, no riders.
+// S.pax.pp (optional; ppSt fills in what a save lacks): plan (run ids whose travellers are planned), seen (run ids
+// whose arrival is done), due ([[t, run id, door line (car * 2 + door), who, exit]] still to set off, soonest first),
+// qn (the next line order number), job (null or the punch in hand: { tr, car (stock), door, run, x, z (the punch spot,
+// hundredths), on (0 walking there, 1 punching), acc (seconds punched), st (the tick it started) }), tot ({ punched,
+// missed, off, boarded }: counts for the game).
+// Travellers' fields (S.pax.list, the M1 shape): s 'come' | 'line' | 'board' | 'aboard' | 'step' | 'off' | 'left';
+// to 'E' / 'W' (a run's end) or 'hub' (a rider stepping off); P's own fields: run (run id), ln (door line, car * 2 +
+// door), who (people type), q (order in the line, -1 none), bt (seconds into boarding or stepping off), and for a rider
+// who stepped down ox, oz (the step-aside spot, hundredths) and wp (1 while walking to it).
 const PP = {
   PUNCH_S: 8,        // game seconds to punch one ticket (provisional)
   LINE_S: 3600,      // travellers start to come to the line this long before a run's arrival
+  LAST_S: 2400,      // ... and the last sets off this long before it
+  WALK_S: 2100,      // the walk from the street's end to platform 1 (about 31 minutes), with a little to spare
   PER_TRAIN: [3, 7], // travellers boarding per passenger train, at least and at most (provisional)
   OFF: [2, 5],       // riders for the Hub stepping off per train (provisional)
+  BOARD_S: 24,       // stepping up into the coach (3 frames)
+  STEP_S: 16,        // stepping down onto the platform
+  GAP: 0.9,          // spacing in a line (u)
+  SIDE: 0.8,         // the punch spot is this far to the side of a door, towards the coach's middle (u)
+  ASIDE: 0.9,        // a rider stepping down steps this far to the other side before walking off (u)
+  HEAD: 1.2,         // the line's head stands this far in from the platform's edge, behind its door (u)
+  DOOR: 0.5,         // the door spot (where people step up and down) this far in from the edge (u)
+  MAX_LINE: 3,       // at most this many planned at one door (the rest go to another door)
+  NEAR: 0.6,         // the player punches standing within this of the punch spot (u)
+  WHO: ['man_top', 'man_bowler', 'man_bag', 'woman_bonnet', 'woman_shawl', 'child', 'worker', 'porter'],   // README-people.md
 };
-function ppTick(S, ev, poseCache) { }
-function ppOnArrive(S, run, tr, ev) { return 0; }
-function ppReady(S, run, tr) { return true; }
-function ppOnDepart(S, run, tr, ev) { return { missed: 0 }; }
-// { stock, tr, line (travellers waiting at its doors), punched, aboard, spot: { x, z } (where the player stands to punch) } or null.
-function ppCarStatus(S, stock) { return null; }
-function ppRunStatus(S, run) { return { off: 0, on: 0, waiting: 0, checked: 0, unchecked: 0, line: 0, punched: 0 }; }
-// The places on platform 1 where a run's travellers line up: [{ car (index behind the engine), door (0 or 1), x, z }].
-function ppLineSpots(S, run) { return []; }
-function ppPunchCmd(S, c, ev) { ev.push({ t: 'ppRefused', why: 'Nobody is waiting to have a ticket punched' }); }
+// P's part of S.pax, filled in where a save does not have it.
+function ppSt(S) {
+  const X = S.pax;
+  if (!X.pp || typeof X.pp !== 'object') X.pp = {};
+  const pp = X.pp;
+  for (const k of ['plan', 'seen', 'due']) if (!Array.isArray(pp[k])) pp[k] = [];
+  if (!Number.isInteger(pp.qn)) pp.qn = 0;
+  if (pp.job === undefined) pp.job = null;
+  if (!pp.tot || typeof pp.tot !== 'object') pp.tot = {};
+  for (const k of ['punched', 'missed', 'off', 'boarded']) if (!Number.isInteger(pp.tot[k])) pp.tot[k] = 0;
+  return pp;
+}
+const ppPax = run => !!run && run.kind === 'pax' && !run.through;
+const ppWho = X => PP.WHO[Math.floor(paxRand(X) * PP.WHO.length) % PP.WHO.length] + (paxRand(X) < 0.5 ? '' : '.b');
+const ppH = v => Math.round(v * 100);
+// The places on platform 1 where a run's travellers line up: [{ car (index behind the engine), door (0 or 1), x, z
+// (the line's head, straight behind the door; the line runs on away from the track), dx, dz (the door spot: where
+// people step up and down), px, pz (the punch spot: where the player stands, beside the head towards the coach's
+// middle), ox, oz (where a rider steps aside to, towards the coach's end, before walking off), sx (the punch spot's
+// side: -1 west, 1 east), cx (the coach's centre) }], all in u. From the run's stopping place and the stock's
+// lengths, so the same before the train comes and while it stands.
+function ppLineSpots(S, run) {
+  if (!ppPax(run) || !protoWorld(S.track)) return [];
+  const st = PROTO.STOP[run.track];
+  if (!st || st[run.to] === undefined) return [];
+  const W = rrW(S.track), L = W.LOCO.len, C = W.CARS.coach.len, g = COUPLER_GAP, front = st[run.to], dir = run.to === 'E' ? -1 : 1;
+  const zE = PROTO.P1.z1, out = [];
+  for (let i = 0; i < rrNcars(run); i++) {
+    const a = L + g + i * (C + g), cx = front + dir * (a + C / 2);
+    for (let j = 0; j < 2; j++) {
+      const dx = front + dir * (a + C * (j ? 0.75 : 0.25)), sx = dx > cx ? -1 : 1;   // towards the coach's middle
+      out.push({ car: i, door: j, x: dx, z: zE - PP.HEAD, dx, dz: zE - PP.DOOR, px: dx + sx * PP.SIDE, pz: zE - PP.HEAD + 0.3, ox: dx - sx * PP.ASIDE, oz: zE - PP.DOOR - 0.2, sx, cx });
+    }
+  }
+  return out;
+}
+// Where the k-th in a door line stands (u).
+const ppSlot = (sp, k) => [sp.x, sp.z - k * PP.GAP];
+// Plan the travellers who want this run: how many, at which doors, who, and when each sets off from the street's end.
+function ppPlan(S, run, ev) {
+  const X = S.pax, pp = ppSt(S), spots = ppLineSpots(S, run);
+  pp.plan.push(run.id);
+  if (!spots.length) return;
+  const [lo, hi] = PP.PER_TRAIN, n = lo + Math.floor(paxRand(X) * (hi - lo + 1)) % (hi - lo + 1), E = PROTO.TOWN_EXITS;
+  // Planned late (the first train of a morning, a loaded game, a debug jump): they set off from now while there is
+  // still time to walk in; with no time left they are in their lines already.
+  let t0 = run.arr - PP.LINE_S, t1 = run.arr - PP.LAST_S;
+  if (S.time >= t0 + CFG.TICK_GAME_S && run.arr - S.time >= PP.WALK_S) { t0 = S.time + CFG.TICK_GAME_S; t1 = Math.max(t0, run.arr - PP.WALK_S); }
+  const at = spots.map(() => 0);
+  for (let i = 0; i < n; i++) {
+    let ln = Math.floor(paxRand(X) * spots.length) % spots.length;
+    if (at[ln] >= PP.MAX_LINE) ln = at.indexOf(Math.min(...at));
+    at[ln]++;
+    const who = ppWho(X), ex = Math.floor(paxRand(X) * E.length) % E.length;
+    const t = pxTickAt(t0 + paxRand(X) * (t1 - t0));
+    if (t <= S.time) {   // would have set off already: in the line now
+      const sp = spots[ln], k = X.list.filter(p => p.run === run.id && p.ln === ln && (p.s === 'line' || p.s === 'come')).length, [x, z] = ppSlot(sp, k);
+      const p = ppAdd(S, run, ln, who, x, z, ev);
+      p.s = 'line'; p.q = pp.qn++; p.tx = ppH(x); p.tz = ppH(z); p.f = paxAngle(0, 1);
+    } else pp.due.push([t, run.id, ln, who, ex]);
+  }
+  pp.due.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  ev.push({ t: 'ppLine', run: run.id, n });
+}
+function ppAdd(S, run, ln, who, x, z, ev) {
+  const p = paxAdd(S, 'town', 'hub', run.to, x, z, ev);
+  Object.assign(p, { s: 'come', run: run.id, ln, who, q: -1, bt: 0 });
+  return p;
+}
+// The standing train of a run (stopped at its track), or null.
+function ppStanding(S, run) {
+  if (!ppPax(run) || run.ph !== 'stand') return null;
+  const tr = rrTrainOf(S, run);
+  return tr && !trainOff(tr) && tr.v === 0 ? tr : null;
+}
+// The coach (stock id) of a run's car index, while its train is made up.
+function ppStock(S, run, i) { const tr = rrTrainOf(S, run), c = tr && !trainOff(tr) ? tr.consist[i + 1] : null; return c && c.k === 'coach' ? c.id : null; }
+// Called by T when a passenger train stands at platform 1 (and by ppTick for a standing run it has not seen): its
+// riders for the Hub are aboard its coaches, to step off. Returns how many.
+function ppOnArrive(S, run, tr, ev) {
+  if (!S.pax || !ppPax(run) || !tr) return 0;
+  const X = S.pax, pp = ppSt(S);
+  if (pp.seen.includes(run.id)) return 0;
+  pp.seen.push(run.id);
+  const doors = ppLineSpots(S, run).filter(sp => tr.consist[sp.car + 1] && tr.consist[sp.car + 1].k === 'coach');
+  if (!doors.length) return 0;
+  const [lo, hi] = PP.OFF, n = lo + Math.floor(paxRand(X) * (hi - lo + 1)) % (hi - lo + 1);
+  for (let i = 0; i < n; i++) {
+    const sp = doors[Math.floor(paxRand(X) * doors.length) % doors.length], who = ppWho(X);
+    X.list.push({ id: X.next++, from: run.from, st: 'hub', to: 'hub', s: 'aboard', x: ppH(sp.dx), z: ppH(sp.dz), tx: null, tz: null, path: [], t0: S.time, f: 0, wait: 0,
+      fare: 0, car: tr.consist[sp.car + 1].id, door: sp.door, run: run.id, ln: sp.car * 2 + sp.door, who, q: -1, bt: 0 });
+  }
+  return n;
+}
+// Nobody is coming to the run's lines, in them, boarding, still aboard for the Hub or stepping off. False until its
+// arrival is done.
+function ppReady(S, run, tr) {
+  if (!S.pax || !ppPax(run)) return true;
+  const pp = ppSt(S);
+  if (!pp.seen.includes(run.id)) return false;
+  const stocks = new Set(tr ? tr.consist.map(c => c.id) : []);
+  return !S.pax.list.some(p => (p.run === run.id && (p.s === 'come' || p.s === 'line' || p.s === 'board')) ||
+    (stocks.has(p.car) && ((p.s === 'aboard' && p.to === 'hub') || p.s === 'step')));
+}
+// Called by T as the train is waved off (before it moves): everyone aboard leaves with it; anyone walking in to board
+// boards; anyone still coming or in line is left behind (ppMissed). Returns { missed }.
+function ppOnDepart(S, run, tr, ev) {
+  if (!S.pax || !tr) return { missed: 0 };
+  const X = S.pax, pp = ppSt(S), stocks = new Set(tr.consist.map(c => c.id)), keep = [], E = PROTO.TOWN_EXITS;
+  let n = 0;
+  for (const p of X.list) {
+    const mine = run && p.run === run.id;
+    if ((p.s === 'aboard' && stocks.has(p.car)) || (mine && p.s === 'board')) {
+      if (p.s === 'board') { pp.tot.boarded++; ev.push({ t: 'ppBoarded', run: run.id, id: p.id }); }
+      paxCount(X.gone, 'hub'); ev.push({ t: 'paxGone', id: p.id, st: 'hub' });
+      continue;
+    }
+    if (p.s === 'step' && stocks.has(p.car)) { p.s = 'off'; p.car = null; p.bt = 0; p.wp = 1; p.tx = null; paxGo(S, p, [], p.ox, p.oz); }
+    if (mine && (p.s === 'come' || p.s === 'line')) {
+      n++; p.s = 'left'; p.q = -1;
+      const e = E[p.id % E.length]; p.tx = null; paxGo(S, p, [], ppH(e[0]), ppH(e[1]));
+    }
+    keep.push(p);
+  }
+  X.list = keep;
+  if (run) pp.due = pp.due.filter(d => d[1] !== run.id);
+  if (pp.job && pp.job.tr === tr.id) { ev.push({ t: 'ppStopped', tr: pp.job.tr, car: pp.job.car, why: 'The train left' }); pp.job = null; }
+  if (n) { pp.tot.missed += n; pdCount(S, 'missed', n); ev.push({ t: 'ppMissed', run: run ? run.id : null, n }); }
+  return { missed: n };
+}
+// One coach's travellers, for the screens (U's Punch button, the car panel): { stock, tr, run, car (index behind the
+// engine), line (waiting in or coming to its two lines), ready (standing at a line's head now), punched (boarding or
+// aboard, punched here), aboard, off (riders still to step off), at (its train stands: it can be punched), door (the
+// door a punch takes: the longer line), spot: { x, z } (the punch spot of that door, u), doors: [{ door, line, spot }],
+// punching (the player is punching here now) } or null (not a coach of a passenger run).
+function ppCarStatus(S, stock) {
+  if (!S.pax || !S.rr) return null;
+  const f = rideCarOf(S, stock);
+  if (!f || f.tr.owner !== 'rr' || f.car.k !== 'coach') return null;
+  const run = rrRunOf(S, f.tr.id);
+  if (!ppPax(run)) return null;
+  const i = f.tr.consist.findIndex(c => c.id === stock) - 1, spots = ppLineSpots(S, run).filter(sp => sp.car === i), L = S.pax.list, pp = ppSt(S);
+  const doors = spots.map(sp => {
+    const ln = i * 2 + sp.door;
+    return { door: sp.door, line: L.filter(p => p.run === run.id && p.ln === ln && (p.s === 'line' || p.s === 'come')).length,
+      ready: L.filter(p => p.run === run.id && p.ln === ln && p.s === 'line').length, spot: { x: sp.px, z: sp.pz } };
+  });
+  const best = doors.slice().sort((a, b) => b.line - a.line || a.door - b.door)[0] || null;
+  return { stock, tr: f.tr.id, run: run.id, car: i, line: doors.reduce((s, d) => s + d.line, 0), ready: doors.reduce((s, d) => s + d.ready, 0),
+    punched: L.filter(p => p.run === run.id && p.to !== 'hub' && ((p.s === 'board' && p.ln >> 1 === i) || (p.s === 'aboard' && p.car === stock))).length,
+    aboard: L.filter(p => p.s === 'aboard' && p.car === stock && p.to !== 'hub').length,
+    off: L.filter(p => p.car === stock && ((p.s === 'aboard' && p.to === 'hub') || p.s === 'step')).length,
+    at: !!ppStanding(S, run), door: best ? best.door : 0, spot: best ? best.spot : null, doors,
+    punching: !!(pp.job && pp.job.car === stock && pp.job.on) };
+}
+// A run's travellers, for the boards: { off (riders still to step off), on (aboard, punched here), waiting (coming or
+// in line), checked (punched: boarding or aboard), unchecked (0: nobody boards unpunched), line (in line now), punched
+// (as checked), coming }.
+function ppRunStatus(S, run) {
+  const out = { off: 0, on: 0, waiting: 0, checked: 0, unchecked: 0, line: 0, punched: 0, coming: 0 };
+  if (!S.pax || !ppPax(run)) return out;
+  const tr = rrTrainOf(S, run), stocks = new Set(tr && !trainOff(tr) ? tr.consist.map(c => c.id) : []);
+  for (const p of S.pax.list) {
+    if (stocks.has(p.car) && ((p.s === 'aboard' && p.to === 'hub') || p.s === 'step')) out.off++;
+    if (p.run !== run.id || p.to === 'hub') continue;
+    if (p.s === 'aboard') { out.on++; out.punched++; }
+    else if (p.s === 'board') out.punched++;
+    else if (p.s === 'line') { out.line++; out.waiting++; }
+    else if (p.s === 'come') { out.coming++; out.waiting++; }
+  }
+  out.checked = out.punched;
+  for (const d of ppSt(S).due) if (d[1] === run.id) { out.coming++; out.waiting++; }
+  return out;
+}
+function ppRefuse(ev, why) { ev.push({ t: 'ppRefused', why }); }
+// The door line travellers of a run, in line order (those in it by the order they reached it, then those coming by id).
+function ppLineOf(S, run, ln) {
+  return S.pax.list.filter(p => p.run === run.id && p.ln === ln && (p.s === 'line' || p.s === 'come'))
+    .sort((a, b) => (a.q >= 0 ? a.q : 1e9 + a.id) - (b.q >= 0 ? b.q : 1e9 + b.id));
+}
+// { t: 'punch', tr, car, door }: walk to the punch spot beside a coach door and punch the first ticket in its line.
+function ppPunchCmd(S, c, ev) {
+  const P = S.player;
+  if (!S.pax || !S.rr || !S.rr.on || !protoWorld(S.track)) return ppRefuse(ev, 'Tickets are punched at the passenger trains at platform 1');
+  if (P.ride) return ppRefuse(ev, 'Step off first');
+  if (P.tool !== null && P.tool !== undefined) return ppRefuse(ev, `Leave the ${carryToolName(S)} at its spot first`);
+  const pp = ppSt(S), L = S.pax.list;
+  // Which train, coach and door: as named, or (no car) the nearest door with a line at a standing train.
+  let pick = null;
+  const runs = S.rr.runs.filter(r => ppStanding(S, r) && (!Number.isInteger(c.tr) || r.slot === c.tr));
+  for (const run of runs) {
+    const tr = rrTrainOf(S, run);
+    for (const sp of ppLineSpots(S, run)) {
+      const stock = ppStock(S, run, sp.car);
+      if (stock === null || (Number.isInteger(c.car) && stock !== c.car) || ((c.door === 0 || c.door === 1) && sp.door !== c.door)) continue;
+      const n = ppLineOf(S, run, sp.car * 2 + sp.door).length, d = Math.hypot(sp.px - P.x, sp.pz - P.z);
+      const key = Number.isInteger(c.car) && c.door !== 0 && c.door !== 1 ? -n * 1000 + sp.door : (n ? 0 : 1e6) + d;   // a named coach: its longer line (as ppCarStatus' door)
+      if (!pick || key < pick.key) pick = { key, run, tr, sp, stock, n };
+    }
+  }
+  if (!pick) {
+    const tr = Number.isInteger(c.tr) ? S.trains[c.tr] : null, run = tr ? rrRunOf(S, tr.id) : null;
+    if (ppPax(run) && run.ph === 'in') return ppRefuse(ev, `${run.name} has not stopped at platform 1 yet`);
+    return ppRefuse(ev, 'Tickets are punched at a coach of a passenger train standing at platform 1');
+  }
+  const { run, tr, sp, stock } = pick;
+  if (L.some(p => p.car === stock && ((p.s === 'aboard' && p.to === 'hub') || p.s === 'step'))) return ppRefuse(ev, 'Let the riders step off that coach first');
+  if (!pick.n) return ppRefuse(ev, 'Nobody is waiting at that door');
+  if (pp.job && (pp.job.car !== stock || pp.job.door !== sp.door)) ev.push({ t: 'ppStopped', tr: pp.job.tr, car: pp.job.car, why: '' });
+  pp.job = { tr: tr.id, car: stock, door: sp.door, run: run.id, x: ppH(sp.px), z: ppH(sp.pz), on: 0, acc: 0, head: null, st: 0 };
+  P.use = null; P.act = null;
+  if (Math.hypot(sp.px - P.x, sp.pz - P.z) <= PP.NEAR) ppPunchStart(S, ev);   // already there
+  else { P.mode = 'to'; P.tx = sp.px; P.tz = sp.pz; }
+}
+function ppPunchStart(S, ev) {
+  const P = S.player, J = S.pax.pp.job;
+  P.mode = 'idle'; J.on = 1; J.acc = 0; J.head = null;
+  ev.push({ t: 'ppStarted', tr: J.tr, car: J.car, door: J.door });
+}
+// The punch in hand, once a tick (after the player has moved).
+function ppPunchTick(S, ev, spotsOf) {
+  const pp = S.pax.pp, J = pp.job, P = S.player;
+  if (!J) return;
+  const stop = why => { ev.push({ t: 'ppStopped', tr: J.tr, car: J.car, why }); pp.job = null; };
+  const run = S.rr.runs.find(r => r.id === J.run);
+  if (!run || !ppStanding(S, run) || rrTrainOf(S, run).id !== J.tr) return stop('The train moved off');
+  const near = Math.hypot(J.x / 100 - P.x, J.z / 100 - P.z) <= PP.NEAR;
+  if (!J.on) {
+    if (P.mode === 'to' && ppH(P.tx) === J.x && ppH(P.tz) === J.z) return;   // still walking there
+    if (P.mode === 'idle' && !P.act && !P.ride && near) ppPunchStart(S, ev);
+    else return stop(P.mode === 'idle' ? 'Could not reach the door' : '');
+  }
+  if (P.mode !== 'idle' || P.act || P.ride || !near) return stop('');
+  const tr = rrTrainOf(S, run), i = tr.consist.findIndex(c => c.id === J.car) - 1, sp = spotsOf(run).find(q => q.car === i && q.door === J.door);
+  const line = sp ? ppLineOf(S, run, sp.car * 2 + sp.door) : [];
+  if (!line.length) return stop('Nobody is waiting at that door');
+  const head = line[0];
+  P.f = Math.atan2(head.x / 100 - P.x, head.z / 100 - P.z);   // facing the traveller with the ticket
+  if (head.s !== 'line' || !paxAt(head)) { J.acc = 0; J.head = null; return; }   // stepping up to the head of the line: wait for them
+  // The ticket is held out for at least one tick before it is punched (so the punch is seen), then PUNCH_S.
+  if (J.head !== head.id) { J.head = head.id; J.st = S.tick; J.acc = 0; return; }
+  J.acc += CFG.TICK_GAME_S;
+  if (J.acc < PP.PUNCH_S) return;
+  head.s = 'board'; head.q = -1; head.bt = 0; head.car = J.car; head.door = J.door; head.tx = null;
+  paxGo(S, head, [], ppH(sp.dx), ppH(sp.dz));
+  pp.tot.punched++; pdCount(S, 'punched');
+  ev.push({ t: 'ppPunched', run: run.id, tr: J.tr, car: J.car, id: head.id });
+  pp.job = null;   // one command, one ticket
+}
+// Step 8 of the sim tick in the prototype (from paxTick > pxTick): travellers coming to the lines, riders stepping
+// off, the punch in hand, boarding, and walking off into the town.
+function ppTick(S, ev, poseCache) {
+  const X = S.pax, R = S.rr;
+  if (!X || !R || !R.on) return;
+  const pp = ppSt(S), E = PROTO.TOWN_EXITS, cache = new Map(), spotsOf = run => { if (!cache.has(run.id)) cache.set(run.id, ppLineSpots(S, run)); return cache.get(run.id); };
+  const poses = [].concat(...S.trains.map(tr => poseCache[tr.id] || []));
+  // 1. The runs: travellers planned LINE_S before each passenger run's arrival; the arrival of one standing now.
+  const ids = new Set(R.runs.map(r => r.id));
+  pp.plan = pp.plan.filter(id => ids.has(id)); pp.seen = pp.seen.filter(id => ids.has(id)); pp.due = pp.due.filter(d => ids.has(d[1]));
+  for (const run of R.runs) {
+    if (!ppPax(run) || run.ph === 'gone' || run.ph === 'cxl' || run.ph === 'out') continue;
+    if (!pp.plan.includes(run.id) && S.time >= run.arr - PP.LINE_S) ppPlan(S, run, ev);
+    if (run.ph === 'stand' && !pp.seen.includes(run.id)) { const tr = rrTrainOf(S, run); if (tr) ppOnArrive(S, run, tr, ev); }
+  }
+  // 2. Travellers setting off from the street's end for their line.
+  while (pp.due.length && pp.due[0][0] <= S.time) {
+    const [, rid, ln, who, ex] = pp.due.shift(), run = R.runs.find(r => r.id === rid), e = E[ex] || E[0];
+    if (run) ppAdd(S, run, ln, who, e[0], e[1], ev);
+  }
+  // 3. The lines: each door's travellers take their places in order; one who reaches the line stands in it.
+  const byRun = new Map(R.runs.map(r => [r.id, r]));
+  const lines = new Map();
+  for (const p of X.list) if (p.s === 'line' || p.s === 'come') { const k = p.run + ':' + p.ln; if (!lines.has(k)) lines.set(k, []); lines.get(k).push(p); }
+  for (const [, L] of [...lines.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+    const run = byRun.get(L[0].run), sp = run && spotsOf(run).find(q => q.car * 2 + q.door === L[0].ln);
+    if (!sp) continue;
+    L.sort((a, b) => (a.q >= 0 ? a.q : 1e9 + a.id) - (b.q >= 0 ? b.q : 1e9 + b.id));
+    L.forEach((p, k) => {
+      const [x, z] = ppSlot(sp, k);
+      paxGo(S, p, poses, ppH(x), ppH(z));
+      if (p.s === 'come' && paxAt(p)) { p.s = 'line'; p.q = pp.qn++; p.f = paxAngle(0, 1); }
+    });
+  }
+  // 4. Standing trains: riders step down one at a time per door, then walk off up the street.
+  for (const run of R.runs) {
+    const tr = ppStanding(S, run);
+    if (!tr) continue;
+    for (const sp of spotsOf(run)) {
+      const c = tr.consist[sp.car + 1];
+      if (!c || c.k !== 'coach' || X.list.some(p => p.s === 'step' && p.car === c.id && p.door === sp.door)) continue;
+      const p = X.list.find(q => q.s === 'aboard' && q.to === 'hub' && q.car === c.id && q.door === sp.door);
+      if (!p) continue;
+      Object.assign(p, { s: 'step', x: ppH(sp.dx), z: ppH(sp.dz), tx: null, tz: null, path: [], bt: 0, f: paxAngle(0, -1), ox: ppH(sp.ox), oz: ppH(sp.oz) });
+      pp.tot.off++; paxCount(X.arrived, 'hub');
+      ev.push({ t: 'ppOff', run: run.id, id: p.id, n: 1 });
+    }
+  }
+  for (const p of X.list) {
+    if (p.s !== 'step') continue;
+    p.bt += CFG.TICK_GAME_S;
+    if (p.bt > PP.STEP_S) { p.s = 'off'; p.car = null; p.bt = 0; paxGo(S, p, poses, p.ox, p.oz); p.wp = 1; }   // a step aside, clear of the line
+  }
+  // 5. The punch in hand (the player moved earlier this tick); those punched step up into the coach.
+  ppPunchTick(S, ev, spotsOf);
+  for (const p of X.list) {
+    if (p.s !== 'board' || !paxAt(p)) continue;
+    if (!p.bt) p.f = paxAngle(0, 1);   // facing the coach
+    p.bt += CFG.TICK_GAME_S;
+    if (p.bt > PP.BOARD_S) { p.s = 'aboard'; p.bt = 0; p.path = []; p.tx = null; p.tz = null; pp.tot.boarded++; ev.push({ t: 'ppBoarded', run: p.run, id: p.id }); }
+  }
+  // 6. Walking; a rider who has stepped aside walks off up the street; those who reach the street's end leave the map.
+  for (const p of X.list) if (p.s === 'off' && p.wp && paxAt(p)) { p.wp = 0; const e = E[p.id % E.length]; paxGo(S, p, poses, ppH(e[0]), ppH(e[1])); }
+  for (const p of X.list) if (p.s !== 'aboard' && p.s !== 'step' && !(p.s === 'board' && paxAt(p))) {
+    const was = p.path.length;
+    paxMove(S, p, poses);
+    if (p.s === 'line' && was && paxAt(p)) p.f = paxAngle(0, 1);   // in place in the line: facing the track
+  }
+  const keep = [];
+  for (const p of X.list) {
+    if ((p.s === 'off' || p.s === 'left') && !p.wp && paxAt(p)) { paxCount(X.gone, 'hub'); ev.push({ t: 'paxGone', id: p.id, st: 'hub' }); continue; }
+    keep.push(p);
+  }
+  X.list = keep;
+}
+// The walking surface's height under a traveller (u): a deck is drawn PIX_PROJ.DECK px high (R; a footbridge, when T's
+// PROTO_BRIDGES lands, its height: the integrator wires it here).
+function ppSurfY(x, z) { return typeof bldDeckInside === 'function' && bldDeckInside(x, z) > 0 && typeof PIX_PROJ !== 'undefined' ? PIX_PROJ.DECK / PIX_PROJ.PH : 0; }
+// A facing as the atlas' four screen diagonals: se +x, ne -z, sw +z, nw -x.
+function ppDir(dx, dz) { return Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 'se' : 'nw') : (dz >= 0 ? 'sw' : 'ne'); }
+const ppDirOf = f => { const a = f / 256 * Math.PI * 2; return ppDir(Math.sin(a), Math.cos(a)); };
+// What R draws for the travellers (every one not aboard): [{ id, who (people type, 'man_top.b'), x, z, y (u: the
+// surface they stand on), f (0-255), dir ('se' | 'ne' | 'sw' | 'nw'), act ('idle' | 'walk' | 'ticket' | 'board'),
+// frame, t (0-1 through a timed act, for R's in-between frames), key (the atlas key 'ppl/<who>/<act>/<dir>/<frame>') }],
+// in id order. Boarding frames 0-2 step up into the coach; stepping off plays them backwards.
+function ppDrawList(S) {
+  if (!S || !S.pax || !protoWorld(S.track)) return [];
+  const pp = ppSt(S), J = pp.job, P = S.player, out = [];
+  for (const p of S.pax.list) {
+    if (p.s === 'aboard') continue;
+    const x = p.x / 100, z = p.z / 100, who = p.who || PP.WHO[p.id % PP.WHO.length];
+    let act = 'idle', frame = Math.floor((S.tick + p.id * 3) / 6) % 2, dir = ppDirOf(p.f), t = 0;
+    if (p.s === 'step') { act = 'board'; t = Math.min(1, p.bt / PP.STEP_S); frame = 2 - Math.min(2, Math.floor(t * 3)); dir = 'ne'; }
+    else if (p.s === 'board' && paxAt(p)) { act = 'board'; t = Math.min(1, p.bt / PP.BOARD_S); frame = Math.min(2, Math.floor(t * 3)); dir = 'sw'; }
+    else if (p.path.length) { act = 'walk'; frame = (S.tick + p.id) % 4; }
+    else if (J && J.on && J.head === p.id) { act = 'ticket'; t = Math.min(1, J.acc / PP.PUNCH_S); frame = t >= 0.5 ? 1 : 0; dir = ppDir(P.x - x, P.z - z); }
+    out.push({ id: p.id, who, x, z, y: ppSurfY(x, z), f: p.f, dir, act, frame, t, s: p.s, key: `ppl/${who}/${act}/${dir}/${frame}` });
+  }
+  return out;
+}
+// The player's punch, for R: null, or { act: 'punch', dir, frame (0-2), t (0-1), head (the traveller's id) } while the
+// player punches a ticket (the agent's punch animation).
+function ppPlayerAct(S) {
+  const J = S && S.pax && S.pax.pp && S.pax.pp.job;
+  if (!J || !J.on) return null;
+  const P = S.player, t = Math.min(1, J.acc / PP.PUNCH_S), a = P.f;
+  return { act: 'punch', dir: ppDir(Math.sin(a), Math.cos(a)), frame: Math.min(2, Math.floor(t * 3)), t, head: J.head === undefined ? null : J.head };
+}
 
 // ==== Section: prototype goods (D25) ====
 // Owner: builder F (plans/proto-tech.md section 4). Freight trains stand at track 3 beside platform 2: goods for the
@@ -15858,6 +16253,7 @@ window.__railhead = {
   // D25: the prototype (its layout, schedule, stubs and the day) and the pixel renderer.
   proto: { PROTO, PROTO_SW, PROTO_SCHEDULE, PROTO_STOCK, PROTO_SHOPS, RR_WORLDS, rrW, protoStopPos, protoTrackAt, buildProtoWorld, protoLayoutExport,
     PP, PG, PD, pdCount, pdNewStore, ppLineSpots, ppCarStatus, pgToDeliver, rrThroughTick },
+  pp: { PP, ppSt, ppLineSpots, ppCarStatus, ppRunStatus, ppReady, ppOnArrive, ppOnDepart, ppDrawList, ppPlayerAct, ppPlan },   // D25: prototype passengers (P)
   pix: { PIX, PIX_PROJ, PIX_FONT, pixOn, pixProject, pixUnproject, pixToScreen, pixGroundAt, pixPickTrain, pixSort, pixItem, pixScale, pixScene, pixScreenRect, pixBehind, get stats() { return PIX.stats; },
     get view() { return { vx: PIX.vx, vy: PIX.vy, nw: PIX.nw, nh: PIX.nh, scale: PIX.scale, dpr: PIX.dpr }; },
     get canvas() { return PIX.canvas; }, get ground() { return PIX.ground; } },

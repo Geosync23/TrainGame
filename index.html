@@ -317,6 +317,7 @@
   body.pdui #carry { bottom: calc(env(safe-area-inset-bottom) + 10px); }
   body.pdui.pdcard #carry, body.pdui.pdcard #centre { display: none !important; }
   body.pdui #centre { bottom: calc(env(safe-area-inset-bottom) + 10px); }
+  body.pdui #centre.up { bottom: calc(env(safe-area-inset-bottom) + 84px); }
   /* The first-day guide's slip, under the Next job line. */
   #pdGuide { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 126px); width: calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right));
     max-width: 520px; box-sizing: border-box; display: flex; gap: 8px; align-items: center; background: #fff3d6; color: var(--px-ink); border: 3px solid var(--px-ink);
@@ -14130,8 +14131,12 @@ function centreHud() {
   if (c.hidden !== hide) c.hidden = hide;
   if (hide) return;
   c.classList.remove('up');
-  const r = c.getBoundingClientRect(), bl = $('bottomleft').getBoundingClientRect();
-  if (bl.right + 6 > r.left && bl.top < r.bottom) c.classList.add('up');
+  const r = c.getBoundingClientRect();
+  for (const e of [$('bottomleft'), $('carry')]) {   // D25 (integrator): the carry readout sits on the bottom row in the prototype
+    if (e.hidden || !e.getClientRects().length) continue;
+    const bl = e.getBoundingClientRect();
+    if (bl.right + 6 > r.left && bl.top < r.bottom) c.classList.add('up');
+  }
 }
 function updateHud() {
   $('clock').textContent = clockText(S);
@@ -15785,6 +15790,8 @@ function pdGuideDraw(t, taken) {
   if (!t) { lab.hidden = edge.hidden = true; return; }
   const W = window.innerWidth, H = window.innerHeight, foot = toScreen(t.x, 0, t.z), top = toScreen(t.x, PDUI.LABEL_Y, t.z);
   const avoid = pdRects(['toast']).concat(taken), on = foot.x > 12 && foot.x < W - 12 && foot.y > 12 && foot.y < H - 12;
+  // A button over the world at the arrow's place says it already (Punch, Unload, Deliver): no label over it (integrator).
+  if (on && taken.some(r => pdHit(r, { l: foot.x - 24, r: foot.x + 24, t: top.y - 8, b: foot.y + 8 }, 0))) { lab.hidden = edge.hidden = true; return; }
   if (on) {
     if (lab.textContent !== t.label) lab.textContent = t.label;
     lab.hidden = false; edge.hidden = true;
@@ -15821,7 +15828,7 @@ function pdOpenBoard() {
   $('pdBoard').hidden = false; pdBoardHud();
 }
 function pdCloseBoard() {
-  pdUi.board = false; $('pdBoard').hidden = true;
+  pdUi.board = false; pdUi.boardAuto = false; $('pdBoard').hidden = true;
   if (pdUi.held !== null && !pdUi.sum) { const h = pdUi.held; pdUi.held = null; if (h) setSpeed(h); }
 }
 function pdBoardHud() {
@@ -15864,13 +15871,17 @@ function pdTap(px, py) {
   return true;
 }
 // A tap on one of the railroad's trains (from onTap, before D24's rrTap): a coach with a line punches (walking there
-// first), a freight car opens (useCar), a ready engine is sent off. False: rrTap takes it as before.
+// first), a freight car opens (useCar), a ready engine is sent off; anything else gets a short message. False (not
+// the prototype): rrTap takes it as before.
 function pdTrainTap(hit) {
   if (!pdUiOn()) return false;
   const tr = S.trains[hit.id], c = tr && tr.consist.find(q => q.id === hit.stock), run = tr ? rrRunOf(S, tr.id) : null;
-  if (!c || !run || run.ph !== 'stand') return false;
+  // Integrator: every tap on a train is answered here in the prototype (D24's train panel and Check tickets are the hub's).
+  if (!c || !run) return true;
+  const nm = pdRunId(run);
+  if (run.ph !== 'stand') { toast(run.through ? `${nm} runs through on track 2.` : run.ph === 'out' ? `${nm} is on its way out.` : `${nm} is not standing at its track yet.`); return true; }
   if (c.k === 'loco') {
-    if (!run.ready) return false;
+    if (!run.ready) { toast(run.kind === 'pax' ? `${nm} is not ready: punch every ticket first.` : `${nm} is not ready: unload and load it first.`); return true; }
     const at = rrUiBeside(S, c.id) || rrWaveSpot(S, tr.id);
     pdGo(at.x, at.z, { t: 'rrWaveOff', tr: tr.id });
     return true;
@@ -15940,7 +15951,9 @@ function pdHud() {
   $('clock').textContent = `Day ${D.day + 1}\n${pdClock(sod)}`;
   pdPendingTick();
   // The cards open by themselves: the board each morning, the summary at the end of the day.
-  if (D.ph === 'morning' && !(pdUi.boardFor === S && pdUi.boardDay === D.day)) { pdUi.boardFor = S; pdUi.boardDay = D.day; pdOpenBoard(); }
+  if (D.ph === 'morning' && !(pdUi.boardFor === S && pdUi.boardDay === D.day)) { pdUi.boardFor = S; pdUi.boardDay = D.day; pdOpenBoard(); pdUi.boardAuto = true; }
+  // The morning's card goes when its morning does (integrator: a game loaded mid-day, a check's new state).
+  else if (pdUi.board && pdUi.boardAuto && (pdUi.boardFor !== S || D.ph !== 'morning')) pdCloseBoard();
   if (D.ph === 'summary' && !(pdUi.sumFor === S && pdUi.sumDay === D.day)) pdOpenSum();
   if (pdUi.sum && D.ph !== 'summary') pdCloseSum();
   if (pdUi.sumFor !== S && pdUi.sum) pdCloseSum();
@@ -17028,8 +17041,9 @@ function pixText(g, text, x, y, col, slope, maxW) {
     for (const ch of String(text)) {
       const f = pixF('font/' + ch.charCodeAt(0)) || pixF('font/63');
       if (cx - x0 + f[3] > lim) break;
-      if (!k) g.drawImage(sheet, f[1], f[2], f[3], f[4], cx, y0 + 5 - f[6], f[3], f[4]);
-      else for (let c = 0; c < f[3]; c++) g.drawImage(sheet, f[1] + c, f[2], 1, f[4], cx + c, y0 + 5 - f[6] + Math.floor((cx + c - x0) * k), 1, f[4]);
+      // On a sloping face each letter steps down whole (integrator: shearing inside a 3 x 5 letter made the TRAINS
+      // board's times hard to read).
+      g.drawImage(sheet, f[1], f[2], f[3], f[4], cx, y0 + 5 - f[6] + (k ? Math.round((cx + f[3] / 2 - x0) * k) : 0), f[3], f[4]);
       PIX.stats.draws++;
       cx += f[3] + 1;
     }
@@ -17414,9 +17428,10 @@ function pixScene(alpha) {
   }
   // Tools: the handcart and the hand truck, parked or pushed (in front of the player), with what they carry.
   const held = carryHeld(S), carrier = carryCarrier(S), hand = carrier === 'HAND', pDir = pixDirOf(Pl.f);
+  const cartPoses = pgCartPose(S, px, pz);   // F's places (integrator): in front by the atlas' pusher offset, behind at a wall
   for (const T of S.tools || []) {
-    const pushed = Pl.tool === T.id, d = CARRY_PUSH[T.k].d, f = pushed ? Pl.f : carryYaw(T.yaw);
-    const x = pushed ? px + Math.sin(f) * d : T.x / 100, z = pushed ? pz + Math.cos(f) * d : T.z / 100, dir = pushed ? pDir : pixDirOf(f);
+    const pushed = Pl.tool === T.id, d = CARRY_PUSH[T.k].d, f = pushed ? Pl.f : carryYaw(T.yaw), cp = pushed ? cartPoses.find(q => q.id === T.id) : null;
+    const x = cp ? cp.x : pushed ? px + Math.sin(f) * d : T.x / 100, z = cp ? cp.z : pushed ? pz + Math.cos(f) * d : T.z / 100, dir = cp ? cp.dir : pushed ? pDir : pixDirOf(f);
     const y = pushed ? pixWalkerY('tool' + T.id, x, z).y : bldDeckInside(x, z) > 0 ? dy : 0, pick = { k: 'tool', id: T.id };
     const load = pushed ? held.filter(id => S.items.where[id].carrier !== 'HAND') : [];
     out.push(pixItem(x - 0.8, x + 0.8, z - 0.8, z + 0.8, y, y + 0.9, g => {
@@ -17476,17 +17491,11 @@ function pixScene(alpha) {
     it.base = wy.base;
     it.id = 'pp' + q.id; out.push(it);
   }
-  // Goods on the ground (or a deck) and in the storage bays (8 a bay: 2 across, 2 deep, 2 high).
-  const I = S.items, bayN = {};
-  for (let id = 0; id < I.next; id++) {
-    const w = I.where[id];
-    if (!w || !I.alive[id]) continue;
-    let x, z, y = 0;
-    if (w.kind === 'GROUND') { x = w.x / 100; z = w.z / 100; y = bldDeckInside(x, z) > 0 ? dy : 0; }
-    else if (w.kind === 'BAY' && BLD_BAYS[w.buildingId] && BLD_BAYS[w.buildingId].bays[w.bay]) {
-      const b = BLD_BAYS[w.buildingId].bays[w.bay], bk = w.buildingId + '/' + w.bay, n = bayN[bk] = (bayN[bk] || 0) + 1, i = n - 1;
-      x = b.x + ((i & 1) - 0.5) * 0.8; z = b.z + (((i >> 1) & 1) - 0.5) * 0.7; y = dy + (i >> 2) * 0.6;
-    } else continue;
+  // Goods on the ground (or a deck) and in the storage bays (8 a bay: 2 across, 2 deep, 2 high), placed by F's
+  // pgDrawList (integrator: one rule for where a good lies; carried goods and those in cars are drawn with them).
+  for (const q of pgDrawList(S)) {
+    if (q.at !== 'ground' && q.at !== 'bay') continue;
+    const id = q.id, x = q.x, z = q.z, y = q.at === 'bay' ? dy + q.y : bldDeckInside(x, z) > 0 ? dy : 0;
     out.push(pixItem(x - 0.35, x + 0.35, z - 0.3, z + 0.3, y, y + 0.6, g => { const p = pixProject(x, y, z); pixGoodsDraw(g, S, id, Math.round(p.x) - PIX.vx, Math.round(p.y) - PIX.vy, false, x, y, z); }, 'item' + id));
   }
   return out;
@@ -17520,6 +17529,7 @@ function pixBoardDraw(rows) { PIX.boardRows = rows ? rows.slice() : null; PIX.bo
 function pixBoardText(r) {
   if (typeof r === 'string') return { text: r, late: false };
   if (r.text) return { text: String(r.text), late: !!r.late };
+  if (r.board) return { text: `${r.board.t} ${r.board.id}`, late: !!r.isLate };   // U's pdBoardRows (integrator: its arr is 'HH:MM' already)
   const t = rrSod(r.arr !== undefined ? r.arr : r.dep || 0), hh = String(Math.floor(t / 3600)).padStart(2, '0'), mm = String(Math.floor(t / 60) % 60).padStart(2, '0');
   const tk = String(r.track || ''), n = /3|cargo/.test(tk) ? '3' : /2|through/.test(tk) || r.through ? '2' : '1';
   return { text: `${hh}:${mm} T${n}`, late: r.late > RR.LATE_S };
@@ -17531,7 +17541,9 @@ function pixBoardRowsNow() {
   let rows = PIX.boardRows;
   if (!rows) {
     rows = (typeof pdBoardRows === 'function' ? pdBoardRows(S) : rrBoardRows(S)) || [];
-    rows = rows.filter(r => typeof r !== 'object' || !/Left|Cancelled/.test(r.state || '')).sort((a, b) => (a.arr || 0) - (b.arr || 0));
+    // (pdBoardRows' states are lower case, its arr a clock string: arrT is its time; integrator)
+    const at = r => (r.arrT !== undefined ? r.arrT : r.arr) || 0;
+    rows = rows.filter(r => typeof r !== 'object' || !/^(Left|Cancelled|gone|cancelled)$/.test(r.state || '')).sort((a, b) => at(a) - at(b));
   }
   PIX.board = rows.slice(0, 2).map(pixBoardText); PIX.boardAt = at; PIX.boardS = S;
   return PIX.board;
@@ -17578,7 +17590,18 @@ function pixOverlays(g) {
       g.fillRect(Math.round(p.x) - PIX.vx - 1, Math.round(p.y) - PIX.vy - 1, 2, 2);
     }
   }
-  if (typeof guideUi !== 'undefined' && guideUi.arrow && guideUi.arrow.visible) {
+  // The prototype's arrow (integrator): at U's pdHintTarget, tip on the ground (bobbing a little), about 3u tall.
+  const ht = typeof pdUiOn === 'function' && pdUiOn() ? pdHintTarget() : null;
+  if (ht) {
+    const gy = bldDeckInside(ht.x, ht.z) > 0 ? pixDeckY() : 0, p = pixProject(ht.x, gy, ht.z), x = Math.round(p.x) - PIX.vx;
+    const y = Math.round(p.y) - PIX.vy - 2 - Math.round(2 + 2 * Math.sin(animT * 4));   // the tip
+    g.fillStyle = C.ink;   // an outline one pixel round: the shaft, then the head (narrow at the tip)
+    g.fillRect(x - 3, y - 26, 7, 18);
+    for (let k = 0; k <= 9; k++) g.fillRect(x - k - 1, y - k + 1, 2 * k + 3, 1);
+    g.fillStyle = '#efb45c';
+    g.fillRect(x - 2, y - 25, 5, 17);
+    for (let k = 0; k <= 8; k++) g.fillRect(x - k, y - k, 2 * k + 1, 1);
+  } else if (typeof guideUi !== 'undefined' && guideUi.arrow && guideUi.arrow.visible) {
     const a = guideUi.arrow.position, p = pixProject(a.x, a.y, a.z), x = Math.round(p.x) - PIX.vx, y = Math.round(p.y) - PIX.vy, up = guideUi.flip;
     g.fillStyle = C.ink;
     for (let j = 0; j < 9; j++) { const half = j < 5 ? j : 1; g.fillRect(x - half - 1, up ? y + j - 1 : y - j + 1 - 1, 2 * half + 3, 1); }

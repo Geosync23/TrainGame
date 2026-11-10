@@ -642,11 +642,12 @@ def shop_all(kind, facing='e'):
 
 # ============================ storage shed (platform 2) ============================
 STORAGE = dict(a=20.0, b=4.8, wall=13.0)      # 10 x 2.4 u, about 3 u high to the ridge
-STORAGE_BAYS = (3.0, 15.0, 27.0)              # left edges (u) of the three freight doors, each 10 MU wide
+STORAGE_BAYS = (1.0, 11.0, 21.0, 31.0)        # left edges (u) of the four freight doors (the game's 4 bays,
+STORAGE_DW = 8.0                              # centres at x -3.75, -1.25, 1.25, 3.75 u), each 2 u wide
 
 
 def storage(open_=False):
-    """The freight shed on platform 2: red board-and-batten, three sliding freight doors on the +z side (towards
+    """The freight shed on platform 2: red board-and-batten, four freight doors on the +z side (towards
     track 3) with cream cross braces. open_=True: the doors are slid aside and the bays show shelves of goods."""
     F = Frame('s')
     o = new_oid(True)
@@ -659,17 +660,17 @@ def storage(open_=False):
         p.fill(zz < 0.8, 'wood', 3 + lit)
         if lf == 'f':
             for k, d0 in enumerate(STORAGE_BAYS):
-                d1 = d0 + 10.0
+                d1 = d0 + STORAGE_DW
                 # the door track rail above the doors
                 p.fill(rect(u, zz, d0 - 1.0, d1 + 1.0, 10.6, 11.4), 'iron', 2 + lit)
                 if not open_:
                     dm = rect(u, zz, d0, d1, 0.4, 10.6)
                     fr = dm & ((u - d0 < 0.8) | (d1 - u < 0.8) | (zz < 1.2) | (zz > 9.8) | (np.abs(zz - 5.5) < 0.4) |
-                               (np.abs((u - d0) / 10.0 - (zz - 0.4) / 10.2) < 0.06) |
-                               (np.abs((u - d0) / 10.0 - (1 - (zz - 0.4) / 10.2)) < 0.06))
+                               (np.abs((u - d0) / STORAGE_DW - (zz - 0.4) / 10.2) < 0.07) |
+                               (np.abs((u - d0) / STORAGE_DW - (1 - (zz - 0.4) / 10.2)) < 0.07))
                     p.fill(dm, 'red', np.where(np.mod(u - d0, 2.0) < 0.5, 2 + lit, 1 + lit))
                     p.fill(fr, 'cream', 1 + lit)
-                    p.fill(rect(u, zz, d0 + 4.6, d0 + 5.4, 4.6, 6.2), 'iron', 3)       # handle
+                    p.fill(rect(u, zz, d0 + STORAGE_DW / 2 - 0.4, d0 + STORAGE_DW / 2 + 0.4, 4.6, 6.2), 'iron', 3)
                 else:
                     op = rect(u, zz, d0, d1, 0.0, 10.6)
                     p.fill(op, 'dark', 2)
@@ -692,17 +693,16 @@ def storage(open_=False):
         return p.rr, p.ii
     F.box(-A, -B, 0, A, B, zb + Hh, 'red', paint=walls, oid=o)
     if open_:
-        # doors slid to the right of each opening, standing just proud of the wall
-        def door(lf, u, z, a, b, idx, lit):
+        # each bay's two door leaves swung open, standing out from the wall at both sides of the opening
+        def leaf(lf, u, z, a, b, idx, lit):
             p = Paint('red', u, z - zb, idx, lit)
             zz = z - zb
-            p.fill(np.mod(u, 2.0) < 0.5, 'red', 2 + lit)
-            fr = (u < 0.8) | (u > 3.4) | (zz < 1.2) | (zz > 9.8)
-            p.fill(fr, 'cream', 1 + lit)
+            p.fill(np.mod(b, 2.0) < 0.5, 'red', 2 + lit)
+            p.fill((zz < 1.2) | (zz > 9.8) | (np.abs(zz - 5.5) < 0.4), 'cream', 1 + lit)
             return p.rr, p.ii
         for d0 in STORAGE_BAYS:
-            a0 = -A + d0 + 10.0
-            F.box(a0, B, zb + 0.4, a0 + 4.2, B + 0.5, zb + 10.6, 'red', paint=door, oid=o)
+            for a0 in (-A + d0 - 0.4, -A + d0 + STORAGE_DW):
+                F.box(a0, B, zb + 0.4, a0 + 0.4, B + STORAGE_DW / 2 - 0.2, zb + 10.6, 'red', paint=leaf, oid=o)
     ze = zb + Hh - 0.4
     F.roof_across(-A - 1.2, A + 0.6, 0, B + 2.2, ze, ze + 4.0, 'roof', wall='red', oid=o, tex=shingle_tex(),
                   shades=(1, 2), endtex=end_batten('y', 2.4, ramp='red'))
@@ -1431,11 +1431,11 @@ FB_RAIL_TOP = 0.34 * UY                     # rail top (MU)
 FB_UNDER = FB_RAIL_TOP + 4.85 * UY          # deck underside: 4.85 u over the rail top
 FB_TOP = FB_UNDER + 1.4                     # walking surface of the deck
 FB_HALF = 2.8                               # deck half width along x (1.4 u wide)
-FB_Z = dict(p1=(-8.2 * U, -7.05 * U), p2=(1.65 * U, 2.8 * U))   # the landings over each platform (z0, z1 MU)
+FB_Z = dict(p1=(-7.17 * U, -6.02 * U), p2=(1.65 * U, 2.8 * U))  # the landings over each platform (z0, z1 MU)
 FB_STEPS = 18
 FB_RISE = (FB_TOP - DECK) / FB_STEPS        # about 1.5 MU (2 px) a step
 FB_RUN = 1.3                                # 0.325 u a step
-FB_BENTS = (-30.5, -10.06, 8.9)             # z (MU) of the trestle bents: platform 1, between tracks 1 and 2, platform 2
+FB_BENTS = (-6.595 * U, -2.0 * U, 2.225 * U)  # z (MU) of the bents: platform 1, between tracks 1 and 2 (thin), platform 2
 RAIL_H = 5.0                                # handrail height over a tread or the deck (MU)
 
 
@@ -1496,7 +1496,7 @@ def footbridge_bent(k):
     y = FB_BENTS[k]
     z0 = DECK if k != 1 else 0.0
     for x in (-FB_HALF + 0.5, FB_HALF - 0.5):
-        _post(x, y, z0, FB_UNDER, o, w=0.55)
+        _post(x, y, z0, FB_UNDER, o, w=0.55 if k != 1 else 0.5)
         box(x - 0.9, y - 0.9, z0, x + 0.9, y + 0.9, z0 + 1.0, 'iron' if k == 1 else 'wood', shades=(1, 2, 3), oid=o)
     box(-FB_HALF - 0.6, y - 0.6, FB_UNDER - 1.0, FB_HALF + 0.6, y + 0.6, FB_UNDER, 'wood', shades=(0, 2, 3), oid=o)
     # X bracing: two diagonals of small blocks across the bent

@@ -110,8 +110,8 @@ def register(reg):
     reg.add('bld/canopy', 'town_station', one(TW.canopy, **NOSHADOW),
             dict(anchor=CENTRE, footprint=[16, 4], underside=2.6, note='posts every 3.75 u along both long edges'))
     reg.add('bld/storage', 'town_station', one(lambda: TW.storage(False), **NOSHADOW),
-            dict(anchor=CENTRE, footprint=[10, 2.4], height=3.2, doors='+z side (track 3): three freight doors',
-                 bays=[round((-TW.STORAGE['a'] + d0 + 5.0) / U, 3) for d0 in TW.STORAGE_BAYS],
+            dict(anchor=CENTRE, footprint=[10, 2.4], height=3.2, doors='+z side (track 3): four freight doors, one per bay',
+                 bays=[round((-TW.STORAGE['a'] + d0 + TW.STORAGE_DW / 2) / U, 3) for d0 in TW.STORAGE_BAYS],
                  bays_note='x of each door centre, u from the anchor; the door sill is at z = +1.2 u'))
     reg.add('bld/storage_open', 'town_station', one(lambda: TW.storage(True), **NOSHADOW),
             dict(anchor=CENTRE, footprint=[10, 2.4], note='the same shed with its doors slid open: shelves of goods'))
@@ -131,7 +131,8 @@ def register(reg):
             parts[f'stair_{plat}_{d}_rail'] = (lambda p=plat, d=d: TW.footbridge_stair_rail(p, d))
     notes = {'deck': 'the span with its floor and far railing; walkers on it are drawn at walk_y',
              'rail': 'the near (+x) railing of the span: draw it after walkers on the deck',
-             'bent0': 'trestle bent on platform 1', 'bent1': 'trestle bent between tracks 1 and 2',
+             'bent0': 'trestle bent on platform 1', 'bent1': 'thin post pair at z -2.0 between tracks 1 and 2 '
+                                                             '(0.85 u clear of each train)',
              'bent2': 'trestle bent on platform 2'}
     for nm, fn in parts.items():
         ex = dict(boxes[nm])
@@ -243,7 +244,7 @@ def ground(layer):
     # ---- the street, running north (-z) away from the station, with ragged dithered edges and cart ruts
     st = L['street']
     sx0, sx1, sz0, sz1 = st['x0'] * U_, st['x1'] * U_, st['z0'] * U_, st['z1'] * U_
-    yard = (-4.4 * U_, 11.0 * U_, sz1 - 4.0 * U_, -12.6 * U_)   # dirt yard behind and beside the station
+    yard = (-8.5 * U_, 6.0 * U_, sz1 - 3.0 * U_, -12.6 * U_)    # dirt yard where the street meets platform 1
     def street(X, Y):
         rr, ii = TW.grass_at(X, Y)
         bay = E.BAYER[np.floor(X + Y).astype(int) % 4, np.floor(2 * (X - Y)).astype(int) % 4]
@@ -258,7 +259,18 @@ def ground(layer):
         di = np.where(Y > sz1 - 2.0 * U_, di2, di)            # the ruts fade out into the yard
         m = in_st | in_y
         return np.where(m, dr, rr), np.where(m, np.where(in_st, di, di2), ii)
-    TW._flat(-6 * U_, 14 * U_, sz0 - 2 * U_, -12.0 * U_, street, z=0.02)
+    TW._flat(-11 * U_, 14 * U_, sz0 - 2 * U_, -12.0 * U_, street, z=0.02)
+    stn = next(bb for bb in L['buildings'] if bb['kind'] == 'station')
+    sx_0, sx_1 = (stn['x'] - stn['w'] / 2 - 1.0) * U_, (stn['x'] + stn['w'] / 2 + 1.0) * U_
+    sz_0, sz_1 = (stn['z'] - stn['d'] / 2 - 1.0) * U_, (stn['z'] + stn['d'] / 2 + 3.0) * U_
+    def forecourt(X, Y):
+        rr, ii = TW.grass_at(X, Y)
+        bay = E.BAYER[np.floor(X + Y).astype(int) % 4, np.floor(2 * (X - Y)).astype(int) % 4]
+        d = np.minimum.reduce([X - sx_0, sx_1 - X, Y - sz_0, sz_1 - Y])
+        m = (d > 1.5) | ((d > -1.5) & (bay < (d + 1.5) / 3.0))
+        dr, di = TW.dirt_at(X, Y)
+        return np.where(m, dr, rr), np.where(m, di, ii)
+    TW._flat(sx_0 - 2, sx_1 + 2, sz_0 - 2, sz_1 + 2, forecourt, z=0.01)
     # ---- worn path from the yard down the station's east side to the platform 1 ramp
     def path(X, Y):
         rr, ii = TW.grass_at(X, Y)

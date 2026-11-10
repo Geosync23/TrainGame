@@ -101,9 +101,15 @@ module.exports = async function checkProtoTrains() {
               order: S.rr.runs.map(r => r.svc + ':' + log.filter(e => e.run === r.id && e.t !== 'trainSwitchWait').map(e => e.t.slice(2)).join(',')), end: S.time,
               slotsFree: S.trains.filter(t => t.owner === 'rr').every(t => t.away && !t.consist.length), bad };
           };
-          const t0 = performance.now(), a = playDay(false), ms = performance.now() - t0, b = playDay(true);
-          const c = playDay(false, { p2: 60 * 60 });   // p2 (leaving west at 09:30) waved off an hour late
-          return { a, b, c, ms };
+          // The trains alone (integrator, 2026-11-10): P's travellers and F's goods are always ready here, as this player
+          // neither punches nor unloads; check-proto-day.js plays the whole day with them (tests/proto-bot.js).
+          const keep = { pp: window.ppReady, pg: window.pgReady };
+          window.ppReady = () => true; window.pgReady = () => true;
+          try {
+            const t0 = performance.now(), a = playDay(false), ms = performance.now() - t0, b = playDay(true);
+            const c = playDay(false, { p2: 60 * 60 });   // p2 (leaving west at 09:30) waved off an hour late
+            return { a, b, c, ms };
+          } finally { window.ppReady = keep.pp; window.pgReady = keep.pg; }
         }, botSource().toString());
         const A = day.a, fmt = s => s === null ? '-' : `${Math.round(s / 60)}m`;
         console.log(`  a day played in ${Math.round(day.ms)} ms, ended ${(A.end / 3600 + 6).toFixed(2)}h (${A.ph}); runs (arrival / departure lateness): ${A.runs.map(r => `${r.svc} ${r.ph} ${fmt(r.arrLate)}/${fmt(r.depLate)}`).join(', ')}`);
@@ -187,7 +193,7 @@ module.exports = async function checkProtoTrains() {
           e = wave(tp); why.push(e[0] && e[0].why);
           if (!(e[0] && /footbridge/.test(e[0].why))) B(`from the footbridge: ${JSON.stringify(e)}`);
           S.player.x = sp.x; S.player.z = sp.z;
-          e = wave(tp);
+          set('ppReady', true); e = wave(tp); set('ppReady', null);   // its travellers all punched (P's, replaced here)
           if (!(e[0] && e[0].t === 'rrWavedOff')) B(`p2 at its engine with everything ready was not waved off: ${JSON.stringify(e)}`);
           e = wave(tp); why.push(e[0] && e[0].why);
           if (!(e[0] && e[0].t === 'rrRefused')) B('p2 waved off twice');

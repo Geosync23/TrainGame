@@ -224,9 +224,21 @@ module.exports = async function checkProtoWorld() {
             const occ = R.occupiedSwitches(s);
             if (Object.values(occ).includes(tr.id)) B('p1 stands on a switch');
             throwSw(SW.W1, 'N'); throwSw(SW.E1, 'R');
+            // P's travellers stand in line at the coach doors: punch every ticket first (one command, one ticket; the
+            // wave-off is refused while anyone is in line: integrator, 2026-11-10).
+            const Pp = R.pp;
+            for (let k = 0; k < 40; k++) {
+              const c = tr.consist.slice(1).map(q => Pp.ppCarStatus(s, q.id)).find(q => q && (q.line || q.off));
+              if (!c) break;
+              if (!c.line) { run(5); continue; }   // riders still stepping off that coach
+              const from = evs.length;
+              run(1, [{ t: 'punch', tr: tr.id, car: c.stock }]);
+              for (let i = 0; i < 400 && !evs.slice(from).some(e => e.t === 'ppPunched' || e.t === 'ppRefused' || e.t === 'ppStopped'); i++) run(1);
+            }
+            for (let i = 0; i < 120 && !evs.some(e => e.t === 'rrReady' && e.run === runOf('p1').id); i++) run(1);
+            if (!evs.some(e => e.t === 'rrReady' && e.run === runOf('p1').id)) B('p1 never became ready after every ticket was punched');
             const ws = R.rr.rrWaveSpot(s, tr.id);   // beside the engine, clear of the east footbridge's stair
             s.player.x = ws.x; s.player.z = ws.z; s.player.mode = 'idle';
-            run(60);   // the stub's dwell
             run(1, [{ t: 'rrWaveOff', tr: tr.id }]);
             if (!evs.some(e => e.t === 'rrWavedOff')) B(`p1 was not waved off: ${JSON.stringify(evs.filter(e => e.t === 'rrRefused').slice(-1))}`);
             for (let i = 0; i < 900 && runOf('p1').ph !== 'gone'; i++) run(1);

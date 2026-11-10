@@ -108,6 +108,18 @@ button:disabled { opacity: .5; cursor: default; }
       <li><b>A middle path:</b> keep today's size, but take the new colours, foliage, sky and sparkle, with people a little bigger (about 20 pixels). Much of the richness for a fraction of the work. Not mocked up yet.</li>
     </ul>
   </section>
+  <section style="display:grid;gap:12px">
+    <h2>New: the middle path</h2>
+    <p>Today's size and camera, with the richer colours, foliage, sky band and sparkle, and people a little bigger (about 20 pixels). It follows the real game layout.</p>
+    <figure style="margin:0;display:grid;gap:6px"><img src="pixel/style/compare3.png" alt="One phone screen three ways: current (left), middle path (centre), full richer style (right)" style="width:100%;height:auto;border-radius:8px;image-rendering:pixelated;border:1px solid rgba(0,0,0,.15)"><figcaption class="muted">One phone screen three ways: current (left), middle path (centre), full richer style (right)</figcaption></figure>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px"><figure style="margin:0;display:grid;gap:6px"><img src="pixel/style/mid.png" alt="The middle path, as a phone would show it" style="width:100%;height:auto;border-radius:8px;image-rendering:pixelated;border:1px solid rgba(0,0,0,.15)"><figcaption class="muted">The middle path, as a phone would show it</figcaption></figure><figure style="margin:0;display:grid;gap:6px"><img src="pixel/style/mid-closeup.png" alt="Close-up: the agent punching tickets with the queue" style="width:100%;height:auto;border-radius:8px;image-rendering:pixelated;border:1px solid rgba(0,0,0,.15)"><figcaption class="muted">Close-up: the agent punching tickets with the queue</figcaption></figure></div>
+    <ul class="plain">
+      <li><b>Work:</b> roughly 1.4 to 1.7 times the art done so far (the full style is 2 to 3 times). People are all redrawn at the new size (the biggest part); buildings keep their shapes and gain foliage and new surfaces; trains and track are nearly free.</li>
+      <li><b>Nothing else changes:</b> same camera, same amount of station on screen, same speed on a phone.</li>
+      <li><b>Small game changes:</b> the platform roof goes up a little so hats fit, and waiting travellers stand at the roof's front edge so they stay visible.</li>
+    </ul>
+  </section>
+
   <section>
     <h2>Your answers</h2>
     <div id="qs" style="display:grid;gap:16px"></div>
@@ -124,6 +136,8 @@ const QS = [
         ['keep', 'Keep the current style.']] },
   { id: 'mock', q: 'Do you want to see the middle path mocked up before deciding?',
     o: [['yes', 'Yes, mock up the middle path too.', 1], ['no', 'No need.']] },
+  { id: 'mid', q: 'Now that you have seen the middle path: which should the next art round be (after the prototype)?',
+    o: [['mid', 'The middle path.', 1], ['full', 'The full richer style.'], ['keep', 'Keep the current style.']] },
   { id: 'else', q: 'What do you like or dislike in the test?', o: [] },
 ];
 const answers = {};

@@ -7,6 +7,7 @@ import town as TW
 import engine as E
 import harness as H
 import numpy as np
+from engine import box, hash2, new_oid
 from registry import one as _one
 
 
@@ -78,7 +79,26 @@ def _shop(reg, kind):
                          note='the whole shop as one picture; the parts are the same picture split for sorting'))
 
 
+GAME_KEYS = ('board', 'box', 'door', 'parts', 'facing', 'front', 'cartSlots', 'pusher', 'tag_at', 'bays', 'footprint',
+             'underside', 'height', 'top_px')
+
+
+class _Game:
+    """Moves the fields the game needs (board areas, part boxes, door spots, cart slots ...) into meta['extra'],
+    which build.py puts into PIX_ATLAS.extra[key]; the rest stays as notes in atlas.json."""
+    def __init__(self, reg):
+        self.reg = reg
+
+    def add(self, name, group, frames, meta=None):
+        meta = dict(meta or {})
+        extra = {k: meta.pop(k) for k in GAME_KEYS if k in meta}
+        if extra:
+            meta['extra'] = extra
+        self.reg.add(name, group, frames, meta)
+
+
 def register(reg):
+    reg = _Game(reg)
     # ---------------- station ----------------
     img = one(TW.station, after=lambda: (TW.station_name(), TW.station_board_rows()), **NOSHADOW)
     ax, ay = img[0][1]
@@ -180,3 +200,107 @@ def register(reg):
     reg.add('street/tile', 'town_ground', one(lambda: TW.street_tile(2), **FLAT), dict(anchor='tile corner; 2 x 2 u, ruts along z'))
     reg.add('street/edge_w', 'town_ground', one(lambda: TW.street_edge_tile('w'), **FLAT), dict(anchor='tile corner; grass on the -x side'))
     reg.add('street/edge_e', 'town_ground', one(lambda: TW.street_edge_tile('e'), **FLAT), dict(anchor='tile corner; grass on the +x side'))
+
+
+# ============================ the ground layer (town part) ============================
+REPLACES_GROUND_BASE = True
+GROUND_ORDER = 30          # before the track (40): the track's ballast and rails then sit on this grass
+
+
+def _caster(x0, y0, z0, x1, y1, z1):
+    """An invisible box (MU) that only casts a shadow onto the ground layer."""
+    E._reg((x0, y0, z0, x1, y1, z1), True)
+
+
+def ground(layer):
+    L = layer.layout
+    U_ = TW.U
+    E.ground(lambda X, Y: TW.grass_at(X, Y))
+    # ---- the street, running north (-z) away from the station, with ragged dithered edges and cart ruts
+    st = L['street']
+    sx0, sx1, sz0, sz1 = st['x0'] * U_, st['x1'] * U_, st['z0'] * U_, st['z1'] * U_
+    yard = (-4.4 * U_, 11.0 * U_, sz1 - 4.0 * U_, -12.6 * U_)   # dirt yard behind and beside the station
+    def street(X, Y):
+        rr, ii = TW.grass_at(X, Y)
+        bay = E.BAYER[np.floor(X + Y).astype(int) % 4, np.floor(2 * (X - Y)).astype(int) % 4]
+        d_st = np.minimum(X - sx0, sx1 - X)                 # MU inside the street's edges
+        in_st = (Y > sz0) & (Y < sz1 + 1.0) & ((d_st > 1.5) | ((d_st > -1.5) & (bay < (d_st + 1.5) / 3.0)))
+        yx0, yx1, yz0, yz1 = yard
+        d_y = np.minimum.reduce([X - yx0, yx1 - X, Y - yz0, yz1 - Y])
+        in_y = (d_y > 1.5) | ((d_y > -1.5) & (bay < (d_y + 1.5) / 3.0))
+        ruts = (('x', -1.3 * U_, 0.55), ('x', 1.2 * U_, 0.55))
+        dr, di = TW.dirt_at(X, Y, ruts=ruts)
+        dr2, di2 = TW.dirt_at(X, Y)
+        di = np.where(Y > sz1 - 2.0 * U_, di2, di)            # the ruts fade out into the yard
+        m = in_st | in_y
+        return np.where(m, dr, rr), np.where(m, np.where(in_st, di, di2), ii)
+    TW._flat(-6 * U_, 14 * U_, sz0 - 2 * U_, -12.0 * U_, street, z=0.02)
+    # ---- worn path from the yard down the station's east side to the platform 1 ramp
+    def path(X, Y):
+        rr, ii = TW.grass_at(X, Y)
+        dr, di = TW.dirt_at(X, Y)
+        hd = hash2(np.floor(X * 2).astype(int), np.floor(Y * 2).astype(int)) % 100
+        m = hd < 82
+        return np.where(m, dr, rr), np.where(m, di, ii)
+    TW._flat(16.0 * U_, 18.0 * U_, -13.5 * U_, -6.0 * U_, path, z=0.03)
+    # ---- platform decks, ramps at their ends, and platform 2's loading edge along track 3
+    for b in L['buildings']:
+        if not b.get('deck'):
+            continue
+        x0, x1 = (b['x'] - b['w'] / 2) * U_, (b['x'] + b['w'] / 2) * U_
+        z0, z1 = (b['z'] - b['d'] / 2) * U_, (b['z'] + b['d'] / 2) * U_
+        TW.deck(x0, x1, z0, z1, variant=1 if b['kind'] == 'p2deck' else 0)
+        TW.deck_ramp(x1, z0 + 2.0, z1 - 2.0, 1, U_)
+        TW.deck_ramp(x0, z0 + 2.0, z1 - 2.0, -1, U_)
+        if b['kind'] == 'p2deck':
+            o = new_oid(False)
+            box(x0 + 8.0, z1, TW.DECK - 1.2, x1 - 8.0, z1 + 0.6, TW.DECK + 0.2, 'wood', shades=(2, 3, 3), oid=o, cast=False)
+            for x in np.arange(x0 + 10.0, x1 - 8.0, 6.0):
+                box(x, z1 + 0.6, TW.DECK - 1.1, x + 1.0, z1 + 0.8, TW.DECK, 'iron', shades=(1, 1, 2), oid=o, cast=False)
+    # ---- the plank walkway across the tracks (boards across the way, just under the rail heads)
+    w = L['walkway']
+    TW.walk_planks((w['x'] - w['w'] / 2) * U_, (w['x'] + w['w'] / 2) * U_, w['z0'] * U_, w['z1'] * U_, z=1.6, along='z')
+    # ---- the shops' boardwalks, and boardwalk between the store and the smithy
+    for sp in L['shops']:
+        b = next(bb for bb in L['buildings'] if bb['id'] == sp['bld'])
+        f = 'e' if b['x'] < 0 else 'w'
+        F = TW.Frame(f, b['x'] * U_, b['z'] * U_)
+        def planks(lf, u, z, a, bb, idx, lit):
+            if lf == 't':
+                ii = np.where(np.mod(a, 1.6) < 0.45, 2, np.where(hash2(np.floor(a / 1.6).astype(int), 1) % 5 == 0, 0, 1))
+                return None, ii
+            return None, np.where(np.mod(u, 3.0) < 0.6, 3, idx)
+        F.box(-TW.SHOP_A, TW.SHOP_FRONT + 1.2, 0, TW.SHOP_A, TW.SHOP_B, 1.5, 'wood', paint=planks,
+              oid=new_oid(False), cast=False)
+    TW.walk_planks(-6.15 * U_, -4.2 * U_, -39.0 * U_, -35.0 * U_, z=1.5, along='z')
+    # ---- shadows of the buildings that stand on the layer (invisible casters)
+    for b in L['buildings']:
+        x, z = b['x'] * U_, b['z'] * U_
+        if b['kind'] == 'station':
+            A, B = TW.STATION['a'] - 1.0, TW.STATION['b'] - 1.0
+            top = TW.DECK + TW.STATION['wall']
+            _caster(x - A, z - B, 0, x + A, z + B, top)
+            _caster(x - A, z - 5.0, top, x + A, z + 5.0, top + 6.0)
+        elif b['kind'] == 'storage':
+            A, B = TW.STORAGE['a'], TW.STORAGE['b']
+            _caster(x - A, z - B, 0, x + A, z + B, TW.DECK + TW.STORAGE['wall'])
+        elif b['kind'] == 'shop':
+            f = 'e' if b['x'] < 0 else 'w'
+            kind = next(sp['id'] for sp in L['shops'] if sp['bld'] == b['id'])
+            F = TW.Frame(f, x, z)
+            p = TW.SHOP[kind]
+            _caster(*_wbox(F, -17.0, -15.0, 17.0, TW.SHOP_FRONT, 0, p['h']))
+            _caster(*_wbox(F, -9.0, -15.0, 9.0, TW.SHOP_FRONT, p['h'], p['h'] + 4.0))
+            _caster(*_wbox(F, -18.0, TW.SHOP_FRONT, 18.0, TW.SHOP_FRONT + 1.2, 0, p['fh']))
+        elif b['kind'] == 'lamp':
+            _caster(x - 0.45, z - 0.45, 0, x + 0.45, z + 0.45, 15.0)
+    c = L['canopy']
+    _caster(c['x0'] * U_, c['z0'] * U_, TW.CANOPY['under'], c['x1'] * U_, c['z1'] * U_, TW.CANOPY['under'] + 3.0)
+    sb = L['schedboard']
+    _caster(sb['x'] * U_ - TW.SCHED['a'], sb['z'] * U_ + 0.4, TW.SCHED['z0'], sb['x'] * U_ + TW.SCHED['a'],
+            sb['z'] * U_ + 0.9, TW.SCHED['z1'])
+
+
+def _wbox(F, a0, b0, a1, b1, z0, z1):
+    x0, y0, x1, y1 = F.rect_w(a0, b0, a1, b1)
+    return x0, y0, z0, x1, y1, z1

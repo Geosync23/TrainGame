@@ -28,7 +28,7 @@ OWNERS = {
     'sprites_track': ('sw/', 'track/', 'track.', 'prop.switch_stand.'),
     'sprites_font': ('font/',),
     'sprites_people': ('ppl/', 'person.'),
-    'sprites_town': ('bld/', 'goods/', 'tag/', 'cart/', 'deck/', 'walk/',
+    'sprites_town': ('bld/', 'goods/', 'tag/', 'cart/', 'deck/', 'walk/', 'plat/', 'prop/', 'ground/', 'street/',
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
 }
 

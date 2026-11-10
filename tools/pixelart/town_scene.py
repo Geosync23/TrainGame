@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import review as RV
 import groundlayer as GL
+import town as TW
 
 OUT = os.path.join(HERE, 'out')
 
@@ -56,6 +57,21 @@ def main(scale=3):
     put('bld/canopy', (c['x0'] + c['x1']) / 2, (c['z0'] + c['z1']) / 2, depth=(c['x0'] + c['x1']) / 2 + c['z1'] + 0.5)
     put('bld/schedboard', L['schedboard']['x'], L['schedboard']['z'])
     put('bld/sign_saloon', 4.0, -25.2)
+    # --- the footbridges (parts sorted by their boxes; the deck and its near railing over everything near them)
+    import sprites_town as STN
+    for fb in STN.footbridges(L):
+        bx = fb['x']
+        for k, zb in enumerate([v / 4.0 for v in TW.FB_BENTS]):
+            put(f'bld/footbridge/bent{k}', bx, 0.0, depth=bx + zb + 0.3)
+        for plat in ('p1', 'p2'):
+            zc = sum(TW.FB_Z[plat]) / 8.0
+            nm = f'bld/footbridge/stair_{plat}_{fb[plat]}'
+            h = m(nm).get('height', {})
+            xm = bx + (h['walk_top'][0] + h['walk_bottom'][0]) / 2
+            put(nm, bx, 0.0, depth=xm + zc - 0.6)
+            put(nm + '_rail', bx, 0.0, depth=xm + zc - 0.4)
+        put('bld/footbridge/deck', bx, 0.0, depth=1000 + bx)
+        put('bld/footbridge/rail', bx, 0.0, depth=1000 + bx + 0.5)
     # --- shops, by parts, facing the street
     for sp in L['shops']:
         b = next(bb for bb in L['buildings'] if bb['id'] == sp['bld'])
@@ -173,9 +189,9 @@ def bridge_scene(scale=3):
         bx = fb['x']
         def part(nm, order):
             put(f'bld/footbridge/{nm}', bx, 0.0, order=order)
-        for k, z in enumerate((-7.625, -2.515, 2.225)):
+        for k, z in enumerate([v / 4.0 for v in TW.FB_BENTS]):
             part(f'bent{k}', bx + z + 0.3)
-        for plat, zc in (('p1', -7.625), ('p2', 2.225)):
+        for plat, zc in (('p1', sum(TW.FB_Z['p1']) / 8.0), ('p2', sum(TW.FB_Z['p2']) / 8.0)):
             d = fb[plat]
             nm = f'stair_{plat}_{d}'
             h = ex[f'bld/footbridge/{nm}']['height']

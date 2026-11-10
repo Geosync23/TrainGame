@@ -8,9 +8,10 @@ CANVAS = (360, 300)
 ORIGIN = (180, 200)
 
 
-def render(draw, shadow=None, outline=True, canvas=CANVAS, origin=ORIGIN, shadows=True, post=None, after=None):
+def render(draw, shadow=None, outline=True, canvas=CANVAS, origin=ORIGIN, shadows=True, post=None, after=None,
+           yaw=0.0, scale=(1.0, 1.0, 1.0)):
     """draw(): calls engine primitives. shadow: (x0, y0, x1, y1) MU rectangle at ground level that catches shadows."""
-    E.begin(canvas[0], canvas[1], origin[0], origin[1])
+    E.begin(canvas[0], canvas[1], origin[0], origin[1], yaw, scale)
     draw()
     if shadow is not None:
         E.shadow_catcher(*shadow)

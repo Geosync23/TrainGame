@@ -7,15 +7,20 @@
 #   One game unit along x or z is 4 MU; one game unit up is 16/3 MU (1.5 px per MU up, 8 px per game unit).
 #   So the game's projection (+x: 8 px right 4 down; +z: 8 px left 4 down; +y: 8 px up) is exactly
 #   proj(X, Y, Z) = (OX + 2 (X - Y), OY + X + Y - 1.5 Z).
-# begin(w, h, ox, oy) starts a fresh canvas; the world origin projects to the pixel corner (ox, oy).
+#
+# begin(w, h, ox, oy, yaw=0, scale=(1, 1, 1)) starts a fresh canvas; the world origin projects to the pixel corner
+# (ox, oy). Shapes are then given in the object's own frame, which may be turned by `yaw` (radians, the game's
+# convention: positive turns from +x towards -z, north) and stretched by `scale` (along its x, its y, and up).
+# Every pixel casts a view ray; in the object's frame the ray is origin (X0P, Y0P, 0) + t (DX, DY, DZ), with larger
+# t nearer the viewer. Turns up to +-45 degrees keep the same three faces in view (+x, +y and the top).
 import numpy as np, math
 
 W, H = 270, 480
 OX, OY = 26, 196
 U_XZ = 4.0          # MU per game unit along x and z
 U_Y = 16.0 / 3.0    # MU per game unit up
-ZS = 1.5          # pixels per world unit of height
-KZ = 2.0 / ZS     # dz/dt along the view ray
+ZS = 1.5            # pixels per MU of height
+KZ = 2.0 / ZS       # world view ray: (1, 1, KZ)
 
 # ---------------- palette ----------------
 HEX = {
@@ -67,22 +72,44 @@ for n, lst in RAMPS.items():
     for i in range(ML):
         PAL[RID[n], i] = hx(HEX[lst[min(i, len(lst)-1)]])
 
-# ---------------- buffers ----------------
+# ---------------- canvas and view ----------------
 BAYER = np.array([[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]]) / 16.0
 OCC = []          # shadow casters: (aabb, pid, kind, extra)
 OUTLINE = set()   # oids that get a selective outline
 _pid = [1]; _oid = [1]
-CLIP = [None]     # optional world-x clip (x0, x1) for tiling pieces: only points with x0 <= X < x1 are drawn
+CLIP = [None]     # optional x clip (x0, x1) for tiling pieces: only points with x0 <= X < x1 are drawn
+L_WORLD = np.array([-0.55, 0.15, 1.0])      # light for shading (from the upper left)
+LS_WORLD = np.array([-0.55, 0.15, 1.0])     # shadow ray direction (towards the light)
+DX, DY, DZ = 1.0, 1.0, KZ
+YAW = 0.0; SC = (1.0, 1.0, 1.0)
+L = L_WORLD / np.linalg.norm(L_WORLD); LS = LS_WORLD.copy()
 
-def begin(w, h, ox, oy):
-    """Start a fresh canvas w x h; the world origin projects to pixel corner (ox, oy)."""
-    global W, H, OX, OY, U, V, X0P, Y0P, BAY, RB, IB, DB, PB, OB, LB, QX, QY, QZ
+
+def _to_local_dir(v, scale=True):
+    c, s = math.cos(YAW), math.sin(YAW)
+    x = c * v[0] - s * v[1]; y = s * v[0] + c * v[1]; z = v[2]
+    if scale:
+        x, y, z = x / SC[0], y / SC[1], z / SC[2]
+    return np.array([x, y, z])
+
+
+def begin(w, h, ox, oy, yaw=0.0, scale=(1.0, 1.0, 1.0)):
+    """Start a fresh canvas w x h; the world origin projects to pixel corner (ox, oy); shapes that follow are in a
+    frame turned by yaw and stretched by scale."""
+    global W, H, OX, OY, X0P, Y0P, BAY, RB, IB, DB, PB, OB, LB, QX, QY, QZ, DX, DY, DZ, YAW, SC, L, LS, DD
     W, H, OX, OY = w, h, ox, oy
+    YAW, SC = float(yaw), tuple(float(v) for v in scale)
     _py, _px = np.mgrid[0:H, 0:W]
     U = (_px + 0.5 - OX) / 2.0
     V = (_py + 0.5 - OY)
-    X0P = (U + V) / 2.0
-    Y0P = (V - U) / 2.0
+    xw = (U + V) / 2.0; yw = (V - U) / 2.0          # world point on the ground under each pixel's ray
+    c, s = math.cos(YAW), math.sin(YAW)
+    X0P = (c * xw - s * yw) / SC[0]
+    Y0P = (s * xw + c * yw) / SC[1]
+    DX, DY, DZ = _to_local_dir((1.0, 1.0, KZ))
+    DD = DX * DX + DY * DY + DZ * DZ
+    l = _to_local_dir(L_WORLD, scale=False); L = l / np.linalg.norm(l)
+    LS = _to_local_dir(LS_WORLD)
     BAY = BAYER[(_py - OY) % 4, (_px - OX) % 4]
     RB = np.full((H, W), -1, np.int32); IB = np.zeros((H, W), np.int32)
     DB = np.full((H, W), -1e9); PB = np.zeros((H, W), np.int32); OB = np.zeros((H, W), np.int32)
@@ -90,13 +117,18 @@ def begin(w, h, ox, oy):
     OCC.clear(); OUTLINE.clear(); _pid[0] = 1; _oid[0] = 1; CLIP[0] = None
 
 begin(W, H, OX, OY)
+
 def new_oid(outline=False):
     _oid[0] += 1
     if outline: OUTLINE.add(_oid[0])
     return _oid[0]
 
 def proj(x, y, z):
-    return OX + 2 * (x - y), OY + x + y - ZS * z
+    """Object frame point -> screen pixel position."""
+    c, s = math.cos(YAW), math.sin(YAW)
+    x, y, z = x * SC[0], y * SC[1], z * SC[2]
+    wx = c * x + s * y; wy = -s * x + c * y
+    return OX + 2 * (wx - wy), OY + wx + wy - ZS * z
 
 def sbbox(x0, y0, z0, x1, y1, z1, pad=2):
     xs, ys = [], []
@@ -111,14 +143,18 @@ def sbbox(x0, y0, z0, x1, y1, z1, pad=2):
 
 def R(name): return RID[name]
 
+def ray(sl, t):
+    """Points along the view rays of a window at parameter t: (X, Y, Z)."""
+    return X0P[sl] + DX * t, Y0P[sl] + DY * t, DZ * t
+
 def put(sl, m, t, ramp, idx, pid, oid, lit):
     if not m.any(): return
     x0p = X0P[sl]; y0p = Y0P[sl]
     t = np.broadcast_to(t, m.shape)
     if CLIP[0] is not None:
-        xw = x0p + t
+        xw = x0p + DX * t
         m = m & (xw >= CLIP[0][0] - 1e-6) & (xw < CLIP[0][1] - 1e-6)
-    D = x0p + y0p + (2 + KZ) * t
+    D = DX * x0p + DY * y0p + DD * t
     m = m & (D > DB[sl])
     if not m.any(): return
     DB[sl][m] = D[m]
@@ -126,7 +162,7 @@ def put(sl, m, t, ramp, idx, pid, oid, lit):
     IB[sl][m] = np.broadcast_to(idx, m.shape)[m]
     PB[sl][m] = pid; OB[sl][m] = oid
     LB[sl][m] = np.broadcast_to(lit, m.shape)[m]
-    QX[sl][m] = (x0p + t)[m]; QY[sl][m] = (y0p + t)[m]; QZ[sl][m] = (KZ * t)[m]
+    QX[sl][m] = (x0p + DX * t)[m]; QY[sl][m] = (y0p + DY * t)[m]; QZ[sl][m] = (DZ * t)[m]
 
 def _reg(aabb, cast, kind='box', extra=None):
     _pid[0] += 1
@@ -145,22 +181,21 @@ def box(x0, y0, z0, x1, y1, z1, ramp, shades=(1, 2, 3), tex=None, oid=0, cast=Tr
     if sl is None: return
     x0p = X0P[sl]; y0p = Y0P[sl]
     if 't' in faces:
-        t = np.full(x0p.shape, z1 / KZ); X = x0p + t; Y = y0p + t; Z = KZ * t
+        t = np.full(x0p.shape, z1 / DZ); X, Y, Z = ray(sl, t)
         m = (X >= x0) & (X < x1) & (Y >= y0) & (Y < y1)
         r, i = _apply_tex(tex, 't', X, Y, Z, ramp, np.full(X.shape, shades[0]))
         put(sl, m, t, r, i, pid, oid, True)
     if 'l' in faces:
-        t = y1 - y0p; X = x0p + t; Z = KZ * t; Y = np.full(X.shape, float(y1))
+        t = (y1 - y0p) / DY; X, Y, Z = ray(sl, t); Y = np.full(X.shape, float(y1))
         m = (X >= x0) & (X < x1) & (Z >= z0) & (Z < z1)
         r, i = _apply_tex(tex, 'l', X, Y, Z, ramp, np.full(X.shape, shades[1]))
         put(sl, m, t, r, i, pid, oid, True)
     if 'r' in faces:
-        t = x1 - x0p; Y = y0p + t; Z = KZ * t; X = np.full(Y.shape, float(x1))
+        t = (x1 - x0p) / DX; X, Y, Z = ray(sl, t); X = np.full(Y.shape, float(x1))
         m = (Y >= y0) & (Y < y1) & (Z >= z0) & (Z < z1)
         r, i = _apply_tex(tex, 'r', X, Y, Z, ramp, np.full(Y.shape, shades[2]))
         put(sl, m, t, r, i, pid, oid, False)
 
-L = np.array([-0.55, 0.15, 1.0]); L = L / np.linalg.norm(L)
 def qshade(nx, ny, nz, th=(0.9, 0.55, -0.1), noise=None):
     d = nx * L[0] + ny * L[1] + nz * L[2]
     if noise is not None: d = d + noise
@@ -168,23 +203,26 @@ def qshade(nx, ny, nz, th=(0.9, 0.55, -0.1), noise=None):
     i = np.where(d > th[2], 2, i); i = np.where(d > th[1], 1, i); i = np.where(d > th[0], 0, i)
     return i
 
+def _near_root(a, b, c):
+    disc = b * b - 4 * a * c
+    ok = disc >= 0
+    t = (-b + np.sqrt(np.where(ok, disc, 0))) / (2 * a)
+    return ok, t
+
 def cyl_x(x0, x1, yc, zc, r, ramp, oid=0, cast=True, tex=None, th=(0.8, 0.5, -0.05), cap=True):
     pid = _reg((x0, yc - r, zc - r, x1, yc + r, zc + r), cast)
     sl = sbbox(x0, yc - r, zc - r, x1, yc + r, zc + r)
     if sl is None: return
     x0p = X0P[sl]; y0p = Y0P[sl]
     dy = y0p - yc
-    a = 1.0 + KZ * KZ; b = 2 * (dy - KZ * zc); c = dy * dy + zc * zc - r * r
-    disc = b * b - 4 * a * c
-    ok = disc >= 0
-    t = (-b + np.sqrt(np.where(ok, disc, 0))) / (2 * a)
-    X = x0p + t; Y = y0p + t; Z = KZ * t
+    ok, t = _near_root(DY * DY + DZ * DZ, 2 * (dy * DY - DZ * zc), dy * dy + zc * zc - r * r)
+    X, Y, Z = ray(sl, t)
     m = ok & (X >= x0) & (X < x1)
     idx = qshade(0, (Y - yc) / r, (Z - zc) / r, th)
     rr, ii = _apply_tex(tex, 's', X, Y, Z, ramp, idx)
     put(sl, m, t, rr, ii, pid, oid, True)
     if cap:
-        t = x1 - x0p; Y = y0p + t; Z = KZ * t; X = np.full(Y.shape, float(x1))
+        t = (x1 - x0p) / DX; X, Y, Z = ray(sl, t); X = np.full(Y.shape, float(x1))
         m = (Y - yc) ** 2 + (Z - zc) ** 2 <= r * r
         rr, ii = _apply_tex(tex, 'c', X, Y, Z, ramp, np.full(Y.shape, 3))
         put(sl, m, t, rr, ii, pid, oid, False)
@@ -195,15 +233,13 @@ def cyl_z(xc, yc, z0, z1, r, ramp, oid=0, cast=True, tex=None, th=(0.45, 0.25, -
     if sl is None: return
     x0p = X0P[sl]; y0p = Y0P[sl]
     dx = x0p - xc; dy = y0p - yc
-    a = 2.0; b = 2 * (dx + dy); c = dx * dx + dy * dy - r * r
-    disc = b * b - 4 * a * c; ok = disc >= 0
-    t = (-b + np.sqrt(np.where(ok, disc, 0))) / (2 * a)
-    X = x0p + t; Y = y0p + t; Z = KZ * t
+    ok, t = _near_root(DX * DX + DY * DY, 2 * (dx * DX + dy * DY), dx * dx + dy * dy - r * r)
+    X, Y, Z = ray(sl, t)
     m = ok & (Z >= z0) & (Z < z1)
     idx = qshade((X - xc) / r, (Y - yc) / r, 0, th)
     rr, ii = _apply_tex(tex, 's', X, Y, Z, ramp, idx)
     put(sl, m, t, rr, ii, pid, oid, True)
-    t = np.full(x0p.shape, z1 / KZ); X = x0p + t; Y = y0p + t; Z = KZ * t
+    t = np.full(x0p.shape, z1 / DZ); X, Y, Z = ray(sl, t)
     m = (X - xc) ** 2 + (Y - yc) ** 2 <= r * r
     rr, ii = _apply_tex(tex, 't', X, Y, Z, ramp, np.full(X.shape, topidx))
     put(sl, m, t, rr, ii, pid, oid, True)
@@ -215,11 +251,9 @@ def sphere(xc, yc, zc, r, ramp, oid=0, cast=True, th=(0.85, 0.5, -0.1), noise=0.
     if sl is None: return
     x0p = X0P[sl]; y0p = Y0P[sl]
     px = x0p - xc; py = y0p - yc; pz = -zc
-    # ellipsoid: px^2+py^2+(pz/sz)^2 = r^2, dir (1,1,2)
-    a = 2 + KZ * KZ / sz ** 2; b = 2 * (px + py + KZ * pz / sz ** 2); c = px * px + py * py + (pz / sz) ** 2 - r * r
-    disc = b * b - 4 * a * c; ok = disc >= 0
-    t = (-b + np.sqrt(np.where(ok, disc, 0))) / (2 * a)
-    X = x0p + t; Y = y0p + t; Z = KZ * t
+    ok, t = _near_root(DX * DX + DY * DY + DZ * DZ / sz ** 2, 2 * (px * DX + py * DY + DZ * pz / sz ** 2),
+                       px * px + py * py + (pz / sz) ** 2 - r * r)
+    X, Y, Z = ray(sl, t)
     nx = (X - xc) / r; ny = (Y - yc) / r; nz = (Z - zc) / (r * sz * sz)
     nn = np.sqrt(nx * nx + ny * ny + nz * nz) + 1e-9
     nse = None
@@ -230,12 +264,15 @@ def sphere(xc, yc, zc, r, ramp, oid=0, cast=True, th=(0.85, 0.5, -0.1), noise=0.
     put(sl, ok, t, R(ramp), idx, pid, oid, True)
 
 def disc_y(xc, zc, r, yp, ramp, oid=0, kind='wheel', spokes=8, phase=0.0):
-    sl = sbbox(xc - r, yp, zc - r, xc + r, yp, zc + r)
+    """A disc in the x-z plane at y = yp (a wheel seen on its +y side). It stays round on a stretched canvas:
+    r is measured along x, and its height is r * SC[0] / SC[2] in the frame (see wheel_zc)."""
+    rz = r * SC[0] / SC[2]
+    sl = sbbox(xc - r, yp, zc - rz, xc + r, yp, zc + rz)
     if sl is None: return
     _pid[0] += 1; pid = _pid[0]
-    x0p = X0P[sl]; y0p = Y0P[sl]
-    t = yp - y0p; X = x0p + t; Z = KZ * t
-    dx = X - xc; dz = Z - zc; d = np.sqrt(dx * dx + dz * dz)
+    y0p = Y0P[sl]
+    t = (yp - y0p) / DY; X, Y, Z = ray(sl, t)
+    dx = X - xc; dz = (Z - zc) * SC[2] / SC[0]; d = np.sqrt(dx * dx + dz * dz)
     m = d <= r
     ang = np.arctan2(dz, dx) + phase
     rr = np.full(X.shape, R(ramp)); ii = np.full(X.shape, 2)
@@ -259,17 +296,21 @@ def disc_y(xc, zc, r, yp, ramp, oid=0, kind='wheel', spokes=8, phase=0.0):
         ii = np.where(d > r - 0.7, 3, ii)
     put(sl, m, t, rr, ii, pid, oid, False)
 
+def wheel_zc(base, r):
+    """Centre height (frame units) of a round wheel of radius r standing on height `base`."""
+    return base + r * SC[0] / SC[2]
+
 def disc_x(yc, zc, r, xp, ramp, oid=0, kind='wheel', spokes=8, phase=0.0):
     """A wheel in the y-z plane at x = xp, seen on its +x side (the shaded side)."""
     sl = sbbox(xp, yc - r, zc - r, xp, yc + r, zc + r)
     if sl is None: return
     _pid[0] += 1; pid = _pid[0]
-    x0p = X0P[sl]; y0p = Y0P[sl]
-    t = xp - x0p; Y = y0p + t; Z = KZ * t
+    x0p = X0P[sl]
+    t = (xp - x0p) / DX; X, Y, Z = ray(sl, t)
     dy = Y - yc; dz = Z - zc; d = np.sqrt(dy * dy + dz * dz)
     m = d <= r
     ang = np.arctan2(dz, -dy) + phase
-    rr = np.full(Y.shape, R(ramp)); ii = np.full(Y.shape, 2)
+    rr = np.full(Y.shape, R(ramp))
     ii = np.where(dz > 0, 2, 3)
     if spokes and r > 1.6:
         sp = (np.abs(((ang / (2 * np.pi) * spokes) % 1.0) - 0.5) < 0.16) & (d > 0.8) & (d < r - 0.8)
@@ -286,18 +327,17 @@ def gable_x(x0, x1, yc, hw, ze, zr, ramp, wall=None, oid=0, cast=True, tex=None,
     x0p = X0P[sl]; y0p = Y0P[sl]
     k = (zr - ze) / hw
     # front half (+y): z = zr - k*(y-yc)
-    t = (zr - k * (y0p - yc)) / (KZ + k); X = x0p + t; Y = y0p + t; Z = KZ * t
+    t = (zr - k * (y0p - yc)) / (DZ + k * DY); X, Y, Z = ray(sl, t)
     m = (X >= x0) & (X < x1) & (Y >= yc) & (Y < yc + hw)
     rr, ii = _apply_tex(tex, 'f', X, Y, Z, ramp, np.full(X.shape, shades[1]))
     put(sl, m, t, rr, ii, pid, oid, True)
-    if KZ - k > 0.05:
-        t = (zr - k * (yc - y0p)) / (KZ - k)
-        X = x0p + t; Y = y0p + t; Z = KZ * t
+    if DZ - k * DY > 0.05:
+        t = (zr - k * (yc - y0p)) / (DZ - k * DY); X, Y, Z = ray(sl, t)
         m = (X >= x0) & (X < x1) & (Y >= yc - hw) & (Y < yc)
         rr, ii = _apply_tex(tex, 'b', X, Y, Z, ramp, np.full(X.shape, shades[0]))
         put(sl, m, t, rr, ii, pid, oid, True)
     if wall is not None:
-        t = x1 - 0.6 - x0p; Y = y0p + t; Z = KZ * t; X = np.full(Y.shape, x1 - 0.6)
+        t = (x1 - 0.6 - x0p) / DX; X, Y, Z = ray(sl, t); X = np.full(Y.shape, x1 - 0.6)
         m = (Z >= ze - 0.01) & (Z <= zr - k * np.abs(Y - yc)) & (np.abs(Y - yc) < hw - 0.8)
         rr, ii = _apply_tex(endtex, 'e', X, Y, Z, wall, np.full(Y.shape, 3))
         put(sl, m, t, rr, ii, pid, oid, False)
@@ -309,24 +349,24 @@ def gable_y(y0, y1, xc, hw, ze, zr, ramp, wall=None, oid=0, cast=True, tex=None,
     if sl is None: return
     x0p = X0P[sl]; y0p = Y0P[sl]
     k = (zr - ze) / hw
-    t = (zr - k * (x0p - xc)) / (KZ + k); X = x0p + t; Y = y0p + t; Z = KZ * t
+    t = (zr - k * (x0p - xc)) / (DZ + k * DX); X, Y, Z = ray(sl, t)
     m = (Y >= y0) & (Y < y1) & (X >= xc) & (X < xc + hw)
     rr, ii = _apply_tex(tex, 'r', X, Y, Z, ramp, np.full(X.shape, shades[1]))
     put(sl, m, t, rr, ii, pid, oid, False)
-    if KZ - k > 0.05:
-        t = (zr - k * (xc - x0p)) / (KZ - k); X = x0p + t; Y = y0p + t; Z = KZ * t
+    if DZ - k * DX > 0.05:
+        t = (zr - k * (xc - x0p)) / (DZ - k * DX); X, Y, Z = ray(sl, t)
         m = (Y >= y0) & (Y < y1) & (X >= xc - hw) & (X < xc)
         rr, ii = _apply_tex(tex, 'l', X, Y, Z, ramp, np.full(X.shape, shades[0]))
         put(sl, m, t, rr, ii, pid, oid, True)
     if wall is not None:
-        t = y1 - 0.6 - y0p; X = x0p + t; Z = KZ * t; Y = np.full(X.shape, y1 - 0.6)
+        t = (y1 - 0.6 - y0p) / DY; X, Y, Z = ray(sl, t); Y = np.full(X.shape, y1 - 0.6)
         m = (Z >= ze - 0.01) & (Z <= zr - k * np.abs(X - xc)) & (np.abs(X - xc) < hw - 0.8)
         rr, ii = _apply_tex(endtex, 'e', X, Y, Z, wall, np.full(X.shape, 2))
         put(sl, m, t, rr, ii, pid, oid, True)
 
 def ground(func):
     sl = (slice(0, H), slice(0, W))
-    t = np.zeros((H, W)); X = X0P + t; Y = Y0P + t
+    t = np.zeros((H, W)); X = X0P + 0; Y = Y0P + 0
     r, i = func(X, Y)
     _pid[0] += 1
     put(sl, np.ones((H, W), bool), t, r, i, _pid[0], 1, True)
@@ -337,63 +377,71 @@ def hash2(a, b):
     h = ((h ^ (h >> 13)) * 1274126177) & 0xffffffff
     return (h ^ (h >> 16)) & 0xffff
 
-def band_curve(pts, half, zt, ramp, idx, oid=0, lit=True, zclear=None):
-    """Draw a horizontal band (top surface at height zt) within distance `half` of polyline pts."""
+def band_curve(pts, half, zt, ramp, idx, oid=0, lit=True, zclear=None, tex=None):
+    """Draw a horizontal band (top surface at height zt) within distance `half` of polyline pts (densely sampled).
+    tex(face, X, Y, Z, idx) -> (ramp or None, idx) may texture it."""
     pts = np.asarray(pts)
     xs = pts[:, 0]; ys = pts[:, 1]
     sl = sbbox(xs.min() - half, ys.min() - half, 0, xs.max() + half, ys.max() + half, zt)
     if sl is None: return
     _pid[0] += 1; pid = _pid[0]
-    x0p = X0P[sl]; y0p = Y0P[sl]
-    t = zt / KZ; X = x0p + t; Y = y0p + t
+    t = zt / DZ; X, Y, Z = ray(sl, t)
+    # cheap pre-cut: only rows/cols of the window near the polyline's box are tested point by point
     best = np.full(X.shape, 1e9)
     for k in range(0, len(pts), 1):
         d = (X - xs[k]) ** 2 + (Y - ys[k]) ** 2
-        best = np.minimum(best, d)
+        np.minimum(best, d, out=best)
     m = best <= half * half
-    put(sl, m, np.full(X.shape, t), R(ramp), np.full(X.shape, idx), pid, oid, lit)
+    rr, ii = R(ramp), np.full(X.shape, idx)
+    if tex is not None:
+        rr, ii = _apply_tex(tex, 't', X, Y, Z, ramp, ii)
+    put(sl, m, np.full(X.shape, t), rr, ii, pid, oid, lit)
 
 def oriented_rect(cx, cy, tx, ty, hl, hw, zt, ramp, idx, oid=0, tex=None):
     sl = sbbox(cx - 6, cy - 6, 0, cx + 6, cy + 6, zt)
     if sl is None: return
     _pid[0] += 1; pid = _pid[0]
-    x0p = X0P[sl]; y0p = Y0P[sl]
-    t = zt / KZ; X = x0p + t; Y = y0p + t
+    t = zt / DZ; X, Y, Z = ray(sl, t)
     a = (X - cx) * tx + (Y - cy) * ty; b = -(X - cx) * ty + (Y - cy) * tx
     m = (np.abs(a) < hl) & (np.abs(b) < hw)
     ii = np.full(X.shape, idx)
     if tex is not None: ii = tex(a, b, ii)
     put(sl, m, np.full(X.shape, t), R(ramp), ii, pid, oid, True)
     # visible side edge (thin dark lip) one unit lower
-    t2 = (zt - 0.7) / KZ; X = x0p + t2; Y = y0p + t2
+    t2 = (zt - 0.7) / DZ; X, Y, Z = ray(sl, t2)
     a = (X - cx) * tx + (Y - cy) * ty; b = -(X - cx) * ty + (Y - cy) * tx
     m = (np.abs(a) < hl) & (np.abs(b) < hw)
     put(sl, m, np.full(X.shape, t2), R(ramp), np.full(X.shape, min(idx + 1, 4)), pid, oid, False)
 
 # ---------------- shadows / outlines / sprites ----------------
-LS = np.array([-0.55, 0.15, 1.0])
 def cast_shadows():
     sel = (RB >= 0) & LB
     ys, xs = np.nonzero(sel)
     qx = QX[ys, xs]; qy = QY[ys, xs]; qz = QZ[ys, xs]; pid = PB[ys, xs]
     sh = np.zeros(len(ys), bool)
+    lx, ly, lz = LS
     for (x0, y0, z0, x1, y1, z1), opid, kind, extra in OCC:
-        cand = (~sh) & (qz < z1 - 0.05) & (qx >= x0 - 0.1) & (qx <= x1 + 0.55 * (z1 - qz) + 0.1) & \
-               (qy <= y1 + 0.1) & (qy >= y0 - 0.15 * (z1 - qz) - 0.1) & (pid != opid)
+        reach = (z1 - qz) / lz
+        cand = (~sh) & (qz < z1 - 0.05) & (pid != opid) & \
+               (qx + np.minimum(0, lx) * reach <= x1 + 0.1) & (qx + np.maximum(0, lx) * reach >= x0 - 0.1) & \
+               (qy + np.minimum(0, ly) * reach <= y1 + 0.1) & (qy + np.maximum(0, ly) * reach >= y0 - 0.1)
         ci = np.nonzero(cand)[0]
         if len(ci) == 0: continue
         px = qx[ci]; py = qy[ci]; pz = qz[ci]
         if kind == 'sph':
             xc, yc, zc, r, sz = extra
             ox = px - xc; oy = py - yc; oz = (pz - zc) / sz
-            dx, dy, dz = LS[0], LS[1], LS[2] / sz
+            dx, dy, dz = lx, ly, lz / sz
             a = dx * dx + dy * dy + dz * dz; b = 2 * (ox * dx + oy * dy + oz * dz); c = ox * ox + oy * oy + oz * oz - r * r
             disc = b * b - 4 * a * c
             s = (-b + np.sqrt(np.maximum(disc, 0))) / (2 * a)
             hit = (disc >= 0) & (s > 0.2)
         else:
             tmin = np.full(len(ci), -1e9); tmax = np.full(len(ci), 1e9)
-            for p, lo, hi, d in ((px, x0, x1, LS[0]), (py, y0, y1, LS[1]), (pz, z0, z1, LS[2])):
+            for p, lo, hi, d in ((px, x0, x1, lx), (py, y0, y1, ly), (pz, z0, z1, lz)):
+                if abs(d) < 1e-9:
+                    inside = (p >= lo) & (p <= hi)
+                    tmin = np.where(inside, tmin, 1e9); continue
                 s0 = (lo - p) / d; s1 = (hi - p) / d
                 tmin = np.maximum(tmin, np.minimum(s0, s1)); tmax = np.minimum(tmax, np.maximum(s0, s1))
             hit = (tmax >= np.maximum(tmin, 0.25))
@@ -416,41 +464,6 @@ def outlines():
     for edge in res:
         IB[edge] = RLEN[RB[edge]] - 1
 
-def darken_blob(x, y, z, rx=2.2, ry=1.2, dxo=1.6):
-    sx, sy = proj(x, y, z)
-    sl = (slice(max(0, int(sy) - 6), min(H, int(sy) + 6)), slice(max(0, int(sx) - 8), min(W, int(sx) + 12)))
-    x0p = X0P[sl]; y0p = Y0P[sl]; t = z / KZ
-    X = x0p + t; Y = y0p + t
-    m = (((X - x - dxo) / rx) ** 2 + ((Y - y) / ry) ** 2 <= 1) & (np.abs(DB[sl] - (X + Y + z)) < 0.8)
-    IB[sl][m] = np.minimum(IB[sl][m] + 1, RLEN[RB[sl][m]] - 1)
-
-def sprite(rows, cmap, x, y, z, mirror=False, outline=True, oid=None, dz=0.5):
-    """rows: list of strings; cmap: char->(ramp, idx). Foot centre at world (x,y,z)."""
-    if mirror: rows = [r[::-1] for r in rows]
-    h = len(rows); w = len(rows[0])
-    sx, sy = proj(x, y, z)
-    left = int(math.floor(sx)) - w // 2; base = int(math.floor(sy)) - 1
-    if oid is None: oid = new_oid()
-    grid = {}
-    for r, line in enumerate(rows):
-        for c, ch in enumerate(line):
-            if ch == '.' or ch == ' ': continue
-            grid[(left + c, base - (h - 1 - r))] = cmap[ch]
-    pts = dict(grid)
-    if outline:
-        for (px, py), (rn, ii) in grid.items():
-            for ddx, ddy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                q = (px + ddx, py + ddy)
-                if q in grid or q in pts: continue
-                pts[q] = (rn, RLEN[R(rn)] - 1)
-    for (px, py), (rn, ii) in pts.items():
-        if not (0 <= px < W and 0 <= py < H): continue
-        rb = base - py
-        D = x + y + z + rb / ZS + dz
-        if D > DB[py, px]:
-            DB[py, px] = D; RB[py, px] = R(rn); IB[py, px] = min(ii, RLEN[R(rn)] - 1); OB[py, px] = oid
-    return oid
-
 def pix(px, py, rn, ii, D=None):
     if 0 <= px < W and 0 <= py < H and (D is None or D > DB[py, px]):
         RB[py, px] = R(rn); IB[py, px] = ii
@@ -471,7 +484,7 @@ FONT = {
  '-':['000','000','111','000','000'],'&':['010','101','010','101','011'],
 }
 def text_on_yface(x, yface, z, s, rn, ii, oid=None, shade2=None):
-    """Write text on a +y face; (x,z) = top-left of text in world. Columns slope 1px per 2 px."""
+    """Write text on a +y face (unturned canvas); (x,z) = top-left of text. Columns slope 1px per 2 px."""
     sx, sy = proj(x, yface, z)
     sx = int(math.floor(sx)); sy = int(math.floor(sy))
     col = 0
@@ -487,24 +500,20 @@ def text_on_yface(x, yface, z, s, rn, ii, oid=None, shade2=None):
         col += len(g[0]) + 1
     return col
 
-def render():
-    img = PAL[np.clip(RB, 0, None), IB]
-    img[RB < 0] = PAL[R('grass'), 1]
-    return img
-
 SHADOW_RGBA = (43, 32, 38, 92)   # ground shadow: the ink colour at about 36% (one palette step darker on grass)
+HARD_ALPHA = [False]             # True: shadow pixels become a 50% checker of opaque ink (contract: alpha 0 or 255)
 
 def shadow_catcher(x0, y0, x1, y1, z=0.0):
     """An invisible ground rectangle that only keeps the shadows falling on it."""
     sl = sbbox(x0, y0, z, x1, y1, z, pad=0)
     if sl is None: return
     _pid[0] += 1
-    t = np.full(X0P[sl].shape, z / KZ); X = X0P[sl] + t; Y = Y0P[sl] + t
+    t = np.full(X0P[sl].shape, z / DZ); X, Y, Z = ray(sl, t)
     m = (X >= x0) & (X < x1) & (Y >= y0) & (Y < y1)
     put(sl, m, t - 1e-3, R('gnd'), np.zeros(X.shape, int), _pid[0], 1, True)
 
 def render_rgba():
-    """RGBA image of the canvas: empty pixels transparent, shadow-catcher pixels a translucent shadow or nothing."""
+    """RGBA image of the canvas: empty pixels transparent, shadow-catcher pixels a shadow or nothing."""
     img = np.zeros((H, W, 4), np.uint8)
     rb = np.clip(RB, 0, None)
     img[..., :3] = PAL[rb, np.minimum(IB, ML - 1)]
@@ -514,10 +523,3 @@ def render_rgba():
     img[g] = 0
     img[g & (IB > 0)] = SHADOW_RGBA
     return img
-
-def blob_shadow(img, x, y, z, rx=2.2, ry=1.2, dxo=1.6):
-    """Paint a soft oval contact shadow (translucent) into an RGBA image where it is empty."""
-    sl = (slice(0, H), slice(0, W))
-    t = z / KZ; X = X0P + t; Y = Y0P + t
-    m = (((X - x - dxo) / rx) ** 2 + ((Y - y) / ry) ** 2 <= 1) & (img[..., 3] == 0)
-    img[m] = SHADOW_RGBA

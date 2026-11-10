@@ -15253,8 +15253,10 @@ window.addEventListener('blur', () => keys.clear());
 // faces, the walkway: everything no higher than a deck), then (2) everything that stands up (buildings, the canopy,
 // switch stands, lamps, the schedule board, trains, people, goods) as one list in painter's order: each thing has a
 // world box (x0..x1, z0..z1, y0..y1) and pixSort orders the overlapping ones by the boxes (the usual isometric rule),
-// so a person beside a long train or under the canopy is drawn on the right side of it. The foundation draws flat
-// placeholder shapes (pixBox); R replaces them with the sprites of PIX_ATLAS (plans/proto-sprites.md) as they come.
+// so a person beside a long train or under the canopy is drawn on the right side of it. R draws the sprites of
+// PIX_ATLAS (plans/proto-sprites.md); a key the art lacks falls back to the foundation's flat placeholder (pixBox).
+// Whatever is drawn over the agent or a traveller standing in a line turns see-through there (pixSeeThrough), and a
+// tap picks what is drawn under it (pixPick, by the sprites' own pixels).
 // Text (sign names, the schedule board's rows) is drawn in a 3 x 5 pixel font (pixText), crisp at every zoom.
 const PIX_PROJ = (() => {
   const B = PROTO.BOUNDS, PAD = 24, TOP = 64;   // TOP: room above the map's far corner for tall things
@@ -15930,7 +15932,7 @@ function pixScene(alpha) {
     else if (moving) { anim = 'walk'; fr = walkFr; }
     const key = pixPersonKey('agent', anim, pDir, fr), carried = hand && held.length ? held[held.length - 1] : null, back = pDir === 'ne' || pDir === 'nw';
     const it = pixItem(px - 0.25, px + 0.25, pz - 0.25, pz + 0.25, wy.y, wy.y + 1.75, g => {
-      const p = pixProject(px, wy.y, pz), bx = Math.round(p.x) - PIX.vx, by = Math.round(p.y) - PIX.vy, hd = PIX_HANDS[pDir];
+      const p = pixProject(px, wy.y, pz), bx = Math.round(p.x) - PIX.vx, by = Math.round(p.y) - PIX.vy, hd = (pixX('ppl/agent/carry/' + pDir) || {}).hands || PIX_HANDS[pDir];   // the art's hands offset when the atlas carries it
       const goods = () => carried !== null && pixGoodsDraw(g, S, carried, bx + hd[0], by + hd[1], true, px, wy.y + 0.8, pz);
       if (back) goods();
       if (!(key && pixBlit(g, key, bx, by, { k: 'player' }))) {

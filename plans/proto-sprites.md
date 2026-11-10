@@ -113,7 +113,7 @@ are split (the renderer sorts each part on its own box):
 |---|---|---|
 | `bld/station` | the station building, about 12 x 5.6, 4.5 high | depot with a name board "RAILHEAD" (or the town's name, provisional) |
 | `bld/canopy` | platform 1's canopy, about 14 x 4 on posts, underside 2.6 high | separate: people walk under it; R fades it when the player is under it |
-| `bld/shop_store`, `bld/shop_smithy`, `bld/shop_saloon` | about 9 x 8, false fronts facing the street (south), signs "STORE", "SMITHY", "SALOON" | the door at the middle of the front |
+| `bld/shop_store`, `bld/shop_smithy`, `bld/shop_saloon` | 10u along the street x 8u deep, false fronts on the main street, signs "STORE", "SMITHY", "SALOON" | the door at the middle of the front. **The main street runs north, away from the station, at right angles to the tracks** (the lead's change, 2026-11-10; not parallel as in the mockup): the store and the blacksmith stand on its west side with their fronts facing east (the right-hand face on screen, towards the viewer's right: the shaded face), the saloon on its east side facing west (its front is turned away from the fixed view: draw its back and side, with a **hanging sign over the street** on a bracket so its name still reads, provisional). Yaw per shop in `proto-layout.json` |
 | `bld/storage` | the storage shed on platform 2, about 10 x 2.6, 3 high, doors on the south (track 3) side | |
 | `bld/schedboard` | the schedule board on two posts, face towards the viewer (south), about 2.4 wide, face 1.6 high from 0.9 | the face is left blank: R draws the rows on it in the pixel font |
 | `bld/lamp` | lamp post | |
@@ -128,6 +128,7 @@ higher than a deck (buildings, stands, lamps) is in it. Until it exists, R draws
 
 ## 5. Sizes the game uses (for the art's scale)
 
+- The main street: x -3.2 to 3.2, from behind the station building (z -18.5) north to the map's edge (z -60).
 - Track: gauge 1.2u (rails at +-0.6), ties 2.4u long, ballast 2.4u wide. Rail top 0.34u.
 - Track spacing: track 1 to track 2 is 5.03u; track 2 to track 3 is 8.48u (platform 2 between them).
 - Platform 1: 6.4u deep, its track edge 1.44u from track 1's centre. Platform 2 (island): 5.6u wide, 1.44u from both

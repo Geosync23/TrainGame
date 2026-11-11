@@ -56,11 +56,12 @@ module.exports = async function checkSave() {
   } finally { await browser.close(); }
   await checkBadSave(problems);
   await checkNewestWins(problems);
+  await checkWorldSaves(problems);
   return problems;
 };
 
 // Writes saves straight into the browser's storage from a blank page of the same site, then opens the game.
-async function plantAndOpen(page, url, idbJson, quickJson) {
+async function plantAndOpen(page, url, idbJson, quickJson, query = '?paused&world=start') {
   await page.goto(url + 'tests/blank.html');
   await page.waitForTimeout(500); // let any save started by the game page as it closed finish first
   await page.evaluate(async ([idbJson, quickJson]) => {
@@ -78,7 +79,7 @@ async function plantAndOpen(page, url, idbJson, quickJson) {
       r.onerror = () => rej(r.error);
     });
   }, [idbJson, quickJson]);
-  await page.goto(url + 'index.html?paused&world=start');
+  await page.goto(url + 'index.html' + query);
   await waitReady(page);
 }
 async function storedKeys(page) {
@@ -125,5 +126,26 @@ async function checkNewestWins(problems) {
     if (i.h !== s.hb) problems.push(`a newer IndexedDB save lost to an older quick save (loaded tick ${i.tick})`);
     if (q.h === s.hb && i.h === s.hb) console.log(`  newest save wins: quick save and IndexedDB both checked (tick ${q.tick})`);
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
+  } finally { await browser.close(); }
+}
+
+// D25 (2026-11-11): a save from another world (an old 3D game) must not open on the prototype's page; it is moved
+// aside, not deleted, and comes back when the page is opened in its own world.
+async function checkWorldSaves(problems) {
+  const { browser, page, errors, url } = await openGame('portrait', { query: '?paused' });
+  try {
+    const s = await page.evaluate(() => { const R = window.__railhead; R.step(50); return { json: R.exportSave(), h: R.hash() }; });
+    await plantAndOpen(page, url, s.json, s.json, '?paused');
+    const p = await page.evaluate(() => ({ world: window.__railhead.state.track.world, tick: window.__railhead.state.tick }));
+    const keys = await storedKeys(page);
+    if (p.world !== 'proto' || p.tick !== 0) problems.push(`with an old start-world save the prototype's page opened ${p.world} at tick ${p.tick}`);
+    if (!keys.idb.includes('world-start')) problems.push('the start-world IndexedDB save was not kept as world-start: ' + JSON.stringify(keys.idb));
+    if (!keys.ls.includes('railhead-quicksave-start')) problems.push('the start-world quick save was not kept: ' + JSON.stringify(keys.ls));
+    await page.goto(url + 'index.html?paused&world=start');
+    await waitReady(page);
+    const b = await page.evaluate(() => ({ world: window.__railhead.state.track.world, h: window.__railhead.hash() }));
+    if (b.world !== 'start' || b.h !== s.h) problems.push(`opening ?world=start did not bring the start save back (${b.world})`);
+    if (errors.length) problems.push('console errors: ' + errors.join(' | '));
+    else if (!problems.length) console.log('  saves by world: an old start save set aside on the prototype page and brought back with ?world=start');
   } finally { await browser.close(); }
 }

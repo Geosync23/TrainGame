@@ -18047,8 +18047,32 @@ window.__railhead = {
 // Both saves are read (IndexedDB and the quick save in localStorage); the one with the higher tick wins.
 // A save that is damaged, or that fails while the world is built from it, is kept under 'broken-<time>'
 // and the next one is tried; if none works the game starts fresh. Only warnings go to the console.
+// D25 (2026-11-11): each world keeps its own save. A save from another world than the page's (an old D24 hub save on
+// the prototype's page, which made the page reopen in 3D) is moved aside to 'world-<id>' (IndexedDB) or
+// 'railhead-quicksave-<id>' (localStorage), never deleted; opening the page in that world (?world=hub) brings it back.
+const saveWorldOf = json => { try { const s = JSON.parse(json); return worldId(s && s.state && s.state.track); } catch (e) { return null; } };
+async function saveSortWorlds(pw) {
+  try {
+    const raw = await saveReadRaw();
+    const w = raw && saveWorldOf(raw.json);
+    if (raw && w && w !== pw) await idbDo('readwrite', st => { st.put(raw.rec, 'world-' + w); return st.delete(SAVE_KEY); });
+    if (!raw || (w && w !== pw)) {
+      const rec = await idbDo('readonly', st => st.get('world-' + pw));
+      if (rec) await idbDo('readwrite', st => { st.put(rec, SAVE_KEY); return st.delete('world-' + pw); });
+    }
+  } catch (e) { console.warn('Could not sort the saved games by world:', e && e.message); }
+  try {
+    const q = localStorage.getItem(QUICK_KEY), w = q && saveWorldOf(q);
+    if (q && w && w !== pw) { localStorage.setItem(QUICK_KEY + '-' + w, q); localStorage.removeItem(QUICK_KEY); }
+    if (!q || (w && w !== pw)) {
+      const back = localStorage.getItem(QUICK_KEY + '-' + pw);
+      if (back) { localStorage.setItem(QUICK_KEY, back); localStorage.removeItem(QUICK_KEY + '-' + pw); }
+    }
+  } catch (e) { /* no storage */ }
+}
 (async () => {
   const found = [];
+  await saveSortWorlds(PAGE_WORLD);
   try {
     const raw = await saveReadRaw();
     if (raw) {

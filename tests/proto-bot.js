@@ -38,7 +38,9 @@ function protoBotFactory(R, mem0) {
   const AHEAD_S = 1200, EARLY_S = 2 * 3600;
   const cm = v => Math.round(v * 100);
   const d2 = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
-  const walkS = (P, x, z) => d2(P.x, P.z, x, z) * 1.33 / 2 * 60;   // 2u a game minute, a third more for the way round
+  // The player's walk (u a game minute: 3 in the prototype since 2026-11-11, read from the game), a third more for the way round.
+  const walkU = S => R.proto.playerWalkSpeed(S.track);
+  const walkS = (P, x, z, S) => d2(P.x, P.z, x, z) * 1.33 / walkU(S) * 60;
   const held = S => R.carry.carryHeld(S);
   const tagOf = (S, id) => R.cargo.itemTag(S.items.waybill[id]);
   const bayOf = (S, tag) => S.bayTags.storage.indexOf(tag);
@@ -62,7 +64,7 @@ function protoBotFactory(R, mem0) {
   // ---- 2. to 4. The day's jobs: switches, send-offs and the work at each standing train, in one plan ----
   // Each job: { k ('sw' | 'wave' | 'work'), at: [x, z] (where it is done), time (when it should be done by), readyAt
   // (when it can start), dur (game seconds it takes there), run }. The plan: of the four most pressing (latest start
-  // first), the order that makes them least late (squared), walking between them at 2u a minute (a third more for the
+  // first), the order that makes them least late (squared), walking between them at the player's pace (a third more for the
   // way round); a send-off counts only after its train's work in that order (or once the train is ready).
   function jobsNow(S) {
     const P = S.player, T = S.track, rows = R.rr.rrSwitchNeeds(S), bySw = {}, jobs = [];
@@ -110,12 +112,12 @@ function protoBotFactory(R, mem0) {
   function plan(S, jobs) {
     const P = S.player;
     if (!jobs.length) return null;
-    const wS = j => walkS(P, j.at[0], j.at[1]);
+    const wS = j => walkS(P, j.at[0], j.at[1], S);
     jobs.sort((a, b) => (a.time - wS(a)) - (b.time - wS(b)) || a.time - b.time);
     let top = jobs.slice(0, 4);
     // A send-off in the top four brings its train's work with it.
     for (const q of top.slice()) if (q.after && !top.some(o => o.key === q.after)) { const w = jobs.find(o => o.key === q.after); if (w) { top = top.slice(0, 3).filter(o => o !== q).concat([w, q]).slice(0, 4); } }
-    const dS = (a, b) => d2(a[0], a[1], b[0], b[1]) * 1.33 / 2 * 60;
+    const dS = (a, b) => d2(a[0], a[1], b[0], b[1]) * 1.33 / walkU(S) * 60;
     const cost = order => {
       let t = S.time, at = [P.x, P.z], c = 0;
       const done = {};

@@ -2,8 +2,9 @@
 // - The atlas is decoded and drawn: the baked ground, the buildings, switch stands and points, trains by heading,
 //   people (all four facings, never mirrored), goods with tags, the handcart; no placeholder shapes for anything the
 //   art has.
-// - The default view at phone size, portrait and landscape: a whole scale (3 in portrait since the integration, the
-//   lead's request) that shows the station, platform 1, platform 2's east half and the player; the town by panning.
+// - The default view at phone size, portrait and landscape: centred on the player (2026-11-11), a whole scale (3 in portrait since the integration, the
+//   lead's request) that shows platform 1 and the station round him (platform 2's east half and track 3 too in
+//   landscape); the town by panning. The view keeps him centred as he walks (section 7).
 // - A busy moment: a passenger train standing at platform 1 with travellers queueing at its doors, a freight train at
 //   track 3, goods in the storage bays and on platform 2, the player carrying a crate.
 // - Painter's order in the tricky cases: travellers behind the passenger train and behind / in front of the freight
@@ -73,10 +74,16 @@ module.exports = async function checkPixRender() {
         const on = (x, z, y, m) => { const p = R.toScreen(x, z, y || 0); return p.x >= -m && p.x <= innerWidth + m && p.y >= -m && p.y <= innerHeight + m; };
         const S = R.state, P = R.proto.PROTO;
         if (!on(S.player.x, S.player.z, 0, 0)) B('the player is not on the screen');
-        for (const [nm, x, z] of [['platform 1', 0, (P.P1.z0 + P.P1.z1) / 2], ['platform 2 (east half)', 10, (P.P2.z0 + P.P2.z1) / 2], ['track 1 at the stop', 10, -P.D1], ['track 3 (east half)', 10, P.D3], ['the station\'s front', -9, P.STATION.z + 2.5]])
-          if (!on(x, z, 0, 0)) B(`${nm} is not on the screen`);
+        // Since 2026-11-11 the view starts (and stays) centred on the player: his feet on the middle native pixel.
+        const q = X.pixPlayerPoint(S.player.x, S.player.z), off = [Math.round(q.x) - v.vx - Math.floor(v.nw / 2), Math.round(q.y) - v.vy - Math.floor(v.nh / 2)];
+        if (off[0] || off[1]) B(`the default view is not centred on the player (his feet ${off} native px from the middle)`);
+        // What shows round him (he starts on platform 1 in front of the schedule board): portrait is narrow (about
+        // 260 native px), so platform 2's east half, track 3 and the station's front show in landscape.
+        const tall = innerHeight > innerWidth;
+        for (const [nm, x, z, both] of [['platform 1', 0, (P.P1.z0 + P.P1.z1) / 2, 1], ['platform 2 (east half)', 10, (P.P2.z0 + P.P2.z1) / 2], ['track 1 at the stop', 10, -P.D1, 1], ['track 3 (east half)', 10, P.D3], ['the station\'s front', -9, P.STATION.z + 2.5]])
+          if ((both || !tall) && !on(x, z, 0, 0)) B(`${nm} is not on the screen`);
         const keys = X.drawn.map(r => r.key || '');
-        for (const k of ['bld/station', 'bld/canopy', 'bld/storage', 'bld/schedboard', 'bld/footbridge/deck', 'ppl/agent/']) if (!keys.some(q => q.startsWith(k))) B(`nothing drawn from ${k}`);
+        for (const k of ['bld/station', 'bld/canopy', ...(tall ? [] : ['bld/storage']), 'bld/schedboard', 'bld/footbridge/deck', 'ppl/agent/']) if (!keys.some(q => q.startsWith(k))) B(`nothing drawn from ${k}`);
         if (X.drawn.some(r => r.si < 0 && r.hit && r.hit.k !== 'tool')) B(`placeholder shapes drawn: ${X.drawn.filter(r => r.si < 0).map(r => r.id).join(', ')}`);
         out.scale = v.scale; out.native = [v.nw, v.nh];
         return out;
@@ -271,6 +278,56 @@ module.exports = async function checkPixRender() {
           await page.screenshot({ path: screenshotPath(`pixrender-zoom-${nm}-portrait`) });
         }
       }
+      // 7. The view follows the player (2026-11-11): while he walks along platform 2 (carrying the crate) his sprite's anchor (his feet) is
+      // on the middle native pixel of the view every frame, and the view moves with him in whole pixels. A look away
+      // (as a drag) stays while he stands, eases back once he walks; the Centre button snaps back.
+      const fol = await page.evaluate(async () => {
+        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = P2.z0 + 1, out = { bad: [], n: 0, moved: 0 }, B = m => out.bad.push(m);
+        const raf = () => new Promise(r => requestAnimationFrame(r)), wait = ms => new Promise(r => setTimeout(r, ms));
+        const feet = () => {
+          const v = X.view, d = X.drawn.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key);
+          return d && f ? [d.l + f[5] - v.vx - Math.floor(v.nw / 2), d.t + f[6] - v.vy - Math.floor(v.nh / 2)] : null;
+        };
+        R.camera.zoom = 1.5; R.camera.ox = 0; R.camera.oz = 0;
+        X.placePlayer(2, z); S.player.mode = 'idle'; S.player.use = null; S.player.act = null;
+        await raf(); await raf();
+        const vx0 = X.view.vx;
+        R.send({ t: 'walkTo', x: 1800, z: Math.round(z * 100) }); X.setSpeed(1);
+        await wait(300);
+        for (let t0 = performance.now(); performance.now() - t0 < 1500;) {
+          await raf();
+          const f = feet(), v = X.view;
+          if (!f) { B('the player was not drawn'); break; }
+          out.n++;
+          if (f[0] || f[1]) { B(`walking, his feet are ${f} native px from the view's middle`); break; }
+          if (!Number.isInteger(v.vx) || !Number.isInteger(v.vy)) { B(`the view is not on whole pixels (${v.vx}, ${v.vy})`); break; }
+        }
+        out.moved = X.view.vx - vx0;
+        if (!(out.moved > 20)) B(`the view moved ${out.moved} native px with him (expected it to follow)`);
+        return out;
+      });
+      fol.bad.forEach(P);
+      await page.screenshot({ path: screenshotPath(`pixrender-follow-${orient}`) });
+      const back = await page.evaluate(async () => {
+        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = P2.z0 + 1, out = { bad: [] }, B = m => out.bad.push(m), c = R.camera;
+        const wait = ms => new Promise(r => setTimeout(r, ms)), off = () => Math.hypot(c.ox, c.oz), centre = document.getElementById('centre');
+        for (let i = 0; i < 100 && S.player.mode !== 'idle'; i++) await wait(100);   // he arrives
+        await wait(300);   // and stands (a tick on)
+        X.pixLookAt(S.player.x, S.player.z - 8); await wait(400);
+        if (!(off() > 7)) B(`a look away while he stands did not stay (offset ${off().toFixed(2)})`);
+        if (centre.hidden) B('the Centre button is hidden while the view looks away');
+        R.send({ t: 'walkTo', x: Math.round((S.player.x - 7) * 100), z: Math.round(z * 100) });
+        await wait(1600);
+        if (S.player.mode === 'idle') B('he stopped before the look away could ease back (the check walks too short a way)');
+        if (off() !== 0) B(`a look away did not ease back once he walked (offset ${off().toFixed(2)} after 1.6 s)`);
+        X.setSpeed(0);
+        X.pixLookAt(S.player.x + 6, S.player.z); await wait(150);
+        centre.click(); await wait(150);
+        if (off() !== 0 || !centre.hidden) B(`the Centre button did not snap back (offset ${off()}, hidden ${centre.hidden})`);
+        return out;
+      });
+      back.bad.forEach(P);
+      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet on the view's middle pixel in each; the view moved ${fol.moved} native px`);
       await page.evaluate(() => { if (window.__pixOrigDrawList) window.ppDrawList = window.__pixOrigDrawList; });
       if (errors.length) P('console errors: ' + errors.join(' | '));
     } finally { await browser.close(); }

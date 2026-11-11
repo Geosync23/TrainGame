@@ -1,9 +1,15 @@
 # People sprites
 
-Made by `people.py` (the drawing) and `sprites_people.py` (registers them with the pipeline). Review pictures:
+Made by `people.py` (the drawing, people v2), `people_d27.py` (the D27 additions, drawn with the same rig; people.py
+is untouched, so every signed-off frame is unchanged) and `sprites_people.py` (registers both). Review pictures:
 `python3 tools/pixelart/review_people.py` writes `out/people-contact.png` and `out/people-closeup.png`;
 `python3 tools/pixelart/review_carry.py` (after `build.py`) writes `out/people-carry.png` (carried goods at the hands
 offset and the handcart at its pusher offset, four facings).
+`python3 tools/pixelart/review_d27.py` writes the D27 sheets: `out/people-d27-contact.png` (every new key),
+`people-d27-handling.png` (the agent's handling, four facings, a stand-in crate or sack at `extra.hands`, a yellow
+pixel at `extra.grip`), `people-d27-seated.png` (every traveller's seated, sitDown, standUp, benchSit and climb
+frames, with a stand-in 5 px seat and the punched mark), `people-d27-town.png` (the townsfolk with who they are) and
+`people-d27-coach.png` (a stand-in coach floor with rows of sitters and the agent punching in the aisle).
 
 **People v2** (2026-11-11): the designer signed off the sample in `plans/pixel/people-v2/` (the richer style's form,
 size and detail in our palette, light and outline rule; less colour, no blush, no bounce) at the sample's size: after
@@ -28,11 +34,28 @@ up by `build.py`, so it has no such wrapper).
 | travellers: `man_top`, `man_bowler`, `man_bag` (carpetbag), `woman_bonnet`, `woman_shawl` (basket), `child`, `worker`, `porter` (trunk on the shoulder), each also `.b` | idle 2, walk 4, ticket 2, board 3 |
 | townsfolk: `cowhand`, `smith` (hammer), `storekeeper`, `barkeep` | idle 2, walk 4 |
 
-320 keys, 896 frames.
+D27 adds (people_d27.py):
+
+| who | anims (frames) |
+|---|---|
+| `agent` | lift 3, shoulder/idle 2, shoulder/walk 4, roll 4, drag 4, truck 4, heave 4, stackHigh 3, door 3, climb 2, handOver 2, pull 4 |
+| every traveller (16 keys) | sit 2, sitTicket 2, sitDown 2, standUp 2, climb 2, benchSit 1 |
+| new townsfolk: `banker`, `hotelkeeper`, `vaquero`, `printer`, `barber`, `sheriff`, `undertaker`, `preacher` (a book), `teacher` (books), `launderer` (a basket of washing), `storekeeper.b` (the feed and seed man), `cowhand.b` (the second cowhand) | idle 2, walk 4, talk 2, benchSit 1 |
+| `cowhand`, `smith`, `storekeeper`, `barkeep` | + talk 2, benchSit 1 |
+| `man_bowler`, `woman_shawl`, `child` (and `.b`), standing in as the assayer, a wife and the pupils | + talk 2 |
+| `ppl/mark/punched/<dir>` | 1 (the punched ticket, 2 x 3 px) |
+
+All together 2,288 keys (896 before), sheet-people 512 x 1308 px, 81.7 KB.
 
 - `wave`: waving a train off (play 0-1 back and forth). `lantern`: standing with a lit lantern (dusk).
 - Walk frames: pass, stride, pass, stride; frame 0 also serves as standing. Idle frame 1 is a breath.
 - `board`: foot on the step, up, in; frames are drawn 0, 2 and 4 px higher (meta `lift_px`).
+- Seated (`sit`, `sitTicket`, `benchSit`, the second `sitDown` and first `standUp` frame): the anchor is the floor
+  straight below the hips (the seat's centre at floor level); the seat top is 5 px (0.64u) above it, seat to crown
+  about 15 px. In a coach the luggage is in the rack (sit); on a platform bench it stands beside the feet (benchSit);
+  a basket stays on the lap. `standUp` is `sitDown` backwards (the same pictures, stored once).
+- `climb`: the coach end steps, a hand on the grab rail; no lift is drawn, the renderer raises the figure.
+- `talk`: an open hand, then a nod; also the keeper taking a delivered good at the door.
 
 ## For the renderer (PIX_ATLAS.extra)
 
@@ -41,6 +64,12 @@ up by `build.py`, so it has no such wrapper).
 - `ppl/agent/push/<dir>/<f>`: `grip`, the hands' offset (se, ne (5, -6); sw, nw (-5, -6)). The committed handcart's
   `pusher` offset (2.25u) still puts the handles in his hands.
 - A person sorts as a box 2.5u tall (`PIX.PERSON_H` in index.html).
+- D27, given per frame (`extra['ppl/agent/<anim>/<dir>/<f>']`): `hands` and `behind` on lift, shoulder/idle,
+  shoulder/walk, stackHigh, handOver (where the held good's anchor goes, the carry convention; behind: draw the good
+  before the agent); `grip` on roll, drag, truck, heave, door, pull (the midpoint of the hands, as the top-left of the
+  hand pixel; for pull the one hand on the handle, behind him).
+- `extra['ppl/<who>/sit|sitTicket/<dir>/<f>'].mark`: where the punched-ticket mark `ppl/mark/punched/<dir>` goes (its
+  top-left pixel, from the sitter's anchor): on the hatband's forward end, or just under the collar.
 
 ## How a frame is built (for changes)
 

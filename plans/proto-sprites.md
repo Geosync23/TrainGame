@@ -100,6 +100,42 @@ the hands offset: R reads `PIX_ATLAS.extra['ppl/agent/carry/<dir>'].hands` (peop
 nw (-5, -8), drawn before the body and to the side so it shows past the shoulder), else `PIX_HANDS`. The push frames give `extra[...].grip`, the hands' offset (se, ne
 (5, -6); sw, nw (-5, -6)).
 
+### People added for D27 (A1; plans/d27-tech.md 7.1; drawn in `tools/pixelart/people_d27.py`)
+
+All four facings drawn, never mirrored; anchor between the feet at ground level unless said otherwise. The renderer
+draws goods and tools itself; the art gives where they go in `PIX_ATLAS.extra`, **per frame key** (`.../<dir>/<f>`).
+
+| Key | Frames | Notes |
+|---|---|---|
+| `ppl/agent/lift/<dir>/<f>` | 3 | squat (0), half up (1), standing with the good (2, as carry 0); backwards to put down. extra `hands` (the good's anchor offset, the carry convention), `behind` (ne, nw: draw the good first) |
+| `ppl/agent/shoulder/idle/<dir>/<f>`, `ppl/agent/shoulder/walk/<dir>/<f>` | 2, 4 | sack or mail sack on the near shoulder, the near hand up steadying it. extra `hands` (se, ne (-6, -10); sw, nw (5, -10)), `behind` false |
+| `ppl/agent/roll/<dir>/<f>` | 4 | stooped, both hands low ahead on the barrel or wheel; walk timing. extra `grip` |
+| `ppl/agent/drag/<dir>/<f>` | 4 | facing the good, walking backwards (the frames are the walk in backwards order), one end held at the hip. extra `grip` |
+| `ppl/agent/truck/<dir>/<f>` | 4 | hand truck handles at the waist; walk timing. extra `grip` |
+| `ppl/agent/heave/<dir>/<f>` | 4 | brace, shove, step in, set again. extra `grip` |
+| `ppl/agent/stackHigh/<dir>/<f>` | 3 | at the chest, at the shoulder, on the toes onto the stack. extra `hands`, `behind` |
+| `ppl/agent/door/<dir>/<f>` | 3 | reach, pull, lean back (the door slides the way he faces). extra `grip` |
+| `ppl/agent/climb/<dir>/<f>` | 2 | coach end steps, a hand on the rail; no lift drawn (the renderer raises him) |
+| `ppl/agent/handOver/<dir>/<f>` | 2 | held, held out at the door. extra `hands`, `behind` |
+| `ppl/agent/pull/<dir>/<f>` | 4 | **added (not in the plan's list):** pulling the platform cart behind him by the handle, walking; extra `grip` (the hand behind him) |
+| `ppl/<traveller>/sit/<dir>/<f>` | 2 | seated (coach seat or bench), hands in the lap; frame 1 the breath. **Anchor: the floor below the hips** (the seat's centre at floor level); seat top 5 px above. extra `mark` |
+| `ppl/<traveller>/sitTicket/<dir>/<f>` | 2 | seated, ticket held out (0), held up for the punch (1). Seated anchor. extra `mark` |
+| `ppl/<traveller>/sitDown/<dir>/<f>`, `standUp` | 2 each | standing to seated (bend, lower) and back (lean forward, rise); standUp is sitDown backwards. Frame 0 of sitDown and 1 of standUp stand on the feet; the other frame is on the seated anchor |
+| `ppl/<traveller>/climb/<dir>/<f>` | 2 | coach end steps, as the agent's; luggage kept in hand |
+| `ppl/<who>/benchSit/<dir>/0` | 1 | seated on a platform or town bench, luggage on the floor beside (a basket on the lap). Seated anchor. Travellers, all townsfolk |
+| `ppl/<who>/talk/<dir>/<f>` | 2 | an open hand, a nod (also taking a delivered good). All townsfolk and the stand-ins below |
+| `ppl/mark/punched/<dir>` | 1 | the punched ticket (2 x 3 px, cream, the punch hole dark). Frame anchor (0, 0): draw its top-left at the sitter's anchor plus `extra[sitter frame key].mark` (the hatband's forward end, else under the collar) |
+
+Travellers (unchanged list): `man_top`, `man_bowler`, `man_bag`, `woman_bonnet`, `woman_shawl`, `child`, `worker`,
+`porter`, each also `.b`. New townsfolk (idle 2, walk 4, talk 2, benchSit 1): `banker` (Henry Whitcomb),
+`hotelkeeper` (Nell O'Hara), `vaquero` (Luis Ortega), `printer` (Ezra Cole), `barber` (Pablo Rivera), `sheriff` (Tom
+Dade), `undertaker` (Abel Grimes), `preacher` (Rev. Elias Booth, carries a book), `teacher` (Clara Lind, books),
+`launderer` (a basket of washing), and two palettes the plan implies: `storekeeper.b` (the feed and seed keeper) and
+`cowhand.b` (the second cowhand). The existing `cowhand`, `smith`, `storekeeper`, `barkeep` gain talk 2 and benchSit
+1; `man_bowler` (Karl Vogel, assayer), `woman_shawl` and `child` (the pupils), each with `.b`, gain talk 2. So the 14
+named townsfolk plus the cowhands and pupils are all different pictures. On board the agent uses the existing
+`walk` (the aisle) and `punch` (facing across the aisle).
+
 ### Goods, cart, switches (`goods/`, `tag/`, `cart/`, `sw/`)
 
 | Key | Frames | Size (u) | Anchor |

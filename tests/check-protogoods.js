@@ -145,6 +145,7 @@ module.exports = async function checkProtoGoods() {
         if (P.tool !== null) B('the hand truck was not left at its spot');
         // ---- The evening: the handcart to the shops ----
         until(() => S.pd.ph === 'evening', 20000, 'the evening');
+        const eveAt = Math.round(S.time / 60);
         // What the day brought for each shop (PG.UNLOAD), and what goes away (the schedule's loads): from the game's tables.
         const want = G.pgToDeliver(S), brought = { store: 0, smithy: 0, saloon: 0 };
         for (const l of Object.values(G.PG.UNLOAD)) for (const [shop] of l) brought[shop]++;
@@ -202,7 +203,12 @@ module.exports = async function checkProtoGoods() {
         // The summary and the next morning.
         act({ t: 'pdEndDay' });
         const sum = S.pd.sum || {};
-        if (sum.unloaded !== nIn || sum.loaded !== nOut || sum.delivered !== nIn) B(`summary: unloaded ${sum.unloaded}, loaded ${sum.loaded}, delivered ${sum.delivered} (expected ${nIn}, ${nOut}, ${nIn})`);
+        // D27 (the integrator): on the D27 layout the D25 handcart's two evening trips can run past the day's end (23:00),
+        // when the summary is made by the clock; then it must count exactly the goods handed in before it (and the day's
+        // figures every one).
+        const sumEv = evs.findIndex(x => x.t === 'pdSummary'), dBefore = sumEv < 0 ? delivered.length : evs.slice(0, sumEv).filter(x => x.t === 'pgDelivered').length;
+        if (sumEv >= 0 && dBefore < nIn) console.log(`  (the 23:00 summary came before the last trip: ${dBefore} of ${nIn} handed in by then; the evening began at game minute ${eveAt})`);
+        if (sum.unloaded !== nIn || sum.loaded !== nOut || sum.delivered !== dBefore || S.pd.stats.delivered !== nIn) B(`summary: unloaded ${sum.unloaded}, loaded ${sum.loaded}, delivered ${sum.delivered} (expected ${nIn}, ${nOut}, ${dBefore}; the day's figure ${S.pd.stats.delivered} of ${nIn})`);
         const used = S.items.used.reduce((o, u) => { o[u.reason] = (o[u.reason] || 0) + 1; return o; }, {});
         if (used.business !== nIn || used.soldOutside !== nOut) B(`items used up: ${JSON.stringify(used)}`);
         const cons = R.cargo.itemCheckConservation(S);

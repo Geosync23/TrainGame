@@ -76,7 +76,7 @@ function botSource() {
 module.exports = async function checkProtoTrains() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&doorline=1' });   // D27 board on (P): this check plays the D25 line at the door
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&d27=0' });   // D27: this check plays the D25 flows (the line at the door, the D25 goods), so the D27 switches are off
     try {
       if (orient === 'portrait') {
         // ---- A whole day with the scripted player, twice (the second saved and loaded at 10:00) ----
@@ -266,7 +266,7 @@ module.exports = async function checkProtoTrains() {
       await page.screenshot({ path: screenshotPath(`prototrains-through-${orient}`) });
       if (orient === 'portrait') {
         // rh.scenario('proto') and 'protop1' on a debug page.
-        const D = await openGame('portrait', { query: '?paused&debug=1&world=proto&doorline=1' });
+        const D = await openGame('portrait', { query: '?paused&debug=1&world=proto&d27=0' });
         try {
           const got = await D.page.evaluate(() => ['proto', 'protop1'].map(n => { window.rh.scenario(n); return window.rh.state.rr.runs.filter(q => q.ph === 'stand').map(q => q.svc).sort().join('+'); }).join(' '));
           if (got !== 'f1+p2 p1') problems.push(`rh.scenario: ${got}`);

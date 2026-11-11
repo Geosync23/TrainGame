@@ -22155,6 +22155,9 @@ function pixSeeThrough() {
 // The player's drawn point (ground-layer pixels, not rounded) at (px, pz): his feet at his drawn height, as the
 // sprite is placed (pixWalkerY, read without moving on its memory of his height).
 function pixPlayerPoint(px, pz) {
+  // D27 integration: on a train the agent is drawn at P's pose (pixAgentItem), so the view centres there.
+  const pb = pixCall('pbPlayerPose', S);
+  if (pb && Number.isFinite(pb.x) && Number.isFinite(pb.y) && Number.isFinite(pb.z)) return pixProject(pb.x, pb.y, pb.z);
   const P = S.player, had = Object.prototype.hasOwnProperty.call(PIX.wy, 'player'), keep = PIX.wy.player;
   const y = pixWalkerY('player', px, pz, typeof P.y === 'number' ? P.y : pixSimY(px, pz)).y;
   if (had) PIX.wy.player = keep; else delete PIX.wy.player;
@@ -22196,7 +22199,10 @@ function pixNight(g, nw, nh) {
 // The camera's knobs (D27, R; plans/d27-tech.md 1.6): the dead zone (a share of the view), the look-ahead (u, walking and
 // with a cart) and how fast it eases in (s), how fast the view re-centres on him standing and frames a car (s), and
 // how far a jump between frames snaps the view (u).
-PIX.CAM = { DEAD: 1 / 3, AHEAD: 6, AHEAD_CART: 10, AHEAD_S: 0.8, REST_S: 1.5, CAR_S: 0.35, JUMP: 6 };
+// D27 integration (the designer, 2026-11-11: the camera must "stay with our character centered as it moves"): no dead
+// zone, no look-ahead and no framing of a car he is in (CAR false: framing would move him off the middle), so the view is
+// locked on him as before R's change; R's knobs are kept for the designer to try (DEAD 1 / 3, AHEAD 6, AHEAD_CART 10, CAR true).
+PIX.CAM = { DEAD: 0, AHEAD: 0, AHEAD_CART: 0, AHEAD_S: 0.8, REST_S: 1.5, CAR: false, CAR_S: 0.35, JUMP: 6 };
 // One frame of the pixel view (called by render() in place of the 3D drawing).
 function pixFrame(alpha, dt) {
   const t0 = performance.now();
@@ -22259,7 +22265,7 @@ function pixFrame(alpha, dt) {
   let K = PIX.cam;
   if (!K || Math.hypot(q.x - K.px, q.y - K.py) > 8 * CM.JUMP || (PIX.lastOff > 0.5 && off === 0 && !moving)) K = PIX.cam = { cx: q.x, cy: q.y, ax: 0, ay: 0, px: q.x, py: q.y };
   PIX.lastOff = off;
-  const car = PIX.inCar, dxp = P.x - prevPlayer.x, dzp = P.z - prevPlayer.z, dl = Math.hypot(dxp, dzp) || 1, ka = 1 - Math.exp(-dt / CM.AHEAD_S);
+  const car = CM.CAR ? PIX.inCar : null, dxp = P.x - prevPlayer.x, dzp = P.z - prevPlayer.z, dl = Math.hypot(dxp, dzp) || 1, ka = 1 - Math.exp(-dt / CM.AHEAD_S);
   let tx = 0, ty = 0;
   if (moving && !car) { const L = P.tool !== null && P.tool !== undefined ? CM.AHEAD_CART : CM.AHEAD, ux = dxp / dl, uz = dzp / dl; tx = 8 * (ux - uz) * L; ty = 4 * (ux + uz) * L; }
   K.ax += (tx - K.ax) * ka; K.ay += (ty - K.ay) * ka;
@@ -22271,7 +22277,8 @@ function pixFrame(alpha, dt) {
     if (moving) {
       if (Tx - K.cx > ex) K.cx = Tx - ex; else if (K.cx - Tx > ex) K.cx = Tx + ex;
       if (Ty - K.cy > ey) K.cy = Ty - ey; else if (K.cy - Ty > ey) K.cy = Ty + ey;
-    } else if (!off) { const kr = 1 - Math.exp(-dt / CM.REST_S); K.cx += (Tx - K.cx) * kr; K.cy += (Ty - K.cy) * kr; }   // (not while he looks away: the view stays where he looks)
+    } else if (!off && !CM.DEAD && !CM.AHEAD && !CM.AHEAD_CART) { K.cx = Tx; K.cy = Ty; }   // locked on him (D27 integration)
+    else if (!off) { const kr = 1 - Math.exp(-dt / CM.REST_S); K.cx += (Tx - K.cx) * kr; K.cy += (Ty - K.cy) * kr; }   // (not while he looks away: the view stays where he looks)
   }
   K.px = q.x; K.py = q.y;
   if (cam.ox || cam.oz) {   // a drag stays over the map

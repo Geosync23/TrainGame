@@ -4,7 +4,7 @@
 //   floor first, then benches, sitters, the agent and the parts in painter's order (a sitter after his own bench and
 //   the bench behind, before the bench in front; for sitters facing ne or nw the own bench after him), the sill last;
 //   the punched mark drawn on punched sitters; a tap on a seated traveller picks him with his seat and coach; the camera
-//   frames the coach.
+//   keeps the agent on the view's middle pixel with the coach in view (the D27 integration: the designer's "centred").
 // - The cut-away boxcar: its floor, the door (open), the goods on its cells in painter's order, the agent inside with a
 //   crate, the sill last; a boxcar with its door shut and nobody at it stays whole; the cart (goods on its cells) and
 //   the hand truck (tilted, a barrel on it) at F's poses.
@@ -32,7 +32,7 @@ module.exports = async function checkInteriors() {
       await page.evaluate(() => window.__railhead.pix.warm(true));
       // ---- 1. The coach cut away with sitters ----
       const c = await SI.coach(page);
-      await page.waitForTimeout(900);   // the camera frames the coach
+      await page.waitForTimeout(900);   // the camera settles
       const co = await page.evaluate((c) => {
         const R = window.__railhead, X = R.pix, D = X.drawn, out = { bad: [] }, B = m => out.bad.push(m), id = `tr${c.tr}/`;
         const cutId = X.cut.find(q => q.startsWith(id));
@@ -67,8 +67,11 @@ module.exports = async function checkInteriors() {
         if (c.others.length && !D.some(d => d.key && d.key.startsWith('veh/coach/'))) B('no whole coach drawn beside the cut-away one');
         const hidden = R.pix.lists.pb.filter(q => c.others.includes(String(q.stock))).map(q => 'pb' + q.id);
         if (D.some(d => hidden.includes(d.id))) B('a rider inside a whole coach is drawn');
-        // The camera frames the coach: its middle in the middle third of the view.
+        // The camera (D27 integration, the designer's "stay centred"): the agent on the view's middle pixel inside the coach
+        // too, and the coach's middle in the middle third of the view.
         const v = X.view, m = X.pixProject(c.cx, 1.6, c.cz), mx = m.x - v.vx, my = m.y - v.vy;
+        { const d = D.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key), fx = f ? d.l + f[5] - v.vx - Math.floor(v.nw / 2) : null, fy = f ? d.t + f[6] - v.vy - Math.floor(v.nh / 2) : null;
+          if (!f || fx || fy) B(`inside the coach the agent is not on the view's middle pixel (${fx}, ${fy})`); }
         if (Math.abs(mx - v.nw / 2) > v.nw / 3 || Math.abs(my - v.nh / 2) > v.nh / 3) B(`the camera does not frame the coach (its middle at ${mx.toFixed(0)}, ${my.toFixed(0)} in a ${v.nw} x ${v.nh} view)`);
         // A tap on a seated traveller's own visible pixel picks him, with his seat and coach.
         let picked = 0, tried = 0;

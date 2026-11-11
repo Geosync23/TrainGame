@@ -297,9 +297,10 @@ module.exports = async function checkPixRender() {
           await page.screenshot({ path: screenshotPath(`pixrender-zoom-${nm}-portrait`) });
         }
       }
-      // 7. The view follows the player (2026-11-11; D27, R: with a dead zone and a look-ahead, plans/d27-tech.md 1.6):
-      // while he walks along platform 1 (carrying the crate) his feet stay inside the dead zone widened by the look-ahead
-      // every frame, never jump on the screen (at most 2 native px a frame), and the view moves with him in whole pixels.
+      // 7. The view follows the player (2026-11-11; the designer: "stay with our character centered as it moves"; the D27
+      // integration keeps R's dead zone and look-ahead at 0): while he walks along platform 1 (carrying the crate) his
+      // sprite's anchor (his feet) is on the middle native pixel of the view every frame, and the view moves with him in
+      // whole pixels.
       // A look away (as a drag) stays while he stands, eases back once he walks; the Centre button snaps back.
       const fol = await page.evaluate(async () => {
         const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = R.proto.PROTO.P1.z0 + 2, out = { bad: [], n: 0, moved: 0, worst: [0, 0] }, B = m => out.bad.push(m), CM = X.PIX.CAM;
@@ -315,16 +316,14 @@ module.exports = async function checkPixRender() {
         const vx0 = X.view.vx;
         R.send({ t: 'walkTo', x: 1800, z: Math.round(z * 100) }); X.setSpeed(1);
         await wait(300);
-        for (let t0 = performance.now(); performance.now() - t0 < 3000;) {   // (D27: 3 s, the dead zone lets him walk a while first)
+        if (CM.DEAD || CM.AHEAD || CM.AHEAD_CART || CM.CAR) B(`the camera is not locked on him: PIX.CAM ${JSON.stringify(CM)}`);
+        for (let t0 = performance.now(); performance.now() - t0 < 1500;) {
           await raf();
           const f = feet(), v = X.view;
           if (!f) { B('the player was not drawn'); break; }
           out.n++;
-          const lx = Math.ceil(v.nw * CM.DEAD / 2 + 8 * CM.AHEAD) + 2, ly = Math.ceil(v.nh * CM.DEAD / 2 + 4 * CM.AHEAD) + 2;
           out.worst = [Math.max(out.worst[0], Math.abs(f[0])), Math.max(out.worst[1], Math.abs(f[1]))];
-          if (Math.abs(f[0]) > lx || Math.abs(f[1]) > ly) { B(`walking, his feet are ${f} native px from the view's middle (the dead zone and look-ahead allow ${lx}, ${ly})`); break; }
-          if (last && (Math.abs(f[0] - last[0]) > 2 || Math.abs(f[1] - last[1]) > 2)) { B(`walking, his feet jumped on the screen from ${last} to ${f}`); break; }
-          last = f;
+          if (f[0] || f[1]) { B(`walking, his feet are ${f} native px from the view's middle`); break; }
           if (!Number.isInteger(v.vx) || !Number.isInteger(v.vy)) { B(`the view is not on whole pixels (${v.vx}, ${v.vy})`); break; }
         }
         out.moved = X.view.vx - vx0;
@@ -353,7 +352,7 @@ module.exports = async function checkPixRender() {
         return out;
       });
       back.bad.forEach(P);
-      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet at most ${fol.worst} native px from the view's middle; the view moved ${fol.moved} native px`);
+      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet at most ${fol.worst} native px from the view's middle (on its middle pixel in each); the view moved ${fol.moved} native px`);
       await page.evaluate(() => { if (window.__pixOrigDrawList) window.ppDrawList = window.__pixOrigDrawList; });
       if (errors.length) P('console errors: ' + errors.join(' | '));
     } finally { await browser.close(); }

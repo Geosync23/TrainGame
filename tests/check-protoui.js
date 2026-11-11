@@ -14,6 +14,9 @@
 // - pdHintTarget (for R's arrows) follows the job; pdBoardRows gives the rows R draws on the board in the world.
 // - The first-day guide's sentences come as the first trains do; the summary card at the end of the day shows the
 //   day's figures (S.pd.sum); Next day opens the next morning's board.
+// - D27 (U, 2026-11-11): this check keeps testing the D25 screens (the line at the door, the bays, the handcart, the
+//   first-day guide) with the D27 switches off (?d27=0); the D27 screens (the lessons, the buttons for punching on
+//   board and freight handling, the evening's cart, the summary's new figures) are check-lessons.js's.
 // - Nothing overlaps (the top row, the gear, the Next job line, the guide's slip, a long message, the buttons over
 //   the world, the cards) in portrait and landscape; no console errors; screenshots to test-output/.
 
@@ -22,7 +25,7 @@ const { openGame, screenshotPath } = require('./browser');
 module.exports = async function checkProtoUi() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&d27=0' });
     const P = m => problems.push(`${orient}: ${m}`);
     const ev = (fn, arg) => page.evaluate(fn, arg);
     const frames = (ms) => page.waitForTimeout(ms || 250);

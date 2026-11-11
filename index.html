@@ -296,7 +296,7 @@
   body.pdui { --px-ink: #2b2026; --px-paper: #f0cf98; --px-paper2: #f8e4bd; --px-rust: #b84a35; --px-green: #2f6449; --px-ochre: #c9863b; --px-navy: #3b4878; }
   body.pdui #lookBtn, body.pdui #hintBtn, body.pdui #officeBtn, body.pdui #workBtn, body.pdui #cash, body.pdui #tgBtn, body.pdui #alerts, body.pdui #tgSlide,
   body.pdui #rotL, body.pdui #rotR, body.pdui #buildBtn, body.pdui .rrBtn, body.pdui #ttCard, body.pdui #settings .row:has(#setCards) { display: none !important; }
-  body.pdui :is(button, #clock, #toast, .pdCard, #pdGuide, #carry, #guideLabel, #guideEdgeText, #settings, #panel, #carPanel) { font-family: "Trebuchet MS", "DejaVu Sans", Verdana, sans-serif; }
+  body.pdui :is(button, #clock, #toast, .pdCard, #pdGuide, #pdLesson, #carry, #guideLabel, #guideEdgeText, #settings, #panel, #carPanel) { font-family: "Trebuchet MS", "DejaVu Sans", Verdana, sans-serif; }
   body.pdui button { border-radius: 0; border: 3px solid var(--px-ink); background: var(--px-paper2); color: var(--px-ink); box-shadow: 0 3px 0 var(--px-ink); font-weight: 700; }
   body.pdui button:active { background: var(--px-paper); box-shadow: 0 1px 0 var(--px-ink); }
   body.pdui button[aria-pressed="true"] { background: var(--px-ink); color: var(--px-paper2); }
@@ -324,6 +324,27 @@
     border-left: 10px solid var(--px-navy); box-shadow: 0 3px 0 var(--px-ink); padding: 4px 4px 4px 10px; font-size: 14px; line-height: 1.3; font-weight: 600; }
   #pdGuideText { flex: 1; min-width: 0; }
   #pdGuideOk { flex: none; }
+  /* D27 (U): the lesson card. A slip under the Next job line (a later step: the clock runs), or a bottom sheet (a lesson's
+     first step: the clock waits for Show me). A small pixel picture of the thing, the lesson and step, one sentence. */
+  #pdLesson { left: calc(env(safe-area-inset-left) + 10px); top: calc(env(safe-area-inset-top) + 126px); width: calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    max-width: 520px; box-sizing: border-box; display: flex; gap: 8px; align-items: center; background: #fff3d6; color: var(--px-ink); border: 3px solid var(--px-ink);
+    border-left: 10px solid var(--px-green); box-shadow: 0 3px 0 var(--px-ink); padding: 4px; font-size: 14px; line-height: 1.3; font-weight: 600; z-index: 2; }
+  #pdLesson[hidden] { display: none; }
+  #pdLesPic { flex: none; width: 44px; height: 44px; image-rendering: pixelated; background: var(--px-paper); border: 2px solid var(--px-ink); }
+  #pdLesBody { flex: 1; min-width: 0; }
+  #pdLesTitle { font-size: 11.5px; font-weight: 700; color: var(--px-green); text-transform: uppercase; letter-spacing: 0.04em; }
+  #pdLesBtns { flex: none; display: flex; gap: 6px; }
+  #pdLesBtns button { min-height: 44px; min-width: 48px; padding: 0 8px; }
+  #pdLesson:not(.hold) #pdLesShow, #pdLesson.hold #pdLesOk { display: none; }
+  #pdLesson.hold { top: auto; left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); bottom: calc(env(safe-area-inset-bottom) + 8px);
+    width: auto; max-width: none; flex-wrap: wrap; padding: 10px; gap: 10px; font-size: 16px; background: var(--px-paper2); border-left-width: 10px; box-shadow: 0 4px 0 var(--px-ink); z-index: 3; }
+  #pdLesson.hold #pdLesPic { width: 66px; height: 66px; }
+  #pdLesson.hold #pdLesTitle { font-size: 13px; }
+  #pdLesson.hold #pdLesBtns { flex: 1 1 100%; justify-content: flex-end; }
+  #pdLesson.hold #pdLesBtns button { min-height: 52px; }
+  #pdLesson.hold #pdLesShow { flex: 1; font-size: 17px; }
+  body:not(.pdui) #setLesRow { display: none; }
+  body.pdui #pdLesShow { background: var(--px-green); color: #f8e4bd; }
   /* The cards: a bottom sheet in portrait (the world and the top rows stay in view above it). */
   .pdCard { left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); bottom: calc(env(safe-area-inset-bottom) + 8px); max-height: 56vh;
     box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--px-paper2); color: var(--px-ink); border: 3px solid var(--px-ink);
@@ -366,6 +387,8 @@
   @media (orientation: landscape) and (max-height: 500px) {
     body.pdui #nextJob { top: calc(env(safe-area-inset-top) + 10px); left: calc(env(safe-area-inset-left) + 290px); width: calc(100vw - 364px - env(safe-area-inset-left) - env(safe-area-inset-right)); max-width: 560px; }
     #pdGuide { top: calc(env(safe-area-inset-top) + 70px); width: min(45vw, 400px); }
+    #pdLesson { top: calc(env(safe-area-inset-top) + 70px); width: min(45vw, 400px); }
+    #pdLesson.hold { top: calc(env(safe-area-inset-top) + 70px); bottom: auto; left: auto; width: min(52vw, 460px); }
     body.pdui #toast { left: calc(env(safe-area-inset-left) + 10px); transform: none; max-width: min(45vw, 400px); }
     .pdCard { left: auto; top: calc(env(safe-area-inset-top) + 70px); width: min(52vw, 460px); max-height: none; gap: 6px; padding: 8px; }
     .pdCard h2 { font-size: 16px; } .pdCard .row button { min-height: 44px; min-width: 44px; }
@@ -412,6 +435,7 @@
   <div class="row"><span class="grow">Helper arrows: the way to the next job.</span><button id="setArrows" aria-pressed="false">Off</button></div>
   <div class="row"><span class="grow">First-time cards: the game pauses to explain something the first time it happens.</span><button id="setCards" aria-pressed="true">On</button></div>
   <div class="row"><span class="grow">Train messages: a short note when a train is due, comes in, is ready or leaves. Refusals always show.</span><button id="setTrainMsgs" aria-pressed="true">On</button></div>
+  <div class="row" id="setLesRow" hidden><span class="grow">Lessons: the six short lessons (switches, tickets, unloading, loading, delivery, pickup) come again, each at its moment.</span><button id="setLessons">Replay</button></div>
 </div>
 <div id="fcard" class="hud" role="dialog" aria-labelledby="fcardTitle" hidden>
   <h2 id="fcardTitle"></h2>
@@ -474,6 +498,12 @@
   <button id="pdNextDay" class="pdGoBtn">Next day</button>
 </div>
 <div id="pdGuide" class="hud" role="status" aria-live="polite" hidden><span id="pdGuideText"></span><button id="pdGuideOk">OK</button></div>
+<!-- D27 (U): the lesson card (block "Lessons (D27)"): a bottom sheet holding the clock for a lesson's first step, a slip under the Next job line for the others. -->
+<div id="pdLesson" class="hud" role="dialog" aria-labelledby="pdLesTitle" hidden>
+  <canvas id="pdLesPic" width="44" height="44" aria-hidden="true"></canvas>
+  <div id="pdLesBody"><div id="pdLesTitle"></div><div id="pdLesText"></div></div>
+  <div id="pdLesBtns"><button id="pdLesSkip">Skip</button><button id="pdLesOk">OK</button><button id="pdLesShow" class="pdGoBtn">Show me</button></div>
+</div>
 <div id="carPanel" class="hud" hidden>
   <div class="row"><h2 class="grow" id="carTitle">Car</h2><button id="carClose" aria-label="Close">X</button></div>
   <div id="carInfo"></div>
@@ -1368,7 +1398,7 @@ const WORLDS = {
     // (P: tickets punched on board; parks the D25 line at the door, parked.doorline), handling (F: freight handling,
     // storage cells, the platform cart, delivery and pickup), town (W: the townsfolk), lessons (U: the six lessons; parks
     // the D25 first-day guide). While one is off, the D25 flow it replaces keeps playing on the D27 layout.
-    d27: { board: false, handling: false, town: false, lessons: false },
+    d27: { board: false, handling: false, town: false, lessons: true },
   },
 };
 // D27: the page's override of the D27 switches (?d27=0 all off, ?d27=all all on, ?d27=board,handling those on): for a
@@ -1765,7 +1795,7 @@ function applyCommand(S, c, ev) {
     case 'pbEnter': case 'pbWalk': case 'pbPunch': case 'pbLeave': pbCmd(S, c, ev); break;   // D27 (P): tickets on board (section "tickets on board (D27)")
     case 'frDoor': case 'frTake': case 'frPut': case 'frCart': case 'frDeliver': case 'frPickup': frCmd(S, c, ev); break;   // D27 (F): freight handling (section "freight handling (D27)")
     case 'pgDeliver': pgDeliverCmd(S, c, ev); break;    // D25: hand the goods for a shop in at its door (section "prototype goods")
-    case 'pdStart': case 'pdEndDay': case 'pdNextDay': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day (section "prototype day")
+    case 'pdStart': case 'pdEndDay': case 'pdNextDay': case 'pdLesson': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day; D27: the lessons' Show me, Skip and replay (section "prototype day")
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
     case 'stepOff': rideStepOffCmd(S, ev); break;
@@ -8613,6 +8643,9 @@ const PD = {
   START_BY_S: 6 * 3600 + 1800,   // the morning becomes the day by itself at 06:30 (the first train is due 06:40)
   LATE_S: 23 * 3600,    // at 23:00 the day ends by itself (provisional; D27: was 22:00, plans/d27-tech.md 8.5)
 };
+// D27 (U): seated (travellers who sat down, from P's pbSeated events), stored (goods stacked in storage, from F's frStored
+// events: both counted in pdTick) and picked (F's pdCount 'picked') are added when first counted (missing reads as 0), so
+// the state of a day with none of them, and every older save's hash, is unchanged.
 function pdNewStats() { return { trains: 0, onTime: 0, late: 0, worstLate: 0, punched: 0, missed: 0, unloaded: 0, loaded: 0, delivered: 0 }; }
 function pdNewStore(world) { return { on: world === 'proto', day: -1, ph: 'morning', stats: pdNewStats(), sum: null }; }
 function pdCount(S, key, n) { if (S.pd && S.pd.on) S.pd.stats[key] = (S.pd.stats[key] || 0) + (n === undefined ? 1 : n); }
@@ -8622,6 +8655,8 @@ function pdTick(S, ev) {
   if (!D || !D.on) return;
   for (const e of ev) {
     if (e.t === 'rrArrived' || (e.t === 'rrLeft' && e.through)) { D.stats.trains++; const late = e.late || 0; if (late > RR.LATE_S) D.stats.late++; else D.stats.onTime++; D.stats.worstLate = Math.max(D.stats.worstLate, late); }
+    else if (e.t === 'pbSeated') D.stats.seated = (D.stats.seated || 0) + 1;   // D27 (U): the summary's new figures
+    else if (e.t === 'frStored') D.stats.stored = (D.stats.stored || 0) + 1;
   }
   const sod = rrSod(S.time);
   if (D.ph === 'morning' && sod >= PD.START_BY_S) { D.ph = 'day'; ev.push({ t: 'pdDay', day: D.day }); }   // the day starts by itself if the player has not
@@ -8643,8 +8678,10 @@ function pdCmd(S, c, ev) {
     D.day = day; D.ph = 'morning'; D.stats = pdNewStats(); D.sum = null;
     Object.assign(S.player, { x: PROTO.PLAYER.x, z: PROTO.PLAYER.z, f: Math.PI, mode: 'idle', use: null, act: null });
     pgNewDay(S, day, ev);
+    pdLesNewDay(S);
     ev.push({ t: 'pdMorning', day });
   }
+  else if (c.t === 'pdLesson') pdLessonCmd(S, c, ev);   // D27 (U): Show me, Skip, replay (block "Lessons (D27)")
 }
 // The first-day guide (U, D25: "a few plain sentences as the first trains come", not the parked tutorial's telegrams).
 // S.pd.guide (optional, missing means 0): the furthest step reached on day 0, from this tick's events; the page shows
@@ -8721,21 +8758,306 @@ function pdCheckSaveShape(st) {
   if (!D || typeof D !== 'object' || typeof D.on !== 'boolean' || !Number.isInteger(D.day) || typeof D.ph !== 'string' || !D.stats || typeof D.stats !== 'object') bad();
   if (D.on && worldId(st.track) !== 'proto') bad('switched on outside the prototype');
   if (D.les !== undefined && (!D.les || typeof D.les !== 'object' || Object.values(D.les).some(v => !Number.isInteger(v)))) bad('lessons');   // D27 (U): optional
+  if (D.lesWait !== undefined && (!Array.isArray(D.lesWait) || D.lesWait.some(v => !PD_LESSON_IDS.includes(v)))) bad('lessons waiting');   // D27 (U): optional
 }
 
 // ---- Lessons (D27; owner: builder U, plans/d27-tech.md section 6) ----
-// The foundation's stub, wired: pdTick calls pdLessonTick(S, ev) after the phases (while D27 lessons is on; the D25
-// first-day guide is parked then, WORLDS.proto.parked.guide). State: S.pd.les = { [lesson id]: step | -1 } (optional;
-// missing means not started; -1 done or skipped), in the save, so the bot and the checks see the same steps. A migrated
-// D25 save whose first day is done has every lesson at -1 (done, replayable from Settings). PD_LESSONS: U fills in each
-// lesson's trigger and steps ({ id, trigger(S, e), steps: [{ text, short, target(S), done(S, e) }] }); the ids are fixed
-// here so a save can name them.
+// Six short lessons, each the first time its moment comes (the designer, D27 (6): "loading, unloading, punching tickets,
+// throwing switches, delivery, pickup made solid and clear, each with a tutorial"). pdTick calls pdLessonTick(S, ev)
+// after the phases (while D27 lessons is on; the D25 first-day guide, PD_GUIDE, is parked then: parked.guide).
+// State (in the save, pure sim, so the bot and the checks see the same steps):
+// - S.pd.les = { [lesson id]: step | -1 } (optional; missing: not started; -1: done or skipped). A migrated D25 save
+//   whose first day was done has every lesson at -1 (replayable).
+// - S.pd.lesWait = [lesson ids] (optional): lessons whose first card waits for Show me. The page holds the clock while
+//   one waits (as the morning board does); later steps never hold it.
+// PD_LESSONS: [{ id, title, pic (atlas keys, the first the atlas has: the card's small picture), need (the D27 switch
+// it needs besides lessons, or null), trigger(S, e) (an event of this tick; or tick(S): a state that comes about),
+// steps: [{ text(S) (the card's one sentence), short(S) (the Next job line), target(S) => { x, z, k, label } | null
+// (the pixel arrow), done(S, e) (an event of this tick completes it), at(S) (or a state reached: checked each tick for
+// the step in hand only) }] }].
+// A step is done by its own event or by any later step's (a player who goes ahead is not held back); a lesson is done
+// after its last step. Commands: { t: 'pdLesson', id, act: 'show' } (the first card's Show me: the clock runs again),
+// { t: 'pdLesson', id, act: 'skip' } (the lesson closes), { t: 'pdLesson', act: 'replay' } (Settings: every lesson not
+// started again; each comes back at its moment). Events: pdLesson { id, step } (a step opened), pdLessonDone { id,
+// skipped }, pdLessonReplay. A lesson still open at the next morning closes (its moment has gone; replay brings it back).
+// Reads P's and F's status (pbCarStatus, pbDrawList, frCarStatus, frToDeliver, frPickups, frCartPose) and T's
+// protoCarEnds / protoCarDoors when they exist; everything is read defensively (a count, a list or an object of counts).
 const PD_LESSON_IDS = ['switches', 'board', 'unload', 'load', 'delivery', 'pickup'];
-const PD_LESSONS = PD_LESSON_IDS.map(id => ({ id, trigger: () => false, steps: [] }));
-function pdLessonTick(S, ev) {
-  if (!d27On(S.track, 'lessons')) return;
+const PD_LES = { NEAR: 3, CART_DOOR: 4.5, STREET_PAD: 1 };
+// A number from a count, a list (its length) or an object of counts (their sum).
+function pdNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  if (Array.isArray(v)) return v.length;
+  if (v && typeof v === 'object') return typeof v.n === 'number' ? v.n : Object.values(v).reduce((a, b) => a + pdNum(b), 0);
+  return 0;
 }
-const LES_TEST = { PD_LESSON_IDS, PD_LESSONS, pdLessonTick };
+const pdLesOn = S => !!(S && S.pd && S.pd.on && d27On(S.track, 'lessons'));
+const pdLesTag = (S, id) => { const wb = S.items.waybill[id]; return wb ? itemTag(wb) : null; };
+const pdLesIsOut = (S, id) => pdLesTag(S, id) === 'OUTSIDE';
+const pdLesShopOf = (S, id) => { const t = pdLesTag(S, id); return SHOPS27.find(q => q.tag === t) || null; };
+// The first train of the day that stops (the schedule's earliest) and its switch in (W1 for P1: from the west to track 1).
+function pdLesFirst(S) {
+  const sv = rrW(S.track).schedule.filter(v => !v.through).sort((a, b) => a.arr - b.arr)[0];
+  if (!sv) return null;
+  const t = sv.track === 't1' ? '1' : '3', name = sv.from + t;
+  return { svc: sv.id, id: sv.id.toUpperCase(), name, sw: PROTO_SW[name], track: t, end: sv.from === 'W' ? 'west' : 'east', lever: PROTO_LEVERS[name] };
+}
+const pdLesRun = (S, svc) => (S.rr ? S.rr.runs.find(r => r.svc === svc && r.day === rrDayOf(S)) || null : null);
+// A builder's function called defensively (a stub or a half-built piece never stops the lessons).
+const pdLesCall = (f, ...a) => { try { return f(...a); } catch (e) { return null; } };
+// Where the platform cart is (F's pose, or the player pushing it, or its place in the tool store), and whether he pushes it.
+function pdLesCart(S) {
+  const p = pdLesCall(frCartPose, S);
+  if (p && Number.isFinite(p.x)) return { x: p.x, z: p.z, held: !!p.held };
+  const t = S.player.tool;
+  if (t !== null && t !== undefined && S.tools[t] && toolIsCart(S.tools[t].k)) return { x: S.player.x, z: S.player.z, held: true };
+  const c = (S.tools || []).find(q => toolIsCart(q.k));
+  return c ? { x: c.x / 100, z: c.z / 100, held: false } : null;
+}
+const pdLesAt = (S, kind) => itemsAt(S, { kind });
+// The railroad's standing trains that stop: [{ run, tr }].
+const pdLesStanding = S => (S.rr && S.rr.on ? S.rr.runs.filter(r => r.ph === 'stand' && !r.through).map(run => ({ run, tr: rrTrainOf(S, run) })).filter(o => o.tr && !trainOff(o.tr)) : []);
+// The door spot of a freight car (F's status, else T's protoCarDoors, else beside the car).
+function pdLesDoorSpot(S, tr, c, s) {
+  if (s && s.spot && Number.isFinite(s.spot.x)) return { x: s.spot.x, z: s.spot.z };
+  if (typeof protoCarDoors === 'function') {
+    const run = rrRunOf(S, tr.id), d = run && (pdLesCall(protoCarDoors, S, run) || []).find(q => q.stock === c.id);
+    if (d) return d.spot && Number.isFinite(d.spot.x) ? { x: d.spot.x, z: d.spot.z } : { x: d.x, z: d.z };
+  }
+  return rrUiBeside(S, c.id);
+}
+// A coach's end nearest (x, z) (where its steps are): P's status ends, else T's protoCarEnds, else beside the coach.
+// { x, z, end (its index) } or null.
+function pdLesEndSpot(S, tr, c, s, x, z) {
+  let ends = s && Array.isArray(s.ends) ? s.ends : null;
+  if (!ends && typeof protoCarEnds === 'function') { const run = rrRunOf(S, tr.id), e = run && (pdLesCall(protoCarEnds, S, run) || []).find(q => q.stock === c.id); if (e) ends = e.ends; }
+  const pts = (ends || []).map((e, i) => ({ i, p: e && e.steps && Number.isFinite(e.steps.x) ? e.steps : e })).filter(o => o.p && Number.isFinite(o.p.x));
+  if (!pts.length) { const b = rrUiBeside(S, c.id); return b ? { x: b.x, z: b.z, end: 0 } : null; }
+  pts.sort((a, b) => Math.hypot(a.p.x - x, a.p.z - z) - Math.hypot(b.p.x - x, b.p.z - z));
+  return { x: pts[0].p.x, z: pts[0].p.z, end: pts[0].i };
+}
+// The cars of the standing trains with their status: [{ run, tr, c, i, s }] (pax: pbCarStatus; freight: frCarStatus).
+function pdLesCars(S, kind) {
+  const out = [];
+  for (const { run, tr } of pdLesStanding(S)) {
+    if (kind && run.kind !== kind) continue;
+    tr.consist.forEach((c, i) => { if (c.k !== 'loco') out.push({ run, tr, c, i, s: pdLesCall(run.kind === 'pax' ? pbCarStatus : frCarStatus, S, c.id) }); });
+  }
+  return out;
+}
+const pdLesNear = (S, at, d) => !!at && Math.hypot(at.x - S.player.x, at.z - S.player.z) <= (d || PD_LES.NEAR);
+const pdLesNearest = (S, list) => list.filter(Boolean).sort((a, b) => Math.hypot(a.x - S.player.x, a.z - S.player.z) - Math.hypot(b.x - S.player.x, b.z - S.player.z))[0] || null;
+// The middle of a storage row's first cell holding goods that match (else the row's first cell), as an arrow target.
+function pdLesRowSpot(S, rows, match, label) {
+  let first = null;
+  for (const row of rows) for (let c = row.c0; c <= row.c1; c++) {
+    const at = storeCellAt(row.block, c, row.r);
+    if (!first) first = at;
+    if (match && itemsAt(S, { kind: 'CELL', block: row.block, c, r: row.r }).some(id => match(id))) return { x: at.x, z: at.z, k: 'cell', label };
+  }
+  return first && { x: first.x, z: first.z, k: 'cell', label };
+}
+const pdLesOutSpot = (S, label) => pdLesRowSpot(S, STORE27_OUT, id => pdLesIsOut(S, id), label || 'OUT rows');
+// The seated travellers with a ticket to punch, from P's drawing list ([{ id, x, z, stock, seat, ... }]).
+function pdLesToPunch(S, stock) {
+  const L = pdLesCall(pbDrawList, S) || [];
+  return L.filter(p => p && (p.act === 'sit' || p.act === 'sitTicket') && !p.punched && !p.through && (stock === undefined || p.stock === stock));
+}
+// The goods on the cart by shop id: { [shop]: [ids] } (goods for the railroad under 'OUT').
+function pdLesCartByShop(S) {
+  const out = {};
+  for (const id of pdLesAt(S, 'CART')) { const sh = pdLesShopOf(S, id), k = sh ? sh.id : pdLesIsOut(S, id) ? 'OUT' : '?'; (out[k] = out[k] || []).push(id); }
+  return out;
+}
+const pdLesPutCart = (e, S, out) => e.t === 'frPut' && !!e.to && e.to.kind === 'CART' && (out === undefined || pdLesIsOut(S, e.id) === out);
+// A switch's lever (its use spot) as an arrow target.
+function pdStandSpotOf(S, sw, label) { const W = S.track.switches[sw]; return W && W.stand ? { x: W.stand.ux, z: W.stand.uz, k: 'switch', sw, label } : null; }
+const PD_LESSONS = [
+  { id: 'switches', title: 'Switches', pic: ['bld/leverframe/W', 'bld/lever/R'], need: null,
+    trigger: (S, e) => e.t === 'pdDay',
+    steps: [
+      { text: S => { const f = pdLesFirst(S); return `Trains stop short of a switch set against them. The levers are in the frame at the ${f ? f.end : 'west'} end of the platform: walk there.`; },
+        short: S => { const f = pdLesFirst(S); return `Walk to the lever frame at the ${f ? f.end : 'west'} end`; },
+        target: S => { const f = pdLesFirst(S); return f && f.lever ? { x: f.lever.ux, z: f.lever.uz, k: 'switch', sw: f.sw, label: 'Lever frame' } : null; },
+        at: S => { const f = pdLesFirst(S); return !!f && !!f.lever && pdLesNear(S, { x: f.lever.ux, z: f.lever.uz }); } },
+      { text: S => { const f = pdLesFirst(S); return f ? `Pull lever ${f.name} to set the way into track ${f.track} for ${f.id}.` : 'Pull the lever to set the way in.'; },
+        short: S => { const f = pdLesFirst(S); return f ? `Pull lever ${f.name}: the way into track ${f.track} for ${f.id}` : 'Pull the lever'; },
+        target: S => { const f = pdLesFirst(S); return f ? pdStandSpotOf(S, f.sw, `${f.name}: pull it`) : null; },
+        done: (S, e) => {
+          const f = pdLesFirst(S);
+          if (e.t !== 'switchThrown' || !f || e.sw !== f.sw) return false;
+          const run = pdLesRun(S, f.svc), n = run ? rrSwitchNeeds(S).find(q => q.run === run.id && q.sw === f.sw && q.move === 'in') : null;
+          return !n || n.set;   // set the right way for the first train (or it needs nothing more of it)
+        } },
+      { text: S => { const f = pdLesFirst(S); return f ? `Its disc turns: ${f.name} is set for track ${f.track}. When ${f.id} has passed, set it back for the next train.` : 'Its disc turns. When the train has passed, set it back for the next one.'; },
+        short: S => { const f = pdLesFirst(S); return f ? `Wait for ${f.id} to pass ${f.name}` : 'Wait for the train to pass'; },
+        target: S => { const f = pdLesFirst(S); return f ? pdStandSpotOf(S, f.sw, `${f.name}: set for track ${f.track}`) : null; },
+        done: (S, e) => { const f = pdLesFirst(S), run = f && pdLesRun(S, f.svc); return !!run && (e.t === 'rrArrived' || e.t === 'rrPassed') && e.run === run.id; } },
+    ] },
+  { id: 'board', title: 'Tickets on board', pic: ['ppl/man_bowler/sitTicket/ne/0', 'ppl/man_bowler/sit/ne/0', 'ppl/man_bowler/ticket/se/0'], need: 'board',
+    trigger: (S, e) => e.t === 'pbSeated',
+    steps: [
+      { text: () => 'Travellers have boarded and sat down. Step up into a coach at its end.',
+        short: () => 'Step up into a coach at its end',
+        target: S => { const c = pdLesNearest(S, pdLesCars(S, 'pax').filter(o => pdNum(o.s && o.s.toPunch) > 0).map(o => pdLesEndSpot(S, o.tr, o.c, o.s, S.player.x, S.player.z))); return c && { x: c.x, z: c.z, k: 'car', label: 'Coach end: step up' }; },
+        done: (S, e) => e.t === 'pbEnter' },
+      { text: () => 'Walk the aisle and tap a traveller to punch the ticket.',
+        short: () => 'Tap a seated traveller to punch the ticket',
+        target: S => { const p = pdLesNearest(S, pdLesToPunch(S)); return p && { x: p.x, z: p.z, k: 'pax', label: 'Punch this ticket' }; },
+        done: (S, e) => e.t === 'pbPunched' },
+      { text: () => 'Punch everyone. The train can leave once every ticket is punched: then step off and Send off at the engine.',
+        short: () => 'Punch everyone, then Send off at the engine',
+        target: S => {
+          const p = pdLesNearest(S, pdLesToPunch(S));
+          if (p) return { x: p.x, z: p.z, k: 'pax', label: 'Punch this ticket' };
+          const st = pdLesStanding(S).find(o => o.run.kind === 'pax');
+          const at = st && (rrWaveSpot(S, st.tr.id) || rrUiBeside(S, rrUiLoco(st.tr)));
+          return at ? { x: at.x, z: at.z, k: 'engine', label: 'Send it off' } : null;
+        },
+        done: (S, e) => e.t === 'rrWavedOff' && !e.auto && (S.rr.runs.find(r => r.id === e.run) || {}).kind === 'pax' },
+    ] },
+  { id: 'unload', title: 'Unloading', pic: ['veh/boxcar_door/se/3', 'veh/boxcar_door/open', 'goods/crate/dry'], need: 'handling',
+    trigger: (S, e) => {
+      if (e.t !== 'rrArrived') return false;
+      const run = S.rr.runs.find(r => r.id === e.run), sv = run && rrW(S.track).schedule.find(v => v.id === run.svc);
+      return !!sv && sv.kind === 'freight' && !sv.through && sv.unload > 0;
+    },
+    steps: [
+      { text: () => 'Goods for the town have come. Slide the boxcar\'s door open.',
+        short: () => 'Slide a boxcar door open',
+        target: S => { const o = pdLesNearest(S, pdLesCars(S, 'freight').filter(o => pdNum(o.s && o.s.unload) > 0 && !(o.s && o.s.doorOpen)).map(o => pdLesDoorSpot(S, o.tr, o.c, o.s))); return o && { x: o.x, z: o.z, k: 'door', label: 'Door: slide it open' }; },
+        done: (S, e) => e.t === 'frDoor' && !!e.open },
+      { text: () => 'Bring the platform cart to the open door.',
+        short: () => 'Bring the cart to the open door',
+        target: S => {
+          const cart = pdLesCart(S);
+          if (cart && !cart.held) return { x: cart.x, z: cart.z, k: 'cart', label: 'Cart: take it' };
+          const o = pdLesNearest(S, pdLesCars(S, 'freight').filter(o => o.s && o.s.doorOpen).map(o => pdLesDoorSpot(S, o.tr, o.c, o.s)));
+          return o && { x: o.x, z: o.z, k: 'door', label: 'Door: the cart here' };
+        },
+        at: S => {
+          const cart = pdLesCart(S);
+          return !!cart && pdLesCars(S, 'freight').some(o => { if (!o.s || !o.s.doorOpen) return false; const d = pdLesDoorSpot(S, o.tr, o.c, o.s); return !!d && Math.hypot(d.x - cart.x, d.z - cart.z) <= PD_LES.CART_DOOR; });
+        } },
+      { text: () => 'Step into the car and lift the goods onto the cart.',
+        short: () => 'Lift the goods onto the cart',
+        target: S => { const o = pdLesNearest(S, pdLesCars(S, 'freight').filter(o => pdNum(o.s && o.s.unload) > 0).map(o => pdLesDoorSpot(S, o.tr, o.c, o.s))); return o && { x: o.x, z: o.z, k: 'door', label: 'Lift the goods out' }; },
+        done: (S, e) => pdLesPutCart(e, S, false) },
+      { text: () => 'Push the cart to the storage area and stack each good in its shop\'s row.',
+        short: () => 'Stack each good in its shop\'s row',
+        target: S => { const id = pdLesAt(S, 'HAND').concat(pdLesAt(S, 'CART')).find(q => pdLesShopOf(S, q)), sh = id !== undefined && pdLesShopOf(S, id); return sh ? pdLesRowSpot(S, [sh.row], null, `${sh.name}'s row`) : null; },
+        done: (S, e) => e.t === 'frStored' && !pdLesIsOut(S, e.id) },
+    ] },
+  { id: 'load', title: 'Loading', pic: ['goods/sack/grain', 'goods/keg', 'goods/crate'], need: 'handling',
+    tick: S => pdLesStanding(S).some(({ run, tr }) => {
+      const sv = rrW(S.track).schedule.find(v => v.id === run.svc);
+      if (!sv || sv.kind !== 'freight' || !(sv.load > 0)) return false;
+      const st = tr.consist.filter(c => c.k !== 'loco').map(c => pdLesCall(frCarStatus, S, c.id));
+      return st.some(Boolean) && st.every(s => !s || pdNum(s.unload) === 0);
+    }),
+    steps: [
+      { text: () => 'This train takes goods away. They wait in the OUT rows: load them on the cart.',
+        short: () => 'Load the OUT goods on the cart',
+        target: S => pdLesOutSpot(S, 'OUT rows: goods to load'),
+        done: (S, e) => pdLesPutCart(e, S, true) },
+      { text: () => 'Wheel them to an open door and put each one in the car.',
+        short: () => 'Put the goods in the car',
+        target: S => { const o = pdLesNearest(S, pdLesCars(S, 'freight').filter(o => pdNum(o.s && o.s.load) > 0).map(o => pdLesDoorSpot(S, o.tr, o.c, o.s))); return o && { x: o.x, z: o.z, k: 'door', label: 'Door: load here' }; },
+        done: (S, e) => e.t === 'frLoaded' },
+    ] },
+  { id: 'delivery', title: 'Delivery', pic: ['cart27/se/loaded', 'cart27/se/0'], need: 'handling',
+    trigger: (S, e) => e.t === 'pdEvening',
+    steps: [
+      { text: () => 'The trains are done for the day. Load the cart with the town\'s goods from storage.',
+        short: () => 'Load the cart with the town\'s goods',
+        target: S => {
+          const left = pdLesCall(frToDeliver, S) || {}, ids = Object.keys(left).filter(k => pdNum(left[k]) > 0).sort((a, b) => pdNum(left[b]) - pdNum(left[a]) || (a < b ? -1 : 1));
+          const sh = SHOPS27.find(q => q.id === ids[0]) || null;
+          return sh ? pdLesRowSpot(S, [sh.row], id => pdLesShopOf(S, id) === sh, `${sh.name}'s goods`) : pdLesRowSpot(S, SHOPS27.map(q => q.row), id => !!pdLesShopOf(S, id), 'The town\'s goods');
+        },
+        done: (S, e) => pdLesPutCart(e, S, false) },
+      { text: () => 'Push it down the east ramp, over the crossing and up the path to town.',
+        short: () => 'Push the cart up the path to town',
+        target: () => { const p = PROTO.CART_PATH[PROTO.CART_PATH.length - 1]; return { x: p[0], z: p[1], k: 'path', label: 'To town' }; },
+        at: S => { const c = pdLesCart(S), T = PROTO.STREET; return !!c && c.z <= T.z1 + PD_LES.STREET_PAD && c.z >= T.z0 && c.x >= T.x0 - T.walk - PD_LES.STREET_PAD && c.x <= T.x1 + T.walk + PD_LES.STREET_PAD; } },
+      { text: () => 'Stop at a shop\'s door and tap Deliver.',
+        short: () => 'Deliver at a shop\'s door',
+        target: S => { const by = pdLesCartByShop(S), d = pdLesNearest(S, SHOPS27.filter(q => by[q.id]).map(q => ({ x: q.door.x, z: q.door.z, sh: q }))); return d ? { x: d.x, z: d.z, k: 'door', label: `${d.sh.name}: deliver` } : null; },
+        done: (S, e) => e.t === 'frDelivered' },
+    ] },
+  { id: 'pickup', title: 'Pickup', pic: ['goods/sack/grain', 'goods/hides', 'goods/mailSack'], need: 'handling',
+    tick: S => S.pd.ph === 'evening' && (S.pd.les || {}).delivery === -1 && pdNum(pdLesCall(frPickups, S)) > 0,
+    steps: [
+      { text: () => 'Some shops send goods out by rail: they wait on the boardwalk. Load them on the cart.',
+        short: () => 'Pick up the goods on the boardwalk',
+        target: S => { const P = pdLesCall(frPickups, S) || {}, d = pdLesNearest(S, SHOPS27.filter(q => pdNum(P[q.id]) > 0).map(q => ({ x: q.pickup.x, z: q.pickup.z, sh: q }))); return d ? { x: d.x, z: d.z, k: 'pickup', label: `${d.sh.name}: pick up` } : null; },
+        done: (S, e) => e.t === 'frPicked' },
+      { text: () => 'Bring them back to the OUT rows for tomorrow\'s trains.',
+        short: () => 'Take them back to the OUT rows',
+        target: S => pdLesOutSpot(S, 'OUT rows: stack them'),
+        done: (S, e) => e.t === 'frStored' && pdLesIsOut(S, e.id) },
+    ] },
+];
+const pdLesson = id => PD_LESSONS.find(L => L.id === id) || null;
+// A lesson may run: lessons on, and the D27 part it teaches on.
+const pdLesCan = (S, L) => pdLesOn(S) && (!L.need || d27On(S.track, L.need));
+// The lessons open now, in PD_LESSON_IDS order: [{ L, step }].
+function pdLesOpen(S) {
+  const les = (S.pd && S.pd.les) || {};
+  return PD_LESSONS.filter(L => Number.isInteger(les[L.id]) && les[L.id] >= 0 && les[L.id] < L.steps.length).map(L => ({ L, step: les[L.id] }));
+}
+function pdLesSet(S, L, step, ev) {
+  const D = S.pd;
+  if (step >= L.steps.length) { D.les[L.id] = -1; ev.push({ t: 'pdLessonDone', id: L.id, skipped: false }); }
+  else { D.les[L.id] = step; ev.push({ t: 'pdLesson', id: L.id, step }); }
+  if (D.lesWait) { D.lesWait = D.lesWait.filter(q => q !== L.id); if (!D.lesWait.length) delete D.lesWait; }   // the first step done: its card no longer waits
+}
+function pdLessonTick(S, ev) {
+  if (!pdLesOn(S)) return;
+  const D = S.pd;
+  if (!D.les || typeof D.les !== 'object') D.les = {};
+  const n = ev.length;   // this tick's events (those pushed below are the lessons' own)
+  // Steps: an event completes the step in hand or a later one; a state reached completes the step in hand.
+  for (const { L, step } of pdLesOpen(S)) {
+    let to = step;
+    for (let i = 0; i < n; i++) for (let k = L.steps.length - 1; k >= to; k--) if (L.steps[k].done && L.steps[k].done(S, ev[i])) { to = k + 1; break; }
+    if (to === step && L.steps[step].at && L.steps[step].at(S)) to = step + 1;
+    if (to !== step) pdLesSet(S, L, to, ev);
+  }
+  // Triggers: the first time each moment comes.
+  for (const L of PD_LESSONS) {
+    if (D.les[L.id] !== undefined || !pdLesCan(S, L)) continue;
+    let go = false;
+    if (L.trigger) for (let i = 0; i < n && !go; i++) go = !!L.trigger(S, ev[i]);
+    if (!go && L.tick) go = !!L.tick(S);
+    if (!go) continue;
+    D.les[L.id] = 0;
+    D.lesWait = (D.lesWait || []).concat([L.id]);
+    ev.push({ t: 'pdLesson', id: L.id, step: 0 });
+  }
+}
+// The next morning: a lesson still open closes (its moment has gone; Settings' replay brings it back).
+function pdLesNewDay(S) {
+  const D = S.pd;
+  if (!D.les) return;
+  for (const { L } of pdLesOpen(S)) D.les[L.id] = -1;
+  delete D.lesWait;
+}
+function pdLessonCmd(S, c, ev) {
+  const D = S.pd, L = pdLesson(c.id);
+  if (!pdLesOn(S)) return;
+  if (!D.les) D.les = {};
+  if (c.act === 'replay') { D.les = {}; delete D.lesWait; ev.push({ t: 'pdLessonReplay' }); return; }
+  if (!L) return;
+  if (c.act === 'show') { if (D.lesWait) D.lesWait = D.lesWait.filter(q => q !== L.id); }
+  else if (c.act === 'skip' && Number.isInteger(D.les[L.id]) && D.les[L.id] >= 0) {
+    D.les[L.id] = -1;
+    if (D.lesWait) D.lesWait = D.lesWait.filter(q => q !== L.id);
+    ev.push({ t: 'pdLessonDone', id: L.id, skipped: true });
+  }
+  if (D.lesWait && !D.lesWait.length) delete D.lesWait;
+}
+const LES_TEST = { PD_LESSON_IDS, PD_LESSONS, PD_LES, pdLessonTick, pdLessonCmd, pdLesOpen, pdLesFirst, pdLesCart, pdLesNewDay, pdNum };
 
 // ==== Section: telegrams and alerts ====
 // Owner: M1 package 7 (builder D1, D13). The telegram inbox and the list of active problems (alerts).
@@ -16308,9 +16630,10 @@ function warnTick() {
 // Gives R: pdHintTarget() (where the helper arrow points: { x, z, k, label } or null; R draws the pixel arrow there,
 // tip on the ground, about 3u tall; this block puts the label above it at PDUI.LABEL_Y and the edge arrow when off
 // screen) and pdBoardRows(S) (the rows for the board in the world, pixBoardDraw).
-const PDUI = { NEAR: 7, NEED_S: 2700, ARRIVE: 1.6, LABEL_Y: 3.8, PEEK_S: 60 };
+const PDUI = { NEAR: 7, NEED_S: 2700, ARRIVE: 1.6, LABEL_Y: 3.8, PEEK_S: 60, MAX_ACTS: 3, REACH: 2.5 };   // D27: at most 3 buttons over the world; Lift and Put within REACH u
 const pdUi = { btns: {}, pending: null, board: false, boardFor: null, boardDay: null, boardSig: '', sum: false, sumFor: null, sumDay: null, held: null,
-  job: null, jobS: null, jobTick: -1, needs: [], needsT: -1e9, needsS: null, peek: null, guideSeen: -1, guideFor: null, nextText: '', layout: '', body: null };
+  job: null, jobS: null, jobTick: -1, needs: [], needsT: -1e9, needsS: null, peek: null, guideSeen: -1, guideFor: null, nextText: '', layout: '', body: null,
+  lesHeld: null, lesFold: null, lesAct: null };   // lesAct: Show me or Skip tapped, its command not yet done   // D27: the speed held for a lesson's first card; the slip folded away (id:step)
 function pdUiOn() { return !!S && !!S.pd && S.pd.on && protoWorld(S.track); }
 const pdFirstNum = (...v) => { for (const x of v) if (Number.isFinite(x)) return x; return 0; };
 const pdRunId = run => run.svc.toUpperCase();
@@ -16375,6 +16698,11 @@ function pdJob() {
     const lock = switchLockReason(S, tr.swWait);
     return { key: 'wait' + tr.swWait + run.id, text: `${pdRunId(run)} is waiting at ${nm}: throw it ${pdWantWords(tr.swWait, want)}` + (lock ? ` once it is clear (${lock})` : ''), t: pdStandSpot(tr.swWait, `${nm}: throw it`) };
   }
+  // D27 (U): a lesson's step is the line (the switches lesson before the switch rows it teaches; the others after them,
+  // so a train's way out is still asked for while its lesson runs: provisional, plans/d27-tech.md 6.2 puts every lesson
+  // first).
+  const les = pdLesJob();
+  if (les && les.les === 'switches') return les;
   // A switch's rows in time order: a later train's way is not asked for while an earlier train still needs that switch
   // the other way (integrator: else the line flips between them, e.g. E3 for F1 while X1 has still to run through it).
   const firstWant = {};
@@ -16388,6 +16716,8 @@ function pdJob() {
     return { key: 'sw' + n.sw + n.want + run.id, text: `Throw switch ${nm} ${pdWantWords(n.sw, n.want)} for ${id}` + (n.move === 'out' && !run.through ? ', its way out' : run.through ? ' (it runs through)' : ` (due ${pdClock(rrSod(run.arr))})`),
       t: pdStandSpot(n.sw, `${nm}: throw it`) };
   }
+  if (les) return les;
+  const board27 = d27On(S.track, 'board'), hand27 = d27On(S.track, 'handling');
   const held = carryHeld(S), heldShop = held.filter(id => pdShopOf(id)), heldOut = held.filter(pdIsOut);
   if (D.ph === 'day' && heldShop.length) {
     // The bay tagged for the good on top (it goes in first); fix (2026-11-11): pdBay(null) threw here, which stopped
@@ -16397,13 +16727,25 @@ function pdJob() {
     return { key: 'stow', text: `Put the ${heldShop.length === 1 ? 'goods' : heldShop.length + ' goods'} for the town in the storage shed`, t: b && { x: b.x, z: b.z, k: 'bay', label: 'Storage shed: put them in' } };
   }
   let best = null;
+  if (hand27 && D.ph === 'day') {
+    // D27 (F's hint first: the next handling step of the job in hand), then goods for the town in hand or on the cart.
+    const h = pdFrHint();
+    if (h) best = { rank: 0.5, d: h.t ? Math.hypot(h.t.x - P.x, h.t.z - P.z) : 0, ...h };
+    const town = pdLesAt(S, 'HAND').concat(pdLesAt(S, 'CART')).filter(q => pdLesShopOf(S, q));
+    if (town.length && !best) {
+      const sh = pdLesShopOf(S, town[0]), t = pdLesRowSpot(S, [sh.row], null, `${sh.name}'s row: stack it`);
+      best = { rank: 1.5, key: 'stack' + sh.id, text: `Stack the ${town.length === 1 ? 'good' : town.length + ' goods'} for the town in their shops' rows (${sh.name.toLowerCase()} first)`, t, d: t ? Math.hypot(t.x - P.x, t.z - P.z) : 0 };
+    }
+  }
   for (const { run, tr } of rrUiStanding(S)) {
     if (run.through) continue;
     const ps = trainPoses(S.track, tr), id = pdRunId(run);
     tr.consist.forEach((c, i) => {
       if (c.k === 'loco' || !ps[i]) return;
       let j = null;
-      if (run.kind === 'pax') {
+      if (run.kind === 'pax' && board27) j = pdJobCoach27(run, tr, c, i, id);
+      else if (run.kind !== 'pax' && hand27) j = pdJobCar27(run, tr, c, i, id);
+      else if (run.kind === 'pax') {
         const s = ppCarStatus(S, c.id), n = s ? pdFirstNum(s.line) : 0, at = s && s.spot ? s.spot : rrUiBeside(S, c.id) || ps[i];
         if (n > 0) j = { rank: 0, key: 'punch' + c.id, text: `Punch tickets at coach ${i} of ${id} (${n} waiting)`, t: { x: at.x, z: at.z, k: 'car', label: `Coach ${i}: punch ${n}` } };
       } else {
@@ -16421,11 +16763,13 @@ function pdJob() {
     });
   }
   if (best) return best;
+  if (board27 && S.player.in) return { key: 'leave', text: 'Every ticket here is punched: step off the train', t: null };
   for (const { run, tr } of rrUiStanding(S)) {
     if (!run.ready) continue;
     const at = rrWaveSpot(S, tr.id) || rrUiBeside(S, rrUiLoco(tr)), id = pdRunId(run), dep = pdClock(rrSod(run.dep));   // D27: T's wave spot first (clear of the flights)
     return { key: 'send' + run.id, text: `Send ${id} off at the engine` + (S.time > run.dep + RR.LATE_S ? ` (due out ${dep}: late)` : ` (due out ${dep})`), t: at && { x: at.x, z: at.z, k: 'engine', label: `${id}: send it off` } };
   }
+  if (D.ph === 'evening' && hand27) return pdJobEvening27();
   if (D.ph === 'evening') {
     const left = pgToDeliver(S) || {}, total = Object.values(left).reduce((a, b) => a + (Number(b) || 0), 0);
     if (heldShop.length) {
@@ -16455,14 +16799,90 @@ function pdJob() {
       : `Nothing to do just now: ${nx.id} is ${nx.isLate ? `${nx.lateMin} min late (due ${nx.arr})` : `due at ${nx.arr}`} on track ${nx.track}${nx.through ? ' (through)' : ''}` };
   return { key: 'idle', text: 'Nothing to do just now', t: null };
 }
+// ---- D27 (U): the Next job line's jobs for punching on board, freight handling and the evening's cart ----
+// The lesson's step in hand, as a job ({ key, text, t, les }), or null (lessons off or none open).
+function pdLesJob() {
+  if (!pdLesOn(S)) return null;
+  const o = pdLesCurOpen();
+  if (!o) return null;
+  const st = o.L.steps[o.step];
+  return { key: 'les' + o.L.id + o.step, text: st.short(S), t: pdLesCall(st.target, S) || null, les: o.L.id };
+}
+// The lesson the card shows: one whose first card waits (Show me), else the first open one.
+function pdLesCurOpen() {
+  const open = pdLesOpen(S), w = (S.pd.lesWait || [])[0];
+  return (w && open.find(o => o.L.id === w)) || open[0] || null;
+}
+// F's next handling step (frJobHint: a sentence, or { text, t | x, z, label, key }), as a job, or null.
+function pdFrHint() {
+  const h = pdLesCall(frJobHint, S);
+  if (!h) return null;
+  if (typeof h === 'string') return { key: 'fr' + h, text: h, t: null };
+  if (!h.text) return null;
+  const t = h.t && Number.isFinite(h.t.x) ? h.t : Number.isFinite(h.x) ? { x: h.x, z: h.z, k: h.k || 'goods', label: h.label || h.text } : null;
+  return { key: 'fr' + (h.key || h.text), text: h.text, t };
+}
+// A coach of a standing passenger train (D27 board): step in, or punch the tickets inside. A job with rank and d, or null.
+function pdJobCoach27(run, tr, c, i, id) {
+  const P = S.player, s = pdLesCall(pbCarStatus, S, c.id), n = pdNum(s && s.toPunch);
+  if (!(n > 0)) return null;
+  let j;
+  if (P.in && P.in.tr === tr.id) {
+    const p = pdLesNearest(S, pdLesToPunch(S, c.id)) || pdLesEndSpot(S, tr, c, s, P.x, P.z);
+    j = { rank: 0, key: 'punch' + c.id, text: `Punch the tickets in coach ${i} of ${id} (${n} to punch)`, t: p && { x: p.x, z: p.z, k: 'pax', label: `Coach ${i}: punch ${n}` } };
+  } else {
+    const e = pdLesEndSpot(S, tr, c, s, P.x, P.z);
+    j = { rank: 0, key: 'enter' + c.id, text: `Step into coach ${i} of ${id}: ${n} ${n === 1 ? 'ticket' : 'tickets'} to punch`, t: e && { x: e.x, z: e.z, k: 'car', label: `Coach ${i}: step in` } };
+  }
+  j.d = j.t ? Math.hypot(j.t.x - P.x, j.t.z - P.z) : 0;
+  return j;
+}
+// A freight car of a standing train (D27 handling): open its door, unload it, load it (fetching from the OUT rows first).
+function pdJobCar27(run, tr, c, i, id) {
+  const P = S.player, s = pdLesCall(frCarStatus, S, c.id);
+  if (!s) return null;
+  const un = pdNum(s.unload), ld = pdNum(s.load), open = !!s.doorOpen, at = pdLesDoorSpot(S, tr, c, s);
+  let j = null;
+  const here = at && { x: at.x, z: at.z, k: 'door' };
+  if (un > 0) j = open ? { rank: 1, key: 'unload' + c.id, text: `Unload ${id}'s car ${i} onto the cart (${un} for the town)`, t: here && { ...here, label: `Car ${i}: unload ${un}` } }
+    : { rank: 1, key: 'door' + c.id, text: `Open the door of ${id}'s car ${i} (${un} for the town)`, t: here && { ...here, label: `Car ${i}: open the door` } };
+  else if (ld > 0) {
+    const out = pdLesAt(S, 'HAND').concat(pdLesAt(S, 'CART')).filter(q => pdLesIsOut(S, q)).length;
+    if (out && !open) j = { rank: 2, key: 'door' + c.id, text: `Open the door of ${id}'s car ${i} to load it`, t: here && { ...here, label: `Car ${i}: open the door` } };
+    else if (out) j = { rank: 2, key: 'load' + c.id, text: `Load the goods into ${id}'s car ${i} (${ld} to go)`, t: here && { ...here, label: `Car ${i}: load` } };
+    else j = { rank: 3, key: 'fetch' + run.id, text: `Load ${id}: fetch its goods from the OUT rows (${ld} to go)`, t: pdLesOutSpot(S, `OUT rows: goods for ${id}`) };
+  }
+  if (j) j.d = j.t ? Math.hypot(j.t.x - P.x, j.t.z - P.z) : 0;
+  return j;
+}
+// The evening with the platform cart (D27 handling): deliver what is on the cart, pick up what the shops put out, take
+// the pickups back to the OUT rows, load the cart from storage; then end the day.
+function pdJobEvening27() {
+  const P = S.player, by = pdLesCartByShop(S), near = list => pdLesNearest(S, list);
+  const d = near(SHOPS27.filter(q => by[q.id]).map(q => ({ x: q.door.x, z: q.door.z, sh: q })));
+  if (d) { const n = by[d.sh.id].length; return { key: 'deliver' + d.sh.id, text: `Deliver ${n} to the ${d.sh.name.toLowerCase()}`, t: { x: d.x, z: d.z, k: 'door', label: `${d.sh.name}: deliver ${n}` } }; }
+  const pk = pdLesCall(frPickups, S) || {}, p = near(SHOPS27.filter(q => pdNum(pk[q.id]) > 0).map(q => ({ x: q.pickup.x, z: q.pickup.z, sh: q })));
+  if (p) { const n = pdNum(pk[p.sh.id]); return { key: 'pick' + p.sh.id, text: `Pick up ${n} at the ${p.sh.name.toLowerCase()}: goods to go out by rail`, t: { x: p.x, z: p.z, k: 'pickup', label: `${p.sh.name}: pick up ${n}` } }; }
+  const out = pdLesAt(S, 'CART').concat(pdLesAt(S, 'HAND')).filter(q => pdLesIsOut(S, q)).length;
+  if (out) return { key: 'back', text: `Take the ${out === 1 ? 'good' : out + ' goods'} back to the OUT rows for tomorrow's trains`, t: pdLesOutSpot(S, 'OUT rows: stack them') };
+  const stored = pdLesAt(S, 'CELL').filter(q => pdLesShopOf(S, q)), hand = pdLesAt(S, 'HAND').filter(q => pdLesShopOf(S, q));
+  if (stored.length || hand.length) {
+    const sh = pdLesShopOf(S, hand[0] !== undefined ? hand[0] : stored[0]), n = stored.length + hand.length;
+    return { key: 'sort27', text: `Load the cart with the town's goods (${n} to deliver)`, t: pdLesRowSpot(S, [sh.row], q => pdLesShopOf(S, q) === sh, `${sh.name}'s goods: load the cart`) };
+  }
+  return { key: 'end', text: 'Every train has gone and every good is delivered. Tap here to end the day', t: null, act: 'end' };
+}
 function pdJobNow() {
-  if (pdUi.jobS !== S || pdUi.jobTick !== S.tick || !pdUi.job || pdUi.jobPh !== S.pd.ph) { pdUi.job = pdJob(); pdUi.jobS = S; pdUi.jobTick = S.tick; pdUi.jobPh = S.pd.ph; }
+  const lk = S.pd.les ? JSON.stringify(S.pd.les) : '';   // D27: a lesson's step changes the line at once
+  if (pdUi.jobS !== S || pdUi.jobTick !== S.tick || !pdUi.job || pdUi.jobPh !== S.pd.ph || pdUi.jobLes !== lk) { pdUi.job = pdJob(); pdUi.jobS = S; pdUi.jobTick = S.tick; pdUi.jobPh = S.pd.ph; pdUi.jobLes = lk; }
   return pdUi.job;
 }
 // For R: where the helper arrow points now ({ x, z, k, label }), or null: while the arrows are on (Settings; on by
 // default in the prototype) or the Next job line was tapped (for PDUI.PEEK_S), and no card is open.
 function pdHintTarget() {
   if (!pdUiOn() || pdUi.board || pdUi.sum) return null;
+  const lc = pdLesCard();
+  if (lc && lc.hold) return null;   // D27: a lesson's first card is open (its Show me shows the arrow)
   const j = pdJobNow(), pk = pdUi.peek, peek = !!pk && pk.key === j.key && animT < pk.until;
   if (pk && !peek) pdUi.peek = null;
   return j.t && (guideOn() || peek) ? j.t : null;
@@ -16505,6 +16925,8 @@ function pdActs() {
         if (!run.ready || !near(p)) return;
         const at = rrWaveSpot(S, tr.id) || rrUiBeside(S, c.id);   // D27: T's wave spot (on the deck, clear of the footbridges' flights beside the engine)
         out.push({ key: 'e' + tr.id, text: 'Send off', sub: pdRunId(run), x: p.x, z: p.z, y: 3.4, cls: 'pdSend', go: () => pdGo(at.x, at.z, { t: 'rrWaveOff', tr: tr.id }) });
+      } else if (run.kind === 'pax' ? d27On(S.track, 'board') : d27On(S.track, 'handling')) {
+        // D27 (U): the coach's and the car's buttons are pdActs27's.
       } else if (run.kind === 'pax') {
         const s = ppCarStatus(S, c.id), n = s ? pdFirstNum(s.line) : 0, at = s && s.spot ? s.spot : rrUiBeside(S, c.id);
         if (n > 0 && at && near(at)) out.push({ key: 'c' + c.id, text: `Punch (${n})`, sub: `coach ${i}`, x: at.x, z: at.z, y: 3.0, cls: 'pdPunch', go: () => pdGo(at.x, at.z, { t: 'punch', tr: tr.id, car: c.id }) });
@@ -16521,9 +16943,73 @@ function pdActs() {
     if (!n || !near(sh.door)) continue;
     out.push({ key: 'd' + sh.id, text: `Deliver (${n})`, sub: sh.name, x: sh.door.x, z: sh.door.z, y: 1.8, cls: 'pdDeliver', go: () => pdGo(sh.door.x, sh.door.z, { t: 'pgDeliver', shop: sh.id }) });
   }
-  return out;
+  pdActs27(out, near);
+  // D27 (plans/d27-tech.md 6.2): at most three at once, nearest first.
+  for (const a of out) a.d = Math.hypot(a.x - P.x, a.z - P.z);
+  return out.sort((a, b) => a.d - b.d).slice(0, PDUI.MAX_ACTS);
 }
-const PD_AVOID = ['topleft', 'tutTask', 'nextJob', 'pdGuide', 'pdBoard', 'pdSum', 'panel', 'carPanel', 'carry', 'centre', 'settings', 'banner', 'dbgBar'];
+// D27 (U): the buttons for punching on board (Step in, Punch (n), Step off) and freight handling (Open door, Close door,
+// Lift, Put, Take cart, Leave cart, Deliver (n), Pick up (n)), each only where it can be done. Commands as the contract
+// (plans/d27-tech.md 3.1, 4.2, 4.3): pbEnter { tr, stock, end }, pbPunch { tr, stock, seat }, pbLeave; frDoor { stock },
+// frTake { item }, frPut { to }, frCart { act, x, z } (u, to two decimals), frDeliver { shop }, frPickup { shop }.
+function pdActs27(out, near) {
+  const P = S.player, board = d27On(S.track, 'board'), hand = d27On(S.track, 'handling'), y = (x, z, up) => (walkDeckY(S.track, x, z) || 0) + up;
+  const reach = p => !!p && Math.hypot(p.x - P.x, p.z - P.z) <= PDUI.REACH, r2 = v => Math.round(v * 100) / 100;
+  if (board) for (const { run, tr } of rrUiStanding(S)) {
+    if (run.through || run.kind !== 'pax') continue;
+    tr.consist.forEach((c, i) => {
+      if (c.k === 'loco') return;
+      const s = pdLesCall(pbCarStatus, S, c.id), n = pdNum(s && s.toPunch);
+      if (P.in && P.in.stock === c.id) {
+        const p = pdLesNearest(S, pdLesToPunch(S, c.id));
+        if (p) out.push({ key: 'pp' + c.id, text: `Punch (${n || 1})`, sub: `coach ${i}`, x: p.x, z: p.z, y: (Number.isFinite(p.y) ? p.y : 1.6) + 2.4, cls: 'pdPunch', go: () => send({ t: 'pbPunch', tr: tr.id, stock: c.id, seat: p.seat }) });
+      } else if (!P.in && n > 0) {
+        const e = pdLesEndSpot(S, tr, c, s, P.x, P.z);
+        if (e && near(e)) out.push({ key: 'pe' + c.id, text: 'Step in', sub: `coach ${i}: ${n} to punch`, x: e.x, z: e.z, y: y(e.x, e.z, 2.6), cls: 'pdPunch', go: () => pdGo(e.x, e.z, { t: 'pbEnter', tr: tr.id, stock: c.id, end: e.end }) });
+      }
+    });
+  }
+  if (board && P.in) out.push({ key: 'pl', text: 'Step off', sub: 'the train', x: P.x + 0.01, z: P.z, y: (Number.isFinite(P.y) ? P.y : 1.6) + 3.2, cls: 'pdLeave', go: () => send({ t: 'pbLeave' }) });   // over the player
+  if (!hand) return;
+  const D = S.pd, inHand = pdLesAt(S, 'HAND'), cart = pdLesCart(S);
+  if (D.ph === 'day') for (const { run, tr } of rrUiStanding(S)) {
+    if (run.through || run.kind === 'pax') continue;
+    tr.consist.forEach((c, i) => {
+      if (c.k === 'loco') return;
+      const s = pdLesCall(frCarStatus, S, c.id);
+      if (!s) return;
+      const un = pdNum(s.unload), ld = pdNum(s.load), at = pdLesDoorSpot(S, tr, c, s);
+      if (!at || !near(at)) return;
+      if (!s.doorOpen && (un > 0 || ld > 0)) out.push({ key: 'fo' + c.id, text: 'Open door', sub: `car ${i}`, x: at.x, z: at.z, y: y(at.x, at.z, 2.2), cls: 'pdGoods', go: () => pdGo(at.x, at.z, { t: 'frDoor', stock: c.id }) });
+      else if (s.doorOpen && !un && !ld && !inHand.length) out.push({ key: 'fc' + c.id, text: 'Close door', sub: `car ${i}`, x: at.x, z: at.z, y: y(at.x, at.z, 2.2), cls: 'pdGoods', go: () => pdGo(at.x, at.z, { t: 'frDoor', stock: c.id }) });
+      else if (s.doorOpen && inHand.length && ld > 0 && inHand.some(q => pdLesIsOut(S, q)) && reach(at)) out.push({ key: 'fi' + c.id, text: 'Put', sub: `in car ${i}`, x: at.x, z: at.z, y: y(at.x, at.z, 2.2), cls: 'pdGoods', go: () => send({ t: 'frPut', to: { kind: 'CAR', stockId: c.id } }) });
+    });
+  }
+  // The cart: take it, leave it, put a good on it.
+  if (cart && cart.held) out.push({ key: 'kl', text: 'Leave cart', sub: 'park it here', x: P.x - 0.01, z: P.z, y: y(P.x, P.z, 3.4), cls: 'pdGoods', go: () => send({ t: 'frCart', act: 'park', x: r2(P.x), z: r2(P.z) }) });
+  else if (cart && reach(cart)) {
+    if (inHand.length) out.push({ key: 'kp', text: 'Put', sub: 'on the cart', x: cart.x, z: cart.z, y: y(cart.x, cart.z, 1.6), cls: 'pdGoods', go: () => send({ t: 'frPut', to: { kind: 'CART' } }) });
+    else out.push({ key: 'kt', text: 'Take cart', sub: 'push it', x: cart.x, z: cart.z, y: y(cart.x, cart.z, 1.6), cls: 'pdGoods', go: () => send({ t: 'frCart', act: 'grab', x: r2(cart.x), z: r2(cart.z) }) });
+  }
+  // A good in reach to lift (hands free), or a storage cell under the player to put it in.
+  if (!inHand.length && !(cart && cart.held)) {
+    const L = (pdLesCall(frDrawList, S) || []).filter(g => g && Number.isFinite(g.x) && g.place !== 'HAND' && !(g.place && g.place.kind === 'HAND') && reach(g));
+    L.sort((a, b) => Math.hypot(a.x - P.x, a.z - P.z) - Math.hypot(b.x - P.x, b.z - P.z) || (b.y || 0) - (a.y || 0));
+    const g = L[0];
+    if (g) out.push({ key: 'gl', text: 'Lift', sub: (GOODS27[g.kind] && g.kind) || 'the good', x: g.x, z: g.z, y: (g.y || 0) + 1.6, cls: 'pdGoods', go: () => send({ t: 'frTake', item: g.id }) });
+  } else if (inHand.length) {
+    const cell = storeCellOf(P.x, P.z);
+    if (cell) { const at = storeCellAt(cell.block, cell.c, cell.r); out.push({ key: 'gp', text: 'Put', sub: 'here', x: at.x, z: at.z, y: at.y + 1.4, cls: 'pdGoods', go: () => send({ t: 'frPut', to: { kind: 'CELL', block: cell.block, c: cell.c, r: cell.r } }) }); }
+  }
+  // In town: deliver what is on the cart for a shop at its door; pick up what a shop has put out.
+  const by = pdLesCartByShop(S), pk = pdLesCall(frPickups, S) || {};
+  for (const sh of SHOPS27) {
+    const n = (by[sh.id] || []).length, m = pdNum(pk[sh.id]);
+    if (n && near(sh.door)) out.push({ key: 'fd' + sh.id, text: `Deliver (${n})`, sub: sh.name, x: sh.door.x, z: sh.door.z, y: y(sh.door.x, sh.door.z, 1.8), cls: 'pdDeliver', go: () => pdGo(sh.door.x, sh.door.z, { t: 'frDeliver', shop: sh.id }) });
+    if (m && near(sh.pickup)) out.push({ key: 'fp' + sh.id, text: `Pick up (${m})`, sub: sh.name, x: sh.pickup.x, z: sh.pickup.z, y: y(sh.pickup.x, sh.pickup.z, 1.8), cls: 'pdDeliver', go: () => pdGo(sh.pickup.x, sh.pickup.z, { t: 'frPickup', shop: sh.id }) });
+  }
+}
+const PD_AVOID = ['topleft', 'tutTask', 'nextJob', 'pdGuide', 'pdLesson', 'pdBoard', 'pdSum', 'panel', 'carPanel', 'carry', 'centre', 'settings', 'banner', 'dbgBar'];
 function pdRects(extra) {
   const out = [];
   for (const id of PD_AVOID.concat(extra || [])) {
@@ -16547,7 +17033,7 @@ function pdBtn(key) {
   return b;
 }
 function pdActsHud(hide) {
-  const used = {}, taken = [], avoid = hide ? [] : pdRects(), W = window.innerWidth, H = window.innerHeight;
+  const used = {}, taken = [], avoid = hide ? [] : pdRects($('toast').classList.contains('show') ? ['toast'] : []), W = window.innerWidth, H = window.innerHeight;
   const c = pdUi.acts;   // worked out each tick (or 4 times a second while paused); placed every frame
   if (!hide && (!c || c.S !== S || c.tick !== S.tick || animT - c.t > 0.25 || animT < c.t)) pdUi.acts = { S, tick: S.tick, t: animT, list: pdActs() };
   if (!hide) for (const a of pdUi.acts.list) {
@@ -16558,7 +17044,7 @@ function pdActsHud(hide) {
     if (!b._w) { b.style.visibility = 'hidden'; b.hidden = false; b._w = b.offsetWidth; b._h = b.offsetHeight; }
     // Over its place; where a neighbour's button or the HUD is, a row higher, else a row lower, else to a side.
     const s = toScreen(a.x, a.y, a.z), w = b._w, h = b._h;
-    const r = [[0, 0], [0, -(h + 6)], [0, h + 6], [w + 6, 0], [-(w + 6), 0], [0, -2 * (h + 6)]].map(([dx, dy]) => ({ l: s.x - w / 2 + dx, r: s.x + w / 2 + dx, t: s.y - h + dy, b: s.y + dy }))
+    const r = [[0, 0], [0, -(h + 6)], [0, h + 6], [w + 6, 0], [-(w + 6), 0], [0, -2 * (h + 6)], [0, 2 * (h + 6)], [w + 6, h + 6], [-(w + 6), h + 6]].map(([dx, dy]) => ({ l: s.x - w / 2 + dx, r: s.x + w / 2 + dx, t: s.y - h + dy, b: s.y + dy }))
       .find(q => q.l >= 4 && q.r <= W - 4 && q.t >= 4 && q.b <= H - 4 && !avoid.some(o => pdHit(q, o, 4)) && !taken.some(o => pdHit(q, o, 4)));
     if (!r) continue;
     taken.push(r); used[a.key] = true;
@@ -16602,6 +17088,14 @@ function pdGuideDraw(t, taken) {
 // ---- The schedule board card (the morning, a tap on the board in the world, a tap on the Next job line then) ----
 const PD_STATE_WORDS = { due: 'Due', coming: 'Coming in', passing: 'Passing', here: 'In', ready: 'Ready', leaving: 'Leaving', gone: 'Gone', cancelled: 'Cancelled' };
 const pdEnd = e => (e === 'W' ? 'west' : 'east');
+// D27 (U): the day's figures so far, for the board card once the day has started (seated and punched; goods stored,
+// loaded, delivered and picked up), or '' with neither D27 part on.
+function pdFiguresSoFar() {
+  const m = S.pd.stats, b = d27On(S.track, 'board'), h = d27On(S.track, 'handling'), out = [];
+  if (b) out.push(`${m.seated || 0} seated, ${m.punched || 0} punched`);
+  if (h) out.push(`${m.unloaded || 0} unloaded, ${m.stored || 0} stored, ${m.loaded || 0} loaded, ${m.delivered || 0} delivered, ${m.picked || 0} picked up`);
+  return out.length ? 'So far today: ' + out.join('; ') + '.' : '';
+}
 function pdOpenBoard() {
   if (!pdUi.board) {
     closePanel(); closeCarPanel(); closeSettings();
@@ -16618,12 +17112,12 @@ function pdCloseBoard() {
 function pdBoardHud() {
   if (!pdUi.board) return;
   const D = S.pd, rows = pdBoardRows(S), morning = D.ph === 'morning';
-  const sig = D.ph + D.day + '|' + rows.map(r => r.state + r.lateMin).join(',') + (D.day === 0 && morning);
+  const sig = D.ph + D.day + '|' + rows.map(r => r.state + r.lateMin).join(',') + (D.day === 0 && morning) + (morning ? '' : pdFiguresSoFar());
   if (sig === pdUi.boardSig) return;
   pdUi.boardSig = sig;
   $('pdBoardTitle').textContent = `Today's trains, day ${D.day + 1}`;
   const intro = $('pdBoardIntro');
-  intro.textContent = morning && D.day === 0 ? PD_GUIDE[0] : morning ? 'The same trains as every day. Start the day when you are ready.' : '';
+  intro.textContent = morning && D.day === 0 ? PD_GUIDE[0] : morning ? 'The same trains as every day. Start the day when you are ready.' : pdFiguresSoFar();
   intro.hidden = !intro.textContent;
   const box = $('pdBoardRows');
   box.textContent = '';
@@ -16670,6 +17164,22 @@ function pdTrainTap(hit) {
     pdGo(at.x, at.z, { t: 'rrWaveOff', tr: tr.id });
     return true;
   }
+  if (run.kind === 'pax' && d27On(S.track, 'board')) {
+    const s = pdLesCall(pbCarStatus, S, c.id), n = pdNum(s && s.toPunch), i = tr.consist.indexOf(c);
+    if (S.player.in) { toast(n ? `Tap a traveller (or Punch) to punch a ticket: ${n} to punch in coach ${i}.` : `Every ticket in coach ${i} is punched.`); return true; }
+    const e = n > 0 && pdLesEndSpot(S, tr, c, s, S.player.x, S.player.z);
+    if (!e) { toast(`Nobody to punch in coach ${i}.`); return true; }
+    pdGo(e.x, e.z, { t: 'pbEnter', tr: tr.id, stock: c.id, end: e.end });
+    return true;
+  }
+  if (run.kind !== 'pax' && d27On(S.track, 'handling')) {
+    const s = pdLesCall(frCarStatus, S, c.id), at = pdLesDoorSpot(S, tr, c, s), i = tr.consist.indexOf(c);
+    if (!s || !at) { toast(`Car ${i}: nothing to do.`); return true; }
+    const un = pdNum(s.unload), ld = pdNum(s.load);
+    if (!s.doorOpen && (un || ld)) { pdGo(at.x, at.z, { t: 'frDoor', stock: c.id }); return true; }
+    toast(`Car ${i}: ` + (un ? `${un} to unload onto the cart` : ld ? `${ld} to load from the OUT rows` : 'nothing more to do') + '.');
+    return true;
+  }
   if (run.kind !== 'pax') { send({ t: 'useCar', stock: c.id }); return true; }
   const s = ppCarStatus(S, c.id), at = s && s.spot ? s.spot : rrUiBeside(S, c.id);
   if (!s || !(pdFirstNum(s.line) > 0) || !at) { toast(`Nobody is waiting at coach ${tr.consist.indexOf(c)}.`); return true; }
@@ -16684,11 +17194,14 @@ function pdOpenSum() {
   if (pdUi.held === null) { pdUi.held = speed; if (speed) setSpeed(0); }
   const worst = Math.round((m.worstLate || 0) / 60), pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   $('pdSumTitle').textContent = `Day ${m.day + 1} is over`;
+  // D27 (U): travellers seated and punched (board), goods stored and picked up (handling).
+  const b27 = d27On(S.track, 'board'), h27 = d27On(S.track, 'handling');
   const lines = [
     ['Trains', `${m.trains}: ${m.onTime} on time, ${m.late} late` + (m.late ? ` (the latest ${worst} min)` : '')],
-    ['Tickets', `${m.punched} punched` + (m.missed ? `, ${m.missed} left behind` : '')],
-    ['Goods', `${m.unloaded} unloaded, ${m.loaded} loaded, ${m.delivered} delivered`],
+    ['Tickets', (b27 ? `${m.seated || 0} seated, ` : '') + `${m.punched} punched` + (m.missed ? `, ${m.missed} ${b27 ? 'rode unpunched' : 'left behind'}` : '')],
+    ['Goods', h27 ? `${m.unloaded} unloaded, ${m.stored || 0} stored, ${m.loaded} loaded` : `${m.unloaded} unloaded, ${m.loaded} loaded, ${m.delivered} delivered`],
   ];
+  if (h27) lines.push(['Town', `${m.delivered} delivered, ${m.picked || 0} picked up`]);
   const box = $('pdSumBody');
   box.textContent = '';
   for (const [k, v] of lines) { const r = document.createElement('div'); r.className = 'pdSumRow'; r.innerHTML = '<b></b><span></span>'; r.firstChild.textContent = k; r.lastChild.textContent = v; r.dataset.k = k.toLowerCase(); box.appendChild(r); }
@@ -16726,10 +17239,77 @@ function pdGuideHud(hide) {
   if (el.hidden !== !show) el.hidden = !show;
 }
 $('pdGuideOk').addEventListener('click', () => { pdUi.guideSeen = S.pd.day === 0 ? S.pd.guide || 0 : pdUi.guideSeen; $('pdGuide').hidden = true; });
+// ---- D27 (U): the lesson card (block "Lessons (D27)" in "prototype day" holds the lessons; this is their screen) ----
+// The lesson in hand (pdLesCurOpen): its first step waits for Show me as a bottom sheet with the clock held (as the
+// morning board), Skip closes the lesson; a later step is a slip under the Next job line (the clock runs), OK folds it
+// away until the next step (the Next job line and the arrow still say it), Skip closes the lesson. The Next job line
+// (pdJob, pdLesJob) and the pixel arrow (pdHintTarget) point at each step.
+// The lesson card's state for the page: { id, step, hold } of the card shown, or null.
+function pdLesCard() {
+  if (!pdUiOn() || !pdLesOn(S) || S.pd.ph === 'morning' || S.pd.ph === 'summary') return null;
+  const o = pdLesCurOpen();
+  if (!o) return null;
+  const wait = (S.pd.lesWait || []).includes(o.L.id);
+  if (pdUi.lesAct && (pdUi.lesAct.S !== S || !(pdUi.lesAct.skip ? S.pd.les[pdUi.lesAct.id] >= 0 : wait) || pdUi.lesAct.id !== o.L.id)) pdUi.lesAct = null;   // the command has been done
+  if (pdUi.lesAct && pdUi.lesAct.skip) return null;
+  return { id: o.L.id, step: o.step, hold: o.step === 0 && wait && !pdUi.lesAct, L: o.L };
+}
+// The card's small picture: the first atlas frame of the lesson's list, scaled up whole pixels to fit.
+function pdLesPicDraw(L) {
+  const cv = $('pdLesPic'), key = pixKey(...(L.pic || []));
+  if (cv.dataset.key === (key || '')) return;
+  const g = cv.getContext('2d'), f = key && pixF(key);
+  g.clearRect(0, 0, cv.width, cv.height);
+  cv.dataset.key = key || '';
+  if (!f) return;
+  const [si, x, y, w, h] = f, k = Math.max(1, Math.floor(Math.min(cv.width / w, cv.height / h)));
+  g.imageSmoothingEnabled = false;
+  g.drawImage(PIXA.imgs[si], x, y, w, h, Math.round((cv.width - w * k) / 2), Math.round((cv.height - h * k) / 2), w * k, h * k);
+}
+function pdLesHud(hideSlip) {
+  const c = pdLesCard(), el = $('pdLesson');
+  // The clock waits while a lesson's first card does (as the morning board); it comes back with Show me or Skip.
+  const hold = !!c && c.hold && !pdUi.board && !pdUi.sum;
+  if (hold && pdUi.lesHeld === null) { pdUi.lesHeld = speed; if (speed) setSpeed(0); }
+  else if (!hold && pdUi.lesHeld !== null) { const h = pdUi.lesHeld; pdUi.lesHeld = null; if (h && !pdUi.board && !pdUi.sum && speed === 0) setSpeed(h); }
+  const key = c ? c.id + ':' + c.step : '';
+  const show = !!c && (hold || (!hideSlip && !c.hold && pdUi.lesFold !== key));
+  if (el.hidden !== !show) el.hidden = !show;
+  if (!show) return false;
+  el.classList.toggle('hold', hold);
+  const st = c.L.steps[c.step], text = st.text(S), title = `Lesson: ${c.L.title} (${c.step + 1} of ${c.L.steps.length})`;
+  if ($('pdLesTitle').textContent !== title) $('pdLesTitle').textContent = title;
+  if ($('pdLesText').textContent !== text) $('pdLesText').textContent = text;
+  el.dataset.les = c.id; el.dataset.step = String(c.step);
+  pdLesPicDraw(c.L);
+  if (!hold) {   // the slip under the Next job line (and its own row when the line wraps)
+    const nj = $('nextJob'), top = !nj.hidden && nj.getClientRects().length && window.innerWidth < window.innerHeight ? Math.round(nj.getBoundingClientRect().bottom + 8) : '';
+    const want = top === '' ? '' : top + 'px';
+    if (el.style.top !== want) el.style.top = want;
+  } else if (el.style.top) el.style.top = '';
+  return hold;
+}
+$('pdLesShow').addEventListener('click', () => {
+  const c = pdLesCard();
+  if (!c) return;
+  send({ t: 'pdLesson', id: c.id, act: 'show' });
+  pdUi.lesAct = { S, id: c.id, skip: false }; pdUi.lesFold = null;
+  pdLesHud(false);   // the clock runs again now (the command is done on the next tick)
+  // Show me: the arrow shows the place even with the arrows off in Settings (as a tap on the Next job line does).
+  const j = pdLesJob();
+  if (j && !guideOn()) pdUi.peek = { key: j.key, until: animT + PDUI.PEEK_S };
+});
+$('pdLesSkip').addEventListener('click', () => { const c = pdLesCard(); if (!c) return; send({ t: 'pdLesson', id: c.id, act: 'skip' }); pdUi.lesAct = { S, id: c.id, skip: true }; pdLesHud(false); });
+$('pdLesOk').addEventListener('click', () => { const c = pdLesCard(); if (c) pdUi.lesFold = c.id + ':' + c.step; $('pdLesson').hidden = true; });
+$('setLessons').addEventListener('click', () => {
+  if (!pdUiOn() || !pdLesOn(S)) return;
+  send({ t: 'pdLesson', act: 'replay' }); pdUi.lesFold = null;
+  toast('The lessons will come again, each at its moment.');
+});
 // Every frame from updateHud.
 function pdHud() {
   const on = pdUiOn();
-  if (pdUi.body !== on) { pdUi.body = on; document.body.classList.toggle('pdui', on); if (!on) { for (const id of ['pdBoard', 'pdSum', 'pdGuide', 'guideLabel', 'guideEdge']) $(id).hidden = true; pdUi.board = pdUi.sum = false; $('toast').style.top = ''; pdUi.layout = ''; document.body.classList.remove('pdcard'); } }
+  if (pdUi.body !== on) { pdUi.body = on; document.body.classList.toggle('pdui', on); if (!on) { for (const id of ['pdBoard', 'pdSum', 'pdGuide', 'pdLesson', 'guideLabel', 'guideEdge']) $(id).hidden = true; pdUi.board = pdUi.sum = false; $('toast').style.top = ''; pdUi.layout = ''; document.body.classList.remove('pdcard'); } }
   if (!on) { for (const b of Object.values(pdUi.btns)) b.hidden = true; return; }
   const D = S.pd, sod = rrSod(S.time);
   $('clock').textContent = `Day ${D.day + 1}\n${pdClock(sod)}`;
@@ -16742,13 +17322,15 @@ function pdHud() {
   if (pdUi.sum && D.ph !== 'summary') pdCloseSum();
   if (pdUi.sumFor !== S && pdUi.sum) pdCloseSum();
   pdBoardHud();
-  const job = pdJobNow(), cards = pdUi.board || pdUi.sum;
+  const job = pdJobNow(), lesHold = pdLesHud(pdUi.board || pdUi.sum), cards = pdUi.board || pdUi.sum || lesHold;
   if (document.body.classList.contains('pdcard') !== cards) document.body.classList.toggle('pdcard', cards);   // the carry readout steps aside for a card
   pdNextHud(job, nextJobOn() && !ui.sendMode);
   pdGuideHud(cards);
+  const lr = $('setLesRow'), lon = pdLesOn(S);
+  if (lr.hidden !== !lon) lr.hidden = !lon;
   // Messages (toast) go under the top rows (the clock, the Next job line, the guide's slip), never over a button.
-  const tb = Math.round(Math.max(...['topleft', 'nextJob', 'pdGuide', 'tutTask'].map(id => $(id)).filter(e => !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect().bottom)) + 8);
-  if (pdUi.layout !== String(tb)) { pdUi.layout = String(tb); $('toast').style.top = tb + 'px'; }
+  const tb = Math.round(Math.max(...['topleft', 'nextJob', 'pdGuide', 'tutTask', 'pdLesson'].map(id => $(id)).filter(e => e.id !== 'pdLesson' || !e.classList.contains('hold')).filter(e => !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect().bottom)) + 8);
+  if (pdUi.layout !== String(tb) || $('toast').style.top !== tb + 'px') { pdUi.layout = String(tb); $('toast').style.top = tb + 'px'; }   // D27: again after a load (tgSlideHide clears it)
   const hide = cards || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || !!S.player.ride || !curPoses;
   const taken = pdActsHud(hide);
   pdGuideDraw(hide ? null : pdHintTarget(), taken);
@@ -16763,7 +17345,7 @@ function pdEventFirst(e) {
   return false;
 }
 function pdOnEvent(e) {
-  if (e.t === 'rrRefused' || e.t === 'ppRefused' || e.t === 'pgRefused') { toast(e.why + '.'); return; }
+  if (e.t === 'rrRefused' || e.t === 'ppRefused' || e.t === 'pgRefused' || e.t === 'pbRefused' || e.t === 'frRefused') { toast(String(e.why).replace(/\.$/, '') + '.'); return; }   // D27: P's and F's refusals too
   const run = e.run !== undefined && S.rr ? S.rr.runs.find(r => r.id === e.run) : null;
   if (e.t === 'pdMorning') { pdUi.boardDay = null; return; }
   if (!run || !rrMsgOn()) return;
@@ -18929,7 +19511,9 @@ window.__railhead = {
     pgShedOpen, pgRunGoods, pgPutCarWhy, pgNoCartRects, pgTagOf, pgShopOf, pgAboard, pgOutWaiting, carryNoCartRects, carryHeld },
   // D25 (U): the prototype's screens (block "Prototype (D25)" in "HUD and panels").
   pdui: { PDUI, PD_GUIDE, rows: st => pdBoardRows(st || S), job: () => { pdUi.jobTick = -1; pdUi.needsT = -1e9; return pdJobNow(); }, hint: () => { pdUi.jobTick = -1; return pdHintTarget(); },
-    acts: () => pdActs(), get ui() { return pdUi; }, openBoard: pdOpenBoard, closeBoard: pdCloseBoard, openSum: pdOpenSum, tap: pdTap, on: pdUiOn },
+    acts: () => pdActs(), get ui() { return pdUi; }, openBoard: pdOpenBoard, closeBoard: pdCloseBoard, openSum: pdOpenSum, tap: pdTap, on: pdUiOn,
+    // D27 (U): the lesson card and the D27 jobs.
+    lesCard: () => { const c = pdLesCard(); return c && { id: c.id, step: c.step, hold: c.hold }; }, lesJob: () => pdLesJob(), trainTap: hit => pdTrainTap(hit), figures: () => pdFiguresSoFar() },
   pix: { PIX, PIX_PROJ, PIX_FONT, pixOn, pixProject, pixUnproject, pixToScreen, pixGroundAt, pixPickTrain, pixSort, pixItem, pixScale, pixScene, pixScreenRect, pixBehind, get stats() { return PIX.stats; },
     PIXA, pixPick, pixSprite, pixBoardDraw, pixBoardRowsNow, pixLookAt, pixPlayerPoint, pixBridges, pixWalkerY, pixHeading, pixDirOf, pixPersonKey, pixBaseScale, pixTextWidth, get atlasReady() { return PIXA.ready; },
     get drawn() { return PIX.drawn; }, get order() { return PIX.order; }, get canopyFade() { return PIX.canopyFade; }, pickAt: (px, py) => pickAt(px, py),

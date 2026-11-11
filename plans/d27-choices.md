@@ -47,6 +47,31 @@ stands 2 hours 40), with the punching of a passenger train at the same time. Opt
 - a porter who stacks while the player punches tickets;
 - fewer goods a day.
 
+## Decided provisionally by the lead: half the goods and a re-timed day (2026-11-11, second decision)
+
+The day was still overloaded for one worker, so (switchable back: the page's `?goods27=full` and `?sched27=t`):
+1. **About half the goods:** 8 for the town and 4 for the railroad a day (was 14 and 6): f1 a crate of dry goods, a
+   whiskey barrel and bar iron; f2 a furniture crate, newspapers and a hay bale; f3 the express box and lumber; out
+   grain and hides (f2), mail and an empty keg (f3). Every kind still comes within the week: seed (Tuesday), a beer keg
+   (Thursday), flour (Saturday), and the plough (Monday), the piano (Wednesday) and the wheels (Friday) as before.
+   Alternative: the foundation's table (14 and 6).
+2. **The day re-timed** (nine runs kept): p1 06:55-07:50, f1 08:40-10:00, p2 10:30-11:15, x1 12:05, p3 12:50-13:35,
+   f2 14:00-15:50, p4 16:40-17:25, **p5 18:00-18:40 now from the east** (was from the west), f3 19:00-20:25. Each
+   freight train stands for its measured handling plus about 20 minutes, passenger trains stand in the gaps, and a
+   train leaving towards an end and the next one coming in from it are 50 minutes apart (the line is single track).
+   Alternative: T's day.
+3. The integrator's additions: **the cart stops in the middle of the street** (one stop for the two shops facing
+   each other; `FR.CART_MID`); the cart is loaded for town from one place by the east block.
+
+**Result** (the bot, seed 1866): **day 1 runs on time (worst 19 minutes)**, every ticket punched, all goods unloaded
+and loaded; but the evening (from 21:21) delivers 6 of 9 goods by 23:59 and picks up none. Day 2 starts by fetching
+the cart left at the far end of the street, so f1 leaves 82 minutes late and the late morning follows (worst 33 in, 82
+out), and its evening does not finish either. The evening needs about 3 to 3.5 hours (loading about an hour, the push
+to town 35 minutes, the shops about 8 minutes a stop), which does not fit between f3 (20:25) and midnight.
+**The aims are not met;** check-d27-day still fails on the evening. Options: f3 earlier (a freight train in the
+afternoon instead of the evening), the goods for town loaded onto the cart during the afternoon's gaps, a shorter
+cart path (a crossing at the west end too), or the evening's delivery the next morning before f1.
+
 ## Integrator (I)
 
 1. **The camera stays with the player, centred** (the designer asked): R's dead zone, look-ahead and framing of the car

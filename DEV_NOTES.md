@@ -838,13 +838,28 @@ Provisional, every old value switchable (plans/d27-choices.md, "Decided provisio
   still run late from f2 on (day 1 worst 113 minutes, day 2 89) and the evening does not finish: check-d27-day fails on
   the deliveries, pickups, day 2's loading and the day's end. The bot's pbPunch is no longer resent while he walks the
   aisle. check-protogoods is back to F's version (the D25 handcart fits before 23:59).
+
+### Half the goods and a re-timed day (2026-11-11, the lead's second decision)
+
+- `SHOP_GOODS27` is now `SHOP_GOODS27_HALF` (8 in and 4 out a day; every kind within the week); `?goods27=full` gives
+  `SHOP_GOODS27_FULL`, which check-handling and check-delivery use (they count its exact numbers).
+- `PROTO_SCHEDULE` is `PROTO_SCHEDULE_I` (freight standing times from the measured handling plus about 20 minutes, the
+  passenger trains in the gaps, 50 minutes between a train leaving towards an end and one coming in from it, p5 from
+  the east); `PROTO_SCHEDULE_T` (T's) with `?d27=0` (the D25 flows' checks) or `?sched27=t`.
+- The cart stops in the middle of the street (`FR.CART_MID`); loading for town from one place by the east block (8u);
+  `FR.KEEP_LAST` (preloading the cart in the afternoon) tried and left off: it made p4 and p5 40 minutes late.
+- check-d27world expects 8 goods a day.
+- **Measured** (check-d27-day): day 1 worst 19 minutes; day 2 worst 82 (the cart fetched from the end of the street
+  first); the evenings do not finish (day 1: 6 of 9 delivered, no pickups). check-d27-day fails on the evening.
+
 ## Next
 
 Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays
 two days and `check-d27-day.js` reports them (see "D27", "The integration"). The day works end to end except that the
 evening cannot carry a day's goods in time; the lead's provisional evening decision is built (the keeper carries,
-shorter handling: see "The lead's evening decision") and the evening's own work is down to about 3.4 hours, but the
-daytime freight work still runs 1.5 to 2 hours late, so the aims are not met yet; every provisional choice is in
+shorter handling: see "The lead's evening decision") and the evening's own work is down to about 3.4 hours, and with half the
+goods and the re-timed day the first day runs on time, but the evening still does not fit before midnight, so the aims are
+not met yet; every provisional choice is in
 `plans/d27-choices.md` for the designer's morning review. Next: the lead's review, the review page with the choices,
 then the designer's decision on the evening's workload.
 

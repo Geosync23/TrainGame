@@ -11077,7 +11077,7 @@ function frJobHint(S) {
     const nearCart = cartPose && !cartPose.held && Math.hypot(cartPose.x - P.x, cartPose.z - P.z) < 10 && cartRoom(id) && (free || frGood(itemType(S, id)).verb !== 'truck');
     const moreFit = c => itemsAt(S, { kind: 'CAR', stockId: c.id }).some(q => !frIsOut(S, q) && frGood(itemType(S, q)).verb !== 'truck' && cartRoom(q));
     const atDoor = trains.some(t => t.town > 0 && t.tr.consist.some(c => moreFit(c)) && t.tr.consist.some(c => { const sp = CARGO_CAR_RULES[c.k] ? frCartDoorSpot(S, c.id) : null; return sp && cartAt(sp); }));   // (D27 integration: only while that train still has goods for the town that go on the cart; else to storage, not back on it)
-    if (nearCart && ((atDoor && F.offCart !== id) || free || preload)) return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
+    if (nearCart && ((atDoor && F.offCart !== id) || (free && (evening || F.offCart !== id)) || preload)) return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
     const row = storeRowOf(id);
     return hint({ t: 'frPut', to: { kind: 'CELL' } }, 'Stack it in storage', storeCellAt(row.block, row.c0, row.r));
   }

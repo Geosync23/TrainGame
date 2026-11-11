@@ -18,7 +18,7 @@ const { openGame } = require('./browser');
 
 module.exports = async function checkDelivery() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d27=handling' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d27=handling&goods27=full' });   // (D27 integration: the foundation's full table of goods, whose numbers this check counts; the game now has half: SHOP_GOODS27_HALF)
   try {
     const r = await page.evaluate(() => {
       const R = window.__railhead, X = R.fr, D = R.d27, out = { bad: [], info: {} }, B = m => { if (out.bad.length < 60) out.bad.push(m); };

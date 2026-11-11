@@ -59,7 +59,7 @@ module.exports = async function checkD27World() {
       if (D.TOWN27.buildings.length !== 12 || D.SHOPS27.length !== 12 || D.TOWN27.houses.length !== 8 || Object.keys(D.GOODS27).length !== 16) B('the town\'s or the goods\' tables are not complete');
       for (const sh of D.SHOPS27) if (!R.cargo.CARGO_TAGS[sh.tag]) B(`no cargo tag for ${sh.id}`);
       const daily = Object.values(D.SHOP_GOODS27.in).reduce((n, l) => n + l.reduce((m, q) => m + q[2], 0), 0);
-      if (daily !== 14) B(`the day's goods for the town: ${daily}, expected 14`);
+      if (daily !== 8) B(`the day's goods for the town: ${daily}, expected 8 (D27 integration: half the goods, SHOP_GOODS27_HALF; the foundation's table had 14)`);
       if (JSON.stringify(D.flags()) !== JSON.stringify({ board: true, handling: true, town: true, lessons: true })) B(`the D27 switches: ${JSON.stringify(D.flags())} (expected on: board (P), handling (F), town (W), lessons (U); all on at the integration)`);
       // ---- Clearances ----
       const half = Math.max(St.cars.coach.wid, St.cars.boxcar.wid, St.loco.wid) / 2;

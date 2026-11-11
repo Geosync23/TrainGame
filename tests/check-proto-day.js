@@ -111,7 +111,7 @@ module.exports = async function checkProtoDay() {
   const t0 = Date.now();
   let shots = [];
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d27=0' });
     try {
       await page.evaluate(src => { window.__pdsrc = src; }, PROTO_BOT_SRC);
       await page.evaluate(RUNNER);
@@ -190,7 +190,7 @@ module.exports = async function checkProtoDay() {
   // ---- Screenshots, portrait and landscape; the busiest frame ----
   const frames = [];
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&d27=0' });
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P(`${orient}: the atlas did not load`));
       await page.waitForTimeout(400);

@@ -64,7 +64,7 @@ async function busy(page) {
 module.exports = async function checkPixRender() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&d27=0' });
     const P = m => problems.push(`${orient}: ${m}`);
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));

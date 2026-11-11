@@ -24,7 +24,7 @@ const { openGame, screenshotPath } = require('./browser');
 
 module.exports = async function checkProtoGoods() {
   const problems = [];
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d27=0' })   // D27: the D25 goods, with the D27 switches off;
   try {
     const r = await page.evaluate(() => {
       const R = window.__railhead, G = R.pg, X = R.proto;

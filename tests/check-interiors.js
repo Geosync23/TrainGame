@@ -69,9 +69,11 @@ module.exports = async function checkInteriors() {
         if (D.some(d => hidden.includes(d.id))) B('a rider inside a whole coach is drawn');
         // The camera (D27 integration, the designer's "stay centred"): the agent on the view's middle pixel inside the coach
         // too, and the coach's middle in the middle third of the view.
-        const v = X.view, m = X.pixProject(c.cx, 1.6, c.cz), mx = m.x - v.vx, my = m.y - v.vy;
-        { const d = D.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key), fx = f ? d.l + f[5] - v.vx - Math.floor(v.nw / 2) : null, fy = f ? d.t + f[6] - v.vy - Math.floor(v.nh / 2) : null;
-          if (!f || fx || fy) B(`inside the coach the agent is not on the view's middle pixel (${fx}, ${fy})`); }
+        const v = X.view, m = X.pixProject(c.cx, 1.6, c.cz), mx = m.x - v.vx, my = m.y - v.vy;   // (the buffer's pixels: nw, nh are the buffer's size)
+        // (Polish, 2026-11-11: the camera sits between native pixels: the middle of his feet's pixel within half a native
+        // pixel, plus a device pixel's rounding, of the screen's middle.)
+        { const d = D.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key), fx = f ? d.l + f[5] + 0.5 - v.camX - v.vw / 2 : null, fy = f ? d.t + f[6] + 0.5 - v.camY - v.vh / 2 : null, lim = 0.5 + 1 / v.scale + 1e-6;
+          if (!f || Math.abs(fx) > lim || Math.abs(fy) > lim) B(`inside the coach the agent is not on the view's middle pixel (${fx}, ${fy})`); }
         if (Math.abs(mx - v.nw / 2) > v.nw / 3 || Math.abs(my - v.nh / 2) > v.nh / 3) B(`the camera does not frame the coach (its middle at ${mx.toFixed(0)}, ${my.toFixed(0)} in a ${v.nw} x ${v.nh} view)`);
         // A tap on a seated traveller's own visible pixel picks him, with his seat and coach.
         let picked = 0, tried = 0;
@@ -82,7 +84,7 @@ module.exports = async function checkInteriors() {
           for (let w = 0; w < d.h && !spot; w++) for (let u = 0; u < d.w && !spot; u++) if (top(d.l + u, d.t + w) === d) spot = [d.l + u, d.t + w];
           if (!spot) continue;
           tried++;
-          const x = (spot[0] + 0.5 - v.vx) * v.scale / v.dpr, y = (spot[1] + 0.5 - v.vy) * v.scale / v.dpr, h = X.pixPick(x, y);
+          const x = (spot[0] + 0.5 - v.camX) * v.scale / v.dpr, y = (spot[1] + 0.5 - v.camY) * v.scale / v.dpr, h = X.pixPick(x, y);
           if (h && h.k === 'pp' && h.id === d.hit.id && h.seat === d.hit.seat && String(h.stock) === c.stock) picked++;
           else B(`a tap on seated traveller ${d.hit.id} picked ${JSON.stringify(h)}`);
         }

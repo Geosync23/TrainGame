@@ -838,6 +838,63 @@ Provisional, every old value switchable (plans/d27-choices.md, "Decided provisio
   still run late from f2 on (day 1 worst 113 minutes, day 2 89) and the evening does not finish: check-d27-day fails on
   the deliveries, pickups, day 2's loading and the day's end. The bot's pbPunch is no longer resent while he walks the
   aisle. check-protogoods is back to F's version (the D25 handcart fits before 23:59).
+### Polish after the designer's play (2026-11-11)
+
+The designer's four requests from playing the published build; small edits in "starting world layout", the pixel
+renderer, "HUD and panels" (Settings) and "start".
+- **Smooth camera** ("very hitchy ... if I walk exactly right or left it's smooth. Any deflection in that angle and it
+  judders"). Measured in Chromium at phone size (390 x 844, scale 3 at 2 device px a CSS px: a native pixel is 1.5 CSS
+  px), walking at 1x in six directions, on this build and on the published one (900d660): **two causes.** (1) The view
+  moved in whole native pixels: walking at 3u/s the camera moves 0.4 to 0.9 native px a frame, so it stood still on
+  about 55 of 135 frames and jumped 1.5 CSS px on the others; walking off the screen's horizontal, x and y stepped on
+  different frames (a stair-step, steps of 2.1 CSS px; up to 3 on the published build), about 1.3 CSS px off a straight
+  glide. Walking exactly across the screen only x steps, which reads as smooth. (2) Ground chunks were made in the
+  frame that first showed them: on a long walk 2 or 3 in one frame; with the CPU throttled 4x (a phone) a chunk took up
+  to 47 ms, frames up to 114 ms (98th percentile 12.8 ms), a jolt each time a row of chunks came into view.
+  **The fix:** the camera moves continuously. The buffer is one native pixel bigger each way (`PIX.vw`, `vh`: the
+  screen in native px; `nw`, `nh`: the buffer); the art is still drawn on whole native pixels at `PIX.vx`, `vy`, and
+  the canvas is shifted by the rest with a CSS transform in whole device pixels (`pixCamSet`; `PIX.camX`, `camY` = the
+  view's exact top-left, which `pixToScreen` / `pixToNative` and the view getter's `camX`, `camY` use). Locked on him,
+  his feet's pixel is within half a native pixel of the screen's middle (he steps by a native pixel against a gliding
+  world, as his sprite always did). The ground: the chunks within `PIX.CH_AHEAD` (160) native px round the view, twice
+  that on the side the view is moving to, are made ahead one at a time in idle time (`pixChunkAhead`:
+  requestIdleCallback, or a timer after the frame), and the cache keeps that ring; chunks are 128 px at scale 3 and up
+  (`pixChunkSize`: at most about 5 ms each on a 4x-throttled CPU), 256 px at scale 1 and 2 (128 px cost about 1 ms more a
+  frame there in copies); the in-frame budget `PIX.CH_MS` is 4 (a jump to a new place still makes one at once).
+  `PIX.chunkStats.inFrame`, `inFrameMax`, `ahead` count them.
+  **Measured after:** the camera moves every frame (0 still frames while walking but for a few at 0.3 native px a
+  frame straight down, under one device pixel), largest step 1.0 to 1.1 CSS px, within one device pixel of a straight
+  glide in every direction. A tour of the map at 12u/s with 4x throttling: 0 chunks made in a frame (440 ahead), frames
+  98th percentile 6.5 ms (12.8 before), longest gap between frames 77 ms (144 before; the headless browser's own jitter
+  is about 50). check-pixperf (4x throttled) within its budgets as before (station 5.4 ms portrait, 6.9 at scale 1).
+  check-pixrender section 8 (new): five walking directions at 1x, the view's step each frame within 1.5 device px of an
+  even glide and never still while he walks, at most one chunk made in a frame (measured: 0.6 to 1.0 device px, 0
+  still frames, 0 chunks in frames; with the old whole-pixel camera put back it fails: 1.7 to 3.8 device px, up to 53
+  still frames). The centred checks (check-pixrender, check-interiors) allow the half native pixel; check-protoworld's
+  canvas size the extra native pixel.
+- **Platform ends** ("add more wood to the right side of the platform where the bridge and step down to the switch
+  is"): platform 1's planks reach the lever frames' stages at both ends, `PROTO.P1_DECK` x -31.5 to 31.5 (P1 itself,
+  the 60u the trains, travellers and checks use, is unchanged). `PROTO_DECKS[0]` (walking height 0.375) and the drawn
+  deck use it; a side that is not a whole number of units ends with a cell laid back from its far end. The stage (at
+  ground level) stays a step down from the deck, as the designer described it. Screenshots
+  `test-output/polish-{before,after}-{east,west}-{portrait,landscape}.png`.
+- **Depot set back** ("a few notches back from the platform for visibility but add extra wood too"): `PROTO.STATION`
+  2.5u back (centre z -24.3, front -19.8, back -28.8; the door spot -19.0), the gap planked: `PROTO.APRON` (x -10 to 10,
+  z -19.8 to platform 1's back edge, deck height, its +x end edged) in `PROTO_DECKS` and the drawn deck. The canopy,
+  benches and the schedule board (TRAINS) stay with the platform; the townsfolk's `door_station` node follows the door
+  (`STATION.door.z + 0.5`, was -16.0); the depot square and the street's end are unchanged (the depot covers 1.8u of
+  the square's dirt and 0.8u of the street's end behind it; the paths round it, `sq_*`, `sta_*`, `street_s`, stay
+  clear). `proto-layout.json` re-exported (`p1Deck`, `apron`, the new `station`). Screenshots
+  `test-output/polish-{before,after}-station{,-wide}-{portrait,landscape}.png`.
+- **Start over** (Settings, "a button in the settings to reset the save file"): asks "This deletes your saved game.
+  Start over?" (Start over / Cancel), then `saveDeleteAll` stops saving, waits for a save in progress, deletes this
+  world's saves (IndexedDB 'auto' and 'world-<PAGE_WORLD>', localStorage 'railhead-quicksave' and
+  'railhead-quicksave-<PAGE_WORLD>') and reloads into a new game; other worlds' saves and the Settings choices stay.
+  check-save's new part (`checkStartOver`; screenshot `polish-reset-confirm-portrait.png`).
+- **Checks run** (one by one): check-pixrender, check-interiors, check-pixperf, check-d27world, check-save, check-levers,
+  check-townsfolk, check-protoworld pass; check-d27-day fails as before on the evening (the integrator's work) with the
+  same figures and the same end hash (c4cf39d5) as on 549993e.
+
 ## Next
 
 Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays

@@ -296,9 +296,10 @@ module.exports = async function checkProtoWorld() {
         const v = X.view;
         if (!Number.isInteger(v.scale) || v.scale < 1) B(`scale ${v.scale} is not a whole number`);
         // D27 (R): the canvas holds the native pixels and is shown v.scale times bigger (CSS size, pixelated), covering the
-        // screen's device pixels (to less than one native pixel over).
+        // screen's device pixels (to less than one native pixel over; polish, 2026-11-11: one more native pixel each way, for
+        // the camera's shift between native pixels).
         const sw = parseFloat(cv.style.width) * devicePixelRatio, sh = parseFloat(cv.style.height) * devicePixelRatio, dw = Math.round(innerWidth * devicePixelRatio), dh = Math.round(innerHeight * devicePixelRatio);
-        if (cv && (cv.width !== v.nw || cv.height !== v.nh || Math.abs(sw - cv.width * v.scale) > 0.01 || sw < dw || sw >= dw + v.scale || sh < dh || sh >= dh + v.scale)) B(`canvas ${cv.width} x ${cv.height} shown at ${sw} x ${sh} device px, not covering the screen's ${dw} x ${dh} at scale ${v.scale}`);
+        if (cv && (cv.width !== v.nw || cv.height !== v.nh || Math.abs(sw - cv.width * v.scale) > 0.01 || sw < dw + v.scale || sw >= dw + 2 * v.scale || sh < dh + v.scale || sh >= dh + 2 * v.scale)) B(`canvas ${cv.width} x ${cv.height} shown at ${sw} x ${sh} device px, not covering the screen's ${dw} x ${dh} at scale ${v.scale}`);
         // The picture is not blank: many colours in the canvas.
         const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, cols = new Set();
         for (let i = 0; i < d.length; i += 4 * 97) cols.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);

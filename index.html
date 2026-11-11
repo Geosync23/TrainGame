@@ -3303,7 +3303,7 @@ const RR_SCHEDULE = [
 // and f3 earlier so the evening starts at 20:15. With the D25 flows and their bot (tests/proto-bot.js) the worst
 // lateness over two days is 13 minutes (seeds 1866, 3, 5, 7, 11, 42; the foundation's first cut: 91); check-levers.js
 // plays it with the lever frames only.
-const PROTO_SCHEDULE = [
+const PROTO_SCHEDULE_T = [
   { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(6, 55), dep: RR_H(7, 50), cars: 3 },
   { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 40), dep: RR_H(10, 20), cars: 4, unload: 6, load: 0 },
   { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(10, 50), dep: RR_H(11, 35), cars: 3 },
@@ -3314,6 +3314,27 @@ const PROTO_SCHEDULE = [
   { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(17, 20), dep: RR_H(18, 0), cars: 2 },
   { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(18, 45), dep: RR_H(20, 15), cars: 4, unload: 4, load: 2 },
 ];
+// D27 integration (the lead's provisional decision, 2026-11-11, with half the goods: SHOP_GOODS27_HALF): each freight
+// train stands for its measured handling (the hints' player: f1 about 60 minutes, f2 90, f3 85) plus about 20 minutes,
+// and the passenger trains stand in the gaps, so a freight train's work and a passenger train's tickets overlap as
+// little as they can; a train leaving towards an end and one coming in from it 50 minutes apart (the line beyond the
+// switches is single track and a train needs about 25 minutes to clear it); p5 now comes from the east (was the west),
+// so f3 can follow it in. Nine runs kept. T's day (PROTO_SCHEDULE_T) is the one for the D25 flows (?d27=0) and the page's ?sched27=t.
+const PROTO_SCHEDULE_I = [
+  { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(6, 55), dep: RR_H(7, 50), cars: 3 },
+  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 40), dep: RR_H(10, 0), cars: 4, unload: 6, load: 0 },
+  { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(10, 30), dep: RR_H(11, 15), cars: 3 },
+  { id: 'x1', kind: 'freight', from: 'W', to: 'E', track: 't2', arr: RR_H(12, 5), dep: RR_H(12, 5), cars: 4, through: true },
+  { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(12, 50), dep: RR_H(13, 35), cars: 2 },
+  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 't3', arr: RR_H(14, 0), dep: RR_H(15, 50), cars: 4, unload: 4, load: 4 },
+  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(16, 40), dep: RR_H(17, 25), cars: 3 },
+  { id: 'p5', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(18, 0), dep: RR_H(18, 40), cars: 2 },
+  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(19, 0), dep: RR_H(20, 25), cars: 4, unload: 4, load: 2 },
+];
+const PROTO_SCHEDULE = (() => {
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+  return q && (q.get('sched27') === 't' || q.get('d27') === '0') ? PROTO_SCHEDULE_T : PROTO_SCHEDULE_I;
+})();
 // D27 (plans/d27-tech.md 1.2; the foundation's, T owns it afterwards): the prototype's stock at the D27 scale. Engine and
 // tender are one vehicle, as RR.LOCO. cars: what a consist is made of ({ k, len, mass, ... } copied into each vehicle;
 // wid, h: its width and top (u), floor: the car floor's height, level with the cargo platform). vmax: the engine's top
@@ -4086,7 +4107,7 @@ const GOODS27 = {
 // commodity, n]] } extra; pickups[shop]: [commodity, n] the shop puts out on its boardwalk at PICKUP_S for the next day's
 // OUT loads (6 a day, so the day balances; the plan's "the express box returns every day" is left to F: it needs the
 // bank's box to wait a day); OUT_DAWN: goods for the railroad waiting in storage when day 0 starts (as D25's PG.OUT_DAWN).
-const SHOP_GOODS27 = {
+const SHOP_GOODS27_FULL = {
   in: {
     f1: [['store', 'drygoods', 2], ['store', 'flour', 1], ['saloon', 'whiskey', 1], ['saloon', 'beer', 1], ['smithy', 'barIron', 1]],
     f2: [['hotel', 'furniturecrate', 1], ['newspaper', 'newsprint', 2], ['livery', 'hay', 1]],
@@ -4104,6 +4125,30 @@ const SHOP_GOODS27 = {
   PICKUP_S: 17 * 3600,
   OUT_DAWN: [['grain', 2], ['hides', 1], ['kegempty', 1], ['mail', 1], ['oresample', 1]],
 };
+// D27 integration (the lead's provisional decision, 2026-11-11: the day was too full for one worker): about half the goods,
+// 8 for the town and 4 for the railroad a day, every kind still coming within the week (sacks and kegs on their weekdays;
+// the plough, the piano and the wheels as before). The page's ?goods27=full gives the foundation's table (SHOP_GOODS27_FULL)
+// back; F's own checks use it for their exact numbers.
+const SHOP_GOODS27_HALF = {
+  in: {
+    f1: [['store', 'drygoods', 1], ['saloon', 'whiskey', 1], ['smithy', 'barIron', 1]],
+    f2: [['hotel', 'furniturecrate', 1], ['newspaper', 'newsprint', 1], ['livery', 'hay', 1]],
+    f3: [['bank', 'expressbox', 1], ['undertaker', 'planks', 1]],
+  },
+  out: { f2: [['grain', 1], ['hides', 1]], f3: [['mail', 1], ['kegempty', 1]] },
+  weekly: {
+    0: { in: [['f1', 'feed', 'plough', 1]] },
+    1: { in: [['f3', 'feed', 'seed', 1]], out: [['f2', 'furniturecrate', 1]] },
+    2: { in: [['f2', 'saloon', 'piano', 1]] },
+    3: { in: [['f1', 'saloon', 'beer', 1]], out: [['f2', 'wheelMended', 1]] },
+    4: { in: [['f1', 'smithy', 'wheelNew', 2]] },
+    5: { in: [['f3', 'store', 'flour', 1]] },
+  },
+  pickups: { feed: [['grain', 1]], livery: [['hides', 1]], saloon: [['kegempty', 1]], newspaper: [['mail', 1]] },
+  PICKUP_S: 17 * 3600,
+  OUT_DAWN: [['grain', 1], ['hides', 1], ['kegempty', 1], ['mail', 1]],
+};
+const SHOP_GOODS27 = typeof location !== 'undefined' && new URLSearchParams(location.search).get('goods27') === 'full' ? SHOP_GOODS27_FULL : SHOP_GOODS27_HALF;
 // Placeholder towns until the towns package builds real ones (provisional): the hub and Willow Ford.
 const CARGO_TOWNS = [{ id: 0, name: 'Hub' }, { id: 1, name: 'Willow Ford' }];
 // Destination tags: colour (Okabe-Ito, colourblind-safe), one letter and a shape, so no one cue is needed alone.
@@ -9877,6 +9922,7 @@ const FR = {
   TIME_K: 0.6,
   KEEPER: true,
   KEEPER_U: 3.0,     // the keeper's walk with a good (u a game minute)
+  CART_MID: true,    // the cart stops in the middle of the street, between the shops facing each other
   KEEP_LAST: false,  // the last freight train's goods for the town stay on the cart for the evening (false: stacked first)
   CART_NIGHT: true,  // the cart may stay in town overnight with the day's pickups (false: back to the OUT rows in the evening)
   COLLECT: ['plough'], // goods their shop collects itself from the standing train ([] restores the player unloading them)
@@ -10099,7 +10145,9 @@ function frShopSlot(S, shop, slot) {
 }
 // The cart's spot at a car's door (on the loading edge, east of the doorway) and at a shop (in the carriageway).
 function frCartDoorSpot(S, stock) { const g = frCarGeo(S, stock); return g ? { x: g.out.x + FR.CART_DOOR_DX, z: FR.CART_EDGE_Z, axis: 'x' } : null; }
-function frShopCartSpot(shop) { const sh = frShop(shop); return { x: sh.door.x + (sh.side === 'W' ? 1 : -1) * FR.SHOP_CART_DX, z: sh.door.z, axis: 'z' }; }
+// (D27 integration: in the middle of the street, so one stop serves the shops facing each other on both sides; F's: the
+// carriageway FR.SHOP_CART_DX from the door, FR.CART_MID false)
+function frShopCartSpot(shop) { const sh = frShop(shop); return { x: FR.CART_MID ? (sh.door.x + (sh.side === 'W' ? 1 : -1) * FR.SHOP_CART_DX) * 0 : sh.door.x + (sh.side === 'W' ? 1 : -1) * FR.SHOP_CART_DX, z: sh.door.z, axis: 'z' }; }
 // The cart's spot in the lane by a storage row's middle.
 function frLaneSpot(row) { const B = PROTO.STORE[row.block]; return { x: B.x0 + (row.c0 + row.c1 + 1) / 2 * B.cell, z: FR.LANE_Z, axis: 'x' }; }
 // Where a good is now ({ x, y, z } of its middle on the map) and where the player stands to take it (or, with to, to
@@ -10999,7 +11047,13 @@ function frJobHint(S) {
   // D27 integration (provisional, the evening too long): deliveries and pickups whenever the player has time between
   // trains (frDayFree), not only in the evening; a trip under way (the cart off the cargo platform with goods for the
   // town on it) carries on.
-  const free = evening || frDayFree(S, onCart.filter(id => !frIsOut(S, id)).length) || (S.pd && S.pd.ph === 'day' && cartPose && !frOnDock(cartPose) && cartPose.z < 3 && onCart.some(id => !frIsOut(S, id)));   // (a trip under way: the cart over track 2 on its way to town)
+  const nextIn = S.rr.runs.filter(r => r.ph === 'due').reduce((m, r) => Math.min(m, r.arr), Infinity), townOn = onCart.filter(id => !frIsOut(S, id)).length;
+  const free = evening || frDayFree(S, townOn) || (S.pd && S.pd.ph === 'day' && cartPose && !frOnDock(cartPose) && cartPose.z < 3 && townOn
+    && nextIn - S.time > FR.DAY_SWITCH_S + FR.TRIP_S / 2 + townOn * FR.TRIP_GOOD_S);   // (a trip under way carries on only while the next train is far enough off)   // (a trip under way: the cart over track 2 on its way to town)
+  // D27 integration (FR.KEEP_LAST): once only the day's last freight train is still to come and nothing stands with work,
+  // the cart is loaded for the evening in the day (preload) and the last train's goods for the town stay on it.
+  const freightLeft = S.rr.runs.filter(r => r.kind === 'freight' && !r.through && (r.ph === 'due' || r.ph === 'in' || r.ph === 'stand') && r.day === rrDayOf(S)).length;
+  const preload = !!(FR.KEEP_LAST && S.pd && S.pd.ph === 'day' && freightLeft <= 1 && !trains.some(t => t.town || t.need) && cartPose && frOnDock(cartPose));
   const cartAt = spot => cartPose && !cartPose.held && Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) < 0.75;
   const cartTo = (spot, text) => P.tool === cart ? hint({ t: 'frCart', act: 'park', x: Math.round(spot.x * 100), z: Math.round(spot.z * 100), f: spot.axis === 'z' ? (P.z >= spot.z ? 'ne' : 'sw') : (P.x <= spot.x ? 'se' : 'nw') }, text, spot)
     : hint({ t: 'frCart', act: 'grab' }, 'Take the platform cart', cartPose);
@@ -11020,10 +11074,10 @@ function frJobHint(S) {
       if (!free || !cartPose || cartPose.held || frOnDock(cartPose) || Math.hypot(cartPose.x - P.x, cartPose.z - P.z) > 6 || !cartRoom(id)) return hint({ t: 'frPut', to: { kind: 'CELL' } }, 'Stack it in the goods for the railroad', storeCellAt(STORE27_OUT[0].block, 5, STORE27_OUT[0].r));
       return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
     }
-    const nearCart = cartPose && !cartPose.held && Math.hypot(cartPose.x - P.x, cartPose.z - P.z) < 8 && cartRoom(id) && (free || frGood(itemType(S, id)).verb !== 'truck');
+    const nearCart = cartPose && !cartPose.held && Math.hypot(cartPose.x - P.x, cartPose.z - P.z) < 10 && cartRoom(id) && (free || frGood(itemType(S, id)).verb !== 'truck');
     const moreFit = c => itemsAt(S, { kind: 'CAR', stockId: c.id }).some(q => !frIsOut(S, q) && frGood(itemType(S, q)).verb !== 'truck' && cartRoom(q));
     const atDoor = trains.some(t => t.town > 0 && t.tr.consist.some(c => moreFit(c)) && t.tr.consist.some(c => { const sp = CARGO_CAR_RULES[c.k] ? frCartDoorSpot(S, c.id) : null; return sp && cartAt(sp); }));   // (D27 integration: only while that train still has goods for the town that go on the cart; else to storage, not back on it)
-    if (nearCart && ((atDoor && F.offCart !== id) || free)) return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
+    if (nearCart && ((atDoor && F.offCart !== id) || free || preload)) return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
     const row = storeRowOf(id);
     return hint({ t: 'frPut', to: { kind: 'CELL' } }, 'Stack it in storage', storeCellAt(row.block, row.c0, row.r));
   }
@@ -11058,7 +11112,7 @@ function frJobHint(S) {
   // (D27 integration: after the day's last freight train has come in, its goods for the town stay on the cart for the
   // evening's trip instead of being stacked and loaded again)
   const lastIn = !S.rr.runs.some(r => r.kind === 'freight' && !r.through && (r.ph === 'due' || r.ph === 'in') && r.day === rrDayOf(S));
-  if (town.length && !free && !(FR.KEEP_LAST && lastIn)) {
+  if (town.length && !free && !(FR.KEEP_LAST && (lastIn || preload))) {
     const laneOf = id => frLaneSpot(storeRowOf(id)), d = id => Math.hypot(laneOf(id).x - cartPose.x, laneOf(id).z - cartPose.z);
     town.sort((a, b) => d(a) - d(b) || a - b);
     const spot = laneOf(town[0]);
@@ -11088,7 +11142,7 @@ function frJobHint(S) {
       return hint({ t: 'frTake', item: first }, `Take the goods for ${t.run.name}`, sp.good);
     }
   }
-  if (!free) {
+  if (!free && !preload) {
     // Goods for the railroad on the cart with no train for them: into the OUT rows.
     const outCart = top(onCart.filter(id => frIsOut(S, id)));
     if (outCart.length && !trains.some(t => t.need)) return frHintStore(S, outCart[0], cartPose, cartAt, cartTo, hint);
@@ -11111,10 +11165,11 @@ function frJobHint(S) {
   const fit = outCart.length || (town.length && !atStation) ? undefined : stored.filter(id => cartRoom(id)).sort((a, b) => frGood(itemType(S, b)).cells - frGood(itemType(S, a)).cells || near(a, b) || a - b)[0];
   if (fit !== undefined) {
     const w = I.where[fit], spot = frLaneSpot({ block: w.block, c0: w.c, c1: w.c });
-    if (!cartAt(spot) && (cartPose.held || Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) > 6)) return cartTo(spot, 'Bring the cart to the town\'s goods');
+    if (!cartAt(spot) && (cartPose.held || Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) > 8)) return cartTo(spot, 'Bring the cart to the town\'s goods');   // (D27 integration: 8u, was 6: one place by the east block serves all its rows)
     if (P.tool === cart) return hint({ t: 'frCart', act: 'park' }, 'Leave the cart', cartPose);
     return hint({ t: 'frTake', item: fit }, 'Load the cart for town', frSpotOf(S, w, itemType(S, fit)).good);
   }
+  if (preload && !free) return frHintOut(S, hint);   // (loaded for the evening: the trip itself waits for it)
   // D27 integration: at a shop where the cart stands, its goods to go out are loaded in the same stop (once its own
   // deliveries are done), so the cart does not come back for them (on the last trip: nothing left in storage for the town).
   const stop = cartPose && !cartPose.held ? SHOPS27.find(q => Math.hypot(cartPose.x - q.door.x, cartPose.z - q.door.z) <= FR.NEAR && !town.some(id => frShopOf(S, id) === q.id)

@@ -53,3 +53,24 @@ settles each one; nothing in the contract's names or anchors was changed quietly
 ## Placeholder parts (for the town artist)
 - Until the town module sets `REPLACES_GROUND_BASE = True`, the pipeline lays a plain ground base: the mockup's
   grass, the street, platform decks 3 px high, and the walkway, in groundlayer.py.
+
+## D27 town, nature, props, tiles (A3)
+- Contract: plans/proto-sprites.md section 6. Built from the plan's numbers (d27-tech.md 1.4, 2.4, 2.5) because the
+  layout export does not carry the D27 town yet; nothing in the sprites depends on the export, and the mock scene's
+  `LOTS` and `cell_kind` (street27_scene.py) are the only places to change when it does.
+- Palette: `pal27.py` appends nine ramps (sage, rock, creek, straw, brick, umber, slate, pine, bloom) to the engine at
+  import time; no existing ramp index moves. Each sheet stays an indexed PNG.
+- Ground shadows: the plan retires the baked ground, so buildings get a separate flat `shadow` part and trees carry
+  their shadow in the frame (50% ink checker, hard alpha). Draw building shadows after the walk, before uprights.
+- East row: the hanging signs stand on a post at the boardwalk's street edge with the arm out over the street; hung
+  from the false front they were hidden by its own south end in the fixed view.
+- Ground tiles are 14 x 8 px frames (the pixel centres inside the 16 x 8 cell diamond): they tile exactly at (8, 4)
+  steps.
+- Big part frames are padded so the lot-centre anchor lies inside them (signs, yards, awnings): mostly clear pixels,
+  cheap in the indexed PNGs.
+- registry.OWNERS gained `sprites_nature` (`nat/`) and `sprites_ground` (`tile/`, `dock/`).
+- Station area (station27.py): the plan's `sw/lever/<N|R>` is `bld/lever/<N|R>` (sw/ is the track module's);
+  the lever frames are `bld/leverframe/W` and `/E` (their number boards differ). The station mock scene draws
+  the track itself (straight, no crossovers) with the engine at the D27 gauge, only for the review picture.
+- The D25 baked ground layer (ground.png, about 136 KB of the atlas) is still built from the D25 layout by
+  sprites_town.ground(); it can go once R's chunked ground lands.

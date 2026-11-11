@@ -32,6 +32,8 @@ OWNERS = {
     'sprites_carts': ('cart27/', 'truck/'),        # D27 (A2): the platform cart and the hand truck
     'sprites_town': ('bld/', 'cart/', 'deck/', 'walk/', 'plat/', 'prop/', 'ground/', 'street/',
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
+    'sprites_nature': ('nat/',),           # D27 nature (A3)
+    'sprites_ground': ('tile/', 'dock/'),  # D27 ground tiles and the cargo platform's pieces (A3)
 }
 
 

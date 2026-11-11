@@ -54,6 +54,11 @@ Needs Python 3 with numpy and Pillow. Where the art reads the contract in its ow
 | `track.py`, `sprites_track.py` | track in the ground layer, switch points overlays, switch stands (`sw/`) | pipeline, trains and track |
 | `people.py`, `sprites_people.py` | all characters and animations (`ppl/`); first version from the mockup's pixel maps, still with the first build's names | people artist |
 | `town.py`, `sprites_town.py` | station, storage shed, shops, houses, trees, props, the D25 handcart (goods and tags moved to sprites_goods.py for D27), platforms, walkway, ground tiles (`bld/`, `cart/`); first version from the mockup's shapes, still with the first build's names | buildings and town artist |
+| `pal27.py`, `town27.py`, `props27.py`, `town27_reg.py` | D27 town at the new scale: the twelve street buildings by parts, church, school, houses, street furniture, horses (`bld/`, `prop/`; registered from sprites_town.py); `pal27.py` appends nine muted ramps to the palette | buildings and town artist (A3) |
+| `station27.py` | D27 station area: depot, canopy, schedule board, freight house, footbridges, lever frames, the cargo platform's pieces (`bld/`, `dock/`) | A3 |
+| `nature.py`, `sprites_nature.py` | D27 nature: trees, brush, rocks, grass, tumbleweed (`nat/`) | A3 |
+| `sprites_ground.py` | D27 ground tiles, 1u iso cells for the ground the browser composes (`tile/`) | A3 |
+| `street27_scene.py` | D27 review: the mock street and station scenes at true scale and the review sheets (out/d27-*.png) | A3 |
 | `proto-layout.json` | the layout, exported by the game (`node tools/pixelart/export-layout.js`, the architect's) | architect |
 
 Each artist edits only their own files. If you need a change in a shared file (engine, harness, registry,

@@ -106,7 +106,7 @@ module.exports = async function checkHandling() {
         if (!e.some(x => x.t === 'frRefused' && /stacked on it/.test(x.why))) B('a crate under another was taken');
         e = pl.send({ t: 'frTake', item: crates[3].id });
         const high = e.find(x => x.t === 'frStep' && x.id === crates[3].id);
-        if (!high || high.dur !== 32 + 8) B(`lifting a crate off the fourth layer: a ${high && high.dur} s step (carry 32 + stackHigh 8)`);
+        if (!high || high.dur !== X.FR.PICK_S.carry + X.FR.HIGH_S) B(`lifting a crate off the fourth layer: a ${high && high.dur} s step (carry ${X.FR.PICK_S.carry} + stackHigh ${X.FR.HIGH_S}; the times are F's scaled by FR.TIME_K)`);
         pl.send({ t: 'frPut', to: { kind: 'CART', cell: 0 } });
         const barrel = R.cargo.itemCreate(S, wbFor('whiskey', 'saloon'), X.frStoreSpot(S, null, 'barrel', 'SALOON'), null).id;
         pl.send({ t: 'frTake', item: barrel });
@@ -144,7 +144,7 @@ module.exports = async function checkHandling() {
         const fr = [];
         e = pl.send({ t: 'frDoor', stock: car.id }, () => fr.push(X.frDoorOpen(S, car.id)));
         const st = e.find(x => x.t === 'frStep' && x.a === 'door'), done = e.find(x => x.t === 'frDoor');
-        if (!st || st.dur !== 40 || !done || !done.open || done.time - st.time !== 40) B(`the door: a ${st && st.dur} s step, done ${done && done.time - st.time} s after it started`);
+        if (!st || st.dur !== X.FR.DOOR_S || !done || !done.open || done.time - st.time !== X.FR.DOOR_S) B(`the door: a ${st && st.dur} s step, done ${done && done.time - st.time} s after it started`);
         if (fr.some((v, i) => i && v < fr[i - 1]) || X.frDoorOpen(S, car.id) !== 1) B(`the door slid ${JSON.stringify(fr.map(v => +v.toFixed(2)))}`);
         let inside = null;
         e = pl.send({ t: 'frTake', item: id }, () => { if (X.frInCar(S) === car.id && inside === null) inside = { y: P.y, pose: X.frPose(S) }; });
@@ -170,7 +170,8 @@ module.exports = async function checkHandling() {
           if (saveAt && !log.mid && S.fr.job && S.fr.job.steps[S.fr.job.i] && S.fr.job.steps[S.fr.job.i].s === 'act' && S.fr.job.t0 >= 0 && S.time > saveAt) log.mid = JSON.stringify({ state: S });
           for (const x of pl.evs.splice(0)) { if (x.t === 'hour') { log.hours++; const a = D.itemAudit(S); if (a.length && log.audit.length < 5) log.audit.push(hm(S) + ' ' + a[0]); }
           if (/Refused$/.test(x.t) && log.refused.length < 8) log.refused.push(hm(S) + ' ' + x.t + ' ' + x.why);
-          if (x.t === 'rrArrived') { const run = S.rr.runs.find(q => q.id === x.run); log.ready0[run.svc] = R.rr.cgReady(S, run); } } };
+          if (x.t === 'rrArrived') { const run = S.rr.runs.find(q => q.id === x.run); log.ready0[run.svc] = R.rr.cgReady(S, run); if (run.kind === 'freight') log.tIn = (log.tIn || 0) + X.frRunIn(S, run).length; }
+          if (x.t === 'frDelivered' && x.collected) log.coll = (log.coll || 0) + 1; } };
         for (let guard = 0; guard < 30000 && S.pd.ph !== 'summary'; guard++) {
           auditHour();
           const ready = S.rr.runs.find(q => q.ph === 'stand' && q.ready);
@@ -193,14 +194,16 @@ module.exports = async function checkHandling() {
       if (a.hash !== b.hash) B(`the same day played twice gave different hashes ${a.hash} and ${b.hash}`);
       if (L.waved.length !== 3) B(`freight trains sent off: ${L.waved.join(', ')} (expected f1, f2 and f3)`);
       for (const svc of ['f1', 'f2', 'f3']) if (L.ready0[svc] !== false) B(`${svc} was ready as it came in (${L.ready0[svc]})`);
-      const sum = S.pd.sum || {}, tIn = S.rr.runs.filter(q => q.day === 0 && q.kind === 'freight').reduce((n, q) => n + X.frRunIn(S, q).length, 0);
-      if (sum.unloaded !== tIn || tIn !== 15) B(`the summary says ${sum.unloaded} unloaded; the tables bring ${tIn} on Monday (15)`);
+      // (D27 integration: counted as the trains came in (the runs are gone once the day ends after midnight); the plough is
+      // collected by its shop (FR.COLLECT), not unloaded by the player)
+      const sum = S.pd.sum || {}, tIn = L.tIn || 0, coll = L.coll || 0;
+      if (sum.unloaded + coll !== tIn || tIn !== 15) B(`the summary says ${sum.unloaded} unloaded and ${coll} collected by their shop; the tables bring ${tIn} on Monday (15)`);
       if (sum.loaded !== 6) B(`the summary says ${sum.loaded} loaded (expected 6: f2 4, f3 2)`);
       if (L.hours < 15) B(`only ${L.hours} game hours were audited`);
       for (const m of L.audit) B('the day: audit: ' + m);
       for (const m of L.refused) B('the day: refused: ' + m);
       // (D27 integration: a trip to town between trains may hand goods in from the cart, unstored: stored or delivered)
-      if (S.fr.tot.unloaded !== 15 || S.fr.tot.stored + S.fr.tot.delivered < 15) B(`totals ${JSON.stringify(S.fr.tot)}`);
+      if (S.fr.tot.unloaded + (L.coll || 0) !== 15 || S.fr.tot.stored + S.fr.tot.delivered < 15) B(`totals ${JSON.stringify(S.fr.tot)}`);
       out.info.day = { waved: L.waved, hints: L.hints, sum: { unloaded: sum.unloaded, loaded: sum.loaded, delivered: sum.delivered }, tot: S.fr.tot, hash: a.hash };
       // A save made in the middle of a step reloads and plays on to the same state.
       if (!L.mid) B('no save was made mid-step');

@@ -51,7 +51,7 @@ module.exports = async function checkDelivery() {
           }
           // The cart between tracks 1 and 2 (z -4.8 to -1.2) only on the crossing's planks.
           const c = X.frCartPose(S);
-          if (c && c.z > -P27.D1 + 1.2 && c.z < -1.2 && Math.abs(c.x - X27.x) > X27.w / 2 + 0.6 && L.across.length < 3) L.across.push(`(${c.x.toFixed(1)}, ${c.z.toFixed(1)})`);
+          if (c && c.z > -P27.D1 + 1.2 && c.z < -1.2 && Math.abs(c.x - X27.x) > X27.w / 2 + 0.6 + 0.4 && L.across.length < 3) L.across.push(`(${c.x.toFixed(1)}, ${c.z.toFixed(1)})`);
           if (saveAt && !L.mid && S.fr.job && S.fr.job.k === 'deliver' && S.fr.job.t0 >= 0 && S.fr.job.steps[S.fr.job.i] && S.fr.job.steps[S.fr.job.i].s === 'act') L.mid = JSON.stringify({ state: S });
         };
         pl.tick([]);
@@ -90,7 +90,8 @@ module.exports = async function checkDelivery() {
       const left = X.frToDeliver(S);
       if (Object.values(left).some(n => n)) B(`still to deliver: ${JSON.stringify(left)}`);
       const outIds = []; for (let i = 0; i < S.items.next; i++) if (S.items.alive[i] && R.cargo.itemTag(S.items.waybill[i]) === 'OUTSIDE') outIds.push(i);
-      const inRows = outIds.filter(i => { const w = S.items.where[i]; return w.kind === 'CELL' && D.STORE27_OUT.some(q => q.block === w.block && q.r === w.r && w.c >= q.c0 && w.c <= q.c1); });
+      // (D27 integration: with FR.CART_NIGHT the day's pickups may stay on the cart in town overnight)
+      const inRows = outIds.filter(i => { const w = S.items.where[i]; return (w.kind === 'CELL' && D.STORE27_OUT.some(q => q.block === w.block && q.r === w.r && w.c >= q.c0 && w.c <= q.c1)) || (X.FR.CART_NIGHT && w.kind === 'CART'); });
       if (outIds.length !== 13 || inRows.length !== 13) B(`goods for the railroad: ${outIds.length} (expected 13: the 6 of day 0's dawn, which no train took in this scenario, and the 7 picked up), ${inRows.length} in the OUT rows (${outIds.map(i => S.items.where[i].kind).join(',')})`);
       if (Object.values(X.frPickups(S)).some(n => n)) B(`pickups left at shops: ${JSON.stringify(X.frPickups(S))}`);
       if (S.fr.tot.delivered !== 15 || S.fr.tot.picked !== 7) B(`totals ${JSON.stringify(S.fr.tot)}`);

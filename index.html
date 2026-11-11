@@ -9860,7 +9860,7 @@ const FR = {
   HAND_S: 24,        // handing a good in at a shop's door
   PUSH_D: 2.9,       // the platform cart's centre ahead of the agent's feet (A2's pusher; D27 integration: 2.5 before the cart was lengthened)
   TRUCK_D: 1.75,     // the hand truck's axle ahead of them
-  TRUCK_NEAR: 12,    // a truck good goes on the hand truck when the truck is this near (u); farther, it is heaved (D27 integration: 40 before; fetching it from far cost a quarter of an hour)
+  TRUCK_NEAR: 40,    // a truck good goes on the hand truck when the truck is this near (u); farther, it is heaved
   NEAR: 8,           // the cart is "at" a shop's door within this (u)
   CART_EDGE_Z: 14.7, // the cart's centre when it stands on the loading edge at a door (D27 integration: 15.1 before the cart was widened)
   CART_DOOR_DX: 3.2, // and its x from the door's middle (east of the doorway)
@@ -9881,6 +9881,7 @@ const FR = {
   CART_NIGHT: true,  // the cart may stay in town overnight with the day's pickups (false: back to the OUT rows in the evening)
   COLLECT: ['plough'], // goods their shop collects itself from the standing train ([] restores the player unloading them)
   COLLECT_S: 1200,   // that long after the train stands
+  DAY_TRIPS: true,   // trips to town between trains when there is time (false: in the evening only)
   TRIP_S: 6000,      // D27 integration: a cart trip to town and back, the walking (game seconds; measured about 90 minutes, provisional)
   TRIP_GOOD_S: 150,  // and for each good (loaded from storage, handed in)
   DAY_SWITCH_S: 2400, // a trip in the day ends this long before the next train's time (its switches, from town)
@@ -9888,9 +9889,9 @@ const FR = {
 // F's handling times (game seconds), scaled by FR.TIME_K into FR (frTimes).
 const FR_TIMES_F = { DOOR_S: 40, PICK_S: { carry: 32, shoulder: 40, roll: 24, drag: 16, truck: 24, heave: 64 }, HIGH_S: 8, GRAB_S: 16, PARK_S: 16, HAND_S: 24 };
 function frTimes(k) {
-  const sc = v => Math.max(8, Math.round(v * k / 8) * 8);
+  const sc = (v, min) => Math.max(min || 8, Math.round(v * k / 8) * 8);
   for (const key of ['DOOR_S', 'HIGH_S', 'GRAB_S', 'PARK_S', 'HAND_S']) FR[key] = sc(FR_TIMES_F[key]);
-  FR.PICK_S = {}; for (const [v, t] of Object.entries(FR_TIMES_F.PICK_S)) FR.PICK_S[v] = sc(t);
+  FR.PICK_S = {}; for (const [v, t] of Object.entries(FR_TIMES_F.PICK_S)) FR.PICK_S[v] = sc(t, 16);   // (a lift at least two ticks, so it is seen)
 }
 frTimes(FR.TIME_K);
 const FR_FP = { 1: [1, 1], 2: [2, 1], 4: [4, 1], 8: [4, 2] };
@@ -10971,8 +10972,8 @@ function frStanding(S) {
 // (and back with any pickups) before the next train needs the player? Nothing standing, coming in or going out, and the
 // next train's time (less FR.DAY_SWITCH_S for its switches) further off than the trip: FR.TRIP_S there and back, plus
 // FR.TRIP_GOOD_S for each good to load and hand in.
-function frDayFree(S) {
-  if (!S.pd || S.pd.ph !== 'day' || !S.rr) return false;
+function frDayFree(S, loaded) {
+  if (!FR.DAY_TRIPS || !S.pd || S.pd.ph !== 'day' || !S.rr) return false;
   let next = Infinity;
   for (const r of S.rr.runs) {
     if (r.ph === 'in' || r.ph === 'stand' || r.ph === 'out') return false;
@@ -10981,8 +10982,9 @@ function frDayFree(S) {
   const I = S.items;
   let n = 0;
   for (let i = 0; i < I.next; i++) if (I.alive[i] && I.where[i].kind === 'CELL' && frShopOf(S, i)) n++;
-  if (!n) return false;
-  return next - FR.DAY_SWITCH_S - S.time > FR.TRIP_S + n * FR.TRIP_GOOD_S;
+  if (!n && !loaded) return false;
+  // (once goods are on the cart for the trip only the trip itself need fit, so the loading is not undone half way)
+  return next - FR.DAY_SWITCH_S - S.time > FR.TRIP_S + (loaded ? loaded * FR.TRIP_GOOD_S / 2 : n * FR.TRIP_GOOD_S);
 }
 // The next handling step for the Next job line: { cmd, text, x, z } (a command the touch layer can send as it is),
 // { busy, k, text } while a job runs, or null when freight has nothing for the player now.
@@ -10997,7 +10999,7 @@ function frJobHint(S) {
   // D27 integration (provisional, the evening too long): deliveries and pickups whenever the player has time between
   // trains (frDayFree), not only in the evening; a trip under way (the cart off the cargo platform with goods for the
   // town on it) carries on.
-  const free = evening || frDayFree(S) || (S.pd && S.pd.ph === 'day' && cartPose && !frOnDock(cartPose) && cartPose.z < 3 && onCart.some(id => !frIsOut(S, id)));   // (a trip under way: the cart over track 2 on its way to town)
+  const free = evening || frDayFree(S, onCart.filter(id => !frIsOut(S, id)).length) || (S.pd && S.pd.ph === 'day' && cartPose && !frOnDock(cartPose) && cartPose.z < 3 && onCart.some(id => !frIsOut(S, id)));   // (a trip under way: the cart over track 2 on its way to town)
   const cartAt = spot => cartPose && !cartPose.held && Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) < 0.75;
   const cartTo = (spot, text) => P.tool === cart ? hint({ t: 'frCart', act: 'park', x: Math.round(spot.x * 100), z: Math.round(spot.z * 100), f: spot.axis === 'z' ? (P.z >= spot.z ? 'ne' : 'sw') : (P.x <= spot.x ? 'se' : 'nw') }, text, spot)
     : hint({ t: 'frCart', act: 'grab' }, 'Take the platform cart', cartPose);

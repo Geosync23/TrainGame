@@ -80,6 +80,7 @@ Current checks:
 - `check-hubworld.js` (D24 foundation): the hub world's layout; see "Station rework (D24)". Screenshots `hubworld-*.png`.
 - `check-proto-day.js` (D25 integrator): two days in the prototype played by `tests/proto-bot.js` through touch-level commands; see "Prototype (D25)".
 - `check-proto-stall.js` (D25 fix, 2026-11-11): the three causes of the designer's stall (the page frozen with goods in hand, two trains in on top of each other, the Next job line while a track is taken); see "Prototype (D25)".
+- D27 (see "D27 (the working day made visual)"): `check-d27world.js` (the foundation), `check-levers.js` (T), `check-onboard.js` (P), `check-handling.js` and `check-delivery.js` (F), `check-townsfolk.js` (W), `check-lessons.js` (U), `check-interiors.js` and `check-pixperf.js` (R), `check-atlas.js` and `check-d27-day.js` (the integrator: two days by the bot with every D27 part on; screenshots `d27-*.png`). The D25 checks open with `?d27=0` (or `&doorline=1`) where they test the D25 flows.
 - `check-protoworld.js` (D25 foundation): the prototype's layout, walking distances, reachability (platform 2 only over the walkway), the first trains in and out with the switches set by hand, the parked systems off over a day, the day's phases, the older worlds in 3D, and the pixel renderer (whole scale and zoom steps, screen to world and back, picking a coach, frame time). Screenshots `protoworld-{start,out,trains}-{portrait,landscape}.png`.
 - `check-freight.js` (D24, CG): the freight trains' goods; see "Station rework (D24)". Screenshots `freight-dock-*.png`.
 - `check-rrtrains.js` (D24, TR): the railroad's trains over a day with a scripted player; `check-tickets.js` (D24, PX): tickets on board; `check-hubui.js` (D24, UI): the screen guidance (with fakes of PX's and CG's reads, and a part on the real pieces); `check-hub-day.js` (D24, integrator): three game days in the hub played by `tests/hub-bot.js`. See "Station rework (D24)".
@@ -426,7 +427,7 @@ The designer, after playing D20 and D21: "Why doesn't the game explain this? Stu
 
 ## Sections of index.html
 
-config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the lessons' stub at its end), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R), drawing each frame, main loop, test hooks, start.
+config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R), drawing each frame, main loop, test hooks, start.
 
 ## Draw calls
 
@@ -765,7 +766,62 @@ Section "the town (D27)"; `WORLDS.proto.d27.town` is **on**. Check: `tests/check
 
 **Checks:** `tests/check-lessons.js` (new; stand-ins for P's and F's status where a lesson reads them): each lesson triggers once at its moment and not with its D27 part off, steps advance on their events and states, a later step's event moves it on, the switches lesson played by the real sim (and the same twice), Show me, Skip, replay, the next morning, the save; on the page (portrait and landscape): the first card holds the clock (and hides the arrow) until Show me, a later step is a slip and the clock runs, OK and Skip, Settings' replay, every D27 button sending its command, the D27 jobs, the summary's and the board's figures, nothing overlapping; screenshots `lessons-{hold,slip,board,freight,evening}-{portrait,landscape}.png`. `check-protoui.js` now opens with `?d27=0` (it tests the D25 screens and the first-day guide). `check-d27world.js` checks the four switches exist (not that they are all off).
 
+### The integration (2026-11-11)
+
+The six builders merged in the plan's order on the foundation (T, R, F, P, W, U), then the follow-up artist's night art
+(lit bodies for every town building, the rodding's turn and crank, a keg of nails, door lanterns); the atlas rebuilt
+(608 KB). **Every D27 switch is on** (`WORLDS.proto.d27`: board, handling, town, lessons); `?d27=0` gives the D25 flows
+on the D27 layout. Each builder's own notes are the parts above; what the integration changed:
+- **Wiring:** R's renderer draws the real lists (P's `pbDrawList`, `pbPlayerPose`, `pbCutaway`, `pbCoachView`; F's
+  `frDrawList`, `frPose`, `frCartPose`, `frTruckPose`, `frDoorOpen`; W's `tfDrawList`): the shapes matched, no adapter
+  change was needed beyond the cart's new cell count. U's buttons and lessons run against the real P and F (the
+  acceptance check taps Punch, Lift and Deliver in a played game). At night R draws each town building's lit body
+  (`.._lit`, same size and anchor) and the rodding turns at the points' end (`bld/rodding_z`, `bld/rodding_crank`);
+  `goods/keg/nails` for kegs of nails. The carry readout reads F's places when handling is on (the cart's goods, the
+  hands).
+- **The camera** (the designer: "stay with our character centered as it moves"): `PIX.CAM` DEAD 0, AHEAD 0,
+  AHEAD_CART 0, CAR false: the view is locked on him again (R's knobs kept for the designer to try); on a train it
+  centres on P's pose (`pixPlayerPoint`). check-pixrender's centred walk (his feet on the view's middle pixel at every
+  frame) is back; check-interiors checks he is centred inside a coach.
+- **The evening, provisional** (plans/d27-choices.md, "Integrator"): the nine shops' storage rows in the east block by
+  the east ramp, OUT in its lane-side row (`SHOPS27`, `STORE27_OUT`); the platform cart 4 x 3 cells (A2's art widened
+  to 2.4u in `tools/pixelart/goods27.py`: `CART_W`, `CART_ROWS`; `CARGO27.CART_CELLS` 12, `CART_ROWS` 3) and small
+  goods 3 high on it (`CARGO27.LAYERS.CART` 3, `GOODS27[k].layers`); trips to town between trains (`frDayFree`, F's
+  `FR.TRIP_S`, `TRIP_GOOD_S`, `DAY_SWITCH_S`; the cart brought back after a day trip); the town's goods packed into
+  as few boxcars as hold them, the one nearest the storage first (`frLoad`).
+- **Fixes found by playing** (all in F's section, minimal): beside a cart on the loading edge the player stands on the
+  cart's level (`frCartStand`: the wider cart reaches the edge, and a stand spot on the ground below sent him round by
+  the ramp or stuck a job); a good taken off the cart is not put back on it while a train still has goods that fit
+  (`S.fr.offCart`, and `atDoor` only while the train has goods for the cart): the hint looped take and put for ever.
+- **The bot** (`tests/proto-bot.js`, extended; the D25 play unchanged with `?d27=0`): tickets on board as P wrote it;
+  freight by F's `frJobHint` as each standing freight train's work in the plan; the evening by the hints, then End the
+  day; goods put away and the cart parked before a switch or a send-off that is due (a switch not yet due lets the
+  handling go on); new work started only with time in hand (the walk there, 20 minutes, the walk on); lessons answered
+  Show me or Skip (`mem.lessons` 'mixed': day 1 shows switches, tickets and unloading and skips the rest, day 2 replays
+  them from Settings and skips each).
+- **Measured** (check-d27-day, seed 1866): day 1 (Monday, the plough) every run in and out, worst 151 minutes late
+  (f2 out; f1 +28, p5 +126, f3 +150), 34 travellers seated and punched, 15 goods unloaded and stored, 6 loaded, none
+  delivered: the evening began at 22:45; day 2 worst 26 minutes late, 31 punched, 14 unloaded, 1 delivered (the
+  evening from 20:47 spent loading two days' goods). **The evening needs 4 to 5 game hours for one day's goods**
+  (the cart to the street about 35 minutes each way, about 3 minutes a good at the shops and 2.5 at the storage): a
+  design decision is needed (plans/d27-choices.md, the first section). Frames: unthrottled 0.6 to 1.6 ms in the
+  played moments (check-d27-day), check-pixperf (4x throttled) 4.4 to 6.6 ms average, 14 ms worst at scale 1.
+- **Checks:** `check-d27-day.js` (new: two days by the bot, every hour's itemAudit, the summary, the hashes twice and
+  after a reload mid-handling and mid-aisle, the buttons, the screenshots `d27-{morning,lesson,punch,unload,cargo,
+  path,deliver,street,night,summary}-{portrait,landscape}.png`), `check-atlas.js` (new: the budget, the keys the code
+  needs, and two days' saves drawn with every lookup watched). Older checks: check-prototrains opens with `?d27=0`
+  (it plays the D25 line and goods); check-protogoods compares the summary with what was handed in by 23:00 (the D25
+  handcart's second trip can run past it on the D27 layout); check-handling's car is the first boxcar with goods
+  (packing) and its day counts goods stored or handed in on a day trip. `tests/dev-eval.js` runs a script file in the
+  page (a developer's tool, not a check).
+
 ## Next
+
+Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays
+two days and `check-d27-day.js` reports them (see "D27", "The integration"). The day works end to end except that the
+evening cannot carry a day's goods in time (4 to 5 game hours needed); every provisional choice is in
+`plans/d27-choices.md` for the designer's morning review. Next: the lead's review, the review page with the choices,
+then the designer's decision on the evening's workload.
 
 Update (2026-11-11, D27 foundation): the D27 layout, stock, tables, switches, schema 19, the stubs and the checks are built on their own branch (see "D27 (the working day made visual)" and `plans/d27-tech.md` section 8.2); the D25 flows play on the D27 layout. Next: the lead's review, then the eight builders in parallel (T, P, F, W, U, R, A1, A2; A3 after T).
 

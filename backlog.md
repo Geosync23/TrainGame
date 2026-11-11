@@ -12,3 +12,4 @@ Small bugs and ideas found outside the current task. Each entry: date, what, whe
 - 2026-11-03 (builder TA): check-feet.js fails on the lead's commit f5e1d78 too: "a tap on the deck at (-2.20, -11.40) lands at" x -2.147, z -11.419 (0.056u off, limit 0.05), the same numbers in three runs; it then passed in the full run on ec62328. Not investigated.
 
 - (2026-11-04, D22 builder) A long message (toast) covers the Arrows toggle and the top-right buttons for its 6.5 seconds. In landscape at zoom 1.5 the WORK BOARD roof sign sits partly under the Next job line (the Work board button still works).
+- (2026-11-11, people v2) tools/pixelart/review_people.py: its people test scene (out/people-testscene.png) reads the first atlas format (`atlas['sprites']`, dotted names such as `track.straight`); out/atlas.json now has `frames` with contract keys, so the script skips it. Rewrite it on the new keys, or drop it for review_carry.py and the game's own screenshots.

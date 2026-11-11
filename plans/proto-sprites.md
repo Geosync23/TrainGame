@@ -27,8 +27,12 @@ The layout's exact numbers (track centre lines sampled every 0.25u, switches, pl
 exported to `tools/pixelart/proto-layout.json` (`node tools/pixelart/export-layout.js`), so the pipeline can bake the
 ground layer and the buildings exactly where the game has them. Re-export after any layout change.
 
-Scale: 1u is 8 px across the screen per unit of x. People keep their 3D size (a person is about 1.75u, **14 px** tall,
-as in the mockup); the prototype's trains are drawn bigger than the 3D game's (see the sizes below) so they keep the
+Scale: 1u is 8 px across the screen per unit of x. People are drawn bigger than their 3D size: **an adult is about
+26 px from heel to crown (3.25u; a top hat adds 2 px), a child about 18 px** (people v2, the designer's sign-off of
+2026-11-11, size raised from 20 to about 26 px by the lead the same day, provisional). They were 14 px (1.75u, the
+mockup's) before; that set is parked in `tools/pixelart/people_v1.py`. The renderer sorts a person as a box
+`PIX.PERSON_H` (3.25u) tall. Note that a 26 px person is taller than a coach's roof (2.8u, about 22 px). The
+prototype's trains are drawn bigger than the 3D game's (see the sizes below) so they keep the
 mockup's proportions.
 
 ## 2. Sheet format
@@ -49,7 +53,8 @@ mockup's proportions.
 
 - People and the handcart: four facings, the screen diagonals. `se` = walking +x (down right), `ne` = walking -z (up
   right), `sw` = +z (down left), `nw` = -x (up left). **The art draws `se` (front, three quarters) and `ne` (back, three
-  quarters); the renderer mirrors `se` for `sw` and `ne` for `nw`.**
+  quarters); the renderer mirrors `se` for `sw` and `ne` for `nw`.** People are the exception (the lead, 2026-11-10):
+  all four facings are drawn and lit from the upper left, and the renderer never mirrors them.
 - Vehicles: by heading, `yaw` as the game measures it (radians, `atan2(-dz, dx)`: 0 is east, +x; positive turns north).
   Ten headings: `e`, `e+15`, `e+30`, `e-15`, `e-30` (east, and 15 or 30 degrees north (+) or south (-) of it, for the
   crossovers) and `w`, `w+15`, `w+30`, `w-15`, `w-30` (west: yaw 180 degrees, +15 turning north of west ...). The
@@ -74,7 +79,7 @@ Heading the front: the front of the vehicle is the end it is heading towards (`e
 A car's two ends look alike, so `veh/coach/e` and `veh/coach/w` may be the same picture (the art may say so by giving
 the same rectangle twice).
 
-### People (`ppl/...`; facings `se` and `ne`, the renderer mirrors)
+### People (`ppl/...`; all four facings drawn, never mirrored)
 
 | Key | Frames | Notes |
 |---|---|---|
@@ -91,7 +96,9 @@ the same rectangle twice).
 | `ppl/<who>/hands` | 1 | (optional) the hands' pixel offset, if not the default |
 
 Anchor: the point between the feet, on the ground. Carry: an item is drawn with its anchor at the agent's anchor plus
-(0, -9) px (`se`) or (0, -9) behind the body (`ne`, drawn first): R reads `PIX_HANDS` (default `{ se: [0, -9], ne: [0, -9] }`).
+the hands offset: R reads `PIX_ATLAS.extra['ppl/agent/carry/<dir>'].hands` (people v2: se, sw (0, -6); ne (6, -11),
+nw (-6, -11), drawn before the body and to the side so it shows past the shoulder), else `PIX_HANDS`. The push frames give `extra[...].grip`, the hands' offset (se, ne
+(6, -6); sw, nw (-6, -6)).
 
 ### Goods, cart, switches (`goods/`, `tag/`, `cart/`, `sw/`)
 

@@ -73,12 +73,12 @@ def contact(sprites, scale=3, width=620):
 
 def closeup(sprites, scale=8):
     sel = [(n, f[0]) for n, f, m in sprites if n.split('/')[2] == 'idle']
-    CW, CH = 18, 24
+    CW, CH = 26, 34
     per = 16
     nrow = (len(sel) + per - 1) // per
     img = np.zeros((nrow * CH, per * CW, 4), np.uint8); img[...] = BG
     for i, (n, (f, (ax, ay))) in enumerate(sel):
-        blit(img, f, (i % per) * CW + 9 - ax, (i // per) * CH + 21 - ay)
+        blit(img, f, (i % per) * CW + 13 - ax, (i // per) * CH + 31 - ay)
     return Image.fromarray(img).resize((img.shape[1] * scale, img.shape[0] * scale), Image.NEAREST)
 
 
@@ -167,7 +167,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     contact(sprites).save(os.path.join(OUT, 'people-contact.png'), optimize=True)
     closeup(sprites).save(os.path.join(OUT, 'people-closeup.png'), optimize=True)
-    test_scene(sprites).save(os.path.join(OUT, 'people-testscene.png'), optimize=True)
+    try:
+        test_scene(sprites).save(os.path.join(OUT, 'people-testscene.png'), optimize=True)
+    except KeyError as e:      # the test scene reads the first atlas format (see backlog.md); the real game shows it now
+        print('people-testscene.png skipped: out/atlas.json has no', e)
     n = sum(len(f) for _, f, _ in sprites)
     print(f'{len(sprites)} people sprites, {n} frames; wrote people-contact.png, people-closeup.png, people-testscene.png')
 

@@ -27,7 +27,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import engine as E
-import people as PE
+import people_v1 as PE      # the 14 px people (parked) and its to_rgba, as when this sample was made
 import font as FT
 
 ROOT = os.path.dirname(os.path.dirname(HERE))

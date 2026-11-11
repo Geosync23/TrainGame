@@ -21,6 +21,9 @@
 //      (the way out of a train still to come) when nothing comes over it first.
 //   3. Tickets: at the standing passenger train due out first, the coach door with someone at the head of its line
 //      (nearest first): one punch command, one ticket. Riders stepping off first: it waits beside the door.
+//      D27 (P, board on): tickets punched on board instead: pbPunch at the nearest coach with a seated traveller to
+//      punch (the player walks in at its nearer end), then seat by seat inside (this coach first, nearest first; the
+//      next coach over the end platforms), waiting inside while travellers still take their seats, then pbLeave.
 //   4. Freight by hand: the town's goods off each standing freight car into the storage shed's bay of their tag; the
 //      railroad's goods from the shed's OUTSIDE bay into the train's cars until it has its load.
 //   5. The evening: the handcart (the hand truck left at its spot first), sorted from the bays (as many as it holds: D27,
@@ -52,7 +55,7 @@ function protoBotFactory(R, mem0) {
   const skip = (S, k, ticks) => { mem.skip[k] = S.tick + (ticks || 30); };
   const send = (S, c, key) => {
     mem.last = { c, key: key || null, tick: S.tick }; mem.stats.cmds++;
-    const k = { pdStart: 'starts', useSwitch: 'switches', punch: 'punches', rrWaveOff: 'waves', carryPick: 'picks', carryPut: 'puts', carryTool: 'tools', pgDeliver: 'delivers', pdEndDay: 'ends', pdNextDay: 'nextDays', walkTo: 'walks' }[c.t];
+    const k = { pdStart: 'starts', useSwitch: 'switches', punch: 'punches', pbPunch: 'punches', rrWaveOff: 'waves', carryPick: 'picks', carryPut: 'puts', carryTool: 'tools', pgDeliver: 'delivers', pdEndDay: 'ends', pdNextDay: 'nextDays', walkTo: 'walks' }[c.t];
     if (k) mem.stats[k]++;
     return [c];
   };
@@ -62,6 +65,7 @@ function protoBotFactory(R, mem0) {
     if (P.mode === 'to' && !P.use && d2(P.tx, P.tz, x, z) < 0.5) return [];   // on the way already
     return send(S, { t: 'walkTo', x: cm(x), z: cm(z) });
   };
+  const onBoard = S => !!(R.pb && R.pb.pbOn && R.pb.pbOn(S.track));   // D27 (P): tickets punched on board (board on)
   const standing = S => S.rr.runs.filter(r => r.ph === 'stand' && !r.through && r.slot !== null && r.slot !== undefined).sort((a, b) => a.dep - b.dep);
 
   // ---- 2. to 4. The day's jobs: switches, send-offs and the work at each standing train, in one plan ----
@@ -100,6 +104,13 @@ function protoBotFactory(R, mem0) {
   // hand truck (three goods a trip) between the cars and the shed.
   function workOf(S, run) {
     const tr = S.trains[run.slot];
+    if (run.kind === 'pax' && onBoard(S)) {
+      // D27 (P): tickets punched on board: the travellers still to seat and punch, and getting off again.
+      const rs = R.pb.pbRunStatus(S, run), inside = S.player.in && S.player.in.tr === tr.id;
+      if (!rs.toPunch && !rs.boarding && !rs.waiting && !rs.off && !inside) return null;
+      const sts = tr.consist.map(c => R.pb.pbCarStatus(S, c.id)).filter(Boolean), c = sts.find(x => x.toPunch > 0) || sts[0], e = c.ends.find(q => q.ok) || c.ends[0];
+      return { at: inside ? [S.player.x, S.player.z] : [e.x, e.z], dur: 90 + (rs.toPunch + rs.boarding + rs.waiting) * 50 };
+    }
     if (run.kind === 'pax') {
       const st = tr.consist.map(c => R.pp.ppCarStatus(S, c.id)).filter(s => s && s.line > 0);
       if (!st.length) return null;
@@ -171,6 +182,26 @@ function protoBotFactory(R, mem0) {
       // Tickets need free hands: goods away and the hand truck back at its spot beside the shed first.
       if (h.length) return putAway(S, h[h.length - 1]);
       if (tool) return send(S, { t: 'carryTool', tool: tool.id }, 'tool' + tool.id);
+      if (onBoard(S)) {
+        // D27 (P): in the train, the nearest traveller still to punch (this coach first), then off again; from the
+        // platform, pbPunch at a coach with tickets to punch (it walks in at the nearer end); else wait at a coach end.
+        const I = P.in, rs = R.pb.pbRunStatus(S, run), mineC = c => tr.consist.some(q => q.id === c);
+        if (I && I.tr === tr.id) {
+          if (I.out || I.clm < 0) return [];
+          const cands = S.pax.list.filter(p => p.s === 'sitting' && !p.punched && mineC(p.stock) && !skipped(S, 'punch' + p.stock + ':' + p.seat));
+          const rx = p => R.pb.pbSeatLocal(p.seat).rx;
+          cands.sort((a, b) => (a.stock === I.stock ? 0 : 1) - (b.stock === I.stock ? 0 : 1) || Math.abs(rx(a) - I.s) - Math.abs(rx(b) - I.s) || a.seat - b.seat);
+          if (cands.length) return send(S, { t: 'pbPunch', tr: tr.id, stock: cands[0].stock, seat: cands[0].seat }, 'punch' + cands[0].stock + ':' + cands[0].seat);
+          if (rs.boarding || rs.waiting || rs.off) return [];   // more to sit down: wait inside
+          return send(S, { t: 'pbLeave' }, 'leave' + tr.id);
+        }
+        const sts = tr.consist.map(c => R.pb.pbCarStatus(S, c.id)).filter(Boolean);
+        const dEnd = x => Math.min(...x.ends.filter(e => e.ok).map(e => d2(P.x, P.z, e.x, e.z)));
+        const todo = sts.filter(x => x.toPunch > 0 && !skipped(S, 'punch' + x.stock)).sort((a, b) => dEnd(a) - dEnd(b));
+        if (todo.length) return send(S, { t: 'pbPunch', tr: tr.id, stock: todo[0].stock }, 'punch' + todo[0].stock);
+        if (rs.boarding || rs.waiting || rs.off) { const c = sts.find(x => x.boarding > 0) || sts[0], e = c.ends.find(q => q.ok) || c.ends[0]; return walkTo(S, e.x, e.z); }
+        return null;
+      }
       let best = null, wait = null;
       for (const c of tr.consist) {
         const s = R.pp.ppCarStatus(S, c.id);
@@ -239,13 +270,14 @@ function protoBotFactory(R, mem0) {
     }
     if (D.ph === 'summary') return D.day + 1 < mem.days ? send(S, { t: 'pdNextDay' }) : [];
     if (P.act) return [];
-    if (D.ph === 'evening') return P.use || (S.pax.pp && S.pax.pp.job) ? [] : evening(S);
+    if (D.ph === 'evening') return P.use || (S.pax.pp && S.pax.pp.job) || (S.pb && S.pb.job) ? [] : evening(S);
     const pj = S.pax && S.pax.pp && S.pax.pp.job;
     const jobs = jobsNow(S), j = plan(S, jobs);
     const waitAt = S.trains.find(tr => tr.owner === 'rr' && tr.swWait !== undefined && tr.swWait !== null);
     // On the way to throw a switch: keep going (the throw happens on arrival), unless a train waits at another one.
     if (P.use && P.use.k === 'sw' && P.mode === 'to' && !(waitAt && waitAt.swWait !== P.use.id)) return [];
     if (pj) return [];   // a punch under way (one ticket: a tick or two once there)
+    if (S.pb && S.pb.job && !(waitAt && P.in)) return [];   // D27 (P): on the way into a coach, or a punch on board under way
     if (P.use && j && j.k === 'work' && j.key === mem.job) return [];   // a pick or a put under way for the job in hand
     if (j && (j.start - S.time < AHEAD_S || j.k === 'work')) {
       if (P.use && (P.use.k === 'pick' || P.use.k === 'put') && j.k !== 'work' && j.start - S.time > 60) return [];   // finish the carry first

@@ -1368,7 +1368,7 @@ const WORLDS = {
     // (P: tickets punched on board; parks the D25 line at the door, parked.doorline), handling (F: freight handling,
     // storage cells, the platform cart, delivery and pickup), town (W: the townsfolk), lessons (U: the six lessons; parks
     // the D25 first-day guide). While one is off, the D25 flow it replaces keeps playing on the D27 layout.
-    d27: { board: false, handling: true, town: false, lessons: false },   // handling on (F, 2026-11-11)
+    d27: { board: true, handling: true, town: false, lessons: false },   // handling on (F), board on (P), 2026-11-11
   },
 };
 // D27: the page's override of the D27 switches (?d27=0 all off, ?d27=all all on, ?d27=board,handling those on): for a
@@ -8185,6 +8185,7 @@ const ppDirOf = f => { const a = f / 256 * Math.PI * 2; return ppDir(Math.sin(a)
 // in id order. Boarding frames 0-2 step up into the coach; stepping off plays them backwards.
 function ppDrawList(S) {
   if (!S || !S.pax || !protoWorld(S.track)) return [];
+  if (worldParked(S.track, 'doorline')) return [];   // D27 board on: the line is parked; the travellers are P's pbDrawList
   const pp = ppSt(S), J = pp.job, P = S.player, out = [];
   for (const p of S.pax.list) {
     if (p.s === 'aboard') continue;
@@ -8202,33 +8203,94 @@ function ppDrawList(S) {
 // player punches a ticket (the agent's punch animation).
 function ppPlayerAct(S) {
   const J = S && S.pax && S.pax.pp && S.pax.pp.job;
-  if (!J || !J.on) return null;
+  if (!J || !J.on || worldParked(S.track, 'doorline')) return null;   // D27 board on: pbPlayerPose
   const P = S.player, t = Math.min(1, J.acc / PP.PUNCH_S), a = P.f;
   return { act: 'punch', dir: ppDir(Math.sin(a), Math.cos(a)), frame: Math.min(2, Math.floor(t * 3)), t, head: J.head === undefined ? null : J.head };
 }
 
 // ==== Section: tickets on board (D27) ====
-// Owner: builder P (plans/d27-tech.md section 3). The foundation's stubs, with the agreed names and safe defaults (empty
-// lists, true for ready, null for poses), already wired in: the sim tick (pbTick after paxTick), the command switch
-// (pbEnter, pbWalk, pbPunch, pbLeave: pbCmd), the player's tick (playerModeTick calls pbPlayerTick first), the
-// redirects while D27 board is on (d27On(T, 'board'): pxReady > pbReady, pxOnArrive > pbOnArrive, pxOnDepart >
-// pbOnDepart, paxTick and the D25 'punch' command > here), the save check (pbCheckSaveShape), the debug scenario
-// (rh.scenario('d27coach') calls pbDebugScenario) and the test hooks (__railhead.pb is PB_TEST: add to it here). While
-// board is off the D25 line at the door ("prototype passengers (D25)") plays and none of this runs but pbTick's guard.
-// P replaces the bodies; the names and shapes are the contract with R, U, T and the integrator (plans/d27-tech.md 3.4):
-// - S.pb (optional; pbSt fills in what a save lacks): { cars: { [stock]: [paxId | -1 per seat] }, plan, seen, due, job,
-//   tot: { punched, missed, off, seated } }. S.player.in (optional): { tr, stock, s } while the player is in a coach.
-// - Commands: { t: 'pbEnter', tr, stock, end }, { t: 'pbWalk', s, stock? }, { t: 'pbPunch', tr, stock, seat },
-//   { t: 'pbLeave' }. Events: pbSeated { run, id }, pbPunched { run, tr, stock, id }, pbOff { run, id }, pbEnter { tr,
-//   stock }, pbLeave, pbRefused { why }, pbMissed { run, n }.
-// - For R: pbDrawList(S) [{ id, who, x, y, z, f, act, frame?, stock, seat, punched, through }], pbPlayerPose(S) { x, y, z,
-//   f, act, stock } or null, pbCutaway(S) [stock ids], pbCoachView(S, stock) { seats: [{ row, side, pos, x, z, f, who? }],
-//   stove, cooler } or null. For U: pbCarStatus(S, stock) { seated, punched, toPunch, boarding, off, ends } or null,
-//   pbRunStatus(S, run) { seated, punched, toPunch, boarding, off, waiting }.
+// Owner: builder P (plans/d27-tech.md section 3). Wired by the foundation: the sim tick (pbTick after paxTick), the
+// command switch (pbEnter, pbWalk, pbPunch, pbLeave: pbCmd; the D25 'punch' too while board is on), the player's tick
+// (playerModeTick calls pbPlayerTick first), the redirects (pxReady > pbReady, pxOnArrive > pbOnArrive, pxOnDepart >
+// pbOnDepart while D27 board is on), the save check (pbCheckSaveShape), the debug scenario (rh.scenario('d27coach')
+// calls pbDebugScenario) and the test hooks (__railhead.pb is PB_TEST). All of it runs only while the D25 line at the
+// door is parked (pbOn: board on and no ?doorline=1); otherwise the pb* redirects hand back to the D25 pp* code, so
+// check-punch.js keeps playing the line at the door with board on.
+//
+// How it goes (P, 2026-11-11; the plan's 3.1, provisional numbers in PB):
+// - Coming. From PB.COME_S before a passenger run's arrival pbPlan picks PB.PER_TRAIN travellers (S.pax's own random
+//   numbers), who each is (PP.WHO) and when each sets off from the street's end near the station (PROTO.TOWN_EXITS),
+//   between COME_S and LAST_S before the arrival (planned late: from now while there is time to walk in, else on the
+//   platform at once). Each walks ('come') to a waiting place on platform 1 chosen as they set off (pbWaitSpot): about
+//   half to a free bench seat (PROTO.BENCHES, two a bench; 'bench', seated facing the track), the rest to a spot under
+//   the canopy ('wait', standing). No lines at the doors. Event pbCome { run, n } (how many will come).
+// - Arriving (pbOnArrive, at rrArrived; pbTick also calls it for a standing run it has not seen). Every coach gets its
+//   seats (S.pb.cars[stock]: 29 places, -1 free) and its riders, seated on random free seats: PB.THROUGH through riders
+//   (through: true, punched elsewhere: the mark in the hatband) and PB.OFF riders for the Hub (to 'hub', punched too).
+//   The riders for the Hub stand up one after another (PB.OFF_GAP apart, 'standing', PB.STAND_S), walk the aisle to
+//   the nearer usable end ('aisle'), climb down the end steps ('climb', PB.CLIMB_S) and walk off to town ('off').
+// - Boarding. While a run's train stands, each of its travellers who is waiting (bench or standing) is given, in list
+//   order, the nearest usable coach end (to their waiting place, straight-line) of a coach with a free seat, and a
+//   seat in that coach (pbPickSeat: the free seat nearest that end's door, window
+//   seats first, alternating sides by how many sit there already, the side seat last: deterministic). They stand up
+//   (from a bench), walk to the end's steps ('toCoach'; they wait there while riders for the Hub are still aboard
+//   that coach), climb ('climb'), walk the aisle ('aisle') and sit down
+//   (PB.SIT_S; 'sitting'; pbSeated { run, id }).
+// - An end is usable when its boarding spot on platform 1 (PB.STEP_Z north of the track's centre, at the end's steps)
+//   is open on the walk grid and not on a footbridge's flight (pbEnds).
+// - Punching. The player enters a coach ({ t: 'pbEnter', tr, stock, end }: walks to that end's boarding spot, then
+//   climbs, PB.CLIMB_S; event pbEnter), walks the aisle ({ t: 'pbWalk', s, stock? }: s in u along the aisle from the
+//   coach's centre, signed towards the train's front; another coach of the same train is reached over the end
+//   platforms, without stepping down) and punches ({ t: 'pbPunch', tr, stock, seat }: walks to the seat's row, faces
+//   across the aisle, the traveller holds the ticket out and the punch takes PB.PUNCH_S; pbPunched { run, tr, stock,
+//   id }; pdCount 'punched'). One command, one ticket. pbPunch from outside the train enters the nearest usable end of
+//   that coach first; without a seat it takes the nearest unpunched traveller in that coach (or the coach he is in).
+//   The D25 { t: 'punch', tr, car } comes here as pbPunch (car = the stock). { t: 'pbLeave' }, or any walk or use
+//   command (a tap outside the train, a switch, a send-off), takes him along the aisle to the nearest usable end and
+//   down the steps; then that walk carries on. A joystick walk (walkDir) inside walks the aisle (towards the platform:
+//   leaves). Refusals: pbRefused { why }.
+// - The player in a coach: S.player.in = { tr, stock, s, clm (1 climbing up, -1 down, 0 not), t (s into the climb),
+//   ts (null or { stock, s }: where he walks to), out (1: leaving), end (the end he climbed at, +-1), mv (1: moved this
+//   tick), f ('se' | 'ne' | 'sw' | 'nw') }; S.player.x, z are kept at his world point and S.player.y at the floor's
+//   height (the renderer's walker height), so everything that reads them works. The walk grid is not used inside.
+// - Departure (pbReady; plan 3.1, the simplest fair rule, provisional): a passenger train is ready when its arrival is
+//   done, every rider for the Hub has stepped off, every traveller who came for it is seated, every ticket aboard is
+//   punched, and the player is off the train. Kept as the alternative (PB.RIDE_FREE, false): unpunched travellers ride
+//   free and the train may go (pbMissed counts them, pdCount 'missed'). pbWhyNotReady says what is still to do.
+// - Leaving (pbOnDepart, at the wave-off): everyone aboard leaves with the train (paxGone); travellers of the run not
+//   aboard yet (only possible with RIDE_FREE) are left behind ('left', walking back to town) and counted as missed.
+// S.pb (optional; pbSt fills in what a save lacks): { cars: { [stock]: [paxId | -1, 29 places] }, plan (run ids
+// planned), seen (run ids whose arrival is done), due ([[t, run id, who, exit]] soonest first), job (null, { k: 'enter',
+// tr, stock, end, x, z (the boarding spot), then? (a punch to do once in) } or { k: 'punch', tr, stock, seat, id, on (0
+// walking there, 1 punching), acc (s) }), tot: { punched, missed, off, seated } }.
+// Travellers (S.pax.list, the M1 shape with P's fields): s 'come' | 'wait' | 'bench' | 'toCoach' | 'climb' | 'aisle' |
+// 'sitting' | 'standing' | 'off' | 'left'; run, who, stock (the coach, or null), seat (0-28, -1), punched, through, bt
+// (s into a timed step), end (+-1, the end they board or leave at), ls (u along the aisle, while in it), bs (bench seat,
+// -1), wx, wz (the waiting place, hundredths), go (a rider for the Hub stands up from this time); car = stock (for the
+// D24 / D25 readers).
+// Seats (pbSeatLocal): i = row * 4 + col (col 0 north window, 1 north aisle, 2 south aisle, 3 south window), rows 0-6
+// from the coach's stove end (local -x: west for a coach heading east, east for one heading west), 28 the side seat at
+// the stove end; the layout of PROTO_STOCK.coach (A2's numbers, plans/proto-sprites.md 6.2).
 const PB = {
   COME_S: 3600,      // travellers come from this long before a passenger run's arrival (provisional)
+  LAST_S: 2400,      // ... and the last sets off this long before it
+  WALK_S: 1500,      // the walk from the street's end to a waiting place, with time to spare
+  PER_TRAIN: [4, 10],// travellers boarding per passenger train (provisional)
+  THROUGH: [2, 6],   // through riders already aboard each coach (provisional)
+  OFF: [1, 3],       // riders for the Hub in each coach (provisional)
   PUNCH_S: 30,       // punching one ticket (game seconds, provisional)
+  CLIMB_S: 16,       // up or down a coach's end steps
+  SIT_S: 16,         // sitting down
+  STAND_S: 16,       // standing up (from a seat or a bench)
+  OFF_GAP: 24,       // the riders for the Hub in a coach stand up this far apart
+  AISLE: 0.3,        // a traveller's walk in the aisle (u a tick)
+  END_S: 6.15,       // the end platforms' steps (u from the coach's centre along it): the aisle runs between them
+  STEP_Z: 2.6,       // the boarding spot on platform 1: this far north of the track's centre, at an end's steps
+  NEAR: 0.6,         // the player starts climbing within this of the boarding spot (u)
+  BENCH_P: 0.5,      // the share of travellers who sit on a bench while one is free
+  RIDE_FREE: false,  // the alternative rule (plan 3.1): unpunched travellers ride free and the train may go
 };
+const pbOn = T => protoWorld(T) && worldParked(T, 'doorline');   // board on, and not ?doorline=1 (check-punch's D25 line)
 function pbSt(S) {
   if (!S.pb || typeof S.pb !== 'object') S.pb = {};
   const B = S.pb;
@@ -8239,39 +8301,681 @@ function pbSt(S) {
   for (const k of ['punched', 'missed', 'off', 'seated']) if (!Number.isInteger(B.tot[k])) B.tot[k] = 0;
   return B;
 }
-// Step 8 of the sim tick (after paxTick): travellers waiting, boarding, seating, punching. Only with D27 board on.
-function pbTick(S, ev, poseCache) {
-  if (!S.pax || !S.rr || !S.rr.on || !d27On(S.track, 'board')) return;
+const pbR = v => Math.round(v * 1e4) / 1e4;
+const PB_SEATS = 29;
+// A seat's place in the coach's own frame (heading e): { i, row, side ('N' | 'S'), pos ('window' | 'aisle' | 'side'),
+// lx, lz (the hip point, u from the coach's centre), rx (the row's x: where one stands in the aisle beside it), f (the
+// sitter's facing for heading e) }.
+function pbSeatLocal(i) {
+  const C = PROTO_STOCK.coach;
+  if (i === PB_SEATS - 1) { const q = C.sideSeat; return { i, row: -1, side: 'S', pos: 'side', lx: q.hip[0], lz: q.hip[2], rx: q.hip[0], f: q.f }; }
+  const row = Math.floor(i / 4), col = i % 4, side = col < 2 ? 'N' : 'S', pos = col === 0 || col === 3 ? 'window' : 'aisle', xk = C.row0 + C.seatPitch * row;
+  return { i, row, side, pos, lx: xk + C.hipDx, lz: C.seatZ[side][pos], rx: xk, f: C.facing.e };
 }
-// T calls these through pxOnArrive / pxOnDepart / pxReady while D27 board is on.
-function pbOnArrive(S, run, tr, ev) { return 0; }
-function pbOnDepart(S, run, tr, ev) { return { missed: 0 }; }
-function pbReady(S, run, tr) { return true; }
-// The commands (from the command switch: pbEnter, pbWalk, pbPunch, pbLeave; and the D25 'punch' while board is on).
-function pbCmd(S, c, ev) {
-  if (!d27On(S.track, 'board')) { ev.push({ t: 'pbRefused', why: 'Tickets are punched at the coach doors' }); return; }
-  ev.push({ t: 'pbRefused', why: 'Punching on board is not built yet' });
+// A facing for heading h (+1 e, -1 w): x mirrored, so se <> nw; ne and sw stay.
+const pbFace = (f, h) => (h > 0 ? f : ({ se: 'nw', nw: 'se', ne: 'ne', sw: 'sw' })[f]);
+// A standing coach's geometry: { tr, run, i (index in the consist), stock, h (+1: its front east), cx, cz (its centre,
+// u) } or null (not a coach of a passenger run standing at platform 1). Coaches stand on the straight of track 1, so a
+// local point (lx along, lz across, north negative) is at (cx + h lx, cz + lz) whichever way it heads.
+function pbGeo(S, stock, poseCache) {
+  const f = rideCarOf(S, stock);
+  if (!f || f.tr.owner !== 'rr' || f.car.k !== 'coach' || trainOff(f.tr)) return null;
+  const run = rrRunOf(S, f.tr.id);
+  if (!ppPax(run)) return null;
+  const ps = (poseCache && poseCache[f.tr.id]) || trainPoses(S.track, f.tr), p = ps[f.i], e = ps[0];
+  if (!p || !e) return null;
+  return { tr: f.tr, run, i: f.i, stock, h: e.x >= p.x ? 1 : -1, cx: p.x, cz: p.z };
 }
-// The player inside a coach (S.player.in), from playerModeTick: true when it handled the player's tick (the walk grid
-// is not used inside a coach), false otherwise.
-function pbPlayerTick(S, ev, poseCache) { return false; }
-function pbDrawList(S) { return []; }
-function pbPlayerPose(S) { return null; }
-function pbCutaway(S) { return []; }
-function pbCoachView(S, stock) { return null; }
-function pbCarStatus(S, stock) { return null; }
-function pbRunStatus(S, run) { return { seated: 0, punched: 0, toPunch: 0, boarding: 0, off: 0, waiting: 0 }; }
-// Shape check of S.pb and S.player.in (a save being loaded): true, or throws.
-function pbCheckSaveShape(st) {
-  if (st.pb !== undefined && (!st.pb || typeof st.pb !== 'object')) throw new Error('damaged save: tickets on board');
-  if (st.player && st.player.in !== undefined && st.player.in !== null && typeof st.player.in !== 'object') throw new Error('damaged save: the player in a coach');
+const pbW = (g, lx, lz) => [g.cx + g.h * lx, g.cz + lz];
+// A coach's two ends: [{ end (-1 its back, local -x; 1 its front), x, z (the boarding spot on platform 1, u), ok (open
+// on the walk grid and off the footbridges) }].
+function pbEnds(S, g) {
+  const G = walkGrid(S.track);
+  return [-1, 1].map(end => {
+    const [x, z] = pbW(g, end * PB.END_S, -PB.STEP_Z);
+    return { end, x, z, ok: walkBridgeAt(S.track, x, z) === 0 && G.cost[walkCell(x, z)] > 0 };
+  });
+}
+// The run's standing train, or null (passenger runs only).
+const pbStanding = (S, run) => ppStanding(S, run);
+// The waiting places on platform 1: the bench seats (two a bench, facing the track) and spots under the canopy.
+function pbBenchSeats() { const out = []; for (const b of PROTO.BENCHES) for (const d of [-0.6, 0.6]) out.push([b.x + d, b.z + 0.15]); return out; }
+function pbWaitSpot(S, p) {
+  const X = S.pax, B = pbBenchSeats(), used = new Set(X.list.filter(q => q !== p && q.bs >= 0 && (q.s === 'come' || q.s === 'bench')).map(q => q.bs)), G = walkGrid(S.track);
+  p.bs = -1;
+  if (paxRand(X) < PB.BENCH_P) {
+    const k0 = Math.floor(paxRand(X) * B.length) % B.length;
+    for (let k = 0; k < B.length; k++) { const j = (k0 + k) % B.length; if (!used.has(j)) { p.bs = j; p.wx = ppH(B[j][0]); p.wz = ppH(B[j][1]); return; } }
+  }
+  const C = PROTO.CANOPY;
+  for (let k = 0; k < 12; k++) {
+    const x = C.x0 + 1 + paxRand(X) * (C.x1 - C.x0 - 2), z = C.z0 + 1.6 + paxRand(X) * (C.z1 - C.z0 - 2.4);
+    if (G.cost[walkCell(x, z)] > 0 && !walkBridgeAt(S.track, x, z)) { p.wx = ppH(x); p.wz = ppH(z); return; }
+  }
+  p.wx = ppH(0); p.wz = ppH(C.z0 + 3);
+}
+function pbAdd(S, run, who, x, z, ev) {
+  const p = paxAdd(S, 'town', 'hub', run.to, x, z, ev);
+  Object.assign(p, { s: 'come', run: run.id, who, stock: null, seat: -1, punched: false, through: false, bt: 0, end: 0, bs: -1, wx: 0, wz: 0 });
+  pbWaitSpot(S, p);
+  return p;
+}
+// Plan the travellers who want this run: how many, who, and when each sets off from the street's end.
+function pbPlan(S, run, ev) {
+  const X = S.pax, B = pbSt(S), E = PROTO.TOWN_EXITS;
+  B.plan.push(run.id);
+  const [lo, hi] = PB.PER_TRAIN, n = lo + Math.floor(paxRand(X) * (hi - lo + 1)) % (hi - lo + 1);
+  let t0 = run.arr - PB.COME_S, t1 = run.arr - PB.LAST_S;
+  if (S.time >= t0 + CFG.TICK_GAME_S && run.arr - S.time >= PB.WALK_S) { t0 = S.time + CFG.TICK_GAME_S; t1 = Math.max(t0, run.arr - PB.WALK_S); }
+  for (let i = 0; i < n; i++) {
+    const who = ppWho(X), ex = Math.floor(paxRand(X) * E.length) % E.length, t = pxTickAt(t0 + paxRand(X) * (t1 - t0));
+    if (t <= S.time) {   // would have set off already: at the waiting place now
+      const p = pbAdd(S, run, who, E[ex][0], E[ex][1], ev);
+      p.x = p.wx; p.z = p.wz; p.s = p.bs >= 0 ? 'bench' : 'wait'; p.f = paxAngle(0, 1);
+    } else B.due.push([t, run.id, who, ex]);
+  }
+  B.due.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  ev.push({ t: 'pbCome', run: run.id, n });
+}
+const pbRand = (X, [lo, hi]) => lo + Math.floor(paxRand(X) * (hi - lo + 1)) % (hi - lo + 1);
+// Called by T (through pxOnArrive) when a passenger train stands at platform 1, and by pbTick for a standing run it has
+// not seen: every coach's seats, its through riders and its riders for the Hub. Returns how many riders for the Hub.
+function pbOnArrive(S, run, tr, ev) {
+  if (!pbOn(S.track)) return ppOnArrive(S, run, tr, ev);
+  if (!S.pax || !ppPax(run) || !tr) return 0;
+  const X = S.pax, B = pbSt(S);
+  if (B.seen.includes(run.id)) return 0;
+  B.seen.push(run.id);
+  let off = 0;
+  for (const c of tr.consist) {
+    if (c.k !== 'coach') continue;
+    const seats = B.cars[c.id] = new Array(PB_SEATS).fill(-1), nOff = pbRand(X, PB.OFF), n = nOff + pbRand(X, PB.THROUGH);
+    for (let k = 0; k < n; k++) {
+      let seat = Math.floor(paxRand(X) * (PB_SEATS - 1)) % (PB_SEATS - 1);
+      while (seats[seat] >= 0) seat = (seat + 1) % (PB_SEATS - 1);
+      const hub = k < nOff, p = { id: X.next++, from: run.from, st: 'hub', to: hub ? 'hub' : run.to, s: 'sitting', x: 0, z: 0, tx: null, tz: null, path: [], t0: S.time, f: 0, wait: 0, fare: 0,
+        car: c.id, door: 0, run: run.id, who: ppWho(X), stock: c.id, seat, punched: true, through: !hub, bt: 0, end: 0, bs: -1, go: hub ? S.time + (k + 1) * PB.OFF_GAP : 0 };
+      seats[seat] = p.id;
+      X.list.push(p);
+      if (hub) off++;
+    }
+  }
+  pbPlaceAll(S, null);
+  return off;
+}
+// The free seat a traveller boarding at end `end` of a coach takes, or -1: nearest that end's door, window seats first,
+// alternating sides by how many sit in the coach already, the side seat last.
+function pbPickSeat(seats, end) {
+  const n = seats.filter(v => v >= 0).length, pref = n % 2 ? 'S' : 'N';
+  let best = -1, bk = Infinity;
+  for (let i = 0; i < PB_SEATS; i++) {
+    if (seats[i] >= 0) continue;
+    const q = pbSeatLocal(i), k = (q.pos === 'side' ? 1e6 : 0) + Math.abs(q.rx - end * PB.END_S) * 100 + (q.pos === 'window' ? 0 : 10) + (q.side === pref ? 0 : 1);
+    if (k < bk) { bk = k; best = i; }
+  }
+  return best;
+}
+// Riders for the Hub still aboard a coach (seated, standing up, in the aisle or on the steps).
+const pbHubAboard = p => p.to === 'hub' && p.stock !== null && p.stock !== undefined && (p.s === 'sitting' || p.s === 'standing' || p.s === 'aisle' || p.s === 'climb');
+// Give a waiting traveller a coach end and a seat on its standing train: true when given.
+function pbAssign(S, p, tr, geoOf) {
+  const B = pbSt(S);
+  let pick = null;
+  for (const c of tr.consist) {
+    if (c.k !== 'coach' || !B.cars[c.id] || !B.cars[c.id].some(v => v < 0)) continue;
+    const g = geoOf(c.id);
+    if (!g) continue;
+    for (const e of pbEnds(S, g)) {
+      if (!e.ok) continue;
+      const d = Math.hypot(e.x * 100 - p.x, e.z * 100 - p.z);
+      if (!pick || d < pick.d - 1e-6) pick = { d, c, e };
+    }
+  }
+  if (!pick) return false;
+  const seats = B.cars[pick.c.id], seat = pbPickSeat(seats, pick.e.end);
+  if (seat < 0) return false;
+  seats[seat] = p.id;
+  Object.assign(p, { stock: pick.c.id, car: pick.c.id, seat, end: pick.e.end, bt: p.s === 'bench' ? PB.STAND_S : 0, s: 'toCoach', bs: -1 });
+  p.tx = null; paxGo(S, p, [], ppH(pick.e.x), ppH(pick.e.z));
   return true;
 }
-// rh.scenario('d27coach'): a new prototype game at 06:55 with p1 standing at platform 1 (protoDebugScenario); P adds
-// travellers seated and waiting.
-function pbDebugScenario(S) { return S; }
-// The test hooks (__railhead.pb): P adds what its checks need.
-const PB_TEST = { PB, pbSt, pbTick, pbOnArrive, pbOnDepart, pbReady, pbCmd, pbPlayerTick, pbDrawList, pbPlayerPose, pbCutaway, pbCoachView, pbCarStatus, pbRunStatus, pbCheckSaveShape, pbDebugScenario };
+// The world point (u) of a traveller in a coach, by state: [x, y, z, facing].
+function pbPaxPoint(S, p, g) {
+  const C = PROTO_STOCK.coach, F = C.floor;
+  if (p.s === 'sitting' || p.s === 'standing' || (p.s === 'aisle' && p.ls === undefined)) {
+    const q = pbSeatLocal(p.seat), [x, z] = pbW(g, q.lx, q.lz);
+    return [x, F, z, pbFace(q.f, g.h)];
+  }
+  if (p.s === 'aisle') {
+    const tgt = pbAisleTarget(p), dir = tgt > p.ls ? 1 : tgt < p.ls ? -1 : 0, [x, z] = pbW(g, p.ls, 0);
+    const f = dir ? (dir * g.h > 0 ? 'se' : 'nw') : (pbSeatLocal(p.seat).side === 'N' ? 'ne' : 'sw');
+    return [x, Math.abs(p.ls) > C.ends.door.x ? C.ends.deckY : F, z, f];
+  }
+  if (p.s === 'climb') {   // up: from the boarding spot to the end platform; a rider for the Hub: down
+    const t = Math.min(1, p.bt / PB.CLIMB_S), u = p.to === 'hub' ? 1 - t : t;
+    const [x0, z0] = pbW(g, p.end * PB.END_S, -PB.STEP_Z), [x1, z1] = pbW(g, p.end * PB.END_S, 0), y0 = walkDeckY(S.track, x0, z0);
+    return [x0 + (x1 - x0) * u, y0 + (C.ends.deckY - y0) * u, z0 + (z1 - z0) * u, p.to === 'hub' ? 'ne' : 'sw'];
+  }
+  return null;
+}
+// Where in the aisle a traveller walks to: a boarder to their seat's row, a rider for the Hub to their end.
+function pbAisleTarget(p) { return p.to === 'hub' ? p.end * PB.END_S : pbSeatLocal(p.seat).rx; }
+// Keep the world points (hundredths) of everyone in a coach.
+function pbPlaceAll(S, poseCache) {
+  const cache = new Map();
+  for (const p of S.pax.list) {
+    if (p.stock === null || p.stock === undefined || !(p.s === 'sitting' || p.s === 'standing' || p.s === 'aisle' || p.s === 'climb')) continue;
+    if (!cache.has(p.stock)) cache.set(p.stock, pbGeo(S, p.stock, poseCache));
+    const g = cache.get(p.stock);
+    if (!g) continue;
+    const q = pbPaxPoint(S, p, g);
+    p.x = ppH(q[0]); p.z = ppH(q[2]);
+  }
+}
+// The nearest usable end of a coach to aisle position s (+-1); an unusable pair falls back to the nearer end.
+function pbExitEnd(S, g, s) {
+  const ends = pbEnds(S, g).filter(e => e.ok), near = s >= 0 ? 1 : -1;
+  if (!ends.length || ends.some(e => e.end === near)) return near;
+  return ends[0].end;
+}
+// Step 8 of the sim tick (after paxTick): travellers coming, waiting, boarding and seating; riders for the Hub off;
+// the player's way into a coach. Only while pbOn.
+function pbTick(S, ev, poseCache) {
+  if (!S.pax || !S.rr || !S.rr.on || !pbOn(S.track)) return;
+  const X = S.pax, R = S.rr, B = pbSt(S), E = PROTO.TOWN_EXITS, P = S.player, T = CFG.TICK_GAME_S;
+  const poses = [].concat(...S.trains.map(tr => poseCache[tr.id] || []));
+  const geo = new Map(), geoOf = stock => { if (!geo.has(stock)) geo.set(stock, pbGeo(S, stock, poseCache)); return geo.get(stock); };
+  // 1. The runs: planned COME_S before each passenger run's arrival; the arrival of one standing now. Stale entries go.
+  const ids = new Set(R.runs.map(r => r.id)), stocks = new Set([].concat(...S.trains.map(tr => tr.consist.map(c => c.id))));
+  B.plan = B.plan.filter(id => ids.has(id)); B.seen = B.seen.filter(id => ids.has(id)); B.due = B.due.filter(d => ids.has(d[1]));
+  for (const k of Object.keys(B.cars)) if (!stocks.has(+k)) delete B.cars[k];
+  for (const run of R.runs) {
+    if (!ppPax(run) || run.ph === 'gone' || run.ph === 'cxl' || run.ph === 'out') continue;
+    if (!B.plan.includes(run.id) && S.time >= run.arr - PB.COME_S) pbPlan(S, run, ev);
+    if (run.ph === 'stand' && !B.seen.includes(run.id)) { const tr = rrTrainOf(S, run); if (tr) pbOnArrive(S, run, tr, ev); }
+  }
+  // 2. Travellers setting off from the street's end for their waiting place.
+  while (B.due.length && B.due[0][0] <= S.time) {
+    const [, rid, who, ex] = B.due.shift(), run = R.runs.find(r => r.id === rid), e = E[ex] || E[0];
+    if (run) { const p = pbAdd(S, run, who, e[0], e[1], ev); paxGo(S, p, poses, p.wx, p.wz); }
+  }
+  // 3. Everyone, in list order.
+  const byRun = new Map(R.runs.map(r => [r.id, r])), standing = new Map();
+  const trOf = run => { if (!standing.has(run.id)) standing.set(run.id, pbStanding(S, run)); return standing.get(run.id); };
+  const hubIn = new Set(X.list.filter(pbHubAboard).map(p => p.stock));
+  const exitAt = (p, x, z) => { const e = E[p.id % E.length]; p.s = 'off'; p.stock = null; p.car = null; p.seat = -1; p.x = ppH(x); p.z = ppH(z); p.tx = null; paxGo(S, p, poses, ppH(e[0]), ppH(e[1])); };
+  for (const p of X.list) {
+    const run = byRun.get(p.run), g = p.stock !== null && p.stock !== undefined ? geoOf(p.stock) : null;
+    switch (p.s) {
+      case 'come':
+        if (paxAt(p)) { p.s = p.bs >= 0 ? 'bench' : 'wait'; p.x = p.wx; p.z = p.wz; p.f = paxAngle(0, 1); }
+        break;
+      case 'wait': case 'bench': {
+        const tr = run && trOf(run);
+        if (tr) pbAssign(S, p, tr, geoOf);
+        break;
+      }
+      case 'toCoach':
+        if (!g) break;
+        if (p.bt > 0) { p.bt = Math.max(0, p.bt - T); break; }   // standing up from the bench
+        if (paxAt(p) && !hubIn.has(p.stock)) { p.s = 'climb'; p.bt = 0; }   // at the steps: up once the coach's riders for the Hub are off
+        break;
+      case 'climb':
+        if (!g) break;
+        p.bt += T;
+        if (p.bt < PB.CLIMB_S) break;
+        if (p.to === 'hub') { const [x, z] = pbW(g, p.end * PB.END_S, -PB.STEP_Z); p.bt = 0; exitAt(p, x, z); }   // down on the platform: off to town
+        else { p.s = 'aisle'; p.bt = 0; p.ls = p.end * PB.END_S; }
+        break;
+      case 'aisle': {
+        if (!g) break;
+        const tgt = pbAisleTarget(p), d = tgt - p.ls;
+        if (Math.abs(d) > 1e-6) { p.ls = pbR(Math.abs(d) <= PB.AISLE ? tgt : p.ls + Math.sign(d) * PB.AISLE); break; }
+        if (p.to === 'hub') { p.s = 'climb'; p.bt = 0; delete p.ls; break; }
+        p.bt += T;   // sitting down
+        if (p.bt >= PB.SIT_S) { p.s = 'sitting'; p.bt = 0; delete p.ls; B.tot.seated++; ev.push({ t: 'pbSeated', run: p.run, id: p.id }); }
+        break;
+      }
+      case 'standing':
+        if (!g) break;
+        p.bt += T;
+        if (p.bt >= PB.STAND_S) { p.s = 'aisle'; p.bt = 0; p.ls = pbSeatLocal(p.seat).rx; }
+        break;
+      case 'sitting':
+        if (p.to === 'hub' && g && S.time >= p.go && trOf(g.run)) {   // a rider for the Hub stands up and makes for the nearer end
+          p.s = 'standing'; p.bt = 0; p.end = pbExitEnd(S, g, pbSeatLocal(p.seat).rx);
+          if (B.cars[p.stock] && B.cars[p.stock][p.seat] === p.id) B.cars[p.stock][p.seat] = -1;
+          B.tot.off++; paxCount(X.arrived, 'hub'); ev.push({ t: 'pbOff', run: p.run, id: p.id });
+        }
+        break;
+    }
+  }
+  // 4. Walking on the ground; those who reach the street's end leave the map.
+  for (const p of X.list) if (p.s === 'come' || p.s === 'off' || p.s === 'left' || (p.s === 'toCoach' && !(p.bt > 0))) paxMove(S, p, poses);
+  pbPlaceAll(S, poseCache);
+  const keep = [];
+  for (const p of X.list) {
+    if ((p.s === 'off' || p.s === 'left') && paxAt(p)) { paxCount(X.gone, 'hub'); ev.push({ t: 'paxGone', id: p.id, st: 'hub' }); continue; }
+    keep.push(p);
+  }
+  X.list = keep;
+  // 5. The player's way in: on reaching the boarding spot he climbs the end steps (pbPlayerTick from the next tick).
+  const J = B.job;
+  if (J && J.k === 'enter' && !P.in) {
+    const g = geoOf(J.stock);
+    if (!g || !trOf(g.run)) { B.job = null; ev.push({ t: 'pbRefused', why: 'The train moved off' }); }
+    else if (P.mode === 'to' && Math.abs(P.tx - J.x) < 1e-6 && Math.abs(P.tz - J.z) < 1e-6) { /* still walking there */ }
+    else if (P.mode === 'idle' && !P.act && !P.ride && Math.hypot(P.x - J.x, P.z - J.z) <= PB.NEAR) {
+      P.in = { tr: g.tr.id, stock: J.stock, s: J.end * PB.END_S, clm: 1, t: 0, ts: null, out: 0, end: J.end, mv: 0, f: 'ne' };
+      B.job = J.then || null;
+      if (B.job) P.in.ts = { stock: B.job.stock, s: pbSeatLocal(B.job.seat).rx };
+      pbPlacePlayer(S, g);
+      ev.push({ t: 'pbEnter', tr: g.tr.id, stock: J.stock });
+    } else {
+      B.job = null;
+      if (P.mode === 'idle') ev.push({ t: 'pbRefused', why: 'Could not reach the coach steps' });
+    }
+  }
+}
+// The player's world point from S.player.in (x, z, y and the facing P.f).
+function pbPlacePlayer(S, g) {
+  const P = S.player, I = P.in, C = PROTO_STOCK.coach;
+  if (I.clm) {
+    const t = Math.min(1, I.t / PB.CLIMB_S), u = I.clm > 0 ? t : 1 - t, e = I.end || (I.s >= 0 ? 1 : -1);
+    const [x0, z0] = pbW(g, e * PB.END_S, -PB.STEP_Z), [x1, z1] = pbW(g, e * PB.END_S, 0), y0 = walkDeckY(S.track, x0, z0);
+    P.x = pbR(x0 + (x1 - x0) * u); P.z = pbR(z0 + (z1 - z0) * u); P.y = pbR(y0 + (C.ends.deckY - y0) * u);
+    I.f = I.clm > 0 ? 'ne' : 'sw';
+  } else {
+    const [x, z] = pbW(g, I.s, 0);
+    P.x = pbR(x); P.z = pbR(z); P.y = Math.abs(I.s) > C.ends.door.x ? C.ends.deckY : C.floor;
+  }
+  P.f = { se: Math.PI / 2, nw: -Math.PI / 2, ne: Math.PI, sw: 0 }[I.f] || 0;
+}
+// Off the train at once (the coach gone, or the train waved off with him aboard): on platform 1 at the nearer end's
+// boarding spot.
+function pbEject(S, g, ev) {
+  const P = S.player, I = P.in;
+  if (!I) return;
+  if (g) { const e = pbExitEnd(S, g, I.s), [x, z] = pbW(g, e * PB.END_S, -PB.STEP_Z); P.x = pbR(x); P.z = pbR(z); }
+  else P.z = PROTO.P1.z1 - 1;
+  P.in = null; delete P.y;
+  if (P.mode !== 'to' && P.mode !== 'dir') P.mode = 'idle';
+  const B = pbSt(S);
+  if (B.job) B.job = null;
+  ev.push({ t: 'pbLeave', tr: I.tr, stock: I.stock });
+}
+// The player inside a coach (S.player.in), from playerModeTick: true while he is in (the walk grid is not used).
+function pbPlayerTick(S, ev, poseCache) {
+  const P = S.player, I = P.in;
+  if (!I || !pbOn(S.track)) return false;
+  const B = pbSt(S), g = pbGeo(S, I.stock, poseCache), TK = CFG.TICK_GAME_S;
+  if (!g) { pbEject(S, null, ev); return false; }
+  const tr = g.tr, idx = stock => tr.consist.findIndex(c => c.id === stock), step = playerWalkSpeed(S.track, false) * DT_MIN;
+  I.mv = 0;
+  const stopPunch = () => { if (B.job && B.job.k === 'punch') B.job = null; };
+  const leave = () => { I.out = 1; stopPunch(); I.ts = { stock: I.stock, s: pbExitEnd(S, g, I.s) * PB.END_S }; };
+  // A walk or a use outside the train (a tap on the ground, a switch, a send-off ...): to the nearest end and down
+  // the steps first, then that walk carries on (P.mode 'to' is kept).
+  if (P.mode === 'to' && !I.out) leave();
+  // The joystick: along the aisle (into the next coach over the end platforms); towards the platform: leave.
+  if (P.mode === 'dir' && !I.out && !I.clm) {
+    const a = P.a / 256 * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+    if (Math.abs(dx) >= Math.abs(dz) * 0.5) {
+      const d = Math.sign(dx) * g.h, want = I.s + d * step, nb = tr.consist[idx(I.stock) - d];
+      if (Math.abs(want) <= PB.END_S) I.ts = { stock: I.stock, s: pbR(want) };
+      else I.ts = nb && nb.k === 'coach' ? { stock: nb.id, s: pbR(d * (Math.abs(want) - 2 * PB.END_S)) } : { stock: I.stock, s: d * PB.END_S };
+      stopPunch();
+    } else if (dz < 0) leave();
+  }
+  if (I.clm) {
+    I.t += TK;
+    if (I.t >= PB.CLIMB_S) {
+      if (I.clm > 0) { I.clm = 0; I.t = 0; if (I.out) leave(); }
+      else {   // down the steps: on platform 1
+        const e = I.end || (I.s >= 0 ? 1 : -1), [x, z] = pbW(g, e * PB.END_S, -PB.STEP_Z);
+        P.in = null; P.x = pbR(x); P.z = pbR(z); delete P.y;
+        if (P.mode !== 'to' && P.mode !== 'dir') P.mode = 'idle';
+        ev.push({ t: 'pbLeave', tr: I.tr, stock: I.stock });
+        return true;
+      }
+    }
+    pbPlacePlayer(S, g);
+    return true;
+  }
+  // Walking the aisle (coach to coach over the end platforms).
+  if (I.ts) {
+    let left = step, cur = g;
+    while (left > 1e-9) {
+      const ti = idx(I.ts.stock), ci = idx(I.stock);
+      if (ti < 0) { I.ts = null; break; }
+      if (ti === ci) {
+        const d = I.ts.s - I.s;
+        if (Math.abs(d) <= left) { I.s = I.ts.s; left = 0; I.ts = null; } else { I.s += Math.sign(d) * left; left = 0; }
+        if (d) { I.f = Math.sign(d) * g.h > 0 ? 'se' : 'nw'; I.mv = 1; }
+      } else {
+        const d = ti < ci ? 1 : -1, edge = d * PB.END_S, dist = Math.abs(edge - I.s);
+        I.f = d * g.h > 0 ? 'se' : 'nw'; I.mv = 1;
+        if (dist <= left) {
+          left -= dist; const nb = tr.consist[ci - d];
+          if (!nb || nb.k !== 'coach') { I.s = edge; I.ts = null; break; }
+          I.stock = nb.id; I.s = -edge; cur = pbGeo(S, nb.id, poseCache) || cur;
+        } else { I.s += d * left; left = 0; }
+      }
+    }
+    I.s = pbR(I.s);
+    if (!I.ts && I.out) { I.clm = -1; I.t = 0; I.end = I.s >= 0 ? 1 : -1; }
+    pbPlacePlayer(S, cur);
+    return true;
+  }
+  if (I.out) { I.clm = -1; I.t = 0; I.end = I.s >= 0 ? 1 : -1; pbPlacePlayer(S, g); return true; }
+  // The punch in hand: at the row, facing across the aisle; the traveller holds the ticket out, then it is punched.
+  const J = B.job;
+  if (J && J.k === 'punch') {
+    const p = S.pax.list.find(q => q.id === J.id);
+    if (!p || p.s !== 'sitting' || p.punched || p.stock !== J.stock || p.seat !== J.seat) { B.job = null; ev.push({ t: 'pbRefused', why: 'That traveller is not waiting with a ticket' }); }
+    else if (I.stock !== J.stock || Math.abs(I.s - pbSeatLocal(J.seat).rx) > 1e-6) { I.ts = { stock: J.stock, s: pbSeatLocal(J.seat).rx }; J.on = 0; }
+    else {
+      I.f = pbSeatLocal(J.seat).side === 'N' ? 'ne' : 'sw';
+      if (!J.on) { J.on = 1; J.acc = 0; }
+      else {
+        J.acc += TK;
+        if (J.acc >= PB.PUNCH_S) {
+          p.punched = true; B.job = null; B.tot.punched++; pdCount(S, 'punched');
+          ev.push({ t: 'pbPunched', run: g.run.id, tr: tr.id, stock: J.stock, id: p.id });
+        }
+      }
+    }
+  }
+  pbPlacePlayer(S, g);
+  return true;
+}
+// T calls these through pxOnDepart / pxReady while D27 board is on.
+function pbOnDepart(S, run, tr, ev) {
+  if (!pbOn(S.track)) return ppOnDepart(S, run, tr, ev);
+  if (!S.pax || !tr) return { missed: 0 };
+  const X = S.pax, B = pbSt(S), stocks = new Set(tr.consist.map(c => c.id)), keep = [], E = PROTO.TOWN_EXITS, P = S.player;
+  if (P.in && P.in.tr === tr.id) pbEject(S, pbGeo(S, P.in.stock, null), ev);
+  let n = 0;
+  for (const p of X.list) {
+    if (p.stock !== null && p.stock !== undefined && stocks.has(p.stock) && p.s !== 'toCoach') {   // aboard: leaves with the train
+      if (!p.punched) n++;   // rode free (only with PB.RIDE_FREE)
+      paxCount(X.gone, 'hub'); ev.push({ t: 'paxGone', id: p.id, st: 'hub' });
+      continue;
+    }
+    if (run && p.run === run.id && p.to !== 'hub' && (p.s === 'come' || p.s === 'wait' || p.s === 'bench' || p.s === 'toCoach')) {   // left behind
+      n++; Object.assign(p, { s: 'left', stock: null, car: null, seat: -1, bs: -1, bt: 0 });
+      const e = E[p.id % E.length]; p.tx = null; paxGo(S, p, [], ppH(e[0]), ppH(e[1]));
+    }
+    keep.push(p);
+  }
+  X.list = keep;
+  for (const s of stocks) delete B.cars[s];
+  if (run) B.due = B.due.filter(d => d[1] !== run.id);
+  if (B.job && B.job.tr === tr.id) B.job = null;
+  if (n) { B.tot.missed += n; pdCount(S, 'missed', n); ev.push({ t: 'pbMissed', run: run ? run.id : null, n }); }
+  return { missed: n };
+}
+// What still keeps a standing passenger train from leaving: null (ready), or a short reason for the screens.
+function pbWhyNotReady(S, run, tr) {
+  if (!S.pax || !ppPax(run)) return null;
+  const B = pbSt(S), P = S.player;
+  if (!B.seen.includes(run.id)) return 'Not in yet';
+  const stocks = new Set(tr ? tr.consist.map(c => c.id) : []);
+  let off = 0, boarding = 0, toPunch = 0, coming = B.due.filter(d => d[1] === run.id).length;
+  for (const p of S.pax.list) {
+    const aboard = p.stock !== null && p.stock !== undefined && stocks.has(p.stock);
+    if (aboard && p.to === 'hub') off++;
+    else if (aboard && p.s === 'sitting') { if (!p.punched && !PB.RIDE_FREE) toPunch++; }
+    else if (aboard) boarding++;
+    else if (p.run === run.id && p.to !== 'hub' && (p.s === 'come' || p.s === 'wait' || p.s === 'bench')) coming++;
+  }
+  if (off) return `${off} still to step off`;
+  if (coming || boarding) return `${coming + boarding} still to take their seats`;
+  if (toPunch) return `${toPunch} ticket${toPunch > 1 ? 's' : ''} still to punch`;
+  if (P.in && tr && P.in.tr === tr.id) return 'Step off the train first';
+  return null;
+}
+function pbReady(S, run, tr) {
+  if (!pbOn(S.track)) return ppReady(S, run, tr);
+  if (!S.pax || !ppPax(run)) return true;
+  return pbWhyNotReady(S, run, tr) === null;
+}
+function pbRefuse(ev, why) { ev.push({ t: 'pbRefused', why }); }
+// The commands (from the command switch: pbEnter, pbWalk, pbPunch, pbLeave; and the D25 'punch' while board is on).
+function pbCmd(S, c, ev) {
+  if (!pbOn(S.track)) return pbRefuse(ev, 'Tickets are punched at the coach doors');
+  const P = S.player, B = pbSt(S), I = P.in;
+  if (!S.pax || !S.rr || !S.rr.on) return pbRefuse(ev, 'Tickets are punched on the passenger trains at platform 1');
+  if (P.ride) return pbRefuse(ev, 'Step off first');
+  const stockOf = () => (Number.isInteger(c.stock) ? c.stock : Number.isInteger(c.car) ? c.car : I ? I.stock : null);
+  if (c.t === 'pbLeave') {
+    if (!I) { if (B.job && B.job.k === 'enter') { B.job = null; return; } return pbRefuse(ev, 'You are not on a train'); }
+    if (I.clm < 0 || I.out) return;
+    if (B.job && B.job.k === 'punch') B.job = null;
+    I.out = 1; P.mode = 'idle';
+    if (!I.clm) { const g = pbGeo(S, I.stock, null); if (g) I.ts = { stock: I.stock, s: pbExitEnd(S, g, I.s) * PB.END_S }; }
+    return;
+  }
+  if (c.t === 'pbWalk') {
+    if (!I) return pbRefuse(ev, 'Step into a coach first');
+    if (I.clm < 0) return pbRefuse(ev, 'Stepping down');
+    const stock = Number.isInteger(c.stock) ? c.stock : I.stock, g = pbGeo(S, stock, null);
+    if (!g || g.tr.id !== I.tr) return pbRefuse(ev, 'That is not a coach of this train');
+    if (!Number.isFinite(c.s)) return pbRefuse(ev, 'Where to?');
+    if (B.job && B.job.k === 'punch') B.job = null;
+    I.out = 0; P.mode = 'idle'; P.use = null; P.act = null;
+    I.ts = { stock, s: pbR(Math.max(-PB.END_S, Math.min(PB.END_S, c.s))) };
+    return;
+  }
+  // pbEnter and pbPunch: a coach of a passenger train standing at platform 1.
+  const stock = stockOf();
+  if (!Number.isInteger(stock)) return pbRefuse(ev, 'Tickets are punched in the coaches of a passenger train standing at platform 1');
+  const g = pbGeo(S, stock, null);
+  if (!g) return pbRefuse(ev, 'Tickets are punched in the coaches of a passenger train standing at platform 1');
+  if (Number.isInteger(c.tr) && c.tr !== g.tr.id) return pbRefuse(ev, 'That coach is not on that train');
+  if (!pbStanding(S, g.run)) return pbRefuse(ev, g.run.ph === 'in' ? `${g.run.name} has not stopped at platform 1 yet` : 'The train is moving');
+  if (!I && P.tool !== null && P.tool !== undefined) return pbRefuse(ev, `Leave the ${carryToolName(S)} at its spot first`);
+  const inside = I && I.tr === g.tr.id;
+  if (I && !inside) return pbRefuse(ev, 'Step off this train first');
+  const ends = pbEnds(S, g), usable = ends.filter(e => e.ok);
+  const enter = (end, then) => {
+    const e = ends.find(q => q.end === end);
+    if (!e || !e.ok) return pbRefuse(ev, 'That end of the coach is beside a footbridge: use the other end');
+    B.job = { k: 'enter', tr: g.tr.id, stock, end, x: pbR(e.x), z: pbR(e.z), then: then || null };
+    P.use = null; P.act = null;
+    if (Math.hypot(P.x - e.x, P.z - e.z) <= PB.NEAR) { P.mode = 'idle'; } else { P.mode = 'to'; P.tx = B.job.x; P.tz = B.job.z; }
+  };
+  const nearEnd = () => usable.slice().sort((a, b) => Math.hypot(a.x - P.x, a.z - P.z) - Math.hypot(b.x - P.x, b.z - P.z))[0];
+  if (c.t === 'pbEnter') {
+    if (inside) { if (B.job && B.job.k === 'punch') B.job = null; I.out = 0; I.ts = { stock, s: (c.end === 1 || c.end === -1 ? c.end : I.s >= 0 ? 1 : -1) * PB.END_S }; return; }
+    if (!usable.length) return pbRefuse(ev, 'Both ends of that coach are beside a footbridge');
+    const end = c.end === 1 ? 1 : c.end === -1 || c.end === 0 ? -1 : nearEnd().end;
+    return enter(end, null);
+  }
+  if (c.t !== 'pbPunch') return pbRefuse(ev, 'Unknown command');
+  // pbPunch: the seat named, or the nearest unpunched traveller in that coach.
+  const L = S.pax.list, from = inside ? (I.stock === stock ? I.s : (g.tr.consist.findIndex(q => q.id === stock) < g.tr.consist.findIndex(q => q.id === I.stock) ? -1 : 1) * PB.END_S) : (nearEnd() || { end: 1 }).end * PB.END_S;
+  let p = null;
+  if (Number.isInteger(c.seat)) {
+    p = L.find(q => q.stock === stock && q.seat === c.seat && (q.s === 'sitting' || q.s === 'aisle' || q.s === 'standing')) || null;
+    if (!p) return pbRefuse(ev, 'Nobody sits there');
+    if (p.s !== 'sitting') return pbRefuse(ev, 'Let them sit down first');
+    if (p.through) return pbRefuse(ev, 'Punched already: a through rider');
+    if (p.to === 'hub') return pbRefuse(ev, 'Getting off here: punched already');
+    if (p.punched) return pbRefuse(ev, 'Punched already');
+  } else {
+    const cand = L.filter(q => q.stock === stock && q.s === 'sitting' && !q.punched).sort((a, b) => Math.abs(pbSeatLocal(a.seat).rx - from) - Math.abs(pbSeatLocal(b.seat).rx - from) || a.seat - b.seat);
+    if (!cand.length) return pbRefuse(ev, L.some(q => q.stock === stock && (q.s === 'aisle' || q.s === 'climb' || q.s === 'toCoach') && q.to !== 'hub') ? 'Nobody to punch yet: they are still taking their seats' : 'Every ticket in this coach is punched');
+    p = cand[0];
+  }
+  const job = { k: 'punch', tr: g.tr.id, stock, seat: p.seat, id: p.id, on: 0, acc: 0 };
+  const J0 = B.job && B.job.k === 'punch' ? B.job : B.job && B.job.then;
+  if (J0 && J0.id === p.id && J0.stock === stock && (inside || B.job.k === 'enter')) return;   // that punch is in hand already: carry on with it
+  if (inside) { B.job = job; I.out = 0; P.mode = 'idle'; P.use = null; P.act = null; I.ts = { stock, s: pbSeatLocal(p.seat).rx }; return; }
+  if (!usable.length) return pbRefuse(ev, 'Both ends of that coach are beside a footbridge');
+  enter(nearEnd().end, job);
+}
+// ---- For R (the renderer) and U (the screens) ----
+// The travellers to draw (everyone of P's: on the platform, on the steps, in the aisle, seated), in list order:
+// [{ id, who (people type, 'man_top.b'), x, y, z (u: y the surface: platform deck, the steps, the coach's floor 1.6;
+// a seated person's x, z is the seat's hip point, drawn on the sit anchor: the floor below the hips), f and dir (the
+// facing 'se' | 'ne' | 'sw' | 'nw'), act ('wait' | 'benchSit' | 'walk' | 'climb' | 'sitDown' | 'sit' | 'sitTicket' |
+// 'standUp'), frame, t (0-1 through a timed act), stock (the coach, or null on the ground), seat (-1 none), punched,
+// through, hub (a rider for the Hub), s (the sim state), key (the atlas key 'ppl/<who>/<anim>/<dir>/<frame>') }].
+function pbDrawList(S) {
+  if (!S || !S.pax || !pbOn(S.track)) return [];
+  const B = pbSt(S), J = B.job, out = [], geo = new Map(), C = PROTO_STOCK.coach;
+  for (const p of S.pax.list) {
+    if (p.s === undefined || p.run === undefined) continue;
+    const who = p.who || PP.WHO[p.id % PP.WHO.length];
+    let x = p.x / 100, z = p.z / 100, y = walkDeckY(S.track, x, z), dir = ppDirOf(p.f), act = 'wait', anim = 'idle', frame = Math.floor((S.tick + p.id * 3) / 6) % 2, t = 0, stock = null;
+    const inCoach = p.stock !== null && p.stock !== undefined && (p.s === 'sitting' || p.s === 'standing' || p.s === 'aisle' || p.s === 'climb');
+    if (inCoach) {
+      if (!geo.has(p.stock)) geo.set(p.stock, pbGeo(S, p.stock, null));
+      const g = geo.get(p.stock);
+      if (!g) continue;
+      const q = pbPaxPoint(S, p, g);
+      [x, y, z, dir] = q; stock = p.stock;
+      if (p.s === 'sitting') {
+        const tk = J && J.k === 'punch' && J.id === p.id;
+        act = anim = tk ? 'sitTicket' : 'sit';
+        if (tk) { t = J.on ? Math.min(1, J.acc / PB.PUNCH_S) : 0; frame = J.on ? 1 : 0; }
+      } else if (p.s === 'standing') { act = anim = 'standUp'; t = Math.min(1, p.bt / PB.STAND_S); frame = t < 0.5 ? 0 : 1; }
+      else if (p.s === 'climb') { act = anim = 'climb'; t = Math.min(1, p.bt / PB.CLIMB_S); frame = Math.floor(t * 4) % 2; }
+      else if (Math.abs(pbAisleTarget(p) - p.ls) > 1e-6) { act = anim = 'walk'; frame = (S.tick + p.id) % 4; }
+      else { act = anim = 'sitDown'; t = Math.min(1, p.bt / PB.SIT_S); frame = t < 0.5 ? 0 : 1; const q2 = pbSeatLocal(p.seat); dir = pbFace(q2.f, g.h); }
+    } else if (p.path && p.path.length) { act = anim = 'walk'; frame = (S.tick + p.id) % 4; }
+    else if (p.s === 'toCoach' && p.bt > 0) { act = anim = 'standUp'; t = 1 - p.bt / PB.STAND_S; frame = t < 0.5 ? 0 : 1; dir = 'sw'; }
+    else if (p.s === 'bench') { act = anim = 'benchSit'; frame = 0; dir = 'sw'; }
+    out.push({ id: p.id, who, x, y, z, f: dir, dir, act, frame, t, stock, seat: Number.isInteger(p.seat) ? p.seat : -1, punched: !!p.punched, through: !!p.through, hub: p.to === 'hub', s: p.s,
+      key: `ppl/${who}/${anim}/${dir}/${frame}` });
+  }
+  return out;
+}
+// The player while on a train: { x, y, z, f ('se' | 'ne' | 'sw' | 'nw'), act ('walk' | 'idle' | 'punch' | 'climb'),
+// frame, t, stock, s, seat (the seat he punches, or -1), key ('ppl/agent/<act>/<f>/<frame>') } or null.
+function pbPlayerPose(S) {
+  const P = S && S.player, I = P && P.in;
+  if (!I || !pbOn(S.track)) return null;
+  const J = S.pb && S.pb.job, punching = J && J.k === 'punch' && J.on && !I.ts && !I.clm;
+  let act = 'idle', frame = Math.floor(S.tick / 6) % 2, t = 0;
+  if (I.clm) { act = 'climb'; t = Math.min(1, I.t / PB.CLIMB_S); frame = Math.floor(t * 4) % 2; }
+  else if (punching) { act = 'punch'; t = Math.min(1, J.acc / PB.PUNCH_S); frame = Math.min(2, Math.floor(t * 3)); }
+  else if (I.mv) { act = 'walk'; frame = S.tick % 4; }
+  const f = I.f || 'se';
+  return { x: P.x, y: typeof P.y === 'number' ? P.y : PROTO_STOCK.coach.floor, z: P.z, f, act, frame, t, stock: I.stock, s: I.s, seat: punching ? J.seat : -1, key: `ppl/agent/${act}/${f}/${frame}` };
+}
+// The vehicles drawn cut away: the coach the player is in (or on whose end platform or steps he stands).
+function pbCutaway(S) { const I = S && S.player && S.player.in; return I && pbOn(S.track) ? [I.stock] : []; }
+// One standing coach's inside for R, in world u: { stock, tr, h ('e' | 'w': the art's heading), cx, cz (its centre),
+// floor (y), seats: [{ i, row, side, pos, x, y, z (the hip point at the floor's height: the sit anchor), f (the
+// sitter's facing), who?, id?, punched?, through?, hub? (who sits there) }], benches: [{ i (the seat index of its
+// aisle seat; the side bench 28), x, y, z, f, key }] (each bench its own sprite, for the sort with the sitters), stove,
+// cooler, closet: { x, y, z }, lamps: [{ x, y, z }], ends: pbEnds } or null.
+function pbCoachView(S, stock) {
+  if (!S || !pbOn(S.track)) return null;
+  const g = pbGeo(S, stock, null);
+  if (!g) return null;
+  const C = PROTO_STOCK.coach, B = pbSt(S), seats = B.cars[stock] || [], F = C.floor, h = g.h > 0 ? 'e' : 'w';
+  const byId = new Map(S.pax.list.filter(p => p.stock === stock).map(p => [p.id, p]));
+  const pt = (lx, y, lz) => { const [x, z] = pbW(g, lx, lz); return { x: pbR(x), y, z: pbR(z) }; };
+  const out = { stock, tr: g.tr.id, h, cx: g.cx, cz: g.cz, floor: F, seats: [], benches: [], ends: pbEnds(S, g) };
+  for (let i = 0; i < PB_SEATS; i++) {
+    const q = pbSeatLocal(i), id = seats[i], p = id >= 0 ? byId.get(id) : null, s = { i, row: q.row, side: q.side, pos: q.pos, ...pt(q.lx, F, q.lz), f: pbFace(q.f, g.h) };
+    if (p && p.s === 'sitting') Object.assign(s, { id: p.id, who: p.who, punched: !!p.punched, through: !!p.through, hub: p.to === 'hub' });
+    out.seats.push(s);
+  }
+  for (let r = 0; r < C.rows; r++) for (const sd of [-1, 1]) {
+    const f = pbFace(C.facing.e, g.h);
+    out.benches.push({ i: r * 4 + (sd < 0 ? 1 : 2), row: r, side: sd < 0 ? 'N' : 'S', ...pt(C.row0 + C.seatPitch * r, F, sd * 1.22), f, key: `veh/seat/${f}` });
+  }
+  const sb = C.sideSeat, sf = pbFace('ne', g.h);
+  out.benches.push({ i: PB_SEATS - 1, row: -1, side: 'S', ...pt(sb.hip[0], F, 1.68), f: sf, key: `veh/sidebench/${sf}` });
+  out.stove = pt(C.stove[0], C.stove[1], C.stove[2]); out.cooler = pt(C.cooler[0], C.cooler[1], C.cooler[2]); out.closet = pt(C.closet[0], C.closet[1], C.closet[2]);
+  out.lamps = C.lamps.map(l => pt(l[0], l[1], l[2]));
+  return out;
+}
+// One coach's travellers for U: { stock, tr, run, seated (sitting), punched (punched here), toPunch, through, boarding
+// (walking to it, on its steps or in its aisle to a seat), off (riders for the Hub still aboard), at (its train stands),
+// inside (the player is in it), punching (the player is punching here), ends: pbEnds } or null.
+function pbCarStatus(S, stock) {
+  if (!S || !S.pax || !S.rr || !pbOn(S.track)) return null;
+  const g = pbGeo(S, stock, null);
+  if (!g) return null;
+  const out = { stock, tr: g.tr.id, run: g.run.id, seated: 0, punched: 0, toPunch: 0, through: 0, boarding: 0, off: 0, at: !!pbStanding(S, g.run), inside: false, punching: false, ends: pbEnds(S, g) };
+  for (const p of S.pax.list) {
+    if (p.stock !== stock) continue;
+    if (pbHubAboard(p)) { out.off++; continue; }
+    if (p.s === 'sitting') { out.seated++; if (p.through) out.through++; else if (p.punched) out.punched++; else out.toPunch++; }
+    else if (p.s === 'toCoach' || p.s === 'climb' || p.s === 'aisle') out.boarding++;
+  }
+  const P = S.player, J = S.pb && S.pb.job;
+  out.inside = !!(P.in && P.in.stock === stock);
+  out.punching = !!(J && J.k === 'punch' && J.stock === stock && J.on);
+  return out;
+}
+// A run's travellers for the boards: { seated, punched, toPunch, boarding, off, waiting (coming or waiting on the
+// platform, not yet given a seat), coming (still to set off or walking in), through, ready (pbReady), why }.
+function pbRunStatus(S, run) {
+  const out = { seated: 0, punched: 0, toPunch: 0, boarding: 0, off: 0, waiting: 0, coming: 0, through: 0, ready: false, why: null };
+  if (!S || !S.pax || !ppPax(run) || !pbOn(S.track)) return out;
+  const tr = rrTrainOf(S, run), stocks = new Set(tr && !trainOff(tr) ? tr.consist.filter(c => c.k === 'coach').map(c => c.id) : []);
+  for (const p of S.pax.list) {
+    if (stocks.has(p.stock)) {
+      if (pbHubAboard(p)) { out.off++; continue; }
+      if (p.s === 'sitting') { out.seated++; if (p.through) out.through++; else if (p.punched) out.punched++; else out.toPunch++; }
+      else out.boarding++;
+    } else if (p.run === run.id && p.to !== 'hub' && (p.s === 'come' || p.s === 'wait' || p.s === 'bench')) { out.waiting++; if (p.s === 'come') out.coming++; }
+  }
+  const due = pbSt(S).due.filter(d => d[1] === run.id).length;
+  out.waiting += due; out.coming += due;
+  out.why = run.ph === 'stand' && tr ? pbWhyNotReady(S, run, tr) : null;
+  out.ready = run.ph === 'stand' && !!tr && out.why === null;
+  return out;
+}
+// Shape check of S.pb and S.player.in (a save being loaded): true, or throws.
+function pbCheckSaveShape(st) {
+  const bad = what => { throw new Error('damaged save: ' + what); };
+  if (st.pb !== undefined) {
+    const B = st.pb;
+    if (!B || typeof B !== 'object') bad('tickets on board');
+    if (B.cars !== undefined && (!B.cars || typeof B.cars !== 'object' || Object.values(B.cars).some(a => !Array.isArray(a) || a.some(v => !Number.isInteger(v))))) bad('tickets on board: the seats');
+    for (const k of ['plan', 'seen', 'due']) if (B[k] !== undefined && !Array.isArray(B[k])) bad('tickets on board: ' + k);
+    if (B.job !== undefined && B.job !== null && (typeof B.job !== 'object' || !Number.isInteger(B.job.stock))) bad('tickets on board: the job in hand');
+  }
+  const I = st.player && st.player.in;
+  if (I !== undefined && I !== null && (typeof I !== 'object' || !Number.isInteger(I.tr) || !Number.isInteger(I.stock) || !Number.isFinite(I.s))) bad('the player in a coach');
+  return true;
+}
+// rh.scenario('d27coach'): a new prototype game at 06:55 with p1 standing at platform 1 (protoDebugScenario, which has
+// called pbOnArrive: through riders and riders for the Hub aboard). Adds p1's travellers: the riders for the Hub gone
+// already, about half the travellers seated (unpunched) and the rest waiting on the platform.
+function pbDebugScenario(S) {
+  if (!pbOn(S.track)) return S;
+  const B = pbSt(S), X = S.pax, run = S.rr.runs.find(r => r.svc === 'p1' && r.ph === 'stand'), tr = run && rrTrainOf(S, run);
+  if (!tr) return S;
+  X.list = X.list.filter(p => { if (p.to === 'hub' && p.stock !== null) { const s = B.cars[p.stock]; if (s && s[p.seat] === p.id) s[p.seat] = -1; return false; } return true; });
+  if (!B.plan.includes(run.id)) pbPlan(S, run, []);
+  for (const d of B.due.filter(q => q[1] === run.id)) {   // planned earlier (the scenario's first tick): at their waiting places now
+    const e = PROTO.TOWN_EXITS[d[3]] || PROTO.TOWN_EXITS[0], p = pbAdd(S, run, d[2], e[0], e[1], []);
+    p.x = p.wx; p.z = p.wz; p.s = p.bs >= 0 ? 'bench' : 'wait'; p.f = paxAngle(0, 1);
+  }
+  B.due = B.due.filter(q => q[1] !== run.id);
+  const geoOf = stock => pbGeo(S, stock, null);
+  X.list.filter(p => p.run === run.id && (p.s === 'wait' || p.s === 'bench')).forEach((p, k) => {
+    if (k % 2 || !pbAssign(S, p, tr, geoOf)) return;
+    Object.assign(p, { s: 'sitting', bt: 0, path: [], tx: null, tz: null });
+    B.tot.seated++;
+  });
+  pbPlaceAll(S, null);
+  return S;
+}
+// Test only (check-d27world's quick day with every switch on, check-onboard): every seated traveller's ticket punched,
+// as if the player had (no events, no counts).
+function pbTestPunchAll(S) { if (S.pax) for (const p of S.pax.list) if (p.s === 'sitting') p.punched = true; }
+// The test hooks (__railhead.pb).
+const PB_TEST = { PB, PB_SEATS, pbOn, pbSt, pbTick, pbOnArrive, pbOnDepart, pbReady, pbWhyNotReady, pbCmd, pbPlayerTick, pbDrawList, pbPlayerPose, pbCutaway, pbCoachView, pbCarStatus, pbRunStatus,
+  pbCheckSaveShape, pbDebugScenario, pbSeatLocal, pbPickSeat, pbGeo, pbEnds, pbPlan, pbTestPunchAll };
 
 // ==== Section: prototype goods (D25) ====
 // Owner: builder F (plans/proto-tech.md section 4). Freight trains stand at track 3 beside platform 2: goods for the

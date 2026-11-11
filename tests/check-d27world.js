@@ -59,7 +59,7 @@ module.exports = async function checkD27World() {
       for (const sh of D.SHOPS27) if (!R.cargo.CARGO_TAGS[sh.tag]) B(`no cargo tag for ${sh.id}`);
       const daily = Object.values(D.SHOP_GOODS27.in).reduce((n, l) => n + l.reduce((m, q) => m + q[2], 0), 0);
       if (daily !== 14) B(`the day's goods for the town: ${daily}, expected 14`);
-      if (JSON.stringify(D.flags()) !== JSON.stringify({ board: false, handling: true, town: false, lessons: false })) B(`the D27 switches: ${JSON.stringify(D.flags())} (handling on: F; the others start off)`);
+      if (JSON.stringify(D.flags()) !== JSON.stringify({ board: true, handling: true, town: false, lessons: false })) B(`the D27 switches: ${JSON.stringify(D.flags())} (handling on: F, board on: P; the others start off)`);
       // ---- Clearances ----
       const half = Math.max(St.cars.coach.wid, St.cars.boxcar.wid, St.loco.wid) / 2;
       if (!(half < P.EDGE)) B(`a car's half width ${half} reaches the deck edge (${P.EDGE} from its track)`);
@@ -186,6 +186,7 @@ module.exports = async function checkD27World() {
         for (let i = 0; i < 450 * hours; i++) {
           const seen = new Set();
           for (const n of R.rr.rrSwitchNeeds(S)) if (!n.passed && !seen.has(n.sw)) { seen.add(n.sw); S.track.switches[n.sw].state = n.want === 'reverse' ? 'R' : 'N'; }
+          R.pb.pbTestPunchAll(S);   // P (board on): every seated ticket punched, as the switchman sets the switches
           for (const run of S.rr.runs) if (run.ph === 'stand' && run.ready && S.time > run.dep) { const tr = S.trains[run.slot], sp = R.rr.rrWaveSpot(S, tr.id); S.player.x = sp.x; S.player.z = sp.z; for (const e of R.simTick(S, [{ t: 'rrWaveOff', tr: tr.id }])) { if (e.t === 'rrRefused') ev['refused: ' + e.why] = 1; ev[e.t] = (ev[e.t] || 0) + 1; } }
           for (const e of R.simTick(S, [])) ev[e.t] = (ev[e.t] || 0) + 1;
         }

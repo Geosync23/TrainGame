@@ -1368,7 +1368,7 @@ const WORLDS = {
     // (P: tickets punched on board; parks the D25 line at the door, parked.doorline), handling (F: freight handling,
     // storage cells, the platform cart, delivery and pickup), town (W: the townsfolk), lessons (U: the six lessons; parks
     // the D25 first-day guide). While one is off, the D25 flow it replaces keeps playing on the D27 layout.
-    d27: { board: false, handling: false, town: false, lessons: false },
+    d27: { board: false, handling: false, town: true, lessons: false },   // town on (W, 2026-11-11)
   },
 };
 // D27: the page's override of the D27 switches (?d27=0 all off, ?d27=all all on, ?d27=board,handling those on): for a
@@ -5171,31 +5171,493 @@ function townDebugScenario(S) {
 // things inside TOWN27); a fixed random stream per day and agent: rngFor(seed, 'tf', day, i) (section "random numbers").
 // The contract (plans/d27-tech.md 5.1 to 5.3): S.tf (optional; tfSt): { day, ag: [{ e, t0, seg, s, wait }] };
 // tfPlanDay(S, day) at 05:00; tfDrawList(S) [{ id, who, x, y, z, f, act ('walk' | 'idle' | 'talk' | 'benchSit'),
-// frame? }] (only those outside); tfAt(S, bld) (is the keeper in: F's delivery; true until W builds it, so F can
-// test); townPath(a, b) (the town graph's shortest path between two node ids); event tfMeet { run, id }.
+// frame? }] (only those outside); tfAt(S, bld) (is the keeper in: F's delivery; true while town is off); townPath(a,
+// b) (the town graph's shortest path between two node ids); event tfMeet { run, id }. Built by W (2026-11-11): town on.
 let TOWN_GRAPH = null;   // { nodes: [{ id, x, z, k }], edges: [[a, b, len]], dist, next } (W, made at load from TOWN27)
 const TF_AGENTS = [];    // W: [{ id, name, who (people type), home, work }]
 const TF_ROUTINES = {};  // W: by kind: [{ place, from, to, p }]
+// How it works (W, 2026-11-11):
+// - The town graph (TOWN_GRAPH, made once at load from TOWN27 and SHOPS27): about 80 nodes (each shop's door spot on
+//   its boardwalk, the alley mouths, the town benches of the art's dressing, the back lanes, the house doors, the church
+//   and school doors, the depot square, the ways round the station, three waiting spots and three benches on platform 1,
+//   a far edge west of town where the cowhands ride in from) and the straight edges between them, all on open ground
+//   (tests/check-townsfolk.js walks every edge on the walk grid). Shortest paths between all nodes once (Floyd).
+//   Nothing of it is on a track, a ramp, the cart crossing or a footbridge.
+// - The people (TF_AGENTS): the 14 named townsfolk of plans/proto-sprites.md (the twelve keepers, the preacher, the
+//   teacher), a laundress, two pupils and two cowhands, each with a home (a room over the shop, a house, or the edge for
+//   the cowhands), a work place and a routine kind (TF_ROUTINES). Times are "be there by" (the walk is set off in time).
+// - Each day's plan (tfPlans: a pure function of the seed and the day, cached; a "day" runs from 05:00 to 05:00): the
+//   routine's errands for that day of the week, optional ones drawn and every time jittered by up to 10 minutes from
+//   rngFor(seed, 'tf', day, i); meeting a train (the hotelkeeper p1 and p3, the sheriff p2, the printer f3) waits from
+//   10 minutes before the run's time until 5 minutes after it really stands (S.rr.runs: the only part that depends on
+//   play); chats in pairs at four times of day from rngFor(seed, 'tf', day, 'pairs').
+// - The tick: one comparison per standing agent, a step along an edge per walking one (2.4u a game minute); a walker
+//   with the player within 0.7u ahead pauses up to 6 game seconds, then walks on. Arrived at a building's door he goes
+//   in (not drawn). A keeper who is in steps out to his door for 4 minutes when the player hands in a delivery there
+//   (pgDelivered, frDelivered), so tfAt(S, shop) is true while he is in or at his door.
+// - S.tf = { day, ag: [{ e (errand), t0 (when it began), at (node), go (goal node, -1 standing), seg (the next node
+//   on the way), s (u along the edge), wait (s paused), in (building id, 'away' or absent), seat, met, out }] }; a save
+//   without it, or a new day, re-plans and settles everyone where their errand puts them (no walking replayed).
+const TF = {
+  SPEED: 2.4 / 60,       // u per game second (2.4u a minute: a stroll, the player is faster)
+  WAIT_S: 6,             // the most a walker waits for the player in his way
+  NEAR: 0.7,             // the player that close ahead on the edge makes him wait
+  PLAN_S: 5 * 3600,      // the day's plan starts at 05:00 (everyone at home)
+  JITTER_S: 600,         // up to 10 minutes either way
+  MEET_EARLY_S: 600,     // a meeter is on platform 1 10 minutes before the run's time
+  MEET_AFTER_S: 300,     // and stays until 5 minutes after it stands
+  MEET_CAP_S: 7200,      // or gives up 2 hours after its time
+  STEP_OUT_S: 240,       // a keeper at his door after a delivery
+  CHAT_S: 1200,          // a planned chat lasts 20 minutes
+  CHAT_SLOTS: [11 * 3600, 13 * 3600 + 2400, 16 * 3600 + 2700, 18 * 3600 + 1800],
+  CHAT_REACH: 48,        // a chat partner comes from at most 48u away (20 minutes' walk)
+  TALK_R: 1.6,           // two people standing outdoors this close talk
+};
+const tfH = s => { const [h, m] = s.split(':').map(Number); return h * 3600 + m * 60; };
+// ---- The town graph ----
+function townGraphBuild() {
+  const P = PROTO, nodes = [], idx = {}, edges = [];
+  const node = (id, x, z, k, o) => { idx[id] = nodes.length; nodes.push({ id, x, z, k, f: 0, ax: 'z', sx: 0, sz: 0, ...(o || {}) }); return id; };
+  const link = (a, b) => { const A = nodes[idx[a]], B = nodes[idx[b]]; edges.push([idx[a], idx[b], Math.hypot(A.x - B.x, A.z - B.z)]); };
+  const chain = ids => { for (let i = 1; i < ids.length; i++) link(ids[i - 1], ids[i]); };
+  const ALLEYS = [-45, -59, -73, -87, -101], BX = 8.5, LX = 27, HX = 30.2;
+  // The boardwalks: each side's door spots, alley mouths, the art's benches (PIX_ATLAS dressing, as numbers here), ends.
+  const BENCHES = [['W', -35.75], ['W', -55], ['W', -49], ['E', -63.5], ['E', -82]];
+  for (const side of ['W', 'E']) {
+    const sx = side === 'W' ? -1 : 1, x = sx * BX, face = side === 'W' ? Math.PI / 2 : -Math.PI / 2, list = [];
+    list.push([-32.6, node('bw' + side + '_s', x, -32.6, 'walk', { f: face })]);
+    for (const sh of SHOPS27.filter(q => q.side === side)) list.push([sh.door.z, node('door_' + sh.id, sh.door.x, sh.door.z, 'door', { f: face, bld: sh.bld, shop: sh.id, sx: sx * 0.6 })]);
+    ALLEYS.forEach((z, i) => list.push([z, node('bw' + side + '_a' + i, x, z, 'walk', { f: face })]));
+    BENCHES.filter(b => b[0] === side).forEach(([, z], i) => list.push([z, node('bench' + side + i, x, z, 'bench', { f: face, seats: [[sx * 0.55, -0.5], [sx * 0.55, 0.5]], sf: -face })]));
+    list.push([-114.6, node('bw' + side + '_n', x, -114.6, 'walk', { f: face })]);
+    list.sort((a, b) => b[0] - a[0]);
+    chain(list.map(q => q[1]));
+    // The back lane behind the row, the alleys to it, the houses on it.
+    const lane = [[-33, node('lane' + side + '_s', sx * LX, -33, 'lane')], [-116, node('lane' + side + '_n', sx * LX, -116, 'lane')]];
+    ALLEYS.forEach((z, i) => { lane.push([z, node('lane' + side + '_a' + i, sx * LX, z, 'lane')]); link('bw' + side + '_a' + i, 'lane' + side + '_a' + i); });
+    for (const h of TOWN27.houses.filter(q => Math.sign(q.x) === sx)) {
+      lane.push([h.z, node('lane_' + h.id, sx * LX, h.z, 'lane')]);
+      node('door_' + h.id, sx * HX, h.z, 'door', { bld: h.id, f: -face, sx: sx * 0.3 });
+      link('lane_' + h.id, 'door_' + h.id);
+    }
+    lane.sort((a, b) => b[0] - a[0]);
+    chain(lane.map(q => q[1]));
+  }
+  // Across the street at three alleys; its two ends; the church and the school.
+  for (const i of [0, 2, 4]) link('bwW_a' + i, 'bwE_a' + i);
+  node('street_s', 0, -30.2, 'walk', { ax: 'x', f: Math.PI });
+  link('bwW_s', 'street_s'); link('bwE_s', 'street_s');
+  node('street_n', 0, -116.6, 'walk', { ax: 'x', f: Math.PI });
+  link('bwW_n', 'street_n'); link('bwE_n', 'street_n');
+  node('door_church', 0, -119.4, 'door', { bld: 'church', ax: 'x', f: 0 });
+  node('door_school', -20, -119.6, 'door', { bld: 'school', ax: 'x', f: 0 });
+  link('street_n', 'door_church'); link('bwW_n', 'door_school'); link('laneW_n', 'door_school'); link('laneE_n', 'street_n');
+  // The depot square, round the station to platform 1 (west and east of the station building).
+  node('sq_w', -13, -29.5, 'walk', { ax: 'x' }); node('sq_e', 13, -29.5, 'walk', { ax: 'x' });
+  node('sq_ww', -24, -26, 'walk'); node('sq_ee', 22, -27, 'walk');
+  node('sta_w', -17, -24, 'walk'); node('sta_e', 17, -24, 'walk');
+  link('street_s', 'sq_w'); link('street_s', 'sq_e'); link('sq_w', 'sta_w'); link('sq_e', 'sta_e');
+  link('laneW_s', 'sq_ww'); link('sq_ww', 'sta_w'); link('laneE_s', 'sq_ee'); link('sq_ee', 'sta_e'); link('sq_ee', 'sq_e');
+  // Platform 1: its two ends by the station, three waiting spots (meeting trains), three benches, the station door.
+  const PZ = -12.6, BZ = P.BENCHES[0].z;
+  node('p1_w', -17, -14, 'walk', { ax: 'x' }); node('p1_e', 17, -14, 'walk', { ax: 'x' });
+  ['wait0', 'wait1', 'wait2'].forEach((id, i) => node(id, -7 + 7 * i, PZ, 'wait', { ax: 'x', f: 0 }));
+  node('door_station', P.STATION.door.x, -16.0, 'door', { bld: 'station', ax: 'x', f: 0 });
+  for (const b of P.BENCHES.filter(q => Math.abs(q.x) <= 12)) node('benchP' + b.x, b.x, BZ + 1.3, 'bench', { ax: 'x', f: 0, sf: 0, seats: [[-0.55, -1.15], [0.55, -1.15]] });
+  link('sta_w', 'p1_w'); link('sta_e', 'p1_e');
+  chain(['p1_w', 'benchP-12', 'wait0', 'wait1', 'benchP4', 'benchP9', 'wait2', 'p1_e']);
+  link('wait1', 'door_station'); link('wait0', 'door_station');
+  // The cowhands' way in: west of the town, past the station.
+  node('edge_w', -88, -26, 'edge'); link('edge_w', 'sq_ww');
+  // All shortest paths (Floyd), next hops for walking.
+  const n = nodes.length, dist = new Float64Array(n * n).fill(Infinity), next = new Int16Array(n * n).fill(-1);
+  for (let i = 0; i < n; i++) { dist[i * n + i] = 0; next[i * n + i] = i; }
+  for (const [a, b, l] of edges) { dist[a * n + b] = dist[b * n + a] = l; next[a * n + b] = b; next[b * n + a] = a; }
+  for (let k = 0; k < n; k++) for (let i = 0; i < n; i++) {
+    const ik = dist[i * n + k];
+    if (ik === Infinity) continue;
+    for (let j = 0; j < n; j++) { const d = ik + dist[k * n + j]; if (d < dist[i * n + j] - 1e-9) { dist[i * n + j] = d; next[i * n + j] = next[i * n + k]; } }
+  }
+  return { nodes, edges, idx, dist, next, n };
+}
+TOWN_GRAPH = townGraphBuild();
+const tfNode = id => TOWN_GRAPH.idx[id];
+// The town graph's shortest path between two node ids: [ids] (both ends included), or null.
+function townPath(a, b) {
+  const G = TOWN_GRAPH, i = G.idx[a], j = G.idx[b];
+  if (i === undefined || j === undefined || G.next[i * G.n + j] < 0) return null;
+  const out = [G.nodes[i].id];
+  for (let k = i; k !== j;) { k = G.next[k * G.n + j]; out.push(G.nodes[k].id); }
+  return out;
+}
+// ---- The people and their routines ----
+// who: the atlas's people type (plans/proto-sprites.md, A1's townsfolk: idle, walk, talk, benchSit); home and work:
+// building ids (BLD_LAYOUTS.proto: 'shop_<kind>', 'house<n>', 'church', 'school') or 'edge'; shop: the shop he keeps
+// (tfAt); meets: the runs he meets on platform 1 and on which days; wait: his spot there; saloon: (unused, a hint).
+// Names marked (p) are the builder's (provisional).
+TF_AGENTS.push(
+  { id: 'amos', name: 'Amos Pratt', who: 'storekeeper', kind: 'keeper', home: 'shop_store', work: 'shop_store', shop: 'store' },
+  { id: 'nell', name: 'Nell O\'Hara', who: 'hotelkeeper', kind: 'keeper', home: 'shop_hotel', work: 'shop_hotel', shop: 'hotel', meets: [['p1', 'all'], ['p3', 'all']], wait: 'wait0' },
+  { id: 'henry', name: 'Henry Whitcomb', who: 'banker', kind: 'clerk', home: 'house1', work: 'shop_bank', shop: 'bank' },
+  { id: 'jake', name: 'Jake Turner', who: 'smith', kind: 'keeper', home: 'shop_smithy', work: 'shop_smithy', shop: 'smithy' },
+  { id: 'luis', name: 'Luis Ortega', who: 'vaquero', kind: 'keeper', home: 'shop_livery', work: 'shop_livery', shop: 'livery' },
+  { id: 'walt', name: 'Walt Hensley (p)', who: 'storekeeper.b', kind: 'keeper', home: 'house5', work: 'shop_feed', shop: 'feed' },
+  { id: 'silas', name: 'Silas Reed', who: 'barkeep', kind: 'barkeep', home: 'shop_saloon', work: 'shop_saloon', shop: 'saloon' },
+  { id: 'ezra', name: 'Ezra Cole', who: 'printer', kind: 'keeper', home: 'shop_newspaper', work: 'shop_newspaper', shop: 'newspaper', meets: [['f3', 'six']], wait: 'wait2' },
+  { id: 'pablo', name: 'Pablo Rivera', who: 'barber', kind: 'keeper', home: 'shop_barber', work: 'shop_barber', shop: 'barber' },
+  { id: 'tom', name: 'Tom Dade', who: 'sheriff', kind: 'sheriff', home: 'shop_sheriff', work: 'shop_sheriff', shop: 'sheriff', meets: [['p2', 'six']], wait: 'wait1' },
+  { id: 'abel', name: 'Abel Grimes', who: 'undertaker', kind: 'keeper', home: 'house6', work: 'shop_undertaker', shop: 'undertaker' },
+  { id: 'karl', name: 'Karl Vogel', who: 'man_bowler', kind: 'clerk', home: 'house8', work: 'shop_assay', shop: 'assay' },
+  { id: 'elias', name: 'Rev. Elias Booth', who: 'preacher', kind: 'preacher', home: 'house4', work: 'church' },
+  { id: 'clara', name: 'Clara Lind', who: 'teacher', kind: 'teacher', home: 'house2', work: 'school' },
+  { id: 'ma', name: 'Ma Kelly (p)', who: 'launderer', kind: 'laundress', home: 'house7', work: 'shop_hotel' },
+  { id: 'tommy', name: 'Tommy Pratt (p)', who: 'child', kind: 'pupil', home: 'house3', work: 'school' },
+  { id: 'sarah', name: 'Sarah Kelly (p)', who: 'child.b', kind: 'pupil', home: 'house7', work: 'school' },
+  { id: 'red', name: 'Red (p, cowhand)', who: 'cowhand', kind: 'cowhand', home: 'edge', work: null },
+  { id: 'dusty', name: 'Dusty (p, cowhand)', who: 'cowhand.b', kind: 'cowhand', home: 'edge', work: null },
+);
+// By kind: the errands in the day, { place, from ('HH:MM', be there by), to (optional: then back to the place before),
+// p (optional: the chance it happens that day), days ('all', 'wk' Monday to Friday, 'six' Monday to Saturday, 'sat',
+// 'sun'; joined with '|'), fixed (only earlier, never later: church, school) }. Places: home, work, porch (outside his
+// own door), stroll (a spot on a boardwalk or the square), bench (a town or platform bench), or a building's kind
+// (hotel, saloon, store, barber, livery, church). Meeting trains comes from TF_AGENTS[].meets. (Provisional.)
+const TF_SUNDAY = [{ place: 'church', from: '10:00', days: 'sun', fixed: true }, { place: 'home', from: '11:45', days: 'sun' }, { place: 'bench', from: '14:00', to: '15:00', p: 0.5, days: 'sun' }, { place: 'stroll', from: '16:00', to: '16:40', p: 0.4, days: 'sun' }];
+Object.assign(TF_ROUTINES, {
+  keeper: [
+    { place: 'home', from: '05:00' },
+    { place: 'porch', from: '07:05', to: '07:25', p: 0.6, days: 'six' },
+    { place: 'work', from: '07:30', days: 'six' },
+    { place: 'hotel', from: '12:05', to: '12:45', p: 0.5, days: 'six' },
+    { place: 'porch', from: '15:30', to: '15:50', p: 0.5, days: 'six' },
+    { place: 'home', from: '18:00', days: 'six' },
+    { place: 'stroll', from: '18:10', to: '18:50', p: 0.4, days: 'six' },
+    { place: 'saloon', from: '19:30', to: '21:15', p: 0.3, days: 'six' },
+    ...TF_SUNDAY],
+  barkeep: [
+    { place: 'home', from: '05:00' },
+    { place: 'porch', from: '09:30', to: '09:50', p: 0.6, days: 'six' },
+    { place: 'store', from: '10:20', to: '10:50', p: 0.4, days: 'six' },
+    { place: 'work', from: '13:00', days: 'all' },
+    { place: 'porch', from: '17:00', to: '17:15', p: 0.5, days: 'all' },
+    { place: 'home', from: '23:30', days: 'all' },
+    ...TF_SUNDAY.slice(0, 2)],
+  clerk: [
+    { place: 'home', from: '05:00' },
+    { place: 'work', from: '09:00', days: 'six' },
+    { place: 'hotel', from: '12:10', to: '13:00', p: 0.7, days: 'six' },
+    { place: 'home', from: '16:00', days: 'six' },
+    { place: 'barber', from: '16:30', to: '17:00', p: 0.3, days: 'six' },
+    { place: 'stroll', from: '17:30', to: '18:10', p: 0.5, days: 'six' },
+    { place: 'saloon', from: '20:00', to: '21:30', p: 0.25, days: 'six' },
+    ...TF_SUNDAY],
+  sheriff: [
+    { place: 'home', from: '05:00' },
+    { place: 'stroll', from: '07:00', to: '07:40', p: 0.8, days: 'six' },
+    { place: 'work', from: '08:00', days: 'six' },
+    { place: 'stroll', from: '11:15', to: '11:45', p: 0.7, days: 'six' },
+    { place: 'hotel', from: '12:20', to: '13:00', p: 0.6, days: 'six' },
+    { place: 'stroll', from: '14:30', to: '15:00', p: 0.7, days: 'six' },
+    { place: 'stroll', from: '17:30', to: '18:00', p: 0.7, days: 'six' },
+    { place: 'saloon', from: '21:00', to: '22:15', p: 0.7, days: 'six' },
+    ...TF_SUNDAY],
+  preacher: [
+    { place: 'home', from: '05:00' },
+    { place: 'work', from: '08:00', days: 'six' },
+    { place: 'hotel', from: '12:00', to: '12:45', p: 0.4, days: 'six' },
+    { place: 'stroll', from: '15:00', to: '15:40', p: 0.7, days: 'six' },
+    { place: 'bench', from: '16:00', to: '16:45', p: 0.5, days: 'six' },
+    { place: 'home', from: '17:30', days: 'six' },
+    { place: 'church', from: '09:30', days: 'sun', fixed: true }, { place: 'home', from: '12:00', days: 'sun' }, { place: 'bench', from: '15:00', to: '16:00', p: 0.6, days: 'sun' }],
+  teacher: [
+    { place: 'home', from: '05:00' },
+    { place: 'work', from: '07:45', days: 'wk', fixed: true },
+    { place: 'home', from: '15:30', days: 'wk' },
+    { place: 'store', from: '16:00', to: '16:30', p: 0.5, days: 'wk' },
+    { place: 'bench', from: '17:00', to: '17:45', p: 0.4, days: 'wk' },
+    { place: 'store', from: '10:00', to: '10:40', p: 0.7, days: 'sat' },
+    { place: 'bench', from: '11:00', to: '11:45', p: 0.6, days: 'sat' },
+    ...TF_SUNDAY],
+  pupil: [
+    { place: 'home', from: '05:00' },
+    { place: 'work', from: '08:00', days: 'wk', fixed: true },
+    { place: 'home', from: '15:05', days: 'wk' },
+    { place: 'stroll', from: '15:30', to: '16:40', p: 0.8, days: 'wk' },
+    { place: 'stroll', from: '10:00', to: '12:00', p: 0.8, days: 'sat' },
+    ...TF_SUNDAY],
+  laundress: [
+    { place: 'home', from: '05:00' },
+    { place: 'work', from: '08:00', days: 'six' },
+    { place: 'home', from: '13:45', days: 'six' },
+    { place: 'store', from: '14:15', to: '14:45', p: 0.6, days: 'six' },
+    { place: 'stroll', from: '16:00', to: '16:30', p: 0.5, days: 'six' },
+    ...TF_SUNDAY],
+  cowhand: [   // ride in for the evening: away on the range by day
+    { place: 'home', from: '05:00' },
+    { place: 'livery', from: '18:50', to: '19:10', p: 0.5, days: 'six' },
+    { place: 'saloon', from: '19:30', to: '23:00', p: 0.5, days: 'wk' },
+    { place: 'saloon', from: '19:30', to: '23:15', p: 0.9, days: 'sat' }],
+});
+const TF_DAYS = { all: () => true, wk: d => d < 5, six: d => d < 6, sat: d => d === 5, sun: d => d === 6 };
+const tfDayOk = (spec, wd) => (spec || 'all').split('|').some(k => TF_DAYS[k] && TF_DAYS[k](wd));
+// The plan's day (05:00 to 05:00) and the time in it (seconds from that day's midnight, 05:00 to 29:00).
+const tfDay = S => Math.floor(S.time / 86400);
+const tfNow = S => S.time - tfDay(S) * 86400 + TF.PLAN_S;
+const tfBld = (ag, b) => b === 'home' ? ag.home : b === 'work' ? ag.work : b;
+function tfDoorOf(bld) {
+  if (bld === 'edge') return tfNode('edge_w');
+  const sh = SHOPS27.find(q => q.bld === bld);
+  return tfNode(sh ? 'door_' + sh.id : 'door_' + bld);
+}
+let TF_SPOTS = null;
+function tfSpots() {
+  if (TF_SPOTS) return TF_SPOTS;
+  const G = TOWN_GRAPH;
+  return (TF_SPOTS = {
+    stroll: G.nodes.filter(q => q.k === 'walk' && /^(bw|street|sq_)/.test(q.id) || q.k === 'door' && q.shop).map(q => G.idx[q.id]),
+    benches: G.nodes.filter(q => q.k === 'bench').map(q => G.idx[q.id]),
+  });
+}
+const tfDist = (a, b) => TOWN_GRAPH.dist[a * TOWN_GRAPH.n + b];
+// The day's plans: [agent] = [{ pl (node), in (building id, 'away', or null: outdoors), act ('in' | 'idle' | 'bench' |
+// 'meet' | 'talk'), at (be there by, s of the day), leave (sets off), svc, side, with, back }]. Pure (seed, day); cached.
+const tfPlanCache = new Map();
+function tfPlans(seed, day) {
+  const key = seed + '/' + day;
+  if (tfPlanCache.has(key)) return tfPlanCache.get(key);
+  const wd = ((day % 7) + 7) % 7, { stroll, benches } = tfSpots(), plans = [];
+  TF_AGENTS.forEach((ag, i) => {
+    const X = rngFor(seed, 'tf', day, i), R = () => rngNext(X), list = [];
+    let base = null;
+    const place = (name, r1) => {
+      if (name === 'porch') return { pl: tfDoorOf(ag.work), in: null, act: 'idle' };
+      if (name === 'stroll') return { pl: stroll[Math.floor(r1 * stroll.length) % stroll.length], in: null, act: 'idle' };
+      if (name === 'bench') return { pl: benches[Math.floor(r1 * benches.length) % benches.length], in: null, act: 'bench' };
+      const b = name === 'home' || name === 'work' ? tfBld(ag, name) : name === 'church' || name === 'school' ? name : 'shop_' + name;
+      if (!b) return null;
+      return { pl: tfDoorOf(b), in: b === 'edge' ? 'away' : b, act: 'in' };
+    };
+    for (const r of TF_ROUTINES[ag.kind] || []) {
+      // four numbers per routine line whatever is taken, so one line's change does not move the others' draws
+      const take = r.p === undefined || R() < r.p, j = Math.round((R() * 2 - 1) * TF.JITTER_S), j2 = Math.round((R() * 2 - 1) * TF.JITTER_S), r1 = R();
+      if (!tfDayOk(r.days, wd) || !take) continue;
+      const q = place(r.place, r1);
+      if (!q || q.pl === undefined) continue;
+      q.at = tfH(r.from) + (r.fixed ? -Math.abs(j) : j);
+      if (r.fixed) q.fixed = 1;
+      list.push(q);
+      if (r.to === undefined) { base = q; q.m = 1; }
+      else if (base) list.push({ ...base, m: 0, at: tfH(r.to) + j2, back: true, from0: q.at });
+    }
+    // a way back that would end within 15 minutes of the next fixed errand (or after it) is left out: he goes on to it
+    list.sort((a, b) => a.at - b.at);
+    for (let k = list.length - 1; k >= 0; k--) {
+      const q = list[k];
+      if (q.back && list.some(o => o.m && o.at > q.from0 && o.at < q.at + 900)) list.splice(k, 1);
+    }
+    for (const [svc, days] of ag.meets || []) {
+      const sv = PROTO_SCHEDULE.find(v => v.id === svc);
+      if (!sv || !tfDayOk(days, wd)) continue;
+      list.sort((a, b) => a.at - b.at);
+      const k = list.filter(q => q.at <= sv.arr - TF.MEET_EARLY_S).length, prev = list[k - 1] || list[0];
+      // after the train: back to what he was doing (a later errand takes over in time)
+      list.splice(k, 0, { pl: tfNode(ag.wait || 'wait1'), in: null, act: 'meet', svc, at: sv.arr - TF.MEET_EARLY_S }, { ...prev, at: sv.arr + 1200, back: true });
+    }
+    list.sort((a, b) => a.at - b.at);
+    plans.push(tfLeaveTimes(list));
+  });
+  tfPairs(seed, day, plans, stroll);
+  if (tfPlanCache.size > 6) tfPlanCache.delete(tfPlanCache.keys().next().value);
+  tfPlanCache.set(key, plans);
+  return plans;
+}
+// When each errand sets off: in time to be there by its time (the graph's walking time), a minute after the last one
+// at the earliest. A meeting, church or school must be kept: errands just before it that would make him late are
+// dropped (he sets off from the one before them).
+function tfLeaveTimes(list) {
+  for (let k = 0; k < list.length; k++) {
+    const q = list[k];
+    if (k === 0) { q.leave = TF.PLAN_S; q.at = TF.PLAN_S; continue; }
+    const leave = () => q.at - Math.ceil(tfDist(list[k - 1].pl, q.pl) / TF.SPEED);
+    if (q.act === 'meet' || q.fixed) while (k > 1 && leave() < list[k - 1].leave + 60) { list.splice(k - 1, 1); k--; }
+    q.leave = Math.max(list[k - 1].leave + 60, leave());
+  }
+  return list;
+}
+// The errand of plan E under way at time t (its index): the last one set off by then.
+function tfErrandAt(E, t) { let k = 0; while (k + 1 < E.length && E[k + 1].leave <= t) k++; return k; }
+// Chats in pairs (rngFor(seed, 'tf', day, 'pairs')): at each of TF.CHAT_SLOTS, maybe one pair of people both free from
+// half an hour before to half an hour after (at home or work, on a porch or a stroll; not at church, school, a meeting
+// or away) and near enough: the first stands at his own door (a keeper at work) or a boardwalk spot, the second walks
+// over; afterwards each goes back to what he was doing.
+function tfPairs(seed, day, plans, stroll) {
+  const X = rngFor(seed, 'tf', day, 'pairs'), R = () => rngNext(X), m = plans.length;
+  for (const t of TF.CHAT_SLOTS) {
+    const go = R() < 0.85, a = Math.floor(R() * m) % m, b = (a + 1 + Math.floor(R() * (m - 1)) % (m - 1)) % m, sp = stroll[Math.floor(R() * stroll.length) % stroll.length];
+    if (!go) continue;
+    const free = E => {
+      const k = tfErrandAt(E, t - 1800), q = E[k];
+      return k === tfErrandAt(E, t + TF.CHAT_S + 1800) && q.act !== 'meet' && q.act !== 'talk' && q.act !== 'bench' && q.in !== 'church' && q.in !== 'school' && q.in !== 'away' ? k : -1;
+    };
+    const ka = free(plans[a]), kb = free(plans[b]);
+    if (ka < 0 || kb < 0) continue;
+    const qa = plans[a][ka], qb = plans[b][kb], pl = qa.in && qa.in === TF_AGENTS[a].work && TF_AGENTS[a].shop ? qa.pl : sp;
+    if (tfDist(qb.pl, pl) > TF.CHAT_REACH || tfDist(qa.pl, pl) > TF.CHAT_REACH) continue;
+    [[a, ka, qa, 0, b], [b, kb, qb, 1, a]].forEach(([i, k, q, side, w]) => {
+      const E = plans[i], walk = Math.ceil(tfDist(q.pl, pl) / TF.SPEED);
+      E.splice(k + 1, 0, { pl, in: null, act: 'talk', side, with: w, at: t, leave: Math.max(E[k].leave + 60, t - walk) }, { ...q, at: t + TF.CHAT_S, leave: t + TF.CHAT_S, back: true });
+    });
+  }
+}
+// The run a meeting is for, and whether the meeting is over (the run gone, cancelled or leaving, 5 minutes after it
+// stood, or 2 hours after its time).
+function tfMeetRun(S, day, svc) { return S.rr && Array.isArray(S.rr.runs) ? S.rr.runs.find(r => r.svc === svc && r.day === day) || null : null; }
+function tfMeetDone(S, q, day, now) {
+  if (q.act !== 'meet') return true;
+  const sv = PROTO_SCHEDULE.find(v => v.id === q.svc), run = tfMeetRun(S, day, q.svc);
+  if (!sv || now > sv.arr + TF.MEET_CAP_S) return true;
+  if (!run) return now > sv.arr + TF.MEET_AFTER_S;
+  if (run.ph === 'gone' || run.ph === 'cxl' || run.ph === 'out' || run.skipped) return true;
+  return run.ph === 'stand' && run.tArr !== null && run.tArr !== undefined && S.time >= run.tArr + TF.MEET_AFTER_S;
+}
+// ---- The store ----
 function tfSt(S) {
   if (!S.tf || typeof S.tf !== 'object') S.tf = { day: -1, ag: [] };
   if (!Array.isArray(S.tf.ag)) S.tf.ag = [];
   return S.tf;
 }
-function tfPlanDay(S, day) { }
+// A day's plan begins (05:00, or a save without S.tf, or the town switched on): every agent is put where his errand of
+// the moment has him, arrived (no walking replayed: cheap). Returns the plans.
+function tfPlanDay(S, day) {
+  const st = tfSt(S), plans = tfPlans(S.seed, day), now = day === tfDay(S) ? tfNow(S) : TF.PLAN_S;
+  st.day = day;
+  st.ag = plans.map(E => {
+    let k = tfErrandAt(E, now);
+    for (let j = k - 1; j >= 0 && j >= k - 2; j--) if (E[j].act === 'meet' && !tfMeetDone(S, E[j], day, now)) k = j;   // still meeting
+    return { e: k, t0: S.time, at: E[k].pl, go: -1, seg: -1, s: 0, wait: 0 };
+  });
+  st.ag.forEach((a, i) => tfArrived(st, i, plans[i][a.e]));
+  return plans;
+}
+// Arrived at errand q's place: in at a door, a seat on a bench (the first free one), or standing.
+function tfArrived(st, i, q) {
+  const a = st.ag[i];
+  delete a.seat; delete a.met;
+  if (q.in) a.in = q.in; else delete a.in;
+  if (q.act === 'bench') {
+    const used = st.ag.filter((o, j) => j !== i && o.go < 0 && o.at === a.at && o.seat !== undefined).map(o => o.seat);
+    const s = [0, 1].find(v => !used.includes(v));
+    if (s !== undefined) a.seat = s;
+  }
+}
 // Step 8b of the sim tick (after townTick): the townsfolk walking their errands. Only with D27 town on.
 function tfTick(S, ev) {
   if (!protoWorld(S.track) || !d27On(S.track, 'town')) return;
+  const st = tfSt(S), day = tfDay(S);
+  const plans = st.day !== day || st.ag.length !== TF_AGENTS.length ? tfPlanDay(S, day) : tfPlans(S.seed, day);
+  const now = tfNow(S), G = TOWN_GRAPH, n = G.n, dt = CFG.TICK_GAME_S, Pl = S.player;
+  // A delivery handed in at a shop: its keeper, if in, steps out to his door.
+  for (const e of ev) if ((e.t === 'pgDelivered' || e.t === 'frDelivered') && e.shop) {
+    const i = TF_AGENTS.findIndex(q => q.shop === e.shop), a = st.ag[i];
+    if (a && a.go < 0 && a.in === TF_AGENTS[i].work && a.at === tfDoorOf(a.in)) a.out = S.time + TF.STEP_OUT_S;
+  }
+  for (let i = 0; i < st.ag.length; i++) {
+    const a = st.ag[i], E = plans[i];
+    if (a.out !== undefined) { if (S.time < a.out) continue; delete a.out; }
+    if (a.go < 0) {
+      const q = E[a.e];
+      if (q.act === 'meet') {
+        const run = tfMeetRun(S, day, q.svc);
+        if (!a.met && run && run.ph === 'stand') { a.met = 1; ev.push({ t: 'tfMeet', run: run.id, id: TF_AGENTS[i].id }); }
+        if (!tfMeetDone(S, q, day, now)) continue;
+      }
+      if (a.e + 1 >= E.length || E[a.e + 1].leave > now) continue;
+      const k = tfErrandAt(E, now), nq = E[k];
+      a.e = k; a.t0 = S.time;
+      if (nq.pl === a.at) { tfArrived(st, i, nq); continue; }
+      a.go = nq.pl; a.seg = G.next[a.at * n + a.go]; a.s = 0; a.wait = 0;
+      delete a.in; delete a.seat; delete a.met;
+    }
+    // Walking: along the edge at > seg; the player close ahead makes him wait up to TF.WAIT_S, then he walks on.
+    const A = G.nodes[a.at], B = G.nodes[a.seg], L = tfDist(a.at, a.seg), ux = (B.x - A.x) / L, uz = (B.z - A.z) / L;
+    const hx = A.x + ux * a.s, hz = A.z + uz * a.s, ahead = (Pl.x - hx) * ux + (Pl.z - hz) * uz;
+    let move = TF.SPEED * dt;
+    if (ahead > 0 && ahead < TF.NEAR && Math.abs((Pl.x - hx) * uz - (Pl.z - hz) * ux) < 0.5) { const p = Math.max(0, Math.min(dt, TF.WAIT_S - a.wait)); a.wait += p; move = TF.SPEED * (dt - p); }
+    else a.wait = 0;
+    a.s += move;
+    while (a.s >= tfDist(a.at, a.seg)) {
+      a.s -= tfDist(a.at, a.seg); a.at = a.seg;
+      if (a.at === a.go) { a.go = -1; a.seg = -1; a.s = 0; a.wait = 0; tfArrived(st, i, E[a.e]); break; }
+      a.seg = G.next[a.at * n + a.go];
+    }
+  }
 }
-function tfDrawList(S) { return []; }
-function tfAt(S, bld) { return true; }
-function townPath(a, b) { return null; }
+// Where agent i is and what he does (pure, from the state): { x, z, f, act, hidden }.
+function tfPose(S, i, plans) {
+  const a = S.tf.ag[i], G = TOWN_GRAPH, N = G.nodes[a.at];
+  if (a.out !== undefined) { const sx = N.sx || 0; return { x: N.x + sx, z: N.z, f: sx < 0 ? Math.PI / 2 : -Math.PI / 2, act: 'talk' }; }
+  if (a.go >= 0) {
+    const B = G.nodes[a.seg], t = Math.min(1, a.s / tfDist(a.at, a.seg));
+    return { x: N.x + (B.x - N.x) * t, z: N.z + (B.z - N.z) * t, f: Math.atan2(B.x - N.x, B.z - N.z), act: 'walk' };
+  }
+  if (a.in) return { x: N.x, z: N.z, f: N.f, act: 'in', hidden: true };
+  const q = plans[i][a.e];
+  if (a.seat !== undefined && N.seats) { const [dx, dz] = N.seats[a.seat]; return { x: N.x + dx, z: N.z + dz, f: N.sf, act: 'benchSit' }; }
+  const o = q.act === 'talk' ? (q.side ? 0.55 : -0.55) : ((i % 3) - 1) * 0.6;
+  return { x: N.x + (N.sx || 0) + (N.ax === 'x' ? o : 0), z: N.z + (N.sz || 0) + (N.ax === 'z' ? o : 0), f: N.f, act: 'idle' };
+}
+// For R: the townsfolk outdoors, [{ id, who, name, x, y, z, f, act ('walk' | 'idle' | 'talk' | 'benchSit') }] (f: the
+// heading, x = sin f, z = cos f, as pixDirOf reads it). Two people standing near each other (a planned chat, meeting by
+// chance or waiting for the same train) face each other and talk.
+function tfDrawList(S) {
+  if (!protoWorld(S.track) || !d27On(S.track, 'town') || !S.tf || S.tf.day < 0 || S.tf.ag.length !== TF_AGENTS.length) return [];
+  const plans = tfPlans(S.seed, S.tf.day), out = [];
+  for (let i = 0; i < TF_AGENTS.length; i++) {
+    const p = tfPose(S, i, plans);
+    if (p.hidden) continue;
+    out.push({ id: 'tf_' + TF_AGENTS[i].id, who: TF_AGENTS[i].who, name: TF_AGENTS[i].name, x: p.x, y: walkDeckY(S.track, p.x, p.z), z: p.z, f: p.f, act: p.act });
+  }
+  for (const a of out) {
+    if (a.act !== 'idle') continue;
+    let best = null, bd = TF.TALK_R;
+    for (const b of out) { if (b === a || (b.act !== 'idle' && b.act !== 'talk')) continue; const d = Math.hypot(b.x - a.x, b.z - a.z); if (d < bd) { bd = d; best = b; } }
+    if (best) { a.act = 'talk'; a.f = Math.atan2(best.x - a.x, best.z - a.z); }
+  }
+  return out;
+}
+// Is the keeper of a shop (SHOPS27 id, or its building id) in to take a delivery: inside his shop or at its door.
+// True while D27 town is off (F's deliveries then always find someone).
+function tfAt(S, bld) {
+  if (!protoWorld(S.track) || !d27On(S.track, 'town')) return true;
+  const sh = SHOPS27.find(q => q.id === bld || q.bld === bld);
+  if (!sh) return false;
+  const i = TF_AGENTS.findIndex(q => q.shop === sh.id), st = S.tf;
+  if (i < 0) return false;
+  if (!st || st.day !== tfDay(S) || !st.ag[i]) return true;   // not planned yet (the next tick plans it)
+  const a = st.ag[i];
+  return a.go < 0 && a.at === tfDoorOf(sh.bld) && (!a.in || a.in === sh.bld);
+}
 function tfCheckSaveShape(st) {
-  if (st.tf !== undefined && (!st.tf || typeof st.tf !== 'object')) throw new Error('damaged save: the townsfolk');
+  const T = st.tf, bad = () => { throw new Error('damaged save: the townsfolk'); };
+  if (T === undefined) return true;
+  if (!T || typeof T !== 'object' || !Number.isInteger(T.day) || !Array.isArray(T.ag)) bad();
+  for (const a of T.ag) if (!a || typeof a !== 'object' || !Number.isInteger(a.e) || !Number.isInteger(a.at) || !Number.isInteger(a.go) || typeof a.s !== 'number') bad();
   return true;
 }
-// rh.scenario('d27town'): a new prototype game at 10:00 on day 0 (a weekday); W sets its people out.
-function tfDebugScenario(S) { return S; }
-const TF_TEST = { TF_AGENTS, TF_ROUTINES, get TOWN_GRAPH() { return TOWN_GRAPH; }, tfSt, tfPlanDay, tfTick, tfDrawList, tfAt, townPath, tfCheckSaveShape, tfDebugScenario };
+// rh.scenario('d27town'): a new prototype game at 10:00 on day 0 (a weekday), the town switched on, everyone where
+// the plan has them, then (for R's drawing) some set out: two chatting at the store's door, the preacher on the
+// hotel's bench, three walking (the boardwalk, the street, the square), the sheriff waiting on platform 1. They go back
+// to their plans as the clock runs.
+function tfDebugScenario(S) {
+  WORLDS.proto.d27.town = true;
+  tfPlanDay(S, tfDay(S));
+  const st = S.tf, G = TOWN_GRAPH, idOf = id => TF_AGENTS.findIndex(q => q.id === id);
+  const put = (id, node, extra) => { const a = st.ag[idOf(id)]; Object.assign(a, { at: tfNode(node), go: -1, seg: -1, s: 0 }, extra || {}); delete a.in; delete a.out; return a; };
+  const walk = (id, from, to, s) => { const a = put(id, from); a.go = tfNode(to); a.seg = G.next[a.at * G.n + a.go]; a.s = s; };
+  put('amos', 'door_store'); put('karl', 'door_store'); put('elias', 'benchW1', { seat: 0 }); put('tom', 'wait1');
+  walk('ma', 'bwW_a0', 'door_bank', 3); walk('henry', 'street_s', 'door_saloon', 1); walk('abel', 'sq_w', 'sta_w', 2);
+  return S;
+}
+const TF_TEST = { TF, TF_AGENTS, TF_ROUTINES, get TOWN_GRAPH() { return TOWN_GRAPH; }, tfSt, tfPlanDay, tfPlans, tfErrandAt, tfMeetDone, tfDay, tfNow, tfDoorOf, tfPose, tfTick, tfDrawList, tfAt, townPath, tfCheckSaveShape, tfDebugScenario, townGraphBuild };
 
 // ==== Section: economy ====
 // Owner: M1 package 3 (builder C1). Cash, the Overland market, import orders by telegraph, contracts, the

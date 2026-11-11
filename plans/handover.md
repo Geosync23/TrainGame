@@ -1,6 +1,11 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
-## Latest (2026-11-10): D25 prototype built
+## Latest (2026-11-12): D27 working day and D28 morning fixes built
+- D27 (bigger trains with interiors, punching on board, step-by-step freight onto a cart, raised cargo platform, evening trip to town with keeper hand-ins and pickups, 19 townsfolk, six lessons, night lights) and D28 (smooth camera, platform planking, station set back, Start over) are merged, tested (full npm test passed) and published at https://claude.ai/artifact/215immEY4Skh13fN9fN2db.
+- Review page with every overnight provisional choice: https://claude.ai/artifact/EJsq45PwyyTbaFcyTFYD89 (answers/d27-review). Full list: plans/d27-choices.md. Tech plan: plans/d27-tech.md. DEV_NOTES "D27" covers each builder's part.
+- Known: the evening takes about 4 game hours (day ends ~23:15); check-pixperf's scale-1 landscape case is borderline under load; the morning trains board covers Settings (backlog).
+
+## Earlier (2026-11-10): D25 prototype built
 - D25 (the streamlined prototype in pixel art) is built and merged: switches, ticket lines and punching, freight unload/load, the evening handcart to three shops, the end-of-day summary. It is the default world; ?world=hub etc. still open the parked 3D game.
 - Checks: 54, including check-proto-day (a bot plays two full days). See DEV_NOTES "Prototype (D25)".
 - Station placement answered 2026-11-11: back behind the platform roof (done). Style: the designer wants the new art style next, before reviewing the prototype; the richer one stays on deck. Plan page https://claude.ai/artifact/CCcToxUJ81G3jT9EeV42Qe (answers/art-plan) waits on answers; nothing drawn until it is signed off. The prototype review https://claude.ai/artifact/CPVGkAAmr81A2CGCLkHAMW (answers/d25-review) waits until after the art round.

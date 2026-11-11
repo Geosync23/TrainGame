@@ -49,6 +49,9 @@ const RUNNER = `window.__pd = (() => {
         if (e.t === 'ppLine') D.line += e.n;
         if (e.t === 'ppPunched') D.punched++;
         if (e.t === 'ppMissed') D.missed += e.n;
+        if (e.t === 'pbCome') D.line += e.n;   // D27 (P): punched on board (board on)
+        if (e.t === 'pbPunched') D.punched++;
+        if (e.t === 'pbMissed') D.missed += e.n;
         if (e.t === 'pgUnloaded' && R.pg.pgShopOf(S.items.waybill[e.id])) D.unloaded++;
         if (e.t === 'pgLoaded') D.loadedEv++;
         if (e.t === 'pgDelivered') { D.delivered++; if (S.items.waybill[e.id].consignee.id !== e.shop) D.wrongShop++; }
@@ -78,9 +81,9 @@ const RUNNER = `window.__pd = (() => {
       // The travellers' line spots: never on a footbridge.
       if (S.tick % 20 === 0) for (const p of S.pax.list) if (p.s === 'line' && R.proto.walkBridgeAt(S.track, p.x / 100, p.z / 100) && rec.lineOnBridge.length < 5) rec.lineOnBridge.push([p.id, p.x, p.z]);
       // The moments for the screenshots.
-      const st = S.rr.runs.filter(r => r.ph === 'stand'), J = S.pax.pp && S.pax.pp.job, P = S.player;
+      const st = S.rr.runs.filter(r => r.ph === 'stand'), J = (S.pax.pp && S.pax.pp.job) || (S.pb && S.pb.job && S.pb.job.k === 'punch' && S.pb.job), P = S.player;
       if (st.length === 2 && J && J.on) {
-        const inLine = S.pax.list.filter(p => p.s === 'line').length;
+        const inLine = S.pax.list.filter(p => p.s === 'line' || (p.s === 'sitting' && !p.punched)).length;   // D27: still to punch on board
         if (!rec.shots.busy || inLine > rec.shots.busy.b) rec.shots.busy = { b: inLine, at: hm(S), save: JSON.stringify({ state: S }) };
       }
       if (!rec.shots.bridge && R.proto.walkBridgeY(S.track, P.x, P.z) > 4) rec.shots.bridge = { at: hm(S), save: JSON.stringify({ state: S }) };

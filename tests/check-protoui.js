@@ -22,7 +22,7 @@ const { openGame, screenshotPath } = require('./browser');
 module.exports = async function checkProtoUi() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&doorline=1' });   // D27 board on (P): this check plays the D25 line at the door
     const P = m => problems.push(`${orient}: ${m}`);
     const ev = (fn, arg) => page.evaluate(fn, arg);
     const frames = (ms) => page.waitForTimeout(ms || 250);

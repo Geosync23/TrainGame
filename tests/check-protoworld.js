@@ -58,7 +58,7 @@ module.exports = async function checkProtoWorld() {
     } finally { await browser.close(); }
   }
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&doorline=1' });   // D27 board on (P): this check plays the D25 line at the door
     try {
       if (orient === 'portrait') {
         const r = await page.evaluate((PROMISE) => {

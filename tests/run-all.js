@@ -58,6 +58,7 @@ const checks = {
   'M1 acceptance criteria (a week played by the bot)': require('./check-m1'),
   'the station rework end to end (D24: three days in the hub played by the bot: every train in and out, tickets, goods, money, same result)': require('./check-hub-day'),
   'the prototype end to end (D25: two days played by the bot through touch-level commands: every train in and out, every switch, ticket and good, the summary, same result)': require('./check-proto-day'),
+  'the prototype never stalls (D25 fix: the page keeps running with goods in hand, two trains never come in on top of each other, the Next job line names the train holding the next one up)': require('./check-proto-stall'),
 };
 
 (async () => {

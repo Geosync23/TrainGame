@@ -6,31 +6,46 @@ alternatives, in plain words. The number in brackets is where it comes from: the
 the foundation, the builders T (trains and levers), P (tickets on board), F (freight), W (townsfolk), U (lessons and
 screens), R (drawing), the artists, and the integrator (I).
 
-## The big one first: the working day is too full for one player
+## Decided provisionally by the lead: the evening and the late Monday (2026-11-11)
 
-Measured with the integrator's bot (a careful player that follows the game's own hints) over two days, with every
-D27 part on:
+The integration measured that the working day was too full for one player: taking a day's goods to town and the
+shops' goods back took 4 to 5 game hours, the evening (from 20:15) ended at 23:00, and Monday ran up to 2.5 hours late.
+The lead decided, provisionally, for the designer's review (every old value can be switched back in `FR` and `PD`):
 
-- The trains run and every ticket is punched: day 2 runs almost on time (worst 26 minutes late), day 1 (a Monday:
-  seven goods on f1, among them the plough) runs up to 2.5 hours late from the afternoon on, because unloading,
-  stacking and loading by hand take most of each freight train's standing time and more.
-- **The evening does not fit.** Taking one day's goods to town and the shops' goods back takes about **4 to 5 game
-  hours** for a careful player even after the integrator's provisional fixes below (F measured about 10.5 hours before
-  them). The evening starts when the last freight train leaves (20:15 on time) and the day ends by itself at 23:00, so
-  the goods pile up: in the two days played, only one good reached the town.
-- Where the time goes (measured): pushing the cart from the storage to the street about 35 minutes each way; at the
-  shops about 3 minutes a good (lift it off the cart, walk to the door, hand it in) plus about 5 minutes to move the
-  cart from shop to shop; loading the cart and stacking about 2.5 minutes a good.
+1. **The keeper carries the goods in.** At a shop the player parks the cart at the door and taps Deliver once; the
+   keeper (or, if he is away, a hand) walks from the door to the cart, takes each of his shop's goods and carries it
+   in, while the player waits by the cart. Pickups the same way: the keeper carries the shop's outgoing goods out to
+   the cart. Drawn: the keeper walking cart to door with the good in his arms (`FR.KEEPER`; false: the player
+   carries, as F built it).
+2. **Handling about 40% shorter:** the door 24 s (was 40), lifting and setting down: carry 16, shoulder 24, roll 16,
+   drag 16, hand truck 16, heave 40 (was 32, 40, 24, 16, 24, 64), the cart's handle 8, handing in 16 (`FR.TIME_K` 0.6;
+   1 gives F's times back).
+3. Kept from the integration: the storage by the east ramp, the bigger cart, the goods packed in the fewest boxcars.
 
-Suggested: decide what to cut or speed up. Alternatives (any mix):
-1. **The keeper fetches from the cart** (the player stays at the cart and hands each good over): saves about half of
-   the time at the shops.
-2. **Fewer goods a day** (for example 8 instead of 14, the weekly specials kept): the evening about halves.
-3. **Faster handling** (the lifting and setting down times halved; now 16 to 64 seconds each way): saves about an hour
-   a day.
-4. **A later end of the day** (midnight, or the evening carrying on past midnight with the next morning later).
-5. **A helper** (a porter who stacks the storage while the player punches tickets).
-6. **The shops collect their own goods** from the cargo platform on some days (the player only unloads and stacks).
+The integrator added these to try to reach the aim (about 3 hours for the evening, about 20 minutes' lateness at
+worst), each switchable:
+4. **The plough is collected by the feed store** from its flatcar 20 minutes after Monday's f1 stands (the player does
+   not unload it; `FR.COLLECT`). Alternative: the player heaves it (as before).
+5. **The cart is a 5 x 4 cell dray** (4.2 x 3.2u; was 4 x 3 at the integration, 4 x 2 at first), so a whole day's
+   goods go to town in one trip; it stands partly over the cart lane when parked at a boxcar door.
+6. **At a shop, its pickups are loaded in the same stop** once its deliveries are done and nothing is left in storage,
+   and goods for the railroad are never set on top of the town's on the cart.
+7. **The cart may stay in town overnight** with the day's pickups (`FR.CART_NIGHT`); the next day the Next job line
+   brings it back and stacks them. Alternative: back to the OUT rows every evening (about 50 minutes more).
+8. **The day ends by itself at 23:59** (was 23:00): three hours after the last freight train leaves at 20:15.
+9. Loading the cart for town takes the long goods first and the nearest along the lane; small goods fill the bed row by
+   row, so whole rows stay free for lumber and bar iron.
+
+**What it gave** (measured, seed 1866): the evening's work for a whole Monday's goods (14, with 7 pickups), started
+from the storage, takes **3 hours 23 minutes** (was 8 hours 25); with the day as the bot plays it, though, the freight
+trains still run late (day 1: f2 92 minutes, f3 113; day 2: f2 89, f3 82), so the evening starts after 21:30 and does
+not finish by 23:59: in two days only one good reached the town. **The aims are not met**; the remaining
+bottleneck is the daytime freight work (unloading, stacking and loading by hand take 3.5 to 4 hours for f2, which
+stands 2 hours 40), with the punching of a passenger train at the same time. Options for the designer:
+- longer freight standing times or fewer runs (the schedule, T's);
+- the crew unloads onto the loading edge and the player only stacks (or the reverse);
+- a porter who stacks while the player punches tickets;
+- fewer goods a day.
 
 ## Integrator (I)
 
@@ -42,9 +57,8 @@ Suggested: decide what to cut or speed up. Alternatives (any mix):
    block of the cargo platform (nearest the east ramp, the busiest shops nearest the ramp); the goods for the railroad
    (OUT) in the east block's row by the cart lane, then the west block's; the barber, the sheriff and the assay office
    (nothing comes for them) in the west block. Alternative: the foundation's (eight shops in the west block).
-3. **A bigger platform cart:** 4 x 3 cells (was 4 x 2; A2's art widened from 1.6u to 2.4u, which still fits the loading
-   edge and the cart lane) and the small goods (crates, sacks, kegs, newspapers, the express box) up to 3 high on it
-   (was 2): about twice the load. Alternatives: 4 x 4 cells (3.2u wide: too wide for the loading edge); 3 high only.
+3. **A bigger platform cart:** at the integration 4 x 3 cells (A2's art widened), then 5 x 4 (see the lead's decision,
+   5); the small goods (crates, sacks, kegs, newspapers, the express box) up to 3 high on it (was 2).
 4. **Trips to town between trains:** the Next job line (F's hint) offers a delivery trip in the day when nothing is
    standing or coming and the next train is further off than the trip (about 100 minutes plus 2.5 a good), and a trip
    under way carries on; the cart is brought back to the cargo platform after a day trip. With the schedule as it is,
@@ -117,6 +131,7 @@ Suggested: decide what to cut or speed up. Alternatives (any mix):
 4. **The express box does not go back yet** (the tables have no pickup for it). Alternative: the bank sends it every
    evening.
 5. **Deliveries in the evening only** (F) - changed by the integrator to also between trains (I 4).
+7. **The hand truck** is fetched within 40u (F's); the integration tried 12u and went back.
 6. The cart stays overnight where it was left; the next morning asks for it only when a freight train needs it.
 
 ## W: the townsfolk

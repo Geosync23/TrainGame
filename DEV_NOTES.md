@@ -815,11 +815,36 @@ on the D27 layout. Each builder's own notes are the parts above; what the integr
   (packing) and its day counts goods stored or handed in on a day trip. `tests/dev-eval.js` runs a script file in the
   page (a developer's tool, not a check).
 
+
+### The lead's evening decision (2026-11-11, after the integration)
+
+Provisional, every old value switchable (plans/d27-choices.md, "Decided provisionally by the lead"):
+- **The keeper carries** (`FR.KEEPER`): Deliver at a shop parks the cart and each good is one step `{ a: 'keeper' }`
+  (the keeper walks door > cart, lifts it, carries it to his door, hands it in: used up 'business' from the cart);
+  Pick up is `{ a: 'keeperLoad' }` (pickup spot > cart, into `frCartFree`'s place). `frKeeperState` gives his place in
+  the step; `frKeeperDraw` (W's entry shape, his own entry in W's list left out by R's `pixTfList`) draws him walking
+  with the good in his arms (the good's place 'moving' at his hands in `frDrawList`); the player waits by the cart.
+- **Times** `FR.TIME_K` 0.6 of F's (`FR_TIMES_F`, `frTimes`; whole 8 s ticks, a lift at least 16 s).
+- **The plough collected** by the feed store 20 minutes after f1 stands (`FR.COLLECT`, `FR.COLLECT_S`; frTick; not
+  counted in `frAboard`, so not the player's to unload; itemAudit allows it).
+- **The cart 5 x 4 cells** (`CARGO27.CART_COLS` 5, `CART_ROWS` 4, 20 cells; A2's art 4.2 x 3.2u in goods27.py;
+  `FR.PUSH_D` 2.9, `FR.CART_EDGE_Z` 14.7; R's sort box follows it); candidates row by row; the long goods loaded
+  first, the nearest along the lane; goods for the railroad never on a town good (`frCartFree`).
+- **Pickups at the same stop** once the shop's deliveries are done and storage is empty; **the cart stays in town
+  overnight** with the pickups (`FR.CART_NIGHT`); **the day ends at 23:59** (`PD.LATE_S`).
+- Day trips keep going once loaded (`frDayFree(S, loaded)`, `FR.DAY_TRIPS`); `FR.KEEP_LAST` (the last freight train's
+  goods left on the cart for the evening) is built but off: it held f3 up.
+- **Measured:** the evening for a whole Monday's goods from the storage 3 h 23 min (8 h 25 before); the bot's two days
+  still run late from f2 on (day 1 worst 113 minutes, day 2 89) and the evening does not finish: check-d27-day fails on
+  the deliveries, pickups, day 2's loading and the day's end. The bot's pbPunch is no longer resent while he walks the
+  aisle. check-protogoods is back to F's version (the D25 handcart fits before 23:59).
 ## Next
 
 Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays
 two days and `check-d27-day.js` reports them (see "D27", "The integration"). The day works end to end except that the
-evening cannot carry a day's goods in time (4 to 5 game hours needed); every provisional choice is in
+evening cannot carry a day's goods in time; the lead's provisional evening decision is built (the keeper carries,
+shorter handling: see "The lead's evening decision") and the evening's own work is down to about 3.4 hours, but the
+daytime freight work still runs 1.5 to 2 hours late, so the aims are not met yet; every provisional choice is in
 `plans/d27-choices.md` for the designer's morning review. Next: the lead's review, the review page with the choices,
 then the designer's decision on the evening's workload.
 

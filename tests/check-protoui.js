@@ -202,8 +202,8 @@ module.exports = async function checkProtoUi() {
           await ev(() => window.__railhead.step(1));
         } else if (j.key === 'summary') {
           await frames(300);
-        } else if (/^idle/.test(j.key)) {
-          // Nothing to do: on to the next thing. After F1 has gone, the rest of the day is skipped to the evening
+        } else if (/^(idle|held)/.test(j.key)) {
+          // Nothing to do (held: the next train waits for another to leave its track; 2026-11-11): on to the next thing. After F1 has gone, the rest of the day is skipped to the evening
           // (the check's own shortcut), with goods for the blacksmith to deliver (fake).
           if (st.f1 === 'gone') {
             const busy = await ev(() => { const S = window.__railhead.state; return S.rr.runs.some(r => r.day === S.pd.day && !r.through && (r.ph === 'in' || r.ph === 'stand' || r.ph === 'out')); });

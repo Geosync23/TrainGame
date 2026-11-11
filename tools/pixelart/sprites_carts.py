@@ -36,7 +36,7 @@ def _uv(v):
 
 def register(reg):
     for d in DIRS:
-        sh = (-(2.4) * 4, -(2.4) * 4, 2.6 * 4, 2.4 * 4)
+        sh = (-(2.4) * 4, -(2.8) * 4, 2.6 * 4, 2.8 * 4)
         fr = [_r(lambda p=p: G.platform_cart(p * math.pi / 6), YAW[d], shadow=sh) for p in range(2)]
         cells = []
         for c, r, a, b in G.cart_cells():
@@ -45,7 +45,7 @@ def register(reg):
             cells.append(dict(c=c, r=r, x=round(x, 3), z=round(z, 3), px=[round(px[0]), round(px[1])]))
         extra = dict(
             bedTop=G.CART_TOP, cells=cells,
-            cells_note='4 x 2 cells of 0.8 u: c 0..3 from the handle end to the front, r 0..1 across; x, z in u from '
+            cells_note='4 x 3 cells of 0.8 u (D27 integration; was 4 x 2): c 0..3 from the handle end to the front, r 0..2 across; x, z in u from '
                        'the anchor; px the cell centre on the bed top. A second layer sits on the goods below '
                        '(their height); long goods take 2 or 4 cells along c (lumber overhangs the front)',
             pusher=_uv(world(-2.5, 0, d)), grip=_uv(world(-2.1, 0, d)) + [1.03])
@@ -86,10 +86,11 @@ def _loaded(d, base):
     canvas[pad:pad + img.shape[0], pad:pad + img.shape[1]] = img
     ox, oy = ax + pad, ay + pad
     load = [(3, 0, 'crate', 0), (3, 1, 'crate', 0), (2, 0, 'sack', 1), (2, 1, 'keg', 0), (1, 0, 'mailSack', 0),
-            (1, 1, 'crate', 0), (0, 0, 'paper', 0), (0, 1, 'strongbox', 0), (3, 0, 'crate', 1)]
+            (1, 1, 'crate', 0), (0, 0, 'paper', 0), (0, 1, 'strongbox', 0), (3, 0, 'crate', 1), (3, 2, 'crate', 0),
+            (2, 2, 'sack', 0), (1, 2, 'paper', 0), (0, 2, 'keg', 0)]
     items = []
     for c, r, kind, layer in load:
-        a, b = -1.6 + 0.8 * (c + 0.5), -0.8 + 0.8 * (r + 0.5)
+        a, b = -1.6 + 0.8 * (c + 0.5), -G.CART_W / 2 + 0.8 * (r + 0.5)
         x, z = world(a, b, d)
         y = G.CART_TOP + (G.SIZE['crate'][2] if layer else 0)
         yaw = YAW[d] + (90 if kind == 'sack' else 0)

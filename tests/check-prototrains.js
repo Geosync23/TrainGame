@@ -23,7 +23,7 @@ const { openGame, screenshotPath } = require('./browser');
 
 // The scripted player, run in the page: returns the commands for this tick.
 // A careful player: it knows the day's plan (rrSwitchNeeds, the standing trains) and picks the job whose latest start
-// (its time less the walk to it, at 2u a minute and a third more for the way round) comes first. A switch whose next
+// (its time less the walk to it, at the player's pace (R.proto.playerWalkSpeed) and a third more for the way round) comes first. A switch whose next
 // move is still blocked by an earlier one set the other way (a train still to pass it) is a job to walk to and wait at,
 // once that train is moving. Waving off: at its time (or later by mem.waveLate[svc]) once it is ready.
 function botSource() {
@@ -50,11 +50,11 @@ function botSource() {
       jobs.push({ k: 'wave', tr: tr.id, at: [sp.x, sp.z], time: run.dep + lateBy, readyAt: run.dep + lateBy, ready: near && S.time >= run.dep + lateBy && (run.ready || S.time >= run.dep + lateBy + 300) });
     }
     if (!jobs.length) return [];
-    const walkS = j => Math.hypot(j.at[0] - P.x, j.at[1] - P.z) * 1.33 / 2 * 60, key = j => j.k + (j.k === 'sw' ? j.sw : j.tr);
+    const wU = R.proto.playerWalkSpeed(T), walkS = j => Math.hypot(j.at[0] - P.x, j.at[1] - P.z) * 1.33 / wU * 60, key = j => j.k + (j.k === 'sw' ? j.sw : j.tr);
     jobs.sort((a, b) => (a.time - walkS(a)) - (b.time - walkS(b)) || a.time - b.time);
     // Look ahead over the three most pressing jobs: the order that makes them least late (walking between them at
-    // 2u a minute, a third more for the way round, waiting for each to be ready) gives the next job.
-    const top = jobs.slice(0, 3), dS = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) * 1.33 / 2 * 60;
+    // the player's pace, a third more for the way round, waiting for each to be ready) gives the next job.
+    const top = jobs.slice(0, 3), dS = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) * 1.33 / wU * 60;
     const cost = order => { let t = S.time, at = [P.x, P.z], c = 0; for (const q of order) { t = Math.max(t + dS(at, q.at), q.readyAt); const l = Math.max(0, t - q.time); c += l * l; t += 60; at = q.at; } return c; };
     const perms = a => a.length <= 1 ? [a] : [].concat(...a.map((x, i) => perms(a.slice(0, i).concat(a.slice(i + 1))).map(r => [x].concat(r))));
     let best = null, bc = Infinity, heldC = Infinity;

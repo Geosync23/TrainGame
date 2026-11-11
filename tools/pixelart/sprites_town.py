@@ -47,39 +47,7 @@ def _box_u(F, a0, b0, a1, b1, h):
     return [round(x0 / U, 3), round(z0 / U, 3), round(x1 / U, 3), round(z1 / U, 3), round(h / TW.UY, 3)]
 
 
-def _shop(reg, kind):
-    for f in ('e', 'w', 's'):
-        F = TW.Frame(f)
-        door = F.w(0.0, TW.SHOP_DOOR_B)
-        parts = {
-            'body': (lambda k=kind, f=f: TW.shop_body(k, f), lambda k=kind, f=f: TW.shop_letters(k, f),
-                     _box_u(F, -18.8, -16.0, 18.8, TW.SHOP_FRONT + 1.8, TW.SHOP[kind]['fh'] + 4.4)),
-            'walk': (lambda k=kind, f=f: TW.shop_walk(k, f), None,
-                     _box_u(F, -TW.SHOP_A, TW.SHOP_FRONT + 1.2, TW.SHOP_A, TW.SHOP_B, 1.5)),
-        }
-        if kind != 'smithy':
-            parts['awning'] = (lambda k=kind, f=f: TW.shop_awning(k, f), None,
-                               _box_u(F, -TW.SHOP_A, TW.SHOP_FRONT + 1.8, TW.SHOP_A, TW.AWN_B, 14.4))
-        else:
-            parts['anvil'] = (lambda f=f: TW.shop_anvil(f), None, _box_u(F, -9.0, 8.2, -7.0, 12.0, 6.2))
-        for part, (draw, after, bx) in parts.items():
-            opts = FLAT if part == 'walk' else NOSHADOW
-            reg.add(f'bld/shop_{kind}/{f}/{part}', 'town_shops', one(draw, after=after, **opts),
-                    dict(anchor=CENTRE + ' of the whole shop (draw every part at the same point)',
-                         box=bx, box_note='[x0, z0, x1, z1, height] in u from the anchor; sort the part on this box'))
-        if f == LAYOUT_FACING[kind]:
-            def draw_all(k=kind, f=f):
-                TW.shop_all(k, f)
-            reg.add(f'bld/shop_{kind}', 'town_shops', one(draw_all, after=lambda k=kind, f=f: TW.shop_letters(k, f), **NOSHADOW),
-                    dict(anchor=CENTRE, footprint=[10, 8], facing=f,
-                         front={'e': '+x', 'w': '-x', 's': '+z'}[f],
-                         door=[round(door[0] / U, 3), round(door[1] / U, 3)],
-                         door_note='the delivery spot on the boardwalk in front of the door, u from the anchor',
-                         parts=[f'bld/shop_{kind}/{f}/{p}' for p in parts],
-                         note='the whole shop as one picture; the parts are the same picture split for sorting'))
-
-
-GAME_KEYS = ('board', 'box', 'door', 'parts', 'facing', 'front', 'cartSlots', 'pusher', 'tag_at', 'bays', 'footprint',
+GAME_KEYS = ('board', 'box', 'door', 'dressing', 'parts', 'facing', 'front', 'cartSlots', 'pusher', 'tag_at', 'bays', 'footprint',
              'underside', 'height', 'top_px')
 
 
@@ -141,42 +109,12 @@ def register(reg):
                          ', running down towards ' + ('+x' if '_e' in nm else '-x'))
         reg.add(f'bld/footbridge/{nm}', 'town_bridge', one(fn, **NOSHADOW),
                 dict(anchor=FBA, note=note, box=bx, height=ex))
-    reg.add('bld/sign_saloon', 'town_props', one(TW.saloon_sign, after=TW.saloon_sign_letters, **NOSHADOW),
-            dict(anchor='foot of the post (put it at the south end of the saloon\'s boardwalk, about x 4.0, z -25.2); '
-                        'the sign hangs 3.4 to 4 u towards -x over the street, its letters on the +z face'))
-    # ---------------- shops ----------------
-    for kind in TW.SHOPS:
-        _shop(reg, kind)
-    # ---------------- town scenery ----------------
-    for k in range(3):
-        p = TW.HOUSE[k]
-        for f in ('s', 'e'):
-            fp = [2 * p['a'] / U, 2 * p['b'] / U] if f == 's' else [2 * p['b'] / U, 2 * p['a'] / U]
-            reg.add(f'bld/house/{k + 1}' + ('' if f == 's' else '/e'), 'town_scenery',
-                    one(lambda k=k, f=f: TW.house(k, f), **NOSHADOW),
-                    dict(anchor=CENTRE, footprint=fp, front='+z' if f == 's' else '+x'))
-    reg.add('bld/church', 'town_scenery', one(TW.church, **NOSHADOW), dict(anchor='centre of the nave at ground level', footprint=[3.0, 6.0]))
-    reg.add('bld/watertower', 'town_scenery', one(TW.water_tower, **NOSHADOW), dict(anchor=CENTRE, footprint=[2.5, 2.5]))
-    trees = [('cottonwood', TW.tree_cottonwood), ('pine', TW.tree_pine), ('young', TW.tree_young)]
-    for k, (nm, fn) in enumerate(trees):
-        reg.add(f'bld/tree/{k + 1}', 'town_scenery', one(fn, **NOSHADOW), dict(anchor='foot of the trunk', kind=nm))
-    reg.add('bld/lamp', 'town_props', one(lambda: TW.lamp_post(False), **NOSHADOW), dict(anchor='foot of the post'))
-    reg.add('bld/lamp_lit', 'town_props', one(lambda: TW.lamp_post(True), **NOSHADOW), dict(anchor='foot of the post', note='evening'))
-    reg.add('bld/fence_x', 'town_props', one(lambda: TW.fence('x'), **NOSHADOW), dict(anchor='the post at the -x end; 1 u long'))
-    reg.add('bld/fence_z', 'town_props', one(lambda: TW.fence('z'), **NOSHADOW), dict(anchor='the post at the -z end; 1 u long'))
-    reg.add('bld/hitch_x', 'town_props', one(lambda: TW.hitching_rail('x'), **NOSHADOW), dict(anchor='centre; 2 u along x'))
-    reg.add('bld/hitch_z', 'town_props', one(lambda: TW.hitching_rail('z'), **NOSHADOW), dict(anchor='centre; 2 u along z'))
-    reg.add('bld/bench_x', 'town_props', one(lambda: TW.bench('x'), **NOSHADOW), dict(anchor='centre; seat faces +z'))
-    reg.add('bld/bench_z', 'town_props', one(lambda: TW.bench('z'), **NOSHADOW), dict(anchor='centre; seat faces +x'))
-    reg.add('bld/horse', 'town_props', [TW.pixmap(TW.HORSE, ax=10, ay=15, outline=False)],
-            dict(anchor='under the horse\'s middle, on the ground; stands along x, head to the +x side'))
-    reg.add('prop/water_barrel', 'town_props', one(TW.water_barrel, **NOSHADOW), dict(anchor='centre of the base'))
-    reg.add('prop/crates', 'town_props', one(TW.crate_stack, **NOSHADOW), dict(anchor='centre of the stack'))
-    reg.add('prop/sacks', 'town_props', one(TW.sack_pile, **NOSHADOW), dict(anchor='centre of the pile'))
-    reg.add('prop/barrels', 'town_props', one(TW.barrel_group, **NOSHADOW), dict(anchor='centre of the group'))
     reg.add('prop/shelf', 'town_props', one(TW.shelf, **NOSHADOW), dict(anchor='centre of the shelf; its back to -z'))
-    for k, rows in enumerate(TW.TUFTS):
-        reg.add(f'prop/tuft/{k + 1}', 'town_props', [TW.pixmap(rows)], dict(anchor='bottom middle', note='grass tuft or flowers'))
+    # ---------------- D27: the town at the new scale (town27.py, props27.py; registered by town27_reg.py) -------
+    # The D25 shops, houses, church, water tower, trees, lamps, fences, hitching rails, benches, horse, tufts and the
+    # saloon's free-standing sign are replaced by these (same keys where the meaning is the same).
+    import town27_reg
+    town27_reg.register(reg)
     # ---------------- goods, tags, cart ----------------
     for kind in ('crate', 'sack', 'barrel', 'keg', 'bale', 'mailSack', 'longBundle'):
         x, z, y = TW.GOODS_TOP[kind]

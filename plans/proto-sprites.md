@@ -142,3 +142,65 @@ higher than a deck (buildings, stands, lamps) is in it. Until it exists, R draws
   tracks. Deck top 0.3u (drawn 3 px).
 - The four switches lie on track 2 (z = 0): crossover legs are radius 12.8u arcs of 30 degrees with a straight between
   them; see `proto-layout.json` for every point.
+
+## 6. D27: town buildings, nature, props and ground tiles (A3)
+
+Drawn at the D27 scale (plans/d27-tech.md section 1: a person 2.5u = 20 px; one-storey walls 5u, false fronts 7.5u).
+Code: `tools/pixelart/town27.py` (buildings), `props27.py` (street furniture), `nature.py` + `sprites_nature.py`,
+`sprites_ground.py` (tiles), `pal27.py` (nine muted ramps appended to the engine palette: sage, rock, creek, straw,
+brick, umber, slate, pine, bloom). Registered by `town27_reg.py` from `sprites_town.py`. Review: `python3
+tools/pixelart/street27_scene.py` after `build.py` writes `out/d27-street-scene.png` (+ `-3x`), `out/d27-buildings.png`,
+`out/d27-nature-props.png`. Positions come from the plan's numbers until the layout export carries the D27 town.
+
+**Street buildings** `bld/shop_<kind>/<f>/<part>`. Kinds (plan 2.4): west row (`f` = `e`, fronts to +x) `store`,
+`hotel`, `bank`, `smithy`, `livery`, `feed`; east row (`f` = `w`, fronts to -x, turned away) `saloon`, `newspaper`,
+`barber`, `sheriff`, `undertaker`, `assay`. **Anchor of every part: the lot centre at ground level** (x -15.5 or 15.5,
+z the lot's z: -38 ... -108); draw all parts of a building at that one point. Parts:
+
+| Part | What | Sort |
+|---|---|---|
+| `walk` | the boardwalk in front (12u along the street, 2.5u wide, 0.3u up; the feed store's loading dock 1u) | flat: first |
+| `shadow` | the building's cast shadow (50% ink checker), on the ground and the walk | flat: after `walk`, before anything upright |
+| `body` | walls, false front, roof, chimneys; the side-wall advertisement and (west row) the front sign | on its `box` |
+| `awning` | posts and awning over the boardwalk (the hotel: a two-level gallery); people pass under | on its `box` |
+| `sign` | east row only: a hanging sign on a post and arm out over the street, its face to +z so the name reads | on its `box` |
+| `yard` | east row only: the back yard seen in the view (porch, kegs, privy, woodpile, washing line ...) | on its `box` |
+| `pole/<f>` | the barber's pole, 2 frames (stripes turning) | on its `box` |
+
+`PIX_ATLAS.extra[key].box` = `[x0, z0, x1, z1, height]` (u from the anchor) for every part. `extra[.../body]` also
+has `door` (the delivery spot on the boardwalk, u from the anchor), `facing`, `front`, `footprint` and `dressing`:
+suggested street furniture `[[key, dx, dz], ...]` (u from the anchor; horses included) for the foundation to place.
+The east row's sign posts stand at the boardwalk's street edge 0.75u inside the lot's south end; their arms reach up to
+about 3.5u over the street. The livery is 16u deep (to x -25.5, half a unit into the back lane's edge).
+
+**Civic and houses**: `bld/church` (10 x 16u, steeple 16u, door and tower to +z; anchor its footprint centre, (0, -128)),
+`bld/church/shadow`; `bld/school` (8 x 11u, door to +z, bell cupola, flag; anchor its footprint centre),
+`bld/school/shadow`; `bld/house/<1-4>/<e|w>` (8 x 8u lots; `e`: door to +x for the west houses, `w`: seen from behind,
+for the east ones; anchor the lot centre). Each has `extra.box`.
+
+**Props** (anchors in `atlas.json` notes; ground level): `prop/hitch_z|x`, `prop/trough_z|x`, `prop/barrel`,
+`prop/barrels`, `prop/crates`, `prop/sacks`, `prop/bench_e|w|s` (`s` faces +z: platform 1's benches),
+`prop/lamp`, `prop/lamp_lit` (also as `bld/lamp`, `bld/lamp_lit`), `prop/wagon_z|x`, `prop/wagon_cov_z|x`,
+`prop/telegraph`, `prop/woodpile`, `prop/privy`, `prop/water_barrel` (a rain barrel), `prop/washline`,
+`prop/corral_x|z`, `prop/corral_gate`, `prop/anvil`, `prop/wheels`, `prop/notices`, `prop/wash_bridge` (8u along x over
+the dry wash), `prop/freight_tarp`, `bld/watertower` (bigger: 4u tank, about 9u), `prop/horse/<e|w>/<bay|grey|dun>/<f>`
+(2 frames, the tail; stands along x, head to +x or -x; anchor under its middle).
+
+**Nature** `nat/...` (anchor: the foot of the trunk or the clump's centre; trees and big plants carry their own
+shadow): `cottonwood/1-3`, `willow/1-2`, `juniper/1-2`, `deadtree`, `sage/1-4`, `rabbitbrush/1-2`, `pear/1-2`
+(prickly pear), `boulder/1-4`, `outcrop/1-2`, `cattails/1-2`, `log_x`, `log_z`, `grass/<1-6>/<f>` (2 frames, sway
+optional), `flowers/1-3`, `tumbleweed/<f>` (4 frames, rolling).
+
+**Ground tiles** `tile/...`: one 1u x 1u cell each, anchor the cell's corner (x, z) at ground level (the diamond's top
+point). The frames are 14 x 8 px: the pixels whose centres fall in the cell, so cells laid at 8 x 4 px steps tile
+exactly, with no overlap and no gap. Kinds: `grass/1-4`, `drygrass/1-2`, `dirt/1-3`, `street/1-3` (ruts along z),
+`path/1-2`, `ballast/1-2`, `sand/1-2`, `gravel/1-2`, `water/<f>` (2 frames), `bank/<n|s|e|w|ne|nw|se|sw>` (grass, sand,
+then water towards that side; two letters: water in that corner only), `boardwalk/1-2`, `deck/1-2`, `crossing`. Pick a
+variant by a hash of the cell. Textures are per-pixel noise, so variants and kinds sit side by side without seams.
+
+**Retired D25 keys** (replaced at the new scale): the old whole-shop pictures `bld/shop_<kind>` and the `s` facings,
+the D25 parts `bld/shop_smithy/e/anvil`, `bld/sign_saloon` (now the saloon's `sign` part), the old `bld/house/1-3`,
+`bld/house/1/e`, `bld/tree/1-3` (now `nat/...`), `bld/fence_x|z`, `bld/hitch_x|z`, `bld/bench_x|z`, `bld/horse` (now
+`prop/...`), `prop/tuft/*` (now `nat/grass`, `nat/flowers`). `bld/church`, `bld/watertower`, `bld/lamp(_lit)`,
+`prop/barrels`, `prop/crates`, `prop/sacks`, `prop/water_barrel` keep their keys at the new scale. Not redrawn yet
+(still D25): the station, canopy, freight house, dock tiles, footbridges, lever frames and schedule board.

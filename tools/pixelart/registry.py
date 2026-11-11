@@ -30,6 +30,8 @@ OWNERS = {
     'sprites_people': ('ppl/', 'person.'),
     'sprites_town': ('bld/', 'goods/', 'tag/', 'cart/', 'deck/', 'walk/', 'plat/', 'prop/', 'ground/', 'street/',
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
+    'sprites_nature': ('nat/',),           # D27 nature (A3)
+    'sprites_ground': ('tile/',),          # D27 ground tiles (A3)
 }
 
 

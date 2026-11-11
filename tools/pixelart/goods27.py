@@ -17,7 +17,7 @@ SIZE = {
     'stove': (1.15, 1.0, 1.15), 'furniture': (1.4, 0.7, 1.6), 'piano': (2.1, 1.0, 1.9), 'strongbox': (0.7, 0.45, 0.4),
 }
 KINDS = list(SIZE)
-VARIANTS = {'crate': ('dry', 'tins', 'linen'), 'sack': ('flour', 'seed', 'grain', 'ore'), 'keg': ('beer', 'empty'),
+VARIANTS = {'crate': ('dry', 'tins', 'linen'), 'sack': ('flour', 'seed', 'grain', 'ore'), 'keg': ('beer', 'empty', 'nails'),
             'barrel': ('whiskey', 'nails')}
 VERB = {'crate': 'carry', 'sack': 'shoulder', 'barrel': 'roll', 'keg': 'carry', 'bale': 'truck', 'hides': 'drag',
         'mailSack': 'shoulder', 'paper': 'carry', 'lumber': 'drag', 'ironBars': 'drag', 'wheel': 'roll',
@@ -164,11 +164,19 @@ def keg(variant='beer', o=None, axis=(0, 0, 1), c=None):
         side = part == 0
         f = s / H + 0.5
         hp = (np.abs(f - 0.15) < 0.06) | (np.abs(f - 0.85) < 0.06)
+        if variant == 'nails':       # a nail keg: four hoops and a tight head with no tap
+            hp = (np.abs(f - 0.1) < 0.05) | (np.abs(f - 0.32) < 0.04) | (np.abs(f - 0.68) < 0.04) | (np.abs(f - 0.9) < 0.05)
         ii = np.where(side & (((ang * 10 / (2 * np.pi)) % 1.0) < 0.16) & ~hp, clampi(ii + 1), ii)
         rr = np.where(side & hp, R('iron'), rr)
         head = ~side
         ii = np.where(head, np.where(rho > D / 2 * 0.8, 3, 1), ii)
-        tap = head & (rho < 0.07)
+        tap = head & (rho < 0.07) & (variant != 'nails')
+        if variant == 'nails':       # the stencilled size mark (a black bar across the head, as the nails barrel)
+            mk = head & (np.abs(np.sin(ang)) * rho < 0.03) & (rho < 0.18)
+            rr = np.where(mk, R('blk'), rr); ii = np.where(mk, 3, ii)
+            # and a black stencil block on the side, between the middle hoops, facing the view
+            st = side & (np.abs(f - 0.5) < 0.1) & (np.cos(ang - 0.785) > 0.8)
+            rr = np.where(st, R('blk'), rr); ii = np.where(st, np.where(np.abs(f - 0.5) < 0.04, 2, 3), ii)
         rr = np.where(tap, R('brass' if variant == 'beer' else 'wood'), rr); ii = np.where(tap, 1, ii)
         if variant == 'empty':       # a chalked cross: going back empty
             ch = side & (np.abs(f - 0.5) < 0.2) & (np.abs(np.abs(f - 0.5) - np.abs(((ang - 2.0) % 6.283) - 0.3) * 0.5) < 0.04)

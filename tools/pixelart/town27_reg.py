@@ -51,6 +51,31 @@ def shadow_only(draw, rect, **kw):
     return _pad([(out[r0:ys.max() + 1, c0:xs.max() + 1].copy(), (an[0] - c0, an[1] - r0))])
 
 
+def lit_pair(draw, after=None, halo=2, fire_halo=False, **kw):
+    """(day, night) frames from one render (night27.render_pair): the same size and anchor, only the lit pixels
+    (window glass, lamps and the warm halo round a lamp) differ."""
+    import night27 as N
+    o = dict(BIG)
+    o.update(kw)
+    day, night = N.render_pair(draw, after=after, halo=halo, fire_halo=fire_halo, **o)
+    day, night = _pad([day])[0], _pad([night])[0]
+    assert day[0].shape == night[0].shape and day[1] == night[1]
+    assert ((day[0][..., 3] > 0) == (night[0][..., 3] > 0)).all()
+    return day, night
+
+
+def add_lit(reg, key, group, day_frames, pair, meta):
+    """Register key (the night version) after checking that its day picture is the registered day sprite."""
+    day, night = pair
+    d0 = day_frames[0]
+    assert d0[0].shape == day[0].shape and tuple(d0[1]) == tuple(day[1]) and (d0[0] == day[0]).all(), key
+    reg.add(key, group, [night], meta)
+
+
+LITNOTE = ('the night version: the same size and anchor as the day sprite; only the lit pixels differ (windows '
+           'glowing, door lamps burning with a warm halo on the wall)')
+
+
 def u(v):
     return round(v / U, 2)
 
@@ -116,7 +141,12 @@ def register(reg):
                 meta.update(door=T.door_spot(kind), door_note='the delivery spot on the boardwalk, u from the anchor',
                             facing=f, front={'e': '+x', 'w': '-x'}[f], footprint=[12, 16 if kind == 'livery' else 12],
                             dressing=dressing(kind), dressing_note='suggested props: [key, x, z] in u from the anchor')
-            reg.add(key, 'town27_' + ('w' if f == 'e' else 'e'), one(draw, after=after, **opts), meta)
+            frames = one(draw, after=after, **opts)
+            reg.add(key, 'town27_' + ('w' if f == 'e' else 'e'), frames, meta)
+            if part == 'body':
+                add_lit(reg, key + '_lit', 'town27_' + ('w' if f == 'e' else 'e'), frames,
+                        lit_pair(draw, after=after, **opts),
+                        dict(anchor=LOT, box=meta['box'], box_note=BOXNOTE, door=meta['door'], note=LITNOTE))
         if kind == 'barber':
             key = f'bld/shop_barber/w/pole'
             names.append(key)
@@ -135,22 +165,29 @@ def register(reg):
                     dict(anchor=LOT, box=T.part_box(kind, 'walk'), box_note='flat: draw after the walk and before anything upright',
                          note='the building\'s cast shadow on the ground (50% ink checker)'))
     # ---------------- church, school, houses ----------------
-    reg.add('bld/church', 'town27_civic', one(T.church),
-            dict(anchor='the church\'s footprint centre (0, -128) at ground level; front (door, tower) to +z', footprint=[10, 16],
-                 box=[-5.0, -8.0, 5.0, 8.0, 16.0], box_note=BOXNOTE))
+    cm = dict(anchor='the church\'s footprint centre (0, -128) at ground level; front (door, tower) to +z', footprint=[10, 16],
+              box=[-5.0, -8.0, 5.0, 8.0, 16.0], box_note=BOXNOTE)
+    fr = one(T.church)
+    reg.add('bld/church', 'town27_civic', fr, cm)
+    add_lit(reg, 'bld/church_lit', 'town27_civic', fr, lit_pair(T.church), dict(cm, note=LITNOTE))
     sh = shadow_only(T.church, (-120, -120, 160, 100))
     reg.add('bld/church/shadow', 'town27_shadow', sh, dict(anchor='as bld/church', note='cast shadow, flat'))
-    reg.add('bld/school', 'town27_civic', one(T.school, after=T.school_letters),
-            dict(anchor='the school\'s footprint centre at ground level; door to +z', footprint=[8, 11],
-                 box=[-4.0, -5.5, 4.0, 7.5, 7.5], box_note=BOXNOTE))
+    sm = dict(anchor='the school\'s footprint centre at ground level; door to +z', footprint=[8, 11],
+              box=[-4.0, -5.5, 4.0, 7.5, 7.5], box_note=BOXNOTE)
+    fr = one(T.school, after=T.school_letters)
+    reg.add('bld/school', 'town27_civic', fr, sm)
+    add_lit(reg, 'bld/school_lit', 'town27_civic', fr, lit_pair(T.school, after=T.school_letters), dict(sm, note=LITNOTE))
     sh = shadow_only(T.school, (-100, -100, 140, 90))
     reg.add('bld/school/shadow', 'town27_shadow', sh, dict(anchor='as bld/school', note='cast shadow, flat'))
     for k in range(4):
         for f in ('e', 'w'):
-            reg.add(f'bld/house/{k + 1}/{f}', 'town27_civic', one(lambda k=k, f=f: T.house(k, f), **MID),
-                    dict(anchor='the house lot\'s centre (8 x 8u) at ground level', footprint=[8, 8], facing=f,
-                         front={'e': '+x (door to the west back lane)', 'w': '-x (seen from behind)'}[f],
-                         box=T.house_box(k, f), box_note=BOXNOTE))
+            hm = dict(anchor='the house lot\'s centre (8 x 8u) at ground level', footprint=[8, 8], facing=f,
+                      front={'e': '+x (door to the west back lane)', 'w': '-x (seen from behind)'}[f],
+                      box=T.house_box(k, f), box_note=BOXNOTE)
+            fr = one(lambda k=k, f=f: T.house(k, f), **MID)
+            reg.add(f'bld/house/{k + 1}/{f}', 'town27_civic', fr, hm)
+            add_lit(reg, f'bld/house/{k + 1}/{f}_lit', 'town27_civic', fr,
+                    lit_pair(lambda k=k, f=f: T.house(k, f), **MID), dict(hm, note=LITNOTE))
     # ---------------- street furniture and props ----------------
     CTR = 'centre at ground level'
     props = [
@@ -225,9 +262,13 @@ def register_station(reg):
             dict(anchor='between the two posts at ground level (14, -16.9)', footprint=[3.6, 0.5],
                  board=S.schedboard_area(ax, ay), box=[-1.8, -0.2, 1.8, 0.5, 3.4], box_note=BOXNOTE))
     fha = f'the freight house\'s footprint centre {S.FH_CENTRE} at ground level (its floor is the cargo deck, 1.6u)'
-    reg.add('bld/freighthouse/body', 'town27_station', one(S.freighthouse_body),
-            dict(anchor=fha, box=S.fh_box('body'), box_note=BOXNOTE, footprint=[16, 6],
-                 note='back wall, end walls, posts along the open (track 3) side, shelves, the scale and the desk'))
+    fm = dict(anchor=fha, box=S.fh_box('body'), box_note=BOXNOTE, footprint=[16, 6],
+              note='back wall, end walls, posts along the open (track 3) side, shelves, the scale and the desk')
+    fr = one(S.freighthouse_body)
+    reg.add('bld/freighthouse/body', 'town27_station', fr, fm)
+    add_lit(reg, 'bld/freighthouse/body_lit', 'town27_station', fr, lit_pair(S.freighthouse_body, halo=3, fire_halo=True),
+            dict(fm, note='the night version (same size and anchor): the lantern on the middle post and the desk lamp '
+                          'burning, with their light on the posts, the desk and the shelves'))
     reg.add('bld/freighthouse/roof', 'town27_station', one(S.freighthouse_roof),
             dict(anchor=fha, box=S.fh_box('roof'), box_note=BOXNOTE, underside=round(S.FH_UNDER / UY, 2),
                  note='the roof alone, to fade like the canopy when the player is under it'))
@@ -266,3 +307,16 @@ def register_station(reg):
                      note={'N': 'normal: standing back (towards -z)', 'R': 'reversed: pulled over towards +z'}[st]))
     reg.add('bld/rodding_x', 'town27_station', one(S.rodding, **MID),
             dict(anchor='the -x end of 2u of point rodding along x, at ground level (rods on stools)'))
+    reg.add('bld/rodding_z', 'town27_station', one(lambda: S.rodding('z'), **MID),
+            dict(anchor='the -z end of 2u of point rodding along z, at ground level (rods on stools); repeat it every 2u',
+                 box=[-0.2, 0.0, 0.2, 2.0, 0.35], box_note=BOXNOTE))
+    CRANK = ('the turn point (where the two runs\' centre lines meet) at ground level. The runs leave it the way the '
+             'arms point: e.g. for arms e and s, draw bld/rodding_x with its -x end here and bld/rodding_z with its -z end '
+             'here; a run the other way (w or n) starts 2u back (its anchor at the turn point minus 2u)')
+    for arms in ('es', 'ws', 'en', 'wn'):
+        key = 'bld/rodding_crank' + ('' if arms == 'es' else '/' + arms[0] + '_' + arms[1])
+        reg.add(key, 'town27_station', one(lambda a=arms: S.rodding_crank(a), **MID),
+                dict(anchor=CRANK, arms={'e': '+x', 'w': '-x'}[arms[0]] + ' and ' + {'s': '+z', 'n': '-z'}[arms[1]],
+                     box=[-0.35, -0.35, 0.35, 0.35, 0.35], box_note=BOXNOTE,
+                     note='a bell crank on a timber baulk' + (' (the usual turn: arms to +x and +z; the other three '
+                          'turns are bld/rodding_crank/w_s, /e_n, /w_n)' if arms == 'es' else '')))

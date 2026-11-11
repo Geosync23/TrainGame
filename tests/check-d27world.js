@@ -16,7 +16,8 @@
 //   (no step down onto track 2 or 3), its height 1.6u on it and sloping on the ramps (walkDeckY).
 // - Saving: schema 19; save-v18.json migrates to the next morning on the D27 layout (trains and travellers cleared, the
 //   goods kept and audited, the player at the schedule board); a new game's save reloads with the same hash.
-// - The D27 switches all start off (WORLDS.proto.d27), ?d27=all turns them on, and the stubs keep a day running.
+// - The D27 switches start as each builder left them (on: board (P), handling (F), town (W), lessons (U); all on at the integration), ?d27=all turns them all on, and the stubs keep a day
+//   running.
 const fs = require('fs');
 const path = require('path');
 const { openGame, screenshotPath } = require('./browser');
@@ -54,12 +55,12 @@ module.exports = async function checkD27World() {
       const St = D.PROTO_STOCK;
       if (St.loco.len !== 18 || St.cars.coach.len !== 13 || St.cars.boxcar.len !== 10 || St.cars.flatcar.len !== 10 || St.cars.coach.wid !== 4.2 || St.loco.h !== 6.4) B('the stock\'s sizes');
       if (St.coach.rows !== 7 || St.coach.seats !== 28 || St.boxcar.door.w !== 2.6) B('the stock\'s interiors');
-      if (Pr.PROTO_SCHEDULE.length !== 9) B(`${Pr.PROTO_SCHEDULE.length} runs in the day, expected 9 (plans/d27-tech.md 8.5)`);
+      if (Pr.PROTO_SCHEDULE.length !== 8) B(`${Pr.PROTO_SCHEDULE.length} runs in the day, expected 8 (D27 integration: no freight train in the evening, p5 left out; plans/d27-tech.md 8.5 had 9)`);
       if (D.TOWN27.buildings.length !== 12 || D.SHOPS27.length !== 12 || D.TOWN27.houses.length !== 8 || Object.keys(D.GOODS27).length !== 16) B('the town\'s or the goods\' tables are not complete');
       for (const sh of D.SHOPS27) if (!R.cargo.CARGO_TAGS[sh.tag]) B(`no cargo tag for ${sh.id}`);
       const daily = Object.values(D.SHOP_GOODS27.in).reduce((n, l) => n + l.reduce((m, q) => m + q[2], 0), 0);
-      if (daily !== 14) B(`the day's goods for the town: ${daily}, expected 14`);
-      if (JSON.stringify(D.flags()) !== JSON.stringify({ board: false, handling: false, town: false, lessons: false })) B(`the D27 switches: ${JSON.stringify(D.flags())} (all start off)`);
+      if (daily !== 8) B(`the day's goods for the town: ${daily}, expected 8 (D27 integration: half the goods, SHOP_GOODS27_HALF; the foundation's table had 14)`);
+      if (JSON.stringify(D.flags()) !== JSON.stringify({ board: true, handling: true, town: true, lessons: true })) B(`the D27 switches: ${JSON.stringify(D.flags())} (expected on: board (P), handling (F), town (W), lessons (U); all on at the integration)`);
       // ---- Clearances ----
       const half = Math.max(St.cars.coach.wid, St.cars.boxcar.wid, St.loco.wid) / 2;
       if (!(half < P.EDGE)) B(`a car's half width ${half} reaches the deck edge (${P.EDGE} from its track)`);
@@ -181,18 +182,21 @@ module.exports = async function checkD27World() {
         for (const k of ['board', 'handling', 'town', 'lessons']) if (!R.d27.d27On(S.track, k)) return { bad: 'd27=all did not turn ' + k + ' on' };
         R.simTick(S, [{ t: 'pdStart' }]);
         // A switchman sets each switch for the first train that needs it (no walking: the stubs are what is tested).
-        for (let i = 0; i < 450 * 4; i++) {
+        // Until 20 minutes after the third stopping run's time to stand (T re-times the day: read from the schedule).
+        const third = R.proto.PROTO_SCHEDULE.filter(v => !v.through).map(v => v.arr).sort((a, b) => a - b)[2], hours = (third + 1200 - 6 * 3600) / 3600;
+        for (let i = 0; i < 450 * hours; i++) {
           const seen = new Set();
           for (const n of R.rr.rrSwitchNeeds(S)) if (!n.passed && !seen.has(n.sw)) { seen.add(n.sw); S.track.switches[n.sw].state = n.want === 'reverse' ? 'R' : 'N'; }
+          R.pb.pbTestPunchAll(S);   // P (board on): every seated ticket punched, as the switchman sets the switches
           for (const run of S.rr.runs) if (run.ph === 'stand' && run.ready && S.time > run.dep) { const tr = S.trains[run.slot], sp = R.rr.rrWaveSpot(S, tr.id); S.player.x = sp.x; S.player.z = sp.z; for (const e of R.simTick(S, [{ t: 'rrWaveOff', tr: tr.id }])) { if (e.t === 'rrRefused') ev['refused: ' + e.why] = 1; ev[e.t] = (ev[e.t] || 0) + 1; } }
           for (const e of R.simTick(S, [])) ev[e.t] = (ev[e.t] || 0) + 1;
         }
         const cmds = ['pbEnter', 'pbWalk', 'pbPunch', 'pbLeave', 'frDoor', 'frTake', 'frPut', 'frCart', 'frDeliver', 'frPickup'].map(t => R.simTick(S, [{ t }]).filter(e => /Refused$/.test(e.t)).length);
-        return { ev, cmds, audit: R.d27.itemAudit(S), sod: (S.time + 18000) % 86400 / 3600, runs: S.rr.runs.filter(r => r.day === 0).map(r => r.svc + ':' + r.ph + (r.ready ? '+' : '')).join(' ') };
+        return { ev, cmds, hours, audit: R.d27.itemAudit(S), sod: (S.time + 18000) % 86400 / 3600, runs: S.rr.runs.filter(r => r.day === 0).map(r => r.svc + ':' + r.ph + (r.ready ? '+' : '')).join(' ') };
       });
       if (r.bad) P(r.bad);
       else {
-        if (!(r.ev.rrArrived >= 3) || !(r.ev.rrWavedOff >= 1)) P(`with every D27 switch on (the stubs), ${r.ev.rrArrived || 0} trains came in and ${r.ev.rrWavedOff || 0} were sent off over four hours (${r.runs}; ${Object.keys(r.ev).filter(k => /^refused/.test(k)).join('; ')})`);
+        if (!(r.ev.rrArrived >= 3) || !(r.ev.rrWavedOff >= 1)) P(`with every D27 switch on (the stubs), ${r.ev.rrArrived || 0} trains came in and ${r.ev.rrWavedOff || 0} were sent off over ${r.hours.toFixed(1)} hours (${r.runs}; ${Object.keys(r.ev).filter(k => /^refused/.test(k)).join('; ')})`);
         if (r.cmds.some(n => n !== 1)) P(`the D27 commands with the stubs: refusals ${r.cmds}`);
         if (r.audit.length) P('with every D27 switch on: item audit: ' + r.audit.slice(0, 3).join('; '));
         console.log(`  every D27 switch on (the stubs): to ${r.sod.toFixed(1)}h, ${r.ev.rrArrived || 0} trains in, ${r.ev.rrWavedOff || 0} sent off, the commands each refused once`);

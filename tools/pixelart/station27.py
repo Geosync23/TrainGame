@@ -266,6 +266,11 @@ def freighthouse_body():
     for k in range(5):
         x = -A + 1.0 + k * (2 * A - 2.0) / 4.0
         box(x - 0.7, B - 1.6, z0, x + 0.7, B - 0.2, zu, 'wood', shades=(1, 2, 3), oid=o)
+    # a lantern hung on the middle post's track side (dark glass by day; lit in bld/freighthouse/body_lit)
+    box(-0.15, B - 0.2, z0 + 13.2, 0.15, B + 0.6, z0 + 13.6, 'iron', shades=(1, 2, 3), oid=o, cast=False)
+    box(-0.7, B + 0.1, z0 + 12.4, 0.7, B + 1.5, z0 + 13.2, 'iron', shades=(1, 2, 3), oid=o, cast=False)
+    box(-0.55, B + 0.25, z0 + 9.8, 0.55, B + 1.35, z0 + 12.4, 'lamp', shades=(1, 2, 2), oid=o, cast=False)
+    box(-0.4, B + 0.4, z0 + 9.2, 0.4, B + 1.2, z0 + 9.8, 'iron', shades=(1, 2, 3), oid=o, cast=False)
     # shelves along the back wall with parcels
     for zz in (z0 + 6.0, z0 + 12.0):
         box(-A + 1.0, -B + 1.0, zz, A - 1.0, -B + 4.0, zz + 0.6, 'wood', shades=(0, 2, 3), oid=o)
@@ -593,10 +598,37 @@ def lever(state='N'):
 
 
 def rodding(axis='x'):
-    """2u of point rodding along x on stools (from a lever frame out to the points), drawn just off the ground."""
+    """2u of point rodding on stools (from a lever frame out to the points), drawn just off the ground: along x
+    from its -x end (axis 'x'), or along z from its -z end (axis 'z')."""
     o = new_oid(True)
+    def B(a0, b0, z0, a1, b1, z1, ramp):
+        if axis == 'x':
+            box(a0, b0, z0, a1, b1, z1, ramp, shades=(1, 2, 3), oid=o, cast=False)
+        else:
+            box(b0, a0, z0, b1, a1, z1, ramp, shades=(1, 2, 3), oid=o, cast=False)
     for x in (1.0, 5.0):
-        box(x - 0.5, -0.8, 0, x + 0.5, 0.8, 0.9, 'wood', shades=(1, 2, 3), oid=o, cast=False)
+        B(x - 0.5, -0.8, 0, x + 0.5, 0.8, 0.9, 'wood')
     for y in (-0.45, 0.45):
-        box(0.0, y - 0.22, 0.9, 8.0, y + 0.22, 1.3, 'iron', shades=(1, 2, 3), oid=o, cast=False)
+        B(0.0, y - 0.22, 0.9, 8.0, y + 0.22, 1.3, 'iron')
+    return o
+
+
+def rodding_crank(arms='es'):
+    """The cranked turn where the rodding changes direction: a cast-iron bell crank (an L plate on a pivot) on a
+    timber baulk, its centre on the turn point. arms: where its two arms point, 'e' +x or 'w' -x, then 's' +z or
+    'n' -z; the runs (bld/rodding_x, _z) leave the turn point that way and their rods meet the arms' eyes."""
+    o = new_oid(True)
+    sx = 1.0 if arms[0] == 'e' else -1.0
+    sy = 1.0 if arms[1] == 's' else -1.0
+    def B(x0, y0, z0, x1, y1, z1, ramp, shades=(1, 2, 3)):
+        box(min(x0 * sx, x1 * sx), min(y0 * sy, y1 * sy), z0, max(x0 * sx, x1 * sx), max(y0 * sy, y1 * sy), z1,
+            ramp, shades=shades, oid=o, cast=False)
+    B(-1.4, -1.4, 0, 1.4, 1.4, 0.7, 'wood')
+    B(-0.9, -0.9, 0.7, 0.9, 0.9, 0.9, 'iron', (2, 3, 3))          # the bearing plate
+    cyl_z(0, 0, 0.9, 1.5, 0.45, 'iron', oid=o, cast=False)        # the pivot boss
+    B(-0.3, -0.3, 1.0, 1.8, 0.3, 1.3, 'iron')                     # arm along x
+    B(-0.3, -0.3, 1.0, 0.3, 1.8, 1.3, 'iron')                     # arm along z
+    B(-0.5, -0.5, 1.0, 0.5, 0.5, 1.4, 'iron')                     # the corner web
+    for (x, y) in ((1.8, 0.0), (0.0, 1.8)):                       # the rod eyes
+        B(x - 0.25, y - 0.25, 0.9, x + 0.25, y + 0.25, 1.4, 'iron', (0, 2, 3))
     return o

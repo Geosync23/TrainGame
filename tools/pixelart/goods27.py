@@ -17,7 +17,7 @@ SIZE = {
     'stove': (1.15, 1.0, 1.15), 'furniture': (1.4, 0.7, 1.6), 'piano': (2.1, 1.0, 1.9), 'strongbox': (0.7, 0.45, 0.4),
 }
 KINDS = list(SIZE)
-VARIANTS = {'crate': ('dry', 'tins', 'linen'), 'sack': ('flour', 'seed', 'grain', 'ore'), 'keg': ('beer', 'empty'),
+VARIANTS = {'crate': ('dry', 'tins', 'linen'), 'sack': ('flour', 'seed', 'grain', 'ore'), 'keg': ('beer', 'empty', 'nails'),
             'barrel': ('whiskey', 'nails')}
 VERB = {'crate': 'carry', 'sack': 'shoulder', 'barrel': 'roll', 'keg': 'carry', 'bale': 'truck', 'hides': 'drag',
         'mailSack': 'shoulder', 'paper': 'carry', 'lumber': 'drag', 'ironBars': 'drag', 'wheel': 'roll',
@@ -164,11 +164,19 @@ def keg(variant='beer', o=None, axis=(0, 0, 1), c=None):
         side = part == 0
         f = s / H + 0.5
         hp = (np.abs(f - 0.15) < 0.06) | (np.abs(f - 0.85) < 0.06)
+        if variant == 'nails':       # a nail keg: four hoops and a tight head with no tap
+            hp = (np.abs(f - 0.1) < 0.05) | (np.abs(f - 0.32) < 0.04) | (np.abs(f - 0.68) < 0.04) | (np.abs(f - 0.9) < 0.05)
         ii = np.where(side & (((ang * 10 / (2 * np.pi)) % 1.0) < 0.16) & ~hp, clampi(ii + 1), ii)
         rr = np.where(side & hp, R('iron'), rr)
         head = ~side
         ii = np.where(head, np.where(rho > D / 2 * 0.8, 3, 1), ii)
-        tap = head & (rho < 0.07)
+        tap = head & (rho < 0.07) & (variant != 'nails')
+        if variant == 'nails':       # the stencilled size mark (a black bar across the head, as the nails barrel)
+            mk = head & (np.abs(np.sin(ang)) * rho < 0.03) & (rho < 0.18)
+            rr = np.where(mk, R('blk'), rr); ii = np.where(mk, 3, ii)
+            # and a black stencil block on the side, between the middle hoops, facing the view
+            st = side & (np.abs(f - 0.5) < 0.1) & (np.cos(ang - 0.785) > 0.8)
+            rr = np.where(st, R('blk'), rr); ii = np.where(st, np.where(np.abs(f - 0.5) < 0.04, 2, 3), ii)
         rr = np.where(tap, R('brass' if variant == 'beer' else 'wood'), rr); ii = np.where(tap, 1, ii)
         if variant == 'empty':       # a chalked cross: going back empty
             ch = side & (np.abs(f - 0.5) < 0.2) & (np.abs(np.abs(f - 0.5) - np.abs(((ang - 2.0) % 6.283) - 0.3) * 0.5) < 0.04)
@@ -621,49 +629,50 @@ def truck_load(kind):
 
 
 # ---------------------------------------------------------------- the platform cart
-CART_L, CART_W, CART_TOP = 3.4, 1.6, 0.85
+CART_L, CART_W, CART_TOP = 4.2, 3.2, 0.85   # D27 integration: 5 x 4 cells (was 3.4 x 1.6, 4 x 2), the integrator's provisional bigger cart
+CART_ROWS, CART_COLS = 4, 5
 CART_R = 0.3
 CELL = 0.8
 
 
 def cart_cells():
-    """The bed's 4 x 2 cells in the cart's own frame (a forwards, b to the left of travel... here +z), u from the
-    cart's centre: [(c, r, a, b)]; c 0..3 from the handle end to the front, r 0 (left, -b) and 1 (+b)."""
+    """The bed's 5 x 3 cells in the cart's own frame (a forwards, b to the left of travel... here +z), u from the
+    cart's centre: [(c, r, a, b)]; c 0..3 from the handle end to the front, r 0 (left, -b) to 2 (+b)."""
     out = []
-    for c in range(4):
-        for r in range(2):
-            out.append((c, r, -1.6 + CELL * (c + 0.5), -0.8 + CELL * (r + 0.5)))
+    for c in range(CART_COLS):
+        for r in range(CART_ROWS):
+            out.append((c, r, -CELL * CART_COLS / 2 + CELL * (c + 0.5), -CART_W / 2 + CELL * (r + 0.5)))
     return out
 
 
 def platform_cart(phase=0.0, o=None):
-    """The four-wheel station cart: a plank bed 3.4 x 1.6 u at 0.85 u on an iron-strapped frame, four small iron
+    """The four-wheel station cart: a plank bed 4.2 x 2.4 u at 0.85 u on an iron-strapped frame, four small iron
     wheels, low rails along the sides, a push handle at the rear (-x) end at 1.0 u. Facing +x. Anchor: its centre
     at the ground."""
     o = o or new_oid(True)
     hl, hw = CART_L / 2, CART_W / 2
     # wheels (both sides), axles
-    for ax in (-1.15, 1.15):
-        for bz, near in ((0.62, True), (-0.62, False)):
+    for ax in (-hl + 0.55, hl - 0.55):
+        for bz, near in ((hw - 0.18, True), (-hw + 0.18, False)):
             def wt(part, s, ang, rho, idx):
                 a = ang + phase
                 sp = (np.abs(((a * 6 / (2 * np.pi)) % 1.0) - 0.5) > 0.36)
                 ii = np.where(part != 0, np.where(rho > CART_R - 0.06, 2, np.where(sp | (rho < 0.07), 1, 3)), 3)
                 return None, ii
             ocyl((ax, bz + (0.04 if near else -0.04), CART_R), (0, 1, 0), CART_R, 0.04, 'iron', tex=wt, oid=o, ref=(1, 0, 0))
-        B(ax - 0.04, -0.6, CART_R - 0.04, ax + 0.04, 0.6, CART_R + 0.04, 'iron', shades=(1, 2, 3), oid=o)
+        B(ax - 0.04, -hw + 0.2, CART_R - 0.04, ax + 0.04, hw - 0.2, CART_R + 0.04, 'iron', shades=(1, 2, 3), oid=o)
     # frame and bed
     B(-hl + 0.1, -hw + 0.12, 0.58, hl - 0.1, -hw + 0.24, 0.72, 'iron', shades=(1, 2, 3), oid=o)
     B(-hl + 0.1, hw - 0.24, 0.58, hl - 0.1, hw - 0.12, 0.72, 'iron', shades=(1, 2, 3), oid=o)
-    for ax in (-1.15, 1.15):
-        B(ax - 0.12, -0.5, CART_R + 0.04, ax + 0.12, 0.5, 0.6, 'iron', shades=(1, 2, 3), oid=o)   # spring blocks
+    for ax in (-hl + 0.55, hl - 0.55):
+        B(ax - 0.12, -hw + 0.3, CART_R + 0.04, ax + 0.12, hw - 0.3, 0.6, 'iron', shades=(1, 2, 3), oid=o)   # spring blocks
     def bed(face, x, z, y, idx):
         rr = np.full(x.shape, R('wood'))
         if face == 't':
             ii = np.where(((x + hl) / 0.34) % 1.0 < 0.12, 3, 1)
             h = hash2(np.floor((x + hl) / 0.34).astype(int), np.floor((z + 1) / 0.9).astype(int)) % 3
             ii = np.where((h == 0) & (ii == 1), 2, ii)
-            nails = (np.abs(np.abs(z) - 0.68) < 0.04) & ((((x + hl) / 0.34) % 1.0) > 0.4) & ((((x + hl) / 0.34) % 1.0) < 0.6)
+            nails = (np.abs(np.abs(z) - (hw - 0.12)) < 0.04) & ((((x + hl) / 0.34) % 1.0) > 0.4) & ((((x + hl) / 0.34) % 1.0) < 0.6)
             return rr, np.where(nails, 3, ii)
         return rr, np.where(y > CART_TOP - 0.05, 3, idx)
     B(-hl, -hw, 0.72, hl, hw, CART_TOP, 'wood', oid=o, tex=bed)
@@ -673,10 +682,10 @@ def platform_cart(phase=0.0, o=None):
             B(sx * hl - 0.1, sz * hw - 0.1, 0.7, sx * hl + 0.01, sz * hw + 0.01, CART_TOP + 0.02, 'iron',
               shades=(1, 2, 3), oid=o)
     # push handle: two bent irons rising from the rear corners and the wooden grip bar at 1.0 u
-    for bz in (-0.6, 0.6):
+    for bz in (-hw + 0.2, hw - 0.2):
         a, b, c = axes_tilt((-1, 0, 0), 38)
         obox((-hl - 0.2, bz, 0.9), (a, b, c), (0.25, 0.03, 0.03), 'iron', oid=o, cast=True, shades=(1, 2, 3))
-    ocyl((-hl - 0.4, 0, 1.03), (0, 1, 0), 0.05, 0.68, 'wood', oid=o, ref=(1, 0, 0))
+    ocyl((-hl - 0.4, 0, 1.03), (0, 1, 0), 0.05, hw - 0.12, 'wood', oid=o, ref=(1, 0, 0))
     # a front towing eye
     B(hl, -0.06, 0.62, hl + 0.12, 0.06, 0.7, 'iron', shades=(1, 2, 3), oid=o)
     return o

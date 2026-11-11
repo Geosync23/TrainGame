@@ -21,6 +21,9 @@
 //      (the way out of a train still to come) when nothing comes over it first.
 //   3. Tickets: at the standing passenger train due out first, the coach door with someone at the head of its line
 //      (nearest first): one punch command, one ticket. Riders stepping off first: it waits beside the door.
+//      D27 (P, board on): tickets punched on board instead: pbPunch at the nearest coach with a seated traveller to
+//      punch (the player walks in at its nearer end), then seat by seat inside (this coach first, nearest first; the
+//      next coach over the end platforms), waiting inside while travellers still take their seats, then pbLeave.
 //   4. Freight by hand: the town's goods off each standing freight car into the storage shed's bay of their tag; the
 //      railroad's goods from the shed's OUTSIDE bay into the train's cars until it has its load.
 //   5. The evening: the handcart (the hand truck left at its spot first), sorted from the bays (as many as it holds: D27,
@@ -28,6 +31,14 @@
 //      handcart back at its spot (if an hour is left before the day's end); End the day.
 // D27 foundation: the same play on the D27 layout (the lever frames, the raised cargo platform, the cart crossing and
 // the main street); the numbers (carrying capacities, the day's end) are read from the game.
+// D27 integration (every D27 switch on: board, handling, town, lessons): tickets punched on board (P's flow above);
+// freight handled step by step by following F's frJobHint (each hint is a command the touch layer sends: frDoor,
+// frTake, frPut, frCart, frDeliver, frPickup, or a walk out of a car), as the standing train's work in the plan; the
+// evening and the trips to town between trains (when the hint offers one) by the same hints, then End the day;
+// goods in hand and the cart put away (the hint, frCart park) before tickets and switches; a handling step under way
+// is not broken off unless a switch or a send-off is due. Lessons: a lesson whose first card waits is answered with
+// Show me or Skip (mem.lessons: 'mixed', the default, follows switches, tickets and unloading and skips the others on
+// day 0, then on the next morning asks for Replay in Settings and skips every lesson as it comes; 'follow'; 'skip').
 //
 // Use: const bot = protoBotFactory(window.__railhead, mem) in the page (PROTO_BOT_SRC is this function's source);
 // each tick: const cmds = bot.decide(S); const ev = R.simTick(S, cmds); bot.observe(S, ev).
@@ -36,15 +47,37 @@
 function protoBotFactory(R, mem0) {
   const mem = mem0 || {
     days: 2, board: {}, skip: {}, refusals: {}, last: null, job: null, notes: [],
-    stats: { cmds: 0, boardRows: 0, starts: 0, switches: 0, punches: 0, waves: 0, picks: 0, puts: 0, tools: 0, delivers: 0, ends: 0, nextDays: 0, walks: 0 },
+    stats: { cmds: 0, boardRows: 0, starts: 0, switches: 0, punches: 0, waves: 0, picks: 0, puts: 0, tools: 0, delivers: 0, ends: 0, nextDays: 0, walks: 0,
+      doors: 0, takes: 0, frPuts: 0, carts: 0, pickups: 0, lessonsShown: 0, lessonsSkipped: 0, replays: 0, leaves: 0 },
+    lessons: 'mixed', les: [],
   };
+  for (const k of ['doors', 'takes', 'frPuts', 'carts', 'pickups', 'lessonsShown', 'lessonsSkipped', 'replays', 'leaves']) if (mem.stats[k] === undefined) mem.stats[k] = 0;
   const AHEAD_S = 1200, EARLY_S = 2 * 3600;
   const cm = v => Math.round(v * 100);
   const d2 = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
   // The player's walk (u a game minute: 3 in the prototype since 2026-11-11, read from the game), a third more for the way round.
   const walkU = S => R.proto.playerWalkSpeed(S.track);
   const walkS = (P, x, z, S) => d2(P.x, P.z, x, z) * 1.33 / walkU(S) * 60;
-  const held = S => R.carry.carryHeld(S);
+  // D27 (handling on): goods in the hands or on the pushed hand truck are F's (frHeld).
+  const handling = S => !!(R.d27 && R.d27.d27On(S.track, 'handling'));
+  const held = S => handling(S) ? R.fr.frHeld(S) : R.carry.carryHeld(S);
+  // The next handling step (F's frJobHint) as a command, or [] (a step under way, or nothing).
+  const frHintKey = c => 'fr:' + c.t + ':' + (c.item !== undefined ? c.item : c.stock !== undefined ? c.stock : c.shop || c.act || '') + (c.to ? ':' + c.to.kind : '');
+  const frNext = S => {
+    const h = R.fr.frJobHint(S);
+    if (!h || h.busy || !h.cmd) return null;
+    const key = frHintKey(h.cmd);
+    return skipped(S, key) ? null : { c: h.cmd, key, h };
+  };
+  const frDo = (S, n) => send(S, n.c, n.key);
+  // Hands free (D27 handling): goods in hand put where the hint says; the pushed cart or hand truck left where it is.
+  const frFree = S => {
+    if (!handling(S)) return null;
+    const P = S.player;
+    if (held(S).length) { const n = frNext(S); return n ? frDo(S, n) : []; }
+    if (P.tool !== null && P.tool !== undefined) return skipped(S, 'park') ? [] : send(S, { t: 'frCart', act: 'park', tool: P.tool }, 'park');
+    return null;
+  };
   const tagOf = (S, id) => R.cargo.itemTag(S.items.waybill[id]);
   const bayOf = (S, tag) => S.bayTags.storage.indexOf(tag);
   const inBay = (S, b) => R.cargo.itemsAt(S, { kind: 'BAY', buildingId: 'storage', bay: b });
@@ -52,7 +85,8 @@ function protoBotFactory(R, mem0) {
   const skip = (S, k, ticks) => { mem.skip[k] = S.tick + (ticks || 30); };
   const send = (S, c, key) => {
     mem.last = { c, key: key || null, tick: S.tick }; mem.stats.cmds++;
-    const k = { pdStart: 'starts', useSwitch: 'switches', punch: 'punches', rrWaveOff: 'waves', carryPick: 'picks', carryPut: 'puts', carryTool: 'tools', pgDeliver: 'delivers', pdEndDay: 'ends', pdNextDay: 'nextDays', walkTo: 'walks' }[c.t];
+    const k = { pdStart: 'starts', useSwitch: 'switches', punch: 'punches', pbPunch: 'punches', rrWaveOff: 'waves', carryPick: 'picks', carryPut: 'puts', carryTool: 'tools', pgDeliver: 'delivers', pdEndDay: 'ends', pdNextDay: 'nextDays', walkTo: 'walks',
+      frDoor: 'doors', frTake: 'takes', frPut: 'frPuts', frCart: 'carts', frDeliver: 'delivers', frPickup: 'pickups', pbLeave: 'leaves' }[c.t];
     if (k) mem.stats[k]++;
     return [c];
   };
@@ -62,6 +96,7 @@ function protoBotFactory(R, mem0) {
     if (P.mode === 'to' && !P.use && d2(P.tx, P.tz, x, z) < 0.5) return [];   // on the way already
     return send(S, { t: 'walkTo', x: cm(x), z: cm(z) });
   };
+  const onBoard = S => !!(R.pb && R.pb.pbOn && R.pb.pbOn(S.track));   // D27 (P): tickets punched on board (board on)
   const standing = S => S.rr.runs.filter(r => r.ph === 'stand' && !r.through && r.slot !== null && r.slot !== undefined).sort((a, b) => a.dep - b.dep);
 
   // ---- 2. to 4. The day's jobs: switches, send-offs and the work at each standing train, in one plan ----
@@ -100,6 +135,20 @@ function protoBotFactory(R, mem0) {
   // hand truck (three goods a trip) between the cars and the shed.
   function workOf(S, run) {
     const tr = S.trains[run.slot];
+    if (run.kind === 'pax' && onBoard(S)) {
+      // D27 (P): tickets punched on board: the travellers still to seat and punch, and getting off again.
+      const rs = R.pb.pbRunStatus(S, run), inside = S.player.in && S.player.in.tr === tr.id;
+      if (!rs.toPunch && !rs.boarding && !rs.waiting && !rs.off && !inside) return null;
+      const sts = tr.consist.map(c => R.pb.pbCarStatus(S, c.id)).filter(Boolean), c = sts.find(x => x.toPunch > 0) || sts[0], e = c.ends.find(q => q.ok) || c.ends[0];
+      return { at: inside ? [S.player.x, S.player.z] : [e.x, e.z], dur: 90 + (rs.toPunch + rs.boarding + rs.waiting) * 50 };
+    }
+    if (run.kind !== 'pax' && handling(S)) {
+      // D27 (F): the town's goods still aboard and the railroad's still to load; the place of the next hint.
+      const t = R.fr.frStanding(S).find(q => q.run === run), inCar = R.fr.frInCar(S), mine = inCar !== null && tr.consist.some(c => c.id === inCar);
+      if (!t || (!t.town && !t.need && !mine && !held(S).length && !(S.fr && S.fr.job))) return null;
+      const h = R.fr.frJobHint(S), at = h && Number.isFinite(h.x) ? [h.x, h.z] : [S.player.x, S.player.z];
+      return { at, dur: 600 + (t.town + t.need) * 420 };
+    }
     if (run.kind === 'pax') {
       const st = tr.consist.map(c => R.pp.ppCarStatus(S, c.id)).filter(s => s && s.line > 0);
       if (!st.length) return null;
@@ -147,7 +196,13 @@ function protoBotFactory(R, mem0) {
     const P = S.player, here = d2(j.at[0], j.at[1], P.x, P.z) < 1.6;
     mem.job = j.key;
     if (j.k === 'work') return workAt(S, j.run) || (here ? [] : walkTo(S, j.at[0], j.at[1]));
-    if (P.tool !== null && P.tool !== undefined) { const h = held(S); if (h.length) return putAway(S, h[h.length - 1]); }   // a switch or a send-off with the hand truck: fine, but goods first
+    if (handling(S) && (P.tool !== null && P.tool !== undefined || held(S).length) && j.start - S.time > 300 && !j.waiting) {
+      // D27: a switch or a send-off not yet due while handling freight with the cart or goods in hand: carry on with that.
+      const n = frNext(S);
+      if (n) return frDo(S, n);
+    }
+    if (handling(S)) { const f = frFree(S); if (f) return f; }   // D27: goods away and the cart left before a switch or a send-off
+    else if (P.tool !== null && P.tool !== undefined) { const h = held(S); if (h.length) return putAway(S, h[h.length - 1]); }   // a switch or a send-off with the hand truck: fine, but goods first
     if (j.k === 'sw' && j.can) return P.mode === 'idle' || !P.use || P.use.id !== j.sw ? (skipped(S, 'sw' + j.sw) ? [] : send(S, { t: 'useSwitch', sw: j.sw }, 'sw' + j.sw)) : [];
     if (j.k === 'wave' && j.ready) return skipped(S, 'wave' + j.tr) ? [] : send(S, { t: 'rrWaveOff', tr: j.tr }, 'wave' + j.tr);
     if (here) return [];
@@ -169,8 +224,29 @@ function protoBotFactory(R, mem0) {
     const P = S.player, h = held(S), tool = P.tool !== null && P.tool !== undefined ? S.tools[P.tool] : null, tr = S.trains[run.slot];
     if (run.kind === 'pax') {
       // Tickets need free hands: goods away and the hand truck back at its spot beside the shed first.
-      if (h.length) return putAway(S, h[h.length - 1]);
+      if (handling(S)) { const f = frFree(S); if (f) return f; }
+      else if (h.length) return putAway(S, h[h.length - 1]);
       if (tool) return send(S, { t: 'carryTool', tool: tool.id }, 'tool' + tool.id);
+      if (onBoard(S)) {
+        // D27 (P): in the train, the nearest traveller still to punch (this coach first), then off again; from the
+        // platform, pbPunch at a coach with tickets to punch (it walks in at the nearer end); else wait at a coach end.
+        const I = P.in, rs = R.pb.pbRunStatus(S, run), mineC = c => tr.consist.some(q => q.id === c);
+        if (I && I.tr === tr.id) {
+          if (I.out || I.clm < 0 || I.ts) return [];   // (D27 integration: on his way along the aisle already: the punch is not sent again every tick)
+          const cands = S.pax.list.filter(p => p.s === 'sitting' && !p.punched && mineC(p.stock) && !skipped(S, 'punch' + p.stock + ':' + p.seat));
+          const rx = p => R.pb.pbSeatLocal(p.seat).rx;
+          cands.sort((a, b) => (a.stock === I.stock ? 0 : 1) - (b.stock === I.stock ? 0 : 1) || Math.abs(rx(a) - I.s) - Math.abs(rx(b) - I.s) || a.seat - b.seat);
+          if (cands.length) return send(S, { t: 'pbPunch', tr: tr.id, stock: cands[0].stock, seat: cands[0].seat }, 'punch' + cands[0].stock + ':' + cands[0].seat);
+          if (rs.boarding || rs.waiting || rs.off) return [];   // more to sit down: wait inside
+          return send(S, { t: 'pbLeave' }, 'leave' + tr.id);
+        }
+        const sts = tr.consist.map(c => R.pb.pbCarStatus(S, c.id)).filter(Boolean);
+        const dEnd = x => Math.min(...x.ends.filter(e => e.ok).map(e => d2(P.x, P.z, e.x, e.z)));
+        const todo = sts.filter(x => x.toPunch > 0 && !skipped(S, 'punch' + x.stock)).sort((a, b) => dEnd(a) - dEnd(b));
+        if (todo.length) return send(S, { t: 'pbPunch', tr: tr.id, stock: todo[0].stock }, 'punch' + todo[0].stock);
+        if (rs.boarding || rs.waiting || rs.off) { const c = sts.find(x => x.boarding > 0) || sts[0], e = c.ends.find(q => q.ok) || c.ends[0]; return walkTo(S, e.x, e.z); }
+        return null;
+      }
       let best = null, wait = null;
       for (const c of tr.consist) {
         const s = R.pp.ppCarStatus(S, c.id);
@@ -184,6 +260,12 @@ function protoBotFactory(R, mem0) {
       if (best) return send(S, { t: 'punch', tr: tr.id, car: best.c.id }, 'punch' + best.c.id);
       if (wait) return walkTo(S, wait.x, wait.z);   // riders still stepping off, or the line still walking up
       return null;
+    }
+    if (handling(S)) {
+      // D27 (F): the next handling step (frJobHint: unloading onto the cart, stacking, loading, out of the car).
+      if (S.fr && S.fr.job) return [];
+      const n = frNext(S);
+      return n ? frDo(S, n) : null;
     }
     // Freight with the hand truck, three at a time: the town's goods off (nearest first), then the railroad's on.
     const truck = S.tools.find(t => t.k === 'truck'), cap = R.cargo.CARGO_CARRY_CAP[R.carry.carryCarrier(S)];   // D27: read from the game
@@ -202,6 +284,17 @@ function protoBotFactory(R, mem0) {
 
   // ---- 5. The evening ----
   function evening(S) {
+    if (handling(S)) {
+      // D27 (F): the evening by the hints (load the cart, to town, deliver, pick up, back to the OUT rows), then End the day.
+      if (S.fr && S.fr.job) return [];
+      const n = frNext(S);
+      if (n) return frDo(S, n);
+      const hh = R.fr.frJobHint(S);
+      if (hh && (hh.busy || hh.cmd)) return [];   // a step under way, or a refused one waiting to be tried again
+      const left = R.fr.frToDeliver(S), picks = R.fr.frPickups(S);
+      if (Object.values(left).some(v => v) || Object.values(picks).some(v => v)) { if (!mem.notes.includes('goods left')) mem.notes.push('goods left'); }
+      return send(S, { t: 'pdEndDay' });
+    }
     const P = S.player, h = held(S), cart = S.tools.find(t => t.k === 'cart' || t.k === 'cart27'), carrier = R.carry.carryCarrier(S);   // D27: the platform cart is the handcart
     const cartCap = R.cargo.CARGO_CARRY_CAP[R.carry.TOOL_KINDS[cart.k].carrier];
     const shopGoods = () => S.bayTags.storage.map((tag, b) => tag === 'OUTSIDE' ? [] : inBay(S, b)).reduce((a, b) => a.concat(b), []);
@@ -230,8 +323,21 @@ function protoBotFactory(R, mem0) {
     return send(S, { t: 'pdEndDay' });
   }
 
+  // D27 (U): a lesson's first card waiting (the page holds the clock): Show me or Skip, by mem.lessons.
+  function lessons(S) {
+    const D = S.pd, w = D.lesWait && D.lesWait[0];
+    if (!w) return null;
+    const mode = mem.lessons, follow = mode === 'follow' || (mode === 'mixed' && D.day === 0 && ['switches', 'board', 'unload'].includes(w));
+    mem.les.push(`d${D.day} ${w} ${follow ? 'show' : 'skip'}`);
+    mem.stats[follow ? 'lessonsShown' : 'lessonsSkipped']++;
+    return send(S, { t: 'pdLesson', id: w, act: follow ? 'show' : 'skip' });
+  }
   function decide(S) {
     const P = S.player, D = S.pd;
+    const lw = lessons(S);
+    if (lw) return lw;
+    // D27 (U): on the second morning ('mixed'), Replay the lessons from Settings, to skip each as it comes.
+    if (D.ph === 'morning' && D.day === 1 && mem.lessons === 'mixed' && !mem.replayed && R.d27 && R.d27.d27On(S.track, 'lessons')) { mem.replayed = true; mem.stats.replays++; return send(S, { t: 'pdLesson', act: 'replay' }); }
     if (D.ph === 'morning') {
       // Read the board (every row: time, train, track, switches, work), then start the day.
       if (mem.board[D.day] === undefined) { const rows = R.pdui.rows(S); mem.board[D.day] = rows.map(r => `${r.arr} ${r.id} t${r.track} ${r.switches} ${r.work}`); mem.stats.boardRows += rows.length; }
@@ -239,14 +345,16 @@ function protoBotFactory(R, mem0) {
     }
     if (D.ph === 'summary') return D.day + 1 < mem.days ? send(S, { t: 'pdNextDay' }) : [];
     if (P.act) return [];
-    if (D.ph === 'evening') return P.use || (S.pax.pp && S.pax.pp.job) ? [] : evening(S);
+    if (D.ph === 'evening') return P.use || (S.pax.pp && S.pax.pp.job) || (S.pb && S.pb.job) ? [] : evening(S);
     const pj = S.pax && S.pax.pp && S.pax.pp.job;
     const jobs = jobsNow(S), j = plan(S, jobs);
     const waitAt = S.trains.find(tr => tr.owner === 'rr' && tr.swWait !== undefined && tr.swWait !== null);
     // On the way to throw a switch: keep going (the throw happens on arrival), unless a train waits at another one.
     if (P.use && P.use.k === 'sw' && P.mode === 'to' && !(waitAt && waitAt.swWait !== P.use.id)) return [];
     if (pj) return [];   // a punch under way (one ticket: a tick or two once there)
+    if (S.pb && S.pb.job && !(waitAt && P.in)) return [];   // D27 (P): on the way into a coach, or a punch on board under way
     if (P.use && j && j.k === 'work' && j.key === mem.job) return [];   // a pick or a put under way for the job in hand
+    if (S.fr && S.fr.job && !(waitAt) && !(j && j.k !== 'work' && j.start - S.time < 0)) return [];   // D27: a handling step under way (broken off only for a switch or send-off now due)
     if (j && (j.start - S.time < AHEAD_S || j.k === 'work')) {
       if (P.use && (P.use.k === 'pick' || P.use.k === 'put') && j.k !== 'work' && j.start - S.time > 60) return [];   // finish the carry first
       return doJob(S, j);
@@ -256,8 +364,20 @@ function protoBotFactory(R, mem0) {
     // first (a way out early only when the next train over it the other way is due well after it, or its train is
     // ready: a late train's way out set early would stop that train before it), soonest first.
     const h = held(S);
-    if (h.length) return putAway(S, h[h.length - 1]);
-    if (P.tool !== null && P.tool !== undefined) return send(S, { t: 'carryTool', tool: P.tool }, 'tool' + P.tool);
+    if (handling(S)) {
+      // D27 (F): the hint's step (goods in hand away, goods on the cart stacked, a trip to town when there is time
+      // before the next train, the cart back to the cargo platform); else the cart left where it is.
+      const n = frNext(S);
+      // (a step that starts a new piece of work only with time in hand before the next job: the walk there, 20 minutes
+      // of work and the walk on to the next job; walking off to the cart and being called back to a lever wastes the walk)
+      const hx = n && Number.isFinite(n.h.x), there = hx ? walkS(P, n.h.x, n.h.z, S) * 1.4 : 0, back = j && hx ? d2(n.h.x, n.h.z, j.at[0], j.at[1]) * 1.9 / walkU(S) * 60 : 0;   // (the ways over the footbridges are longer than the straight line)
+      const nearHint = hx && d2(P.x, P.z, n.h.x, n.h.z) < 4;
+      if (n && (h.length || nearHint || !j || j.start - S.time > there + 1200 + back)) return frDo(S, n);
+      if (h.length) return [];
+    } else {
+      if (h.length) return putAway(S, h[h.length - 1]);
+      if (P.tool !== null && P.tool !== undefined) return send(S, { t: 'carryTool', tool: P.tool }, 'tool' + P.tool);
+    }
     const early = jobs.filter(q => q.k === 'sw' && q.can && q.time - S.time < EARLY_S && (q.move !== 'out' || (q.run && (q.run.through || q.run.ready)) || q.other - q.time > 1800)).sort((a, b) => a.time - b.time)[0];
     if (early) return doJob(S, early);
     if (j) return doJob(S, j);   // walk ahead to the next job's place

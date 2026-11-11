@@ -282,7 +282,7 @@ said. `extra.tag_at` on the resting keys: the pixel offset from the anchor where
 |---|---|
 | `goods/<kind>` | resting, its length along x |
 | `goods/<kind>/z` | resting along z (every kind but the round ones: barrel, keg, mailSack, wheel) |
-| `goods/<kind>/<variant>[/z]` | crate `dry` (= `goods/crate`), `tins`, `linen`; sack `flour` (= `goods/sack`), `seed`, `grain`, `ore`; keg `beer`, `empty` (a chalk cross); barrel `whiskey`, `nails` |
+| `goods/<kind>/<variant>[/z]` | crate `dry` (= `goods/crate`), `tins`, `linen`; sack `flour` (= `goods/sack`), `seed`, `grain`, `ore`; keg `beer`, `empty` (a chalk cross), `nails` (A3 follow-up: four hoops, no tap, a black stencil mark on the head and a stencil block on the side; round, so no `/z`, and held like any keg with `goods/keg/held/<dir>`); barrel `whiskey`, `nails` |
 | `goods/<kind>/held/<dir>` | the good in its verb's held state, for the agent facing `dir` (four keys for every kind) |
 | `goods/barrel/roll/<dir>/<f>`, `goods/wheel/roll/<dir>/<f>` | rolling towards `dir`, 4 frames |
 | `goods/barrel/tip/<dir>/<f>` | tipping from upright towards `dir`: 2 frames (30, 60 degrees); anchor the barrel's foot |
@@ -391,11 +391,35 @@ shed (`bld/storage`, `bld/storage_open`) is replaced by the freight house below.
 | `bld/leverframe/<W|E>` | the stage's centre, (-33, -11) or (33, -11) | a plank stage 3 x 2u with the iron frame, a number board (W1 W3, E1 E3) and a lamp; `extra.levers` = where to draw the two levers (u from the anchor: lever 1 then lever 2), `extra.use` = where the agent stands to pull |
 | `bld/lever/<N|R>` | the lever's pivot foot | 1.6u, red with a white grip; N leans back (to -z), R is pulled over to +z |
 | `bld/rodding_x` | the -x end | 2u of point rodding on stools along x, to repeat from a frame out to its points |
+| `bld/rodding_z` | the -z end | the same 2u run along z (repeat every 2u towards +z) |
+| `bld/rodding_crank` (+ `/w_s`, `/e_n`, `/w_n`) | the turn point (where the runs' centre lines meet) | the cranked turn: a bell crank on a timber baulk, 0.7u square. Its arms point the way the two runs leave the turn: `bld/rodding_crank` +x and +z, `w_s` -x and +z, `e_n` +x and -z, `w_n` -x and -z. A run leaving to +x (+z) is drawn with its anchor at the turn point; one leaving to -x (-z) with its anchor 2u back. Draw it after the runs' ends (it sits over them) |
 | `dock/face_s`, `/bumper`, `/post` | the face's -x end on the cargo platform's +z edge (z 16.3) | 1u of the loading edge along track 3 from the ground to the deck (13 px): sheathing and a rubbing strip; variants with an iron bumper plate or a timber post |
 | `dock/face_e`, `/post` | the face's -z end on the +x end (x 26) | 1u of the east end face |
 | `dock/top/1-2` | the cell corner (x, z) | a 1u deck cell drawn 13 px up (planks across the platform) |
 | `dock/cell` | the storage cell's corner | a 1.4u chalk square on the deck (13 px up), for the 2 x 40 storage cells |
 | `dock/ramp_e`, `dock/ramp_w` | the ramp's footprint centre, (30, 12.4) or (-30, 12.4) | 8 x 3u, 1 in 5, planked with cleats; walkers rise from 0 at the outer end to 1.6u at the platform |
+
+**Night versions (A3 follow-up, 2026-11-11).** Every lit key has the **same size and anchor** as its day key
+(build-checked: the same picture with only its lit pixels recoloured, so it swaps in place and keeps the day key's
+`extra.box` and `door`):
+
+| Night key | Day key | What lights |
+|---|---|---|
+| `bld/shop_<kind>/<e\|w>/body_lit` (all 12) | `.../body` | window glass, the hotel's glazed gallery doors, the door lamps; the smithy's forge was already glowing |
+| `bld/house/<1-4>/<e\|w>_lit` | `bld/house/<n>/<f>` | windows; the back-door lamp of the `w` houses (the `e` houses' doors are on the unseen side) |
+| `bld/church_lit`, `bld/school_lit` | `bld/church`, `bld/school` | the windows (the church's tower window and fanlight too) and the lamp by the door |
+| `bld/freighthouse/body_lit` | `bld/freighthouse/body` | the lantern on the middle post and the clerk's desk lamp, with their light on the posts, desk and shelves |
+
+Lit glass is drawn like the station's and the coach's lit windows (brass ramp: the pane `#fff2a6`, its top band
+`#efbd4c`); a lamp burns `#fff2a6` and lights a 2 px (freight house 3 px) halo on the wall round it (wood tones turned
+ochre, the rest one step lighter). Outline pixels never change. **Door lamps**: a small wall lantern now hangs beside
+the door seen in the view on the store (1), hotel (2), bank (2), feed store (1), every east-row back door (1), the
+church tower, the school and the `w` houses, and one inside the livery barn's doorway; by day it reads as dark glass
+(the day sprites' sizes and anchors are unchanged). The other parts (`walk`, `shadow`, `awning`, `sign`, `yard`,
+`pole`, roofs) have no night version: the renderer tints them. Drawing code: `tools/pixelart/night27.py` (adds a
+`lamp` ramp after the others; `render_pair` makes the day and lit frames from one render); review sheet
+`tools/pixelart/out/followup-art.png` (`python3 tools/pixelart/review_followup.py` after `build.py`: day, lit, and lit
+with a stand-in night tint).
 
 The faces that the fixed view cannot see (the cargo platform's north side and west end) are not drawn. Platform 1's
 low deck keeps the D25 `plat/` tiles (its deck is still 3 px). `sw/lever` (the plan's name) is `bld/lever` here,

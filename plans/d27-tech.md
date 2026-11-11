@@ -729,6 +729,11 @@ Nine runs (D25: 10): passenger trains stand 30 minutes (D25: 15), freight trains
 because walking the aisle and every handling step now take time. The evening runs from about 20:15 to the day's end,
 which moves to 23:00 (`PD.LATE_S`, provisional).
 
+**As T re-timed it (2026-11-11, `PROTO_SCHEDULE`; the code rules):** p1 06:55-07:50, f1 08:40-10:20, p2 10:50-11:35,
+x1 12:20, p3 13:05-13:50, f2 14:10-16:50, p4 15:20-16:10, p5 17:20-18:00, f3 18:45-20:15 (same directions, tracks, cars
+and goods). Passenger trains stand 40 to 55 minutes, not 30; f1 and p2 no longer overlap; x1 an hour after p2. Worst
+lateness with the D25 flows' careful player: 13 minutes over two days (the first cut: 91). DEV_NOTES "D27", T's part.
+
 ### 8.6 Saving: schema 19
 
 - **18 > 19, a prototype save:** the layout has changed under it, so it is migrated to **the next morning** of the
@@ -786,7 +791,9 @@ which moves to 23:00 (`PD.LATE_S`, provisional).
 14. **Lessons:** six, each the first time its moment comes; the first card of each holds the clock; replay from
     Settings. The D25 first-day guide is replaced.
 15. **Through riders** already aboard (tickets punched elsewhere, a mark in the hatband) to fill the coaches.
-16. **The day:** nine runs (8.5), the evening to 23:00.
+16. **The day:** nine runs (8.5), the evening to 23:00. T's re-timing: passenger trains stand 40 to 55 minutes (the walks
+    between the lever frames and along the train need it). Alternatives: fewer runs, or shorter (2-coach) trains with
+    30 minutes.
 17. **The atlas budget** raised to 700 KB; the ground composed in the browser from tiles, not baked.
 18. **Speeds:** walking stays at the helper's 3.0u per game minute, the clock stays at one game minute per real second,
     the trains' line speeds double in the prototype. Alternative: a slower clock (two real seconds a game minute).

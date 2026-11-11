@@ -13,6 +13,7 @@
 import math
 import numpy as np
 import pal27  # noqa: F401  (adds the D27 ramps to the engine)
+import night27  # noqa: F401  (adds the 'lamp' ramp: door lamps, lit at night)
 import engine as E
 from engine import R, box, cyl_z, cyl_x, sphere, gable_x, gable_y, hash2, new_oid, disc_x, disc_y
 import town as TW
@@ -142,6 +143,18 @@ def wall_h(sp):
 
 # ============================ painting the faces ============================
 
+# door lamps (a beside the main door seen in the view), lit in the night versions (night27.py)
+FRONT_LAMPS = {'store': (4.5,), 'hotel': (-4.9, 4.9), 'bank': (-5.1, 5.1), 'feed': (3.5,)}
+
+
+def door_lamp(p, a, z, ac, zb=DOOR_H - 4.4, dark=False):
+    """A small wall lantern painted on the face at a = ac: an iron cap, hook and base round the 'lamp' glass
+    (which reads as dark glass by day and burns at night). dark: a lantern inside a dark doorway."""
+    p.fill(rect(a, z, ac - 0.2, ac + 0.2, zb + 4.4, zb + 5.2), 'iron', 3)
+    p.fill(rect(a, z, ac - 0.9, ac + 0.9, zb + 3.6, zb + 4.4) | rect(a, z, ac - 0.45, ac + 0.45, zb, zb + 0.6), 'iron', 3)
+    p.fill(rect(a, z, ac - 0.7, ac + 0.7, zb + 0.6, zb + 3.6), 'lamp', 3 if dark else np.where(z > zb + 2.6, 1, 2))
+
+
 def _sign_board(p, a, z, sp, z0, z1, a0, a1, lit):
     if sp['board'] is None:
         return
@@ -232,6 +245,8 @@ def _front_paint(kind):
             p.window(-19.0, -14.0, 7.0, 13.0, trim=tr, panes=(2, 2))
             p.door(-2.6, 2.6, 30.0, ramp='wood', trim=tr, z0=21.0, panels=False, knob=False)   # loft door
             _sign_board(p, a, z, sp, 32.0, 38.4, -14.0, 14.0, lit)
+        for ac in FRONT_LAMPS.get(kind, ()):
+            door_lamp(p, a, z, ac)
         p.fill(rect(a, z, -LOT_A, LOT_A, -1, 1.2), tr, 3 + lit) if kind in ('store', 'hotel') else None
         return p.rr, p.ii
     return paint
@@ -301,7 +316,10 @@ def _side_paint(kind, part='body'):
             p.fill((np.abs(a - a_door) < 3.2) & (z < DOOR_H + 0.7) & ~dm, tr if kind not in ('sheriff', 'assay') else 'wood', 2 + lit)
             p.fill(dm, 'wood', np.where(np.mod(a - a_door, 1.3) < 0.4, 4, 3))
             p.fill(dm & (np.abs(a - a_door + 1.6) < 0.4) & (np.abs(z - 8.0) < 0.5), 'iron', 1)
-            for ac in [c for c in (-14.0, 16.0, -2.0) if abs(c - a_door) > 7.0][:2]:
+            wins = [c for c in (-14.0, 16.0, -2.0) if abs(c - a_door) > 7.0][:2]
+            sd = -1.0 if any(abs(a_door + 4.2 - c) < 4.5 for c in wins) else 1.0
+            door_lamp(p, a, z, a_door + sd * 4.2)
+            for ac in wins:
                 g = (np.abs(a - ac) < 1.8) & (z > 6.0) & (z < 13.0)
                 fr = (np.abs(a - ac) < 2.4) & (z > 5.3) & (z < 13.7) & ~g
                 if kind in ('sheriff',):
@@ -494,6 +512,7 @@ def livery_body(F, sp, o):
                 p.fill(dd & (x1 | x2), 'cream', 2 + lit)
                 p.fill(dd & ((z > 4.3 * UY - 1.2) | (z < 1.2)), 'cream', 2 + lit)
             p.fill(rect(a, z, -22.0, 22.0, 4.3 * UY + 1.0, 4.3 * UY + 1.8), 'iron', 3)   # the door track
+            door_lamp(p, a, z, -6.5, zb=4.3 * UY - 6.4, dark=True)    # a lantern hung inside the barn door
         return p.rr, p.ii
     F.box(-A, bk, 0, A, LOT_B, wh, 'wood', paint=walls, oid=o)
     hw = A + 2.0
@@ -916,6 +935,7 @@ def church():
             g = (np.abs(a) < 1.4) & (z > 24.0) & (z < 30.0)
             p.fill(g, 'glass', 3)
             p.fill(((np.abs(a) < 2.0) & (z > 23.3) & (z < 30.7)) & ~g, 'green', 1 + lit)
+            door_lamp(p, p.u, z, 4.6)          # beside the door (painted in u, like the door)
         if lf == 's':
             g = (np.abs(b - tb - T) < 1.2) & (z > 24.0) & (z < 30.0)
             p.fill(g, 'glass', 3)
@@ -958,6 +978,7 @@ def school():
             for ac in (-10.0, 10.0):
                 p.window(ac - 2.0, ac + 2.0, 5.0, 15.0, trim='cream', panes=(2, 3), sill=True)
             p.board(-5.0, 5.0, DOOR_H + 2.0, DOOR_H + 7.4, 'cream', 0, frame='cream', fi=2)
+            door_lamp(p, p.u, z, 4.4)
         if lf == 's':
             for bc in (-14.0, -5.0, 4.0, 13.0):
                 u2 = b
@@ -1021,6 +1042,7 @@ def house(k, facing_='e'):
         elif lf == 'k':
             p.door(3.0, 7.0, DOOR_H - 1.0, ramp='wood', trim=tr, panels=False)
             p.window(-8.0, -4.0, 6.0, 11.0, trim=tr, panes=(2, 2))
+            door_lamp(p, p.u, z, 8.6, zb=DOOR_H - 5.4)
         elif lf == 's':
             g = (np.abs(b) < 1.8) & (z > 6.0) & (z < 12.0)
             p.fill((np.abs(b) < 2.4) & (z > 5.3) & (z < 12.7) & ~g, tr, 1 + lit)

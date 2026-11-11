@@ -24,12 +24,14 @@ function script() {
   const L = () => s.pax.list;
   tick();
   s.track.switches[SW.W1].state = 'R';   // p1 comes in from the west to track 1
+  const exitZ = Math.max(...R.proto.PROTO.TOWN_EXITS.map(e => e[1]));   // D27: the street's end the travellers come from (TOWN_EXITS)
+  const keys = new Set();
   const p1 = runOf('p1');
   // 1. Lines form before the arrival.
   for (let i = 0; i < 2000 && p1.ph !== 'stand'; i++) {
     tick();
     const m = L().filter(p => p.run === p1.id);
-    for (const p of m) if (p.s === 'come' && p.z < -5000 && !out.fromStreet) out.fromStreet = true;
+    for (const p of m) if (p.s === 'come' && p.z / 100 < exitZ + 1 && !out.fromStreet) out.fromStreet = true;
     if (!out.lineState && m.length && m.every(p => p.s === 'line' && !p.path.length) && !s.pax.pp.due.some(d => d[1] === p1.id)) { out.lineState = JSON.stringify(s); out.notes.linedUp = (s.time + R.CFG.DAY_START_S) % 86400; out.notes.arrIn = p1.arr - s.time; }
   }
   if (!out.fromStreet) B('p1\'s travellers did not walk in from the street\'s end');
@@ -49,12 +51,14 @@ function script() {
   out.notes.firstCame = firstArr ? firstArr.id : null;
   const who = new Set(mine.map(p => p.who));
   for (const w of who) if (!/^(man_top|man_bowler|man_bag|woman_bonnet|woman_shawl|child|worker|porter)(\.b)?$/.test(w)) B(`a traveller of an unknown type: ${w}`);
-  // The line spots are where the doors stopped: each door spot within a coach, a quarter of its length from its middle.
+  // The line spots are where the doors stopped. D27: the coaches board at their ends: each door spot PP.END in from an
+  // end of its coach (the train's poses); a door beside a footbridge's flight is left out, but every coach keeps one.
   const tr = s.trains[p1.slot], poses = R.trainPoses(s.track, tr), spots = Pp.ppLineSpots(s, p1);
-  if (spots.length !== 2 * (tr.consist.length - 1)) B(`${spots.length} door spots for ${tr.consist.length - 1} coaches`);
+  if (spots.length > 2 * (tr.consist.length - 1) || tr.consist.slice(1).some((c, i) => !spots.some(sp => sp.car === i))) B(`${spots.length} door spots for ${tr.consist.length - 1} coaches (a coach with none)`);
   for (const sp of spots) {
     const ps = poses[sp.car + 1];
-    if (!ps || Math.abs(Math.abs(sp.dx - ps.x) - ps.len / 4) > 0.05) B(`door ${sp.car}/${sp.door} at x ${sp.dx.toFixed(2)} is not a quarter along coach ${sp.car} (centre ${ps && ps.x.toFixed(2)})`);
+    if (!ps || Math.abs(Math.abs(sp.dx - ps.x) - (ps.len / 2 - Pp.PP.END)) > 0.05) B(`door ${sp.car}/${sp.door} at x ${sp.dx.toFixed(2)} is not ${Pp.PP.END}u in from an end of coach ${sp.car} (centre ${ps && ps.x.toFixed(2)})`);
+    if ([[sp.x, sp.z], [sp.dx, sp.dz], [sp.px, sp.pz]].some(([x, z]) => R.proto.walkBridgeAt(s.track, x, z))) B(`door ${sp.car}/${sp.door}'s spots are on a footbridge`);
     if (!(sp.dz < R.proto.PROTO.P1.z1 && sp.z < sp.dz && sp.z - 4 * Pp.PP.GAP > R.proto.PROTO.P1.z0)) B(`door ${sp.car}/${sp.door}'s line is not on platform 1`);
   }
   // Each traveller in line stands at its door's line, one behind another.
@@ -75,7 +79,7 @@ function script() {
     const e = tick([{ t: 'punch', tr: tr.id, car: rc.car }]);
     if (!e.some(q => q.t === 'ppRefused')) B('a punch was taken at a coach whose riders had not stepped off');
   }
-  for (let i = 0; i < 100 && L().some(p => p.to === 'hub' && (p.s === 'aboard' || p.s === 'step')); i++) tick();
+  for (let i = 0; i < 100 && L().some(p => p.to === 'hub' && (p.s === 'aboard' || p.s === 'step')); i++) { tick(); for (const d of Pp.ppDrawList(s)) keys.add(d.act); }
   if (L().some(p => p.to === 'hub' && (p.s === 'aboard' || p.s === 'step'))) B('the riders did not all step off');
   const offN = evs.filter(e => e.t === 'ppOff' && e.run === p1.id).length;
   if (offN !== riders.length) B(`${offN} ppOff events for ${riders.length} riders`);
@@ -113,7 +117,6 @@ function script() {
   if (!sawTicket || !/^ppl\/[a-z_.]+\/ticket\/(se|ne|sw|nw)\/[01]$/.test(sawTicket.key)) B(`the traveller's ticket animation was not shown: ${JSON.stringify(sawTicket)}`);
   out.notes.punchAct = sawAct; out.notes.ticketKey = sawTicket && sawTicket.key;
   // The draw list: walk / idle / board keys of the atlas' shape.
-  const keys = new Set();
   // 4. Ready, sent off, counts.
   for (let i = 0; i < 60 && !evs.some(e => e.t === 'rrReady' && e.run === p1.id); i++) { tick(); for (const d of Pp.ppDrawList(s)) keys.add(d.act); }
   if (!Pp.ppReady(s, p1, tr)) B('ppReady is false with nobody in line');
@@ -166,7 +169,7 @@ module.exports = async function checkPunch() {
   const problems = [];
   let shared = null;
   for (const orient of ['portrait', 'landscape']) {
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&doorline=1' });   // D27: the D25 line at the door, kept for this check when D27 board is on
     try {
       if (orient === 'portrait') {
         const a = await page.evaluate(script), b = await page.evaluate(script);

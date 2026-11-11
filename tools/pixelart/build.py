@@ -2,11 +2,13 @@
 # Railhead sprite pipeline. One command regenerates everything:
 #     python3 tools/pixelart/build.py            (all modules)
 #     python3 tools/pixelart/build.py people     (only sprites_people.py, into out/preview/, for a quick look)
+#     python3 tools/pixelart/build.py --ground   (all modules, and the D25 baked ground layer: see below)
 # It finds every tools/pixelart/sprites_*.py module, calls its register(reg) (see registry.py and README.md),
-# draws the ground layer from proto-layout.json (groundlayer.py), packs the frames into sprite sheets and writes,
-# in tools/pixelart/out/:
+# packs the frames into sprite sheets and writes, in tools/pixelart/out/:
 #   sheet-<group>.png   the sprite sheets (native pixels, alpha 0 or 255)
-#   ground.png          the ground layer (proto-layout.json's W x H, world origin at OX, OY)
+#   ground.png          only with --ground: the D25 baked ground layer from proto-layout.json (groundlayer.py). D27 (the
+#                       foundation, plans/d27-tech.md 7.4 and 10.1) retires it: the D27 map's would be 3,048 x 1,588 px
+#                       (400 KB or more), so the browser composes the ground from the tile/ sprites instead (builder R)
 #   atlas.js            the contract's block: const PIX_ATLAS = { v, sheets: [data URLs], frames, extra };
 #   atlas.json          the same frames with every note, for people
 #   contact.png         every sprite at 3x with its key, for review
@@ -184,13 +186,15 @@ def write(frames, ground):
 def main():
     t0 = time.time()
     global OUT
-    only = sys.argv[1] if len(sys.argv) > 1 else None
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    bake = '--ground' in sys.argv[1:]
+    only = args[0] if args else None
     if only:
         OUT = os.path.join(OUT, 'preview')   # a one-module build never overwrites the real atlas
     mods = modules(only)
     frames = collect(mods)
     ground = None
-    if not only:
+    if not only and bake:
         t = time.time()
         layout = GL.load_layout()
         img = GL.build(mods, layout)
@@ -203,7 +207,7 @@ def main():
     print(f'  atlas.js: {js_bytes / 1024:.1f} KB (what embed.py puts into index.html)')
     import review
     review.contact_sheet(info, OUT)
-    if not only:
+    if not only and ground is not None:
         review.test_scene(info, OUT)
     print(f'done in {time.time() - t0:.1f} s')
 

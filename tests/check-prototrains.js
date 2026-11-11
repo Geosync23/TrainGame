@@ -1,9 +1,9 @@
 // Check: the prototype's trains (D25, builder T; plans/proto-tech.md section 2).
 // - A whole day in the prototype with a scripted player who only walks and taps (walkTo, useSwitch, rrWaveOff): it
 //   reads rrSwitchNeeds, walks to each switch stand in time (over the footbridges or the walkway) and throws the switch
-//   for the next train, in and out, and walks up to each standing train's engine and waves it off at its time. All 10
-//   runs come in and go out in schedule order (5 passenger trains at track 1, 3 freight trains at track 3, 2 through on
-//   track 2); none is cancelled; the worst lateness is small (the schedule fits the real running times with a careful
+//   for the next train, in and out, and walks up to each standing train's engine and waves it off at its time. All the
+//   schedule's runs come in and go out in schedule order (D27: 9 runs, 5 passenger trains at track 1, 3 freight trains
+//   at track 3, 1 through on track 2; the numbers are read from PROTO_SCHEDULE); none is cancelled; the worst lateness is small (the schedule fits the real running times with a careful
 //   player); never more than 3 of the railroad's trains on the map; every switch the player threw; the events of each
 //   run come in order; the same day twice gives the same state hash (once saved and loaded mid-day).
 // - A wrong switch: a through train meets a switch set against it, stops short of it and waits (trainSwitchWait, shown
@@ -41,7 +41,8 @@ function botSource() {
     }
     for (const run of S.rr.runs) {
       if (run.ph === 'in' && !run.through) {   // coming in: its wave-off is a job already, at its stopping place
-        const Pp = R.proto.PROTO, x = Pp.STOP[run.track][run.to] - (run.to === 'E' ? 1 : -1) * 4.4, z = (run.track === 't1' ? -Pp.D1 : Pp.D3) - 1.72, lateBy = (mem.waveLate && mem.waveLate[run.svc]) || 0;
+        // (D27: the wave spot beside the engine's middle, on the deck: rrWaveSpot's numbers)
+        const Pp = R.proto.PROTO, x = Pp.STOP[run.track][run.to] - (run.to === 'E' ? 1 : -1) * R.proto.PROTO_STOCK.loco.len / 2, z = (run.track === 't1' ? -Pp.D1 : Pp.D3) - (Pp.EDGE + 0.35), lateBy = (mem.waveLate && mem.waveLate[run.svc]) || 0;
         jobs.push({ k: 'wave', tr: run.slot, at: [x, z], time: run.dep + lateBy, readyAt: run.dep + lateBy, ready: false });
       }
       if (run.ph !== 'stand') continue;
@@ -107,8 +108,10 @@ module.exports = async function checkProtoTrains() {
           window.ppReady = () => true; window.pgReady = () => true;
           try {
             const t0 = performance.now(), a = playDay(false), ms = performance.now() - t0, b = playDay(true);
-            const c = playDay(false, { p2: 60 * 60 });   // p2 (leaving west at 09:30) waved off an hour late
-            return { a, b, c, ms };
+            const c = playDay(false, { p2: 60 * 60 });   // p2 (leaving west) waved off an hour late
+            // D27: from the schedule: how many runs, and the first run in from p2's way out after p2 has gone.
+            const sch = R.proto.PROTO_SCHEDULE, p2 = sch.find(v => v.id === 'p2'), after = sch.filter(v => v.from === p2.to && v.arr > p2.dep).sort((u, v) => u.arr - v.arr)[0];
+            return { a, b, c, ms, n: sch.length, stop: sch.filter(v => !v.through).length, tracks: ['t1', 't2', 't3'].map(t => sch.filter(v => v.track === t).length), after: after.id };
           } finally { window.ppReady = keep.pp; window.pgReady = keep.pg; }
         }, botSource().toString());
         const A = day.a, fmt = s => s === null ? '-' : `${Math.round(s / 60)}m`;
@@ -116,7 +119,7 @@ module.exports = async function checkProtoTrains() {
         console.log(`  switches thrown ${A.thrown}, waits at a switch ${A.waits}, at most ${A.maxOn} trains on the map; stats ${JSON.stringify(A.stats)}`);
         console.log(`  events: ${A.order.join(' | ')}`);
         problems.push(...A.bad);
-        if (A.runs.length !== 10) problems.push(`${A.runs.length} runs, expected 10`);
+        if (A.runs.length !== day.n) problems.push(`${A.runs.length} runs, expected ${day.n}`);
         for (const r of A.runs) if (r.ph !== 'gone') problems.push(`${r.svc} did not leave (${r.ph})`);
         for (const r of A.runs) {
           const late = Math.max(r.arrLate || 0, r.depLate || 0);
@@ -128,17 +131,17 @@ module.exports = async function checkProtoTrains() {
         console.log(`  left in order ${leftOrder}`);
         // Every switch move is the player's: each switch is thrown over and back during the day (a train leaves a switch
         // as it was set, so the next train often needs no throw there: 20 throws in all).
-        if (A.thrown < 16 || A.swThrown.some(n => n < 2)) problems.push(`switch throws: ${A.thrown} (per switch ${A.swThrown})`);
+        if (A.thrown < 2 * day.stop - 2 || A.swThrown.some(n => n < 2)) problems.push(`switch throws: ${A.thrown} (per switch ${A.swThrown})`);
         if (A.maxOn > 3) problems.push(`${A.maxOn} of the railroad's trains on the map at once`);
         if (!A.slotsFree) problems.push('a train slot is still in use at the end of the day');
         if (A.ph !== 'evening' && A.ph !== 'summary') problems.push(`the day did not reach the evening (${A.ph})`);
-        if (A.stats.trains !== 10) problems.push(`the day counted ${A.stats.trains} trains`);
+        if (A.stats.trains !== day.n) problems.push(`the day counted ${A.stats.trains} trains`);
         if (day.b.hash !== A.hash) problems.push(`the same day twice (saved and loaded at 10:00) gave a different result (${A.hash} / ${day.b.hash})`);
         const C = day.c, cl = svc => C.runs.find(r => r.svc === svc);
         console.log(`  p2 waved off an hour late: ${C.runs.map(r => `${r.svc} ${fmt(r.arrLate)}/${fmt(r.depLate)}`).join(', ')}`);
         if (C.runs.some(r => r.ph !== 'gone')) problems.push(`with p2 waved off late, not every run left: ${C.runs.filter(r => r.ph !== 'gone').map(r => r.svc + ' ' + r.ph)}`);
         if (!(cl('p2').depLate >= 60 * 60)) problems.push('p2 was not waved off late');
-        if (!(cl('p3').arrLate > 5 * 60)) problems.push(`p3 (in from the west after the late p2 went out west) was not late (${fmt(cl('p3').arrLate)})`);
+        if (!(cl(day.after).arrLate > 5 * 60)) problems.push(`${day.after} (in from the west after the late p2 went out west) was not late (${fmt(cl(day.after).arrLate)})`);
 
         // ---- A wrong switch, refusals, the needs, the board rows, the scenarios, the bridges ----
         const r = await page.evaluate(() => {
@@ -170,9 +173,10 @@ module.exports = async function checkProtoTrains() {
           if (x1.ph !== 'gone') B('x1 did not leave once E1 was thrown');
           out.x1Late = x1.tArr - x1.arr;
           const rows = R.rr.rrBoardRows(S);
-          if (rows.length !== 10 || rows.filter(q => q.track === 't1').length !== 5 || rows.filter(q => q.track === 't3').length !== 3 || rows.filter(q => q.track === 't2').length !== 2) B(`board rows: ${rows.map(q => q.svc + q.track).join(' ')}`);
+          const sch = Pr.PROTO_SCHEDULE, n = t => sch.filter(v => v.track === t).length;
+          if (rows.length !== sch.length || ['t1', 't2', 't3'].some(t => rows.filter(q => q.track === t).length !== n(t))) B(`board rows: ${rows.map(q => q.svc + q.track).join(' ')}`);
           // Refusals with p2 and f1 standing (rh.scenario('proto')).
-          S = R.rr.protoDebugScenario(R.newState(1866, 'proto'), 9, 20, ['p2', 'f1']);
+          S = R.rr.protoDebugScenario(R.newState(1866, 'proto'), 9, 45, ['p2', 'f1']);
           const p2 = S.rr.runs.find(q => q.svc === 'p2'), f1 = S.rr.runs.find(q => q.svc === 'f1'), tp = S.trains[p2.slot], tf = S.trains[f1.slot];
           const wave = (tr) => R.simTick(S, [{ t: 'rrWaveOff', tr: tr.id }]).filter(e => e.t === 'rrRefused' || e.t === 'rrWavedOff');
           const why = [];
@@ -209,9 +213,9 @@ module.exports = async function checkProtoTrains() {
           const cell = (x, z) => Math.floor((z - Wk.Z0) / Wk.CELL) * Wk.N + Math.floor((x - Wk.X0) / Wk.CELL);
           for (const b of Pr.PROTO_BRIDGES) if (G.cost[cell(b.x, -3)] > 0 || G.cost[cell(b.path[0][0] + (b.p1 === 'w' ? 1 : -1), b.path[0][1])] > 0) B(`the handcart may use bridge ${b.id}`);
           R.world.walkGrid(S.track);
-          // A walker on the west bridge's deck over track 2 while x2 (through, east > west) passes beneath.
+          // A walker on the west bridge's deck over track 2 while a through train passes beneath (D27: x1, the day's one).
           S = R.newState(1866, 'proto'); R.simTick(S, [{ t: 'pdStart' }]);
-          const x2 = R.rr.rrDebugJump(S, 'x2'), wb = Pr.PROTO_BRIDGES[0];
+          const x2 = R.rr.rrDebugJump(S, 'x1'), wb = Pr.PROTO_BRIDGES[0];
           S.player.x = wb.x; S.player.z = 0.3; S.player.mode = 'idle';
           let under = false, moved = false, ys = [];
           const ev2 = [];
@@ -223,10 +227,10 @@ module.exports = async function checkProtoTrains() {
             if (S.player.z < -3.5) moved = true;
             if (i % 30 === 0) ys.push(Pr.walkBridgeY(S.track, S.player.x, S.player.z));
           }
-          if (!under) B('x2 did not pass under the west footbridge');
+          if (!under) B('x1 did not pass under the west footbridge');
           if (!moved) B(`the walker on the deck did not cross while x2 passed (at ${S.player.x.toFixed(2)}, ${S.player.z.toFixed(2)})`);
           if (ev2.some(e => e.t === 'blocked')) B('the walker on the deck was blocked by the train beneath');
-          if (x2.ph !== 'gone') B(`x2: ${x2.ph}`);
+          if (x2.ph !== 'gone') B(`x1: ${x2.ph}`);
           return out;
         });
         problems.push(...r.bad);
@@ -237,7 +241,7 @@ module.exports = async function checkProtoTrains() {
       // ---- rh.scenario('proto') drawn, and a through train under the footbridges ----
       const sc = await page.evaluate(async () => {
         const R = window.__railhead, out = {};
-        R.importSave(JSON.stringify({ state: R.rr.protoDebugScenario(R.newState(1866, 'proto'), 9, 20, ['p2', 'f1']) }));
+        R.importSave(JSON.stringify({ state: R.rr.protoDebugScenario(R.newState(1866, 'proto'), 9, 45, ['p2', 'f1']) }));
         const S = R.state;
         out.stand = S.rr.runs.filter(q => q.ph === 'stand').map(q => q.svc).sort().join();
         R.camera.zoom = 1.0; R.camera.ox = 0 - S.player.x; R.camera.oz = 0 - S.player.z;
@@ -248,7 +252,7 @@ module.exports = async function checkProtoTrains() {
       await page.screenshot({ path: screenshotPath(`prototrains-scenario-${orient}`) });
       await page.evaluate(async () => {
         const R = window.__railhead;
-        const S = R.rr.protoDebugScenario(R.newState(1866, 'proto'), 6, 45, ['p1']), x1 = S.rr.runs.find(q => q.svc === 'x1');
+        const S = R.rr.protoDebugScenario(R.newState(1866, 'proto'), 6, 55, ['p1']), x1 = S.rr.runs.find(q => q.svc === 'x1');
         S.rr.runs.find(q => q.svc === 'p1').ph = 'stand';
         S.player.x = R.proto.PROTO_BRIDGES[1].x; S.player.z = -2;   // on the east footbridge's deck
         for (let i = 0; i < 4000 && !(x1.ph === 'out' && S.trains[x1.slot] && R.trainPoses(S.track, S.trains[x1.slot])[0].x > 12); i++) {

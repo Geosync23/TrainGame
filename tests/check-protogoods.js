@@ -8,12 +8,14 @@
 // - f1 brings 6 goods for the shops (store 3, smithy 2, saloon 1): the hand truck takes them off, 3 onto platform 2
 //   and then into the bays, 3 straight into the bays, each into its shop's bay; f1 is not ready until it is empty,
 //   then it is sent off;
-// - f2 loads 4 goods for the railroad from storage (a 5th is refused, a shop's good is refused), is not ready before;
+// - f2 loads 4 goods for the railroad from storage (a 5th is refused, a shop's good is refused), is not ready before
+//   (D27 foundation: it brings 4 for the shops too, unloaded first);
 // - f3 unloads 4 and loads 2; the hand truck goes back to its spot;
-// - the evening: the handcart takes the shops' goods (6, then 4), crosses the tracks only at the east walkway (never
-//   between the platforms anywhere else), goes up the main street to each shop's door; pgDeliver hands in only that
-//   shop's goods (a shop with nothing aboard refuses); every good reaches its own shop;
-// - the summary counts 10 unloaded, 6 loaded, 10 delivered; the next morning has 6 goods waiting again;
+// - the evening: the handcart (D27: the platform cart, 16 slots) takes the shops' goods in two trips, crosses the tracks
+//   only at the cart crossing (never between the platforms anywhere else), goes up the main street to each shop's door;
+//   pgDeliver hands in only that shop's goods (a shop with nothing aboard refuses); every good reaches its own shop;
+// - the summary counts what the tables say (D27: 14 unloaded, 6 loaded, 14 delivered); the next morning has 6 goods
+//   waiting again;
 // - items conserved all along; the same state hash when the day is played twice; no console errors;
 // - screenshots: goods on platform 2 beside f1, the storage shed open with goods in its bays, the loaded handcart at the
 //   general store's door (portrait and landscape).
@@ -45,7 +47,7 @@ module.exports = async function checkProtoGoods() {
           switchman();
           const e = R.simTick(S, cmds || []);
           for (const x of e) { evs.push(x); if (x.t === 'carryRefused' || x.t === 'rrRefused' || x.t === 'itemRefused') x.__seen = false; }
-          if (P.tool === 1 && P.z > X.PROTO.P1.z1 + 0.3 && P.z < X.PROTO.P2.z0 - 0.3) cartTrack.push([P.x, P.z]);
+          if (P.tool === 1 && P.z > -X.PROTO.D1 + 1.2 && P.z < X.PROTO.P2.z0 - 0.3) cartTrack.push([P.x, P.z]);   // between tracks 1 and 2, or 2 and the cargo platform
           return e;
         };
         tick([{ t: 'pdStart' }]);
@@ -88,10 +90,11 @@ module.exports = async function checkProtoGoods() {
         // Trip 1: 3 onto platform 2 (east of the shed, clear of the train in the view), then into the bays.
         for (const id of f1.ids.slice(0, 3)) act({ t: 'carryPick', id });
         if (G.carryHeld(S).length !== 3) B(`the hand truck holds ${G.carryHeld(S).length} after 3 picks`);
-        const onDeck = [];
-        for (let k = 0; k < 3; k++) { const h = G.carryHeld(S), id = h[h.length - 1]; onDeck.push(id); act({ t: 'carryPut', x: Math.round((5.6 + k * 0.9) * 100), z: Math.round((X.PROTO.P2.z0 + 1.4 + (k % 2) * 0.7) * 100) }); }
+        // (D27: on the cargo platform's loading edge, beside the train; the cargo platform is P2's alias)
+        const onDeck = [], LE = X.PROTO.LOAD_EDGE;
+        for (let k = 0; k < 3; k++) { const h = G.carryHeld(S), id = h[h.length - 1]; onDeck.push(id); act({ t: 'carryPut', x: Math.round((10 + k * 0.9) * 100), z: Math.round((LE.z0 + 0.5 + (k % 2) * 0.7) * 100) }); }
         for (const id of onDeck) { const w = S.items.where[id]; if (w.kind !== 'GROUND' || !(w.z / 100 > X.PROTO.P2.z0 && w.z / 100 < X.PROTO.P2.z1)) B(`item ${id} is not on platform 2 (${JSON.stringify(w)})`); }
-        act({ t: 'walkTo', x: 1050, z: Math.round((X.PROTO.P2.z0 + 1.2) * 100) });   // step back, so the screenshot shows them
+        act({ t: 'walkTo', x: 1050, z: Math.round((X.PROTO.CART_LANE.z0 + 1.2) * 100) });   // step back, so the screenshot shows them
         snaps.platform = JSON.stringify({ state: S });
         for (const id of onDeck) act({ t: 'carryPick', id });
         for (let k = 0; k < 3; k++) putTopInBay();
@@ -103,9 +106,10 @@ module.exports = async function checkProtoGoods() {
         if (!G.pgReady(S, runOf('f1'))) B('f1 is not ready once unloaded');
         if (!G.pgShedOpen(S)) B('the storage shed is not open while f1 stands at track 3');
         waveOff('f1');
-        // ---- f2: load 4 ----
+        // ---- f2: load 4 (D27 foundation: it brings goods for the shops too, PG.UNLOAD.f2: unloaded first) ----
         until(() => runOf('f2') && runOf('f2').ph === 'stand', 20000, 'f2 to stand at track 3');
         if (G.pgReady(S, runOf('f2'))) B('f2 is ready before it is loaded');
+        while (aboard('f2').town) { const ids = aboard('f2').ids.filter(id => tagOf(id) !== 'OUTSIDE').slice(0, 3); for (const id of ids) act({ t: 'carryPick', id }); for (let j = 0; j < ids.length; j++) putTopInBay(); }
         const outs = () => R.cargo.itemsAt(S, { kind: 'BAY', buildingId: 'storage', bay: 3 });
         const loadN = (svc, n) => {
           let left = n;
@@ -141,10 +145,14 @@ module.exports = async function checkProtoGoods() {
         if (P.tool !== null) B('the hand truck was not left at its spot');
         // ---- The evening: the handcart to the shops ----
         until(() => S.pd.ph === 'evening', 20000, 'the evening');
-        const want = G.pgToDeliver(S);
-        if (JSON.stringify(want) !== '{"store":4,"smithy":3,"saloon":3}') B(`to deliver: ${JSON.stringify(want)}`);
+        // What the day brought for each shop (PG.UNLOAD), and what goes away (the schedule's loads): from the game's tables.
+        const want = G.pgToDeliver(S), brought = { store: 0, smithy: 0, saloon: 0 };
+        for (const l of Object.values(G.PG.UNLOAD)) for (const [shop] of l) brought[shop]++;
+        const nIn = brought.store + brought.smithy + brought.saloon, nOut = X.PROTO_SCHEDULE.reduce((n, v) => n + (v.load || 0), 0);
+        if (JSON.stringify(want) !== JSON.stringify(brought)) B(`to deliver: ${JSON.stringify(want)}, brought ${JSON.stringify(brought)}`);
         act({ t: 'carryTool', tool: 1 });
         if (P.tool !== 1) B('the handcart was not taken');
+        const cap = R.cargo.CARGO_CARRY_CAP[R.carry.carryCarrier(S)];   // D27: the platform cart holds 16
         const inBay = tag => R.cargo.itemsAt(S, { kind: 'BAY', buildingId: 'storage', bay: bayOf(tag) });
         const delivered = [];
         const deliver = (shop, snapName) => {
@@ -165,40 +173,42 @@ module.exports = async function checkProtoGoods() {
           for (const k of ['store', 'smithy', 'saloon']) if (k !== shop && after[k] !== before[k]) B(`handing in at the ${shop} took the ${k}'s goods`);
           if (after[shop]) B(`goods for the ${shop} still in the cart after handing in`);
         };
-        // Trip 1: the store's 4 and 2 of the smithy's.
+        // Trip 1: the store's and the smithy's (as many as the cart holds, less one: a second trip for the rest).
         if (G.pgShedOpen(S)) B('the storage shed is open with no train and nobody near it');
         act({ t: 'carryPick', id: inBay('STORE')[0] });
         if (!G.pgShedOpen(S)) B('the storage shed is not open with the player at its bays');
         snaps.shed = JSON.stringify({ state: S });
-        for (const id of inBay('STORE').concat(inBay('SMITHY').slice(0, 2)).slice(0, 5)) act({ t: 'carryPick', id });
-        if (G.carryHeld(S).length !== 6) B(`the handcart holds ${G.carryHeld(S).length}, expected 6`);
+        const first = Math.min(cap - 1, brought.store + brought.smithy);
+        for (const id of inBay('STORE').concat(inBay('SMITHY')).slice(0, first - 1)) act({ t: 'carryPick', id });
+        if (G.carryHeld(S).length !== first) B(`the handcart holds ${G.carryHeld(S).length}, expected ${first}`);
         deliver('store', 'cart');
         act({ t: 'pgDeliver', shop: 'saloon' }, true);   // nothing for the saloon aboard: refused
         deliver('smithy');
         // Trip 2: back for the rest.
-        for (const id of inBay('SMITHY').concat(inBay('SALOON'))) act({ t: 'carryPick', id });
+        for (const id of inBay('STORE').concat(inBay('SMITHY'), inBay('SALOON'))) act({ t: 'carryPick', id });
         deliver('saloon');
-        deliver('smithy');
+        if (G.pgCartStatus(S).byShop.store) deliver('store');
+        if (G.pgCartStatus(S).byShop.smithy) deliver('smithy');
         act({ t: 'carryTool', tool: 1 });
         if (P.tool !== null) B('the handcart was not left at its spot');
         // Every good handed in at its own shop; the cart crossed only at the walkway.
         for (const e of delivered) { const wb = S.items.waybill[e.id]; if (wb.consignee.id !== e.shop) B(`item ${e.id} for the ${wb.consignee.id} was handed in at the ${e.shop}`); }
         const left = G.pgToDeliver(S);
         if (left.store + left.smithy + left.saloon) B(`goods still to deliver: ${JSON.stringify(left)}`);
-        const wk = X.PROTO.WALKWAY.x;
+        const wk = X.PROTO.XING_CART.x;   // D27: the cart crossing
         const off = cartTrack.filter(([x]) => Math.abs(x - wk) > 2.2);
         if (!cartTrack.length) B('the handcart never crossed the tracks');
-        if (off.length) B(`the handcart crossed the tracks away from the walkway, at ${off.slice(0, 3).map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}`);
+        if (off.length) B(`the handcart crossed the tracks away from the cart crossing, at ${off.slice(0, 3).map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}`);
         // The summary and the next morning.
         act({ t: 'pdEndDay' });
         const sum = S.pd.sum || {};
-        if (sum.unloaded !== 10 || sum.loaded !== 6 || sum.delivered !== 10) B(`summary: unloaded ${sum.unloaded}, loaded ${sum.loaded}, delivered ${sum.delivered} (expected 10, 6, 10)`);
+        if (sum.unloaded !== nIn || sum.loaded !== nOut || sum.delivered !== nIn) B(`summary: unloaded ${sum.unloaded}, loaded ${sum.loaded}, delivered ${sum.delivered} (expected ${nIn}, ${nOut}, ${nIn})`);
         const used = S.items.used.reduce((o, u) => { o[u.reason] = (o[u.reason] || 0) + 1; return o; }, {});
-        if (used.business !== 10 || used.soldOutside !== 6) B(`items used up: ${JSON.stringify(used)}`);
+        if (used.business !== nIn || used.soldOutside !== nOut) B(`items used up: ${JSON.stringify(used)}`);
         const cons = R.cargo.itemCheckConservation(S);
         if (cons.length) B('conservation: ' + cons.slice(0, 3).join('; '));
         const unl = evs.filter(x => x.t === 'pgUnloaded').length, ld = evs.filter(x => x.t === 'pgLoaded').length;
-        if (unl !== 10 || ld !== 6) B(`events: ${unl} pgUnloaded, ${ld} pgLoaded (expected 10, 6)`);
+        if (unl !== nIn || ld !== nOut) B(`events: ${unl} pgUnloaded, ${ld} pgLoaded (expected ${nIn}, ${nOut})`);
         tick([{ t: 'pdNextDay' }]);
         const out1 = G.pgOutWaiting(S);
         if (S.pd.ph !== 'morning' || out1.length !== 6) B(`next morning: phase ${S.pd.ph}, ${out1.length} goods waiting for the railroad`);
@@ -227,11 +237,11 @@ module.exports = async function checkProtoGoods() {
       return info;
     };
     const st = {};
-    st.platform = await shot('platform2', r.snaps.platform, 'portrait', 6.5, 3.5, 3.0);
-    st.shed = await shot('shed', r.snaps.shed, 'portrait', -1, 5, 2.0);
-    st.cart = await shot('cart', r.snaps.cart, 'portrait', -4.5, -30, 2.0);
-    st.cartL = await shot('cart', r.snaps.cart, 'landscape', -4.5, -30, 2.0);
-    st.shedL = await shot('shed', r.snaps.shed, 'landscape', -1, 5, 2.0);
+    st.platform = await shot('platform2', r.snaps.platform, 'portrait', 11, 14, 3.0);
+    st.shed = await shot('shed', r.snaps.shed, 'portrait', -1, 9, 2.0);
+    st.cart = await shot('cart', r.snaps.cart, 'portrait', -6, -38, 2.0);
+    st.cartL = await shot('cart', r.snaps.cart, 'landscape', -6, -38, 2.0);
+    st.shedL = await shot('shed', r.snaps.shed, 'landscape', -1, 9, 2.0);
     if (!st.shed.open) problems.push('the storage shed is not shown open in the screenshot');
     for (const [k, v] of Object.entries(st)) if (!(v.ms < 50)) problems.push(`a frame took ${v.ms} ms (${k})`);
     console.log(`  frames: ${JSON.stringify(st)}`);

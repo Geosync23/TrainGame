@@ -604,6 +604,9 @@ grows from 1.6 MB to about 1.9 MB.
 
 ### 8.2 The foundation's commit (what everyone builds on)
 
+**Built 2026-11-11: see 8.2a below for what changed against this list.**
+
+
 - **Scale and layout:** `PROTO` rewritten with the numbers of sections 1 and 2 (`PROTO.M`, `P1`, `CARGO` (with
   `P2` kept as an alias), `LEVERS`, `STOP`, `XING_CART`, `CART_PATH`, `STORE` (the cell blocks), `DOCK_Y` 1.6,
   `DECK_Y` 0.375, `BOUNDS`); `buildProtoWorld` (radius 20 legs, the lever stands); `PROTO_FB`, `PROTO_BRIDGES` for the
@@ -640,6 +643,40 @@ grows from 1.6 MB to about 1.9 MB.
 - `node tools/pixelart/export-layout.js` re-run; the ground drawn procedurally (R's existing code) until R's chunked
   ground lands; the old baked `ground` frame no longer used in the prototype.
 - DEV_NOTES "Prototype (D25)" gets a short "D27 foundation" part; design-doc's D27 row points at this plan.
+
+### 8.2a The foundation as built (2026-11-11): follow the code where it differs
+
+The foundation is built (DEV_NOTES "D27 (the working day made visual)" lists everything). Where it differs from the text
+above, **the code rules**; the differences and the interfaces added:
+- **The day:** f2 leaves at **16:10** (8.5 said 15:50): after p4 leaves west the player needs about 30 minutes from the
+  west lever frame to f2's engine on the cargo platform. T re-times the day anyway.
+- **Walking surfaces:** the walk grid has **levels** (`PROTO_LEVELS`: the two footbridges, then the cargo platform with
+  its ramps as flights; `PROTO_DOCK_LEVEL`); `walkLevelAt(T, x, z)` gives the level; `walkBridgeAt` now means the
+  footbridges only (the wave-off's "come down from the footbridge"); `walkDeckY(T, x, z)` is the one height for the sim
+  and the renderer (levels, platform 1, the boardwalks: `PROTO_DECKS`). The creek is shut on the walk grid.
+- **Lever frames:** `PROTO_LEVERS[name] = { frame, n, x, z, ux, uz }`; each switch's `stand` is its lever's post and
+  use spot. There is no `extra.levers` in A3's atlas, so the levers are placed by `PROTO.LEVERS.PITCH`.
+- **The platform cart:** `TOOL_KINDS.cart27` (carrier `CART27`, 16 slots) is already tool 1 in the prototype; until F
+  turns handling on, the D25 flow uses it as its handcart (one evening trip). `toolIsCart(k)`, `cargoCartCarrier(c)`.
+- **Item places:** `HAND` and `TRUCK` carry a `slot` (0, 1: a pair of crates), `SHOP` a `slot`; layers: up to 5 in a
+  storage cell, 2 on the cart, 3 in a car (`CARGO27`). `cargo27Key(w)` is a place's identity; `storeCellAt(block, c,
+  r)`, `storeCellOf(x, z)`. The D27 commodities are on `COMMODITIES` but not enumerable (the economy and older saves do
+  not see them).
+- **Migration 18 > 19:** the goods are re-stowed by `protoStow`: into the freight house's 4 bays while handling is off
+  (the D25 flow), into F's cells (`frStowPlace`) once it is on. F: a v19 save made before handling was on can hold goods
+  in the bays: move them (`frNewDay` is the place) or keep reading bays.
+- **Lessons:** the ids are fixed (`PD_LESSON_IDS`: switches, board, unload, load, delivery, pickup); `S.pd.les[id]` is
+  a step number or -1 (done or skipped).
+- **Hooks:** `playerModeTick(S, ev, poseCache)` returns true when `pbPlayerTick` or `frPlayerTick` handled the
+  player's tick (each returns a boolean); `rngFor(seed, ...keys)` (section "random numbers"); `protoDebugEvening(S)`;
+  `__railhead.d27` holds the foundation's tables and helpers.
+- **The D25 flows on the D27 layout:** the line at the door boards at the coaches' ends (`PP.END`; a door beside a
+  footbridge is left out); a car's door spot for the carrying commands is on the deck (`PROTO.EDGE + 0.35` from the
+  track); U's Send off walks to T's `rrWaveSpot` (clear of the flights); in the pixel view a tap on something's own
+  pixels wins over a lever's thumb margin (`pickAt`); travellers come from the street near the station
+  (`PROTO.TOWN_EXITS` at z -44).
+- **The atlas:** `build.py` no longer bakes the ground (`--ground` keeps the D25 one); the budget is 700 KB (575 now).
+- **The renderer's quick D27 drawing** is the foundation's stand-in (DEV_NOTES lists what is left for R).
 
 ### 8.3 The builders
 

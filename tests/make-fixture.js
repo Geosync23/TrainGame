@@ -7,6 +7,8 @@
 // the same kind of session, with places that exist there (no dead end inside the hub, no Willow Ford travellers).
 // From schema 18 (D25, the prototype) the new sample is a game in the prototype world, the same session again: the flour
 // on platform 1, the salt in the storage shed's first bay, switch W1 thrown, the player's walk along platform 1.
+// From schema 19 (D27, the foundation) the same session on the D27 layout: the places are on platform 1 there too, the
+// salt in the freight house's first bay (the storage shed's id), W1 thrown at the west lever frame.
 const fs = require('fs');
 const path = require('path');
 const { openGame, stopServer } = require('./browser');

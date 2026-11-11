@@ -101,5 +101,6 @@ build, groundlayer, shapes), ask the pipeline helper, or keep the change inside 
 
 ## Size
 
-The contract's budget: the sprite sheets under 500 KB of base64, the ground layer under 400 KB. Now: atlas.js is
-about 255 KB in all. build.py prints the sizes.
+The contract's budget (D27, plans/d27-tech.md 7.4): the atlas under 700 KB of base64, target 600 (was 500). Now: atlas.js is
+about 575 KB in all, with no baked ground: `build.py` bakes the D25 ground layer (and the test scene) only with `--ground`,
+since the browser composes the D27 ground from the `tile/` sprites. build.py prints the sizes.

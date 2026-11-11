@@ -59,6 +59,19 @@ const checks = {
   'the station rework end to end (D24: three days in the hub played by the bot: every train in and out, tickets, goods, money, same result)': require('./check-hub-day'),
   'the prototype end to end (D25: two days played by the bot through touch-level commands: every train in and out, every switch, ticket and good, the summary, same result)': require('./check-proto-day'),
   'the prototype never stalls (D25 fix: the page keeps running with goods in hand, two trains never come in on top of each other, the Next job line names the train holding the next one up)': require('./check-proto-stall'),
+  // D27 (plans/d27-tech.md 8.2 and 8.3): the foundation's world check, then one line per builder's check (each a
+  // placeholder that passes until its owner writes it), so no builder edits this list.
+  'the D27 world (the foundation: the layout at the D27 scale, clearances, walking distances, heights and walls, the v18 save to the next morning, the D27 switches)': require('./check-d27world'),
+  'lever frames and the re-timed day (D27, T)': require('./check-levers'),
+  'tickets punched on board (D27, P)': require('./check-onboard'),
+  'freight handling step by step (D27, F)': require('./check-handling'),
+  'the evening delivery and the pickups (D27, F)': require('./check-delivery'),
+  'the townsfolk (D27, W)': require('./check-townsfolk'),
+  'the lessons (D27, U)': require('./check-lessons'),
+  'inside a coach and a boxcar, drawn (D27, R)': require('./check-interiors'),
+  'the pixel frame-time budget (D27, R)': require('./check-pixperf'),
+  'the atlas: every key the code asks for, the budget (D27, the integrator)': require('./check-atlas'),
+  'the D27 day end to end (D27, the integrator)': require('./check-d27-day'),
 };
 
 (async () => {

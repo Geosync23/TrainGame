@@ -23,8 +23,11 @@
 //      (nearest first): one punch command, one ticket. Riders stepping off first: it waits beside the door.
 //   4. Freight by hand: the town's goods off each standing freight car into the storage shed's bay of their tag; the
 //      railroad's goods from the shed's OUTSIDE bay into the train's cars until it has its load.
-//   5. The evening: the handcart (the hand truck left at its spot first), sorted from the bays (up to 6), each shop's
-//      goods handed in at its door (pgDeliver), again until nothing is left; the handcart back at its spot; End the day.
+//   5. The evening: the handcart (the hand truck left at its spot first), sorted from the bays (as many as it holds: D27,
+//      the platform cart's 16), each shop's goods handed in at its door (pgDeliver), again until nothing is left; the
+//      handcart back at its spot (if an hour is left before the day's end); End the day.
+// D27 foundation: the same play on the D27 layout (the lever frames, the raised cargo platform, the cart crossing and
+// the main street); the numbers (carrying capacities, the day's end) are read from the game.
 //
 // Use: const bot = protoBotFactory(window.__railhead, mem) in the page (PROTO_BOT_SRC is this function's source);
 // each tick: const cmds = bot.decide(S); const ev = R.simTick(S, cmds); bot.observe(S, ev).
@@ -183,7 +186,7 @@ function protoBotFactory(R, mem0) {
       return null;
     }
     // Freight with the hand truck, three at a time: the town's goods off (nearest first), then the railroad's on.
-    const truck = S.tools.find(t => t.k === 'truck'), cap = ({ HAND: 1, HANDTRUCK: 3, HANDCART: 6 })[R.carry.carryCarrier(S)];
+    const truck = S.tools.find(t => t.k === 'truck'), cap = R.cargo.CARGO_CARRY_CAP[R.carry.carryCarrier(S)];   // D27: read from the game
     const off = pgOff(S, tr).filter(id => !skipped(S, 'pick' + id)), st = R.pg.pgCarStatus(S, tr.consist[1].id), want = st ? st.load : 0;
     const heldOut = h.filter(id => tagOf(S, id) === 'OUTSIDE').length, outs = inBay(S, bayOf(S, 'OUTSIDE')).filter(id => !skipped(S, 'pick' + id));
     if (!off.length && !(want > 0) && !h.length) return null;
@@ -199,12 +202,13 @@ function protoBotFactory(R, mem0) {
 
   // ---- 5. The evening ----
   function evening(S) {
-    const P = S.player, h = held(S), cart = S.tools.find(t => t.k === 'cart'), carrier = R.carry.carryCarrier(S);
+    const P = S.player, h = held(S), cart = S.tools.find(t => t.k === 'cart' || t.k === 'cart27'), carrier = R.carry.carryCarrier(S);   // D27: the platform cart is the handcart
+    const cartCap = R.cargo.CARGO_CARRY_CAP[R.carry.TOOL_KINDS[cart.k].carrier];
     const shopGoods = () => S.bayTags.storage.map((tag, b) => tag === 'OUTSIDE' ? [] : inBay(S, b)).reduce((a, b) => a.concat(b), []);
     if (carrier === 'HAND' && h.length) { const id = h[h.length - 1], tag = tagOf(S, id); return send(S, { t: 'carryPut', b: 'storage', bay: bayOf(S, tag) }, 'put' + id); }
     const waiting = shopGoods().filter(id => !skipped(S, 'pick' + id));
     // Sort the cart: fill it from the bays, shop by shop, before setting off.
-    if (waiting.length && (P.tool !== cart.id || h.length < 6) && !(P.tool === cart.id && h.length && mem.cartFull)) {
+    if (waiting.length && (P.tool !== cart.id || h.length < cartCap) && !(P.tool === cart.id && h.length && mem.cartFull)) {
       if (P.tool !== null && P.tool !== cart.id) return send(S, { t: 'carryTool', tool: P.tool }, 'tool' + P.tool);   // the hand truck back first
       if (P.tool !== cart.id) return send(S, { t: 'carryTool', tool: cart.id }, 'tool' + cart.id);
       mem.cartFull = false;
@@ -220,7 +224,7 @@ function protoBotFactory(R, mem0) {
     mem.cartFull = false;
     // The handcart back at its spot if there is time (else the morning's first job), then End the day.
     const sod = (S.time + 18000) % 86400;
-    if (P.tool !== null && P.tool !== undefined && sod < 21 * 3600) return send(S, { t: 'carryTool', tool: P.tool }, 'tool' + P.tool);
+    if (P.tool !== null && P.tool !== undefined && sod < R.proto.PD.LATE_S - 3600) return send(S, { t: 'carryTool', tool: P.tool }, 'tool' + P.tool);   // D27: an hour before the day's end (PD.LATE_S)
     const left = R.pg.pgToDeliver(S);
     if (left.store + left.smithy + left.saloon > 0) { if (!mem.notes.includes('goods left')) mem.notes.push('goods left'); }
     return send(S, { t: 'pdEndDay' });

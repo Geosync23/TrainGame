@@ -44,7 +44,10 @@ async function busy(page) {
     let id = 100;
     poses.forEach((p, i) => { if (p.k !== 'coach') return; for (const f of [0.25, 0.75]) for (let k = 0; k < 2; k++) people.push({ id: id++, x: p.x - p.len / 2 + f * p.len, z: z1 - 0.6 - 0.7 * k, f: 'sw', act: k === 0 && f === 0.25 ? 'ticket' : 'idle', who: ['man_top', 'woman_bonnet', 'man_bag', 'woman_shawl', 'child', 'man_bowler', 'worker', 'porter.b'][(id - 100) % 8] }); });
     [['se', 12, z1 - 3.5], ['ne', 13, z1 - 4], ['sw', 14, z1 - 3.5], ['nw', 15, z1 - 4]].forEach(([f, x, z]) => people.push({ id: id++, x, z, f, act: 'walk', who: 'man_bowler.b' }));
-    people.push({ id: 900, x: -12, z: PR.P2.z1 - 0.5, f: 'se', act: 'idle', who: 'woman_shawl' }, { id: 901, x: -12, z: PR.D3 + 2.1, f: 'ne', act: 'idle', who: 'man_top.b' });
+    // (D27: beside the middle of f1's first car; in front of it, clear of its 4u width)
+    const half = (R.proto.PROTO_STOCK.cars.boxcar.wid || 2) / 2, zf = PR.D3 + half + 0.6;
+    const fq = R.trainPoses(R.state.track, R.state.trains[runOf('f1').slot]).filter(p => p.k === 'boxcar').sort((a, c) => (Math.abs(a.x - zf - 1) * 8 / innerWidth + Math.abs(a.x + zf + 1) * 4 / innerHeight) - (Math.abs(c.x - zf - 1) * 8 / innerWidth + Math.abs(c.x + zf + 1) * 4 / innerHeight))[0];   // the car nearest the view's middle on screen (it looks at (0, -1))
+    people.push({ id: 900, x: fq.x, z: PR.P2.z1 - 0.5, f: 'se', act: 'idle', who: 'woman_shawl' }, { id: 901, x: fq.x, z: zf, f: 'ne', act: 'idle', who: 'man_top.b' });
     const sx = st.x + 2.5, sz0 = st.z - (Math.abs(Math.sin(st.yaw)) > 0.5 ? st.w : st.d) / 2;
     people.push({ id: 902, x: sx, z: sz0 - 0.5, f: 'se', act: 'idle', who: 'child' }, { id: 903, x: sx, z: PR.P2.z1 - 0.6, f: 'nw', act: 'walk', who: 'man_bag' });
     window.__pixPeople = people;
@@ -52,9 +55,9 @@ async function busy(page) {
     window.ppDrawList = () => window.__pixPeople;
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // the loaded game's first frame sets its own view first
     R.pix.pixLookAt(0, -1);
-    if (innerHeight > innerWidth) R.camera.zoom = 1.0;   // portrait: one step out (scale 2) so both trains and the people by them are in view
+    R.camera.zoom = 1.0;   // one step out (D27: in landscape too, the stock is twice D25's) so both trains and the people by them are in view
     await new Promise(r => setTimeout(r, 500));
-    return { stand: [runOf('p1').ph, runOf('f1').ph], p1: tr.id, coach: tr.consist[2].id, f1: R.state.trains[runOf('f1').slot].id, people: people.length };
+    return { stand: [runOf('p1').ph, runOf('f1').ph], p1: tr.id, coach: tr.consist[2].id, f1: R.state.trains[runOf('f1').slot].id, people: people.length, fx: fq.x };
   });
 }
 
@@ -79,11 +82,13 @@ module.exports = async function checkPixRender() {
         if (off[0] || off[1]) B(`the default view is not centred on the player (his feet ${off} native px from the middle)`);
         // What shows round him (he starts on platform 1 in front of the schedule board): portrait is narrow (about
         // 260 native px), so platform 2's east half, track 3 and the station's front show in landscape.
-        const tall = innerHeight > innerWidth;
-        for (const [nm, x, z, both] of [['platform 1', 0, (P.P1.z0 + P.P1.z1) / 2, 1], ['platform 2 (east half)', 10, (P.P2.z0 + P.P2.z1) / 2], ['track 1 at the stop', 10, -P.D1, 1], ['track 3 (east half)', 10, P.D3], ['the station\'s front', -9, P.STATION.z + 2.5]])
-          if ((both || !tall) && !on(x, z, 0, 0)) B(`${nm} is not on the screen`);
+        // D27: things are about twice D25's size, so the default view (about 32u of track: plans/d27-tech.md 1.6) shows
+        // platform 1 round him, track 1, the east footbridge's deck and the station's front; the cargo platform by panning.
+        const tall = innerHeight > innerWidth, px = P.PLAYER.x;
+        for (const [nm, x, z] of [['platform 1', px - 4, (P.P1.z0 + P.P1.z1) / 2], ['track 1 at the stop', px, -P.D1], ['the east footbridge', P.FB.X[1], -6], ['the station\'s front', P.STATION.x1 - 4, P.STATION.z1]])
+          if (!on(x, z, 0, 0)) B(`${nm} is not on the screen`);
         const keys = X.drawn.map(r => r.key || '');
-        for (const k of ['bld/station', 'bld/canopy', ...(tall ? [] : ['bld/storage']), 'bld/schedboard', 'bld/footbridge/deck', 'ppl/agent/']) if (!keys.some(q => q.startsWith(k))) B(`nothing drawn from ${k}`);
+        for (const k of ['bld/station', 'bld/canopy', 'bld/schedboard', 'bld/footbridge/deck', 'ppl/agent/']) if (!keys.some(q => q.startsWith(k))) B(`nothing drawn from ${k}`);
         if (X.drawn.some(r => r.si < 0 && r.hit && r.hit.k !== 'tool')) B(`placeholder shapes drawn: ${X.drawn.filter(r => r.si < 0).map(r => r.id).join(', ')}`);
         out.scale = v.scale; out.native = [v.nw, v.nh];
         return out;
@@ -93,9 +98,14 @@ module.exports = async function checkPixRender() {
       // The town by panning: drag up-left in steps (the view's offset), the shops come on screen.
       const town = await page.evaluate(async () => {
         const R = window.__railhead, X = R.pix;
-        X.pixLookAt(0, -34); await new Promise(r => setTimeout(r, 250));
-        const keys = X.drawn.map(r => r.key || '');
-        return ['bld/shop_store', 'bld/shop_saloon', 'bld/shop_smithy'].filter(k => !keys.some(q => q.startsWith(k)));
+        // (D27: each shop on its lot up the main street, SHOPS27)
+        const miss = [];
+        for (const sh of R.proto.PROTO_SHOPS) {
+          X.pixLookAt(0, sh.door.z); await new Promise(r => setTimeout(r, 250));
+          if (!X.drawn.some(r => (r.key || '').startsWith('bld/' + sh.bld))) miss.push('bld/' + sh.bld);
+        }
+        X.pixLookAt(0, -38); await new Promise(r => setTimeout(r, 250));
+        return miss;
       });
       if (town.length) P(`the town's shops are not drawn when panned there: ${town.join(', ')}`);
       await page.screenshot({ path: screenshotPath(`pixrender-town-${orient}`) });
@@ -104,27 +114,33 @@ module.exports = async function checkPixRender() {
       if (b.stand.join() !== 'stand,stand') P(`the two trains did not stand (${b.stand})`);
       const bs = await page.evaluate((b) => {
         const R = window.__railhead, X = R.pix, out = { bad: [] }, B = m => out.bad.push(m), keys = X.drawn.map(r => r.key || ''), n = p => keys.filter(k => k.startsWith(p)).length;
-        if (!(n('veh/loco') >= 2)) B(`${n('veh/loco')} engines drawn`);
-        if (!(n('veh/coach/') >= 3)) B(`${n('veh/coach/')} coaches drawn`);
-        if (!(n('veh/boxcar') >= 2)) B(`${n('veh/boxcar')} boxcars drawn`);
-        if (!(n('ppl/') >= b.people)) B(`${n('ppl/')} people drawn (expected ${b.people} travellers and the agent)`);
+        // D27: the stock and the travellers are bigger than the view holds; each one whose anchor is in view must be drawn.
+        const inV = (x, z, y) => { const p = R.toScreen(x, z, y || 0); return p.x >= 4 && p.x <= innerWidth - 4 && p.y >= 4 && p.y <= innerHeight - 4; };
+        const vehIn = k => R.state.trains.reduce((m, tr) => m + R.trainPoses(R.state.track, tr).filter(p => p.k === k && inV(p.x, p.z, 1)).length, 0);
+        const ppIn = window.__pixPeople.filter(q => inV(q.x, q.z, 0.5)).length + 1;
+        if (!(n('veh/loco') >= vehIn('loco'))) B(`${n('veh/loco')} engines drawn, ${vehIn('loco')} in view`);
+        if (!(n('veh/coach/') >= vehIn('coach'))) B(`${n('veh/coach/')} coaches drawn, ${vehIn('coach')} in view`);
+        if (!(n('veh/boxcar') >= vehIn('boxcar'))) B(`${n('veh/boxcar')} boxcars drawn, ${vehIn('boxcar')} in view`);
+        if (!(vehIn('loco') + vehIn('coach') >= 2 && vehIn('boxcar') >= 1)) B('the busy view does not hold both trains');
+        if (!(n('ppl/') >= ppIn)) B(`${n('ppl/')} people drawn (expected the ${ppIn - 1} travellers in view and the agent)`);
         for (const dir of ['se', 'ne', 'sw', 'nw']) if (!keys.some(k => k.startsWith('ppl/') && k.includes('/' + dir + '/'))) B(`no person drawn facing ${dir}`);
         if (!keys.some(k => k.startsWith('ppl/agent/carry/'))) B('the agent is not drawn carrying');
         if (!keys.some(k => k.startsWith('goods/') && k.includes('/carried'))) B('the carried crate is not drawn');
-        if (!(n('goods/') >= 10)) B(`${n('goods/')} goods drawn (expected 10)`);
+        const goodsIn = R.pg.pgDrawList(R.state).filter(q => q.at === 'hand' || ((q.at === 'bay' || q.at === 'ground') && inV(q.x, q.z, 1.6))).length;
+        if (!(n('goods/') >= goodsIn && goodsIn >= 4)) B(`${n('goods/')} goods drawn (${goodsIn} in view)`);
         if (!(n('tag/') >= 3)) B(`${n('tag/')} tags drawn`);
-        if (!keys.includes('bld/storage_open')) B('the storage shed is not open with goods in its bays');
+        if (!keys.some(k => k.startsWith('bld/freighthouse'))) B('the freight house (the storage shed) is not drawn');
         if (!(n('sw/points/') >= 1)) B('no switch points drawn');
         if (X.drawn.some(r => r.si < 0 && r.hit && r.hit.k !== 'tool')) B(`placeholder shapes drawn: ${X.drawn.filter(r => r.si < 0).map(r => r.id).join(', ')}`);
         // Painter's order (ids of the sorted items).
         const o = X.order, at = id => o.indexOf(id), coach = `tr${b.p1}/2`, f1 = o.filter(id => id && id.startsWith(`tr${b.f1}/`));
         const before = (a, c, why) => { if (at(a) < 0 || at(c) < 0) B(`${why}: not both drawn (${a} ${at(a)}, ${c} ${at(c)})`); else if (!(at(a) < at(c))) B(`${why}: ${a} is drawn after ${c}`); };
         before('pp100', `tr${b.p1}/1`, 'a traveller on platform 1 behind the first coach');
-        const near = id => f1.find(t => { const it = R.pix.pixScene(0).find(q => q.id === t); return it && it.x0 <= -12 && it.x1 >= -12; });
+        const near = id => f1.find(t => { const it = R.pix.pixScene(0).find(q => q.id === t); return it && it.x0 <= b.fx && it.x1 >= b.fx; });
         const fc = near();
         if (fc) { before('pp900', fc, 'a traveller on platform 2 behind the freight train'); before(fc, 'pp901', 'a traveller in front of the freight train'); }
-        else B('no freight car at x -12');
-        before('pp902', 'storage', 'a traveller behind the storage shed'); before('storage', 'pp903', 'a traveller in front of the storage shed');
+        else B(`no freight car drawn at x ${b.fx}`);
+        before('pp902', 'storage/body', 'a traveller behind the storage shed'); before('storage/body', 'pp903', 'a traveller in front of the storage shed');
         for (const id of o.filter(q => q && q.startsWith('fb') && q.endsWith('/deck'))) for (const t of o.filter(q => q && q.startsWith(`tr${b.p1}/`))) {
           const A = R.pix.pixScene(0), di = A.find(q => q.id === id), ti = A.find(q => q.id === t);
           if (di && ti && di.x0 < ti.x1 && di.x1 > ti.x0) before(t, id, 'the bridge deck over the train beneath');
@@ -133,7 +149,7 @@ module.exports = async function checkPixRender() {
         // behind it; not the shed for the one walking in front of it.
         const see = X.PIX.seeThrough;
         if (!see.some(id => id.startsWith(`tr${b.p1}/`))) B(`no coach turns see-through over the line behind it (${see.join(', ')})`);
-        if (!see.includes('storage')) B(`the storage shed does not turn see-through over the traveller behind it (${see.join(', ')})`);
+        if (!see.some(id => id.startsWith('storage/'))) B(`the storage shed does not turn see-through over the traveller behind it (${see.join(', ')})`);
         if (see.some(id => id.startsWith('pp') || id === 'player')) B(`a person was made see-through: ${see.join(', ')}`);
         out.see = see.join(' ');
         out.ms = X.stats.ms; out.items = X.stats.items; out.draws = X.stats.draws;
@@ -206,18 +222,18 @@ module.exports = async function checkPixRender() {
         const R = window.__railhead, X = R.pix, out = { bad: [], ys: [] }, B = m => out.bad.push(m), frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         const [W, E] = X.pixBridges().sort((a, b) => a.x - b.x);
         const sx = E.p1 === 'e' ? 1 : -1, F = R.proto.PROTO_FB, zs = (F.Z1[0] + F.Z1[1]) / 2;   // the middle of T's platform 1 flight
-        X.placePlayer(E.x + sx * 7.5, zs); await frame();
-        for (let i = 0; i <= 14; i++) { X.placePlayer(E.x + sx * (6.6 - i * 0.45), zs); await frame(); out.ys.push(+X.PIX.wy.player.toFixed(2)); }
+        X.placePlayer(E.x + sx * (F.HALF + F.RUN + 1), zs); await frame();
+        for (let i = 0; i <= 14; i++) { X.placePlayer(E.x + sx * (F.HALF + F.RUN * (0.95 - i * 0.9 / 14)), zs); await frame(); out.ys.push(+X.PIX.wy.player.toFixed(2)); }
         for (const z of [-6.5, -5, -3.5]) { X.placePlayer(E.x, z); await frame(); }
         out.deckY = X.PIX.wy.player;
-        if (Math.abs(out.deckY - 5.452) > 0.01) B(`the player on the deck is drawn at y ${out.deckY}, not the deck's 5.452`);
+        if (Math.abs(out.deckY - F.TOP) > 0.01) B(`the player on the deck is drawn at y ${out.deckY}, not the deck's ${F.TOP}`);
         if (!(out.ys[0] < 1.2 && out.ys[out.ys.length - 1] > 5) || out.ys.some((y, i) => i && y < out.ys[i - 1] - 1e-6)) B(`up the stairs the heights are ${out.ys.join(' ')}`);
         const o = X.order, at = id => o.indexOf(id);
         if (!(at(E.id + '/deck') < at('player') && at('player') < at(E.id + '/rail'))) B(`the walker on the deck is not between the deck and its near railing (${at(E.id + '/deck')}, ${at('player')}, ${at(E.id + '/rail')})`);
-        window.__pixPeople.push({ id: 950, x: W.x, z: -1.5, f: 'sw', act: 'walk', who: 'woman_bonnet', y: 5.452 }, { id: 951, x: W.x + (W.p1 === 'e' ? 3 : -3), z: zs, f: 'ne', act: 'walk', who: 'man_top' });
+        window.__pixPeople.push({ id: 950, x: W.x, z: -1.5, f: 'sw', act: 'walk', who: 'woman_bonnet', y: F.TOP }, { id: 951, x: W.x + (W.p1 === 'e' ? 1 : -1) * (F.HALF + F.RUN / 2), z: zs, f: 'ne', act: 'walk', who: 'man_top' });
         await frame();
-        if (Math.abs(X.PIX.wy.pp950 - 5.452) > 0.01) B(`a traveller given y 5.452 is drawn at ${X.PIX.wy.pp950}`);
-        if (!(X.PIX.wy.pp951 > 1.5 && X.PIX.wy.pp951 < 4.5)) B(`a traveller halfway up the stairs is drawn at y ${X.PIX.wy.pp951}`);
+        if (Math.abs(X.PIX.wy.pp950 - F.TOP) > 0.01) B(`a traveller given y ${F.TOP} is drawn at ${X.PIX.wy.pp950}`);
+        if (!(X.PIX.wy.pp951 > F.TOP * 0.3 && X.PIX.wy.pp951 < F.TOP * 0.7)) B(`a traveller halfway up the stairs is drawn at y ${X.PIX.wy.pp951}`);
         X.pixLookAt(E.x - 2, -3);
         await frame(); await frame();
         out.under = null;
@@ -246,7 +262,7 @@ module.exports = async function checkPixRender() {
       const bd = await page.evaluate(async () => {
         const X = window.__railhead.pix;
         X.pixBoardDraw(['06:40 T1', { text: '09:15 T1', late: true }]);
-        X.pixLookAt(4, -14); window.__railhead.camera.zoom = 3;
+        const sb = window.__railhead.proto.PROTO.SCHEDBOARD; X.pixLookAt(sb.x - 1, sb.z + 2); window.__railhead.camera.zoom = 3;
         await new Promise(r => setTimeout(r, 300));
         const rows = X.pixBoardRowsNow();
         return rows.map(r => r.text + (r.late ? '!' : '')).join('|');
@@ -282,7 +298,7 @@ module.exports = async function checkPixRender() {
       // on the middle native pixel of the view every frame, and the view moves with him in whole pixels. A look away
       // (as a drag) stays while he stands, eases back once he walks; the Centre button snaps back.
       const fol = await page.evaluate(async () => {
-        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = P2.z0 + 1, out = { bad: [], n: 0, moved: 0 }, B = m => out.bad.push(m);
+        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = R.proto.PROTO.P1.z0 + 2, out = { bad: [], n: 0, moved: 0 }, B = m => out.bad.push(m);   // (D27: along platform 1, behind the footbridge's flight)
         const raf = () => new Promise(r => requestAnimationFrame(r)), wait = ms => new Promise(r => setTimeout(r, ms));
         const feet = () => {
           const v = X.view, d = X.drawn.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key);
@@ -309,7 +325,7 @@ module.exports = async function checkPixRender() {
       fol.bad.forEach(P);
       await page.screenshot({ path: screenshotPath(`pixrender-follow-${orient}`) });
       const back = await page.evaluate(async () => {
-        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = P2.z0 + 1, out = { bad: [] }, B = m => out.bad.push(m), c = R.camera;
+        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = R.proto.PROTO.P1.z0 + 2, out = { bad: [] }, B = m => out.bad.push(m), c = R.camera;
         const wait = ms => new Promise(r => setTimeout(r, ms)), off = () => Math.hypot(c.ox, c.oz), centre = document.getElementById('centre');
         for (let i = 0; i < 100 && S.player.mode !== 'idle'; i++) await wait(100);   // he arrives
         await wait(300);   // and stands (a tick on)

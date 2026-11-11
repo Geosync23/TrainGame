@@ -1,6 +1,7 @@
 // Check: the prototype's screens (D25, builder U; plans/proto-tech.md sections 5 and 9).
-// - The morning opens with the schedule board card: every train of the day (10 rows: passenger, freight and the two
-//   through trains, with their tracks and times), the clock held while it is open, Start the day starts it.
+// - The morning opens with the schedule board card: every train of the day (a row for each run of PROTO_SCHEDULE:
+//   passenger, freight and through trains, with their tracks and times), the clock held while it is open, Start the day
+//   starts it.
 // - The HUD keeps only the clock, the speeds and the Settings gear (cash, mail, Build, Work board, Look and the turn
 //   buttons hidden); the arrows are on by default.
 // - The Next job line through each step of a day, played by a scripted player through the buttons over the world
@@ -52,10 +53,13 @@ module.exports = async function checkProtoUi() {
           intro: document.getElementById('pdBoardIntro').textContent, arrows: R.guide.on() };
       });
       if (m.ph !== 'morning' || !m.board) P(`the morning: phase ${m.ph}, board card shown ${m.board}`);
-      if (m.rows.length !== 10 || m.cardRows !== 10) P(`the board has ${m.rows.length} rows (card ${m.cardRows}), expected the day's 10 trains`);
-      const want = { P1: [1, '06:40', '06:55'], X1: [2, '07:45', '07:45'], F1: [3, '08:45', '10:30'], F2: [3, '13:45', '15:10'], X2: [2, '12:45', '12:45'] };
-      for (const [id, [trk, a, d]] of Object.entries(want)) { const r = m.rows.find(q => q[0] === id); if (!r || r[1] !== trk || r[2] !== a || r[3] !== d) P(`board row ${id}: ${JSON.stringify(r)}`); }
-      if (m.rows.filter(r => r[4]).length !== 2 || m.rows.filter(r => r[5] === 'freight' && !r[4]).length !== 3) P('the board does not show 2 through trains and 3 freight trains');
+      // D27 foundation: every row against the day's schedule (PROTO_SCHEDULE: its tracks and times), not numbers written here.
+      const sch = await ev(() => window.__railhead.proto.PROTO_SCHEDULE.map(v => ({ id: v.id.toUpperCase(), trk: +v.track.slice(1), arr: v.arr, dep: v.dep, through: !!v.through, kind: v.kind })));
+      const hm = t => String(Math.floor(t / 3600)).padStart(2, '0') + ':' + String(Math.floor(t % 3600 / 60)).padStart(2, '0');
+      if (m.rows.length !== sch.length || m.cardRows !== sch.length) P(`the board has ${m.rows.length} rows (card ${m.cardRows}), expected the day's ${sch.length} trains`);
+      for (const v of sch) { const r = m.rows.find(q => q[0] === v.id); if (!r || r[1] !== v.trk || r[2] !== hm(v.arr) || r[3] !== hm(v.dep)) P(`board row ${v.id}: ${JSON.stringify(r)}`); }
+      const nThru = sch.filter(v => v.through).length, nFr = sch.filter(v => v.kind === 'freight' && !v.through).length;
+      if (m.rows.filter(r => r[4]).length !== nThru || m.rows.filter(r => r[5] === 'freight' && !r[4]).length !== nFr) P(`the board does not show ${nThru} through trains and ${nFr} freight trains`);
       if (!/Start the day/.test(m.start)) P(`the morning card's button says "${m.start}"`);
       if (m.job.key !== 'morning' || m.hint) P(`the morning's job ${JSON.stringify(m.job)} / arrow while the card is open ${JSON.stringify(m.hint)}`);
       {
@@ -243,7 +247,8 @@ module.exports = async function checkProtoUi() {
       await frames(300);
       const s = await ev(() => {
         const R = window.__railhead, S = R.state, el = document.getElementById('pdSum');
-        return { ph: S.pd.ph, open: !el.hidden, sum: S.pd.sum, text: el.textContent, guide: S.pd.guide, sentTypes: window.__fake.sent.map(c => c.t) };
+        const came = S.rr.runs.filter(r => r.day === S.pd.day && !r.skipped && r.tArr !== null && r.tArr !== undefined).length;   // the trains that came in (or ran through) before the check skipped the rest
+        return { ph: S.pd.ph, open: !el.hidden, sum: S.pd.sum, text: el.textContent, guide: S.pd.guide, sentTypes: window.__fake.sent.map(c => c.t), came };
       });
       if (s.ph !== 'summary' || !s.open) P(`the end of the day: phase ${s.ph}, summary card shown ${s.open}`);
       else {
@@ -251,7 +256,7 @@ module.exports = async function checkProtoUi() {
         if (m2.punched !== 3 || m2.delivered !== 2 || m2.loaded !== 1 || m2.unloaded !== 2) P(`the summary's figures: ${JSON.stringify(m2)}`);
         const need = [`${m2.trains}: ${m2.onTime} on time, ${m2.late} late`, `${m2.punched} punched`, `${m2.unloaded} unloaded, ${m2.loaded} loaded, ${m2.delivered} delivered`];
         for (const n of need) if (!s.text.includes(n)) P(`the summary card does not say "${n}" (${s.text})`);
-        if (!(m2.trains >= 3)) P(`the summary counts ${m2.trains} trains (P1, F1 and the others that came in)`);
+        if (!(m2.trains >= 2) || m2.trains !== s.came) P(`the summary counts ${m2.trains} trains (P1, F1 and the others that came in: ${s.came})`);
       }
       if (s.guide !== 5) P(`the first-day guide reached step ${s.guide}, expected 5 (the evening)`);
       for (const t of ['useSwitch', 'punch', 'rrWaveOff', 'useCar', 'pgDeliver', 'pdEndDay']) if (!s.sentTypes.includes(t)) P(`no ${t} command was sent by the buttons`);

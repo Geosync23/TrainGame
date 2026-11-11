@@ -4,8 +4,9 @@
 // Two game days from a new prototype game (the bot reads the board, sets every switch in and out, punches every
 // ticket, sends the trains off, unloads and loads the freight trains, sorts the handcart, delivers to the three shops,
 // ends the day and opens the next):
-// - each day all 10 runs come in and go out (none cancelled), every one of them through switches the player set (no
-//   switch changes but by the player's throws), the 8 that stop waved off by the player;
+// - each day all the schedule's runs come in and go out (none cancelled), every one of them through switches the player
+//   set (no switch changes but by the player's throws), the ones that stop waved off by the player (D27 foundation: the
+//   numbers are read from the game's tables: 9 runs, 8 stopping, 14 goods for the shops, 6 for the railroad);
 // - every traveller who came to a line was punched (none left behind), every good brought for the shops delivered at
 //   its own shop's door, every good for the railroad loaded;
 // - the player ends each day (End the day, before 22:00); the summary's figures match what happened (trains in and
@@ -28,7 +29,7 @@ const MAX_TICKS = 2 * 86400 / 8;
 const RUNNER = `window.__pd = (() => {
   const R = window.__railhead, factory = (0, eval)('(' + window.__pdsrc + ')');
   const hm = S => { const s = (S.time + 18000) % 86400; return 'day ' + (Math.floor((S.time + 18000) / 86400) + 1) + ' ' + String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
-  function newRec() { return { days: {}, runs: {}, events: {}, swState: null, swOther: 0, shots: {}, sums: [], cons: [], lineOnBridge: [] }; }
+  function newRec() { return { days: {}, runs: {}, events: {}, swState: null, swOther: 0, shots: {}, sums: [], cons: [], lineOnBridge: [], needs: {}, sw0: {} }; }
   function start(seed) { const S = R.newState(seed, 'proto'), bot = factory(R); return { S, bot, rec: newRec() }; }
   const dayRec = (rec, d) => rec.days[d] = rec.days[d] || { line: 0, punched: 0, missed: 0, boarded: 0, unloaded: 0, loadedEv: 0, delivered: 0, wrongShop: 0, throws: 0, waves: 0, arrived: 0, passed: 0, onTime: 0, late: 0, worstLate: 0, soldOutside: 0 };
   function step(X, n, until) {
@@ -69,6 +70,11 @@ const RUNNER = `window.__pd = (() => {
         }
       }
       if (before !== after && !thrown) rec.swOther++;
+      // D27 foundation: the switch settings the day's trains needed (the game's rrSwitchNeeds, the board's switch column),
+      // in the order the trains passed them, so the fewest throws a day takes come from the game (each switch's changes
+      // of setting, from how it lay at the morning), not from a number written here.
+      if (S.pd.ph === 'morning' && !rec.sw0[day]) rec.sw0[day] = S.track.switches.map(w => w.state);
+      if (S.pd.ph === 'day') for (const n of R.rr.rrSwitchNeeds(S)) { const N = rec.needs[day] = rec.needs[day] || {}, k = n.run + ':' + n.move + ':' + n.sw; if (!N[k]) N[k] = { sw: n.sw, st: n.want === 'reverse' ? 'R' : 'N', t: Infinity }; if (n.passed && N[k].t === Infinity) N[k].t = S.time; }
       // The travellers' line spots: never on a footbridge.
       if (S.tick % 20 === 0) for (const p of S.pax.list) if (p.s === 'line' && R.proto.walkBridgeAt(S.track, p.x / 100, p.z / 100) && rec.lineOnBridge.length < 5) rec.lineOnBridge.push([p.id, p.x, p.z]);
       // The moments for the screenshots.
@@ -86,7 +92,14 @@ const RUNNER = `window.__pd = (() => {
   const done = S => S.pd.ph === 'summary' && S.pd.day >= ${DAYS - 1};
   function report(X) {
     const S = X.S, runs = Object.keys(X.rec.runs).map(Number).sort((a, b) => a - b).map(id => X.rec.runs[id]);
-    return { runs, days: X.rec.days, sums: X.rec.sums, cons: X.rec.cons, swOther: X.rec.swOther, lineOnBridge: X.rec.lineOnBridge, hash: R.stateHash(S), tick: S.tick, at: hm(S),
+    const minThrows = {};
+    for (const d of Object.keys(X.rec.needs)) {
+      const rows = Object.values(X.rec.needs[d]).sort((a, b) => a.t - b.t), st = (X.rec.sw0[d] || S.track.switches.map(w => w.state)).slice();
+      let n = 0;
+      for (const r of rows) if (st[r.sw] !== r.st) { n++; st[r.sw] = r.st; }
+      minThrows[d] = n;
+    }
+    return { minThrows, runs, days: X.rec.days, sums: X.rec.sums, cons: X.rec.cons, swOther: X.rec.swOther, lineOnBridge: X.rec.lineOnBridge, hash: R.stateHash(S), tick: S.tick, at: hm(S),
       used: S.items.used.reduce((o, u) => { o[u.reason] = (o[u.reason] || 0) + 1; return o; }, {}), left: R.pg.pgToDeliver(S), consEnd: R.cargo.itemCheckConservation(S),
       stats: X.bot.mem.stats, refusals: X.bot.mem.refusals, notes: X.bot.mem.notes, board: X.bot.mem.board, shotsAt: Object.fromEntries(Object.entries(X.rec.shots).map(([k, v]) => [k, v.at])) };
   }
@@ -118,23 +131,27 @@ module.exports = async function checkProtoDay() {
       }
       const tA = Date.now();
       const A = await page.evaluate(() => { const r = window.__pd.report(window.__A); r.mid = window.__A.mid && window.__A.mid.hash; return r; });
+      // D27 foundation: what a day holds, from the game's own tables (the schedule's runs, the stopping ones, the goods
+      // for the shops and for the railroad), not written into the check.
+      const W = await page.evaluate(() => { const R = window.__railhead, sch = R.proto.PROTO_SCHEDULE, PG = R.proto.PG;
+        return { runs: sch.length, stop: sch.filter(v => !v.through).length, unload: Object.values(PG.UNLOAD).reduce((n, l) => n + l.length, 0), load: sch.reduce((n, v) => n + (v.load || 0), 0) }; });
       // ---- The figures ----
       if (A.sums.length !== DAYS) P(`${A.sums.length} day summaries, expected ${DAYS} (ended at ${A.at})`);
       for (let d = 0; d < DAYS; d++) {
         const runs = A.runs.filter(r => r.day === d), D = A.days[d] || {}, sum = A.sums[d] || {}, tag = `day ${d + 1}`;
-        if (runs.length !== 10) P(`${tag}: ${runs.length} runs, expected 10`);
+        if (runs.length !== W.runs) P(`${tag}: ${runs.length} runs, expected ${W.runs}`);
         const bad = runs.filter(r => r.ph !== 'gone' || r.auto);
         if (bad.length) P(`${tag}: runs not in and out: ${bad.map(r => `${r.svc} (${r.ph}${r.auto ? ', left alone' : ''})`).join(', ')}`);
-        if (D.waves !== 8) P(`${tag}: ${D.waves} trains waved off by the player, expected 8 (the through trains need none)`);
-        if (!(D.throws >= 16)) P(`${tag}: only ${D.throws} switch throws (every stopping train needs its way in and out)`);
+        if (D.waves !== W.stop) P(`${tag}: ${D.waves} trains waved off by the player, expected ${W.stop} (the through trains need none)`);
+        if (!(A.minThrows[d] >= W.stop) || !(D.throws >= A.minThrows[d])) P(`${tag}: ${D.throws} switch throws, but the day's trains needed at least ${A.minThrows[d]} (every stopping train needs its way in and out)`);
         if (!(D.line > 0) || D.punched !== D.line || D.missed) P(`${tag}: travellers ${D.line} came to the lines, ${D.punched} punched, ${D.missed} left behind`);
-        if (D.unloaded !== 10 || D.delivered !== 10 || D.wrongShop) P(`${tag}: goods ${D.unloaded} unloaded, ${D.delivered} delivered (${D.wrongShop} at the wrong shop), expected 10 and 10`);
-        if (D.soldOutside !== 6) P(`${tag}: ${D.soldOutside} goods for the railroad went away, expected 6`);
+        if (D.unloaded !== W.unload || D.delivered !== W.unload || D.wrongShop) P(`${tag}: goods ${D.unloaded} unloaded, ${D.delivered} delivered (${D.wrongShop} at the wrong shop), expected ${W.unload} and ${W.unload}`);
+        if (D.soldOutside !== W.load) P(`${tag}: ${D.soldOutside} goods for the railroad went away, expected ${W.load}`);
         // The summary's figures against what happened.
         const want = { trains: D.arrived, onTime: D.onTime, late: D.late, punched: D.punched, missed: D.missed, unloaded: D.unloaded, loaded: D.soldOutside, delivered: D.delivered };
         const diff = Object.keys(want).filter(k => sum[k] !== want[k]);
         if (diff.length) P(`${tag}: the summary says ${diff.map(k => `${k} ${sum[k]}`).join(', ')}; what happened: ${diff.map(k => `${k} ${want[k]}`).join(', ')}`);
-        if (sum.trains !== 10) P(`${tag}: the summary counts ${sum.trains} trains, expected 10`);
+        if (sum.trains !== W.runs) P(`${tag}: the summary counts ${sum.trains} trains, expected ${W.runs}`);
         if (!sum.byPlayer) P(`${tag}: the day was not ended by the player (the summary came by itself at ${sum.at})`);
       }
       if (A.swOther) P(`a switch changed ${A.swOther} times without the player throwing it`);
@@ -142,7 +159,7 @@ module.exports = async function checkProtoDay() {
       if (A.consEnd.length) P('item conservation at the end: ' + A.consEnd.slice(0, 3).join('; '));
       if (A.left.store + A.left.smithy + A.left.saloon) P(`goods still to deliver at the end: ${JSON.stringify(A.left)}`);
       if (A.lineOnBridge.length) P(`travellers stood in line on a footbridge: ${JSON.stringify(A.lineOnBridge)}`);
-      if (Object.keys(A.board).length !== DAYS || Object.values(A.board).some(r => r.length !== 10)) P(`the bot did not read the 10 rows of each morning's board: ${JSON.stringify(A.board).slice(0, 200)}`);
+      if (Object.keys(A.board).length !== DAYS || Object.values(A.board).some(r => r.length !== W.runs)) P(`the bot did not read the ${W.runs} rows of each morning's board: ${JSON.stringify(A.board).slice(0, 200)}`);
       // ---- Run B: the same again; run C: the save mid-day, reloaded ----
       const B = await page.evaluate(max => { const X = window.__pd.start(1866); for (let i = 0; i < max && !window.__pd.done(X.S); i++) window.__pd.step(X, 1); return { hash: window.__railhead.stateHash(X.S), tick: X.S.tick }; }, MAX_TICKS);
       if (B.hash !== A.hash || B.tick !== A.tick) P(`the two days played twice gave different results (${A.hash} at tick ${A.tick}, ${B.hash} at tick ${B.tick})`);
@@ -162,7 +179,7 @@ module.exports = async function checkProtoDay() {
       for (let d = 0; d < DAYS; d++) {
         const D = A.days[d] || {}, runs = A.runs.filter(r => r.day === d);
         console.log(`  day ${d + 1}: runs (in/out, minutes late) ${runs.map(r => `${r.svc} ${mins(r.arrLate)}/${mins(r.depLate)}`).join(', ')}`);
-        console.log(`  day ${d + 1}: ${D.throws} switch throws, ${D.waves} waved off, travellers ${D.line} in line / ${D.punched} punched / ${D.missed} left, goods ${D.unloaded} unloaded / ${D.soldOutside} loaded / ${D.delivered} delivered; summary ${JSON.stringify(A.sums[d])}`);
+        console.log(`  day ${d + 1}: ${D.throws} switch throws (the trains needed at least ${A.minThrows[d]}), ${D.waves} waved off, travellers ${D.line} in line / ${D.punched} punched / ${D.missed} left, goods ${D.unloaded} unloaded / ${D.soldOutside} loaded / ${D.delivered} delivered; summary ${JSON.stringify(A.sums[d])}`);
       }
       console.log(`  bot ${JSON.stringify(A.stats)}; refusals ${JSON.stringify(A.refusals)}${A.notes.length ? '; notes ' + A.notes.join(', ') : ''}`);
       console.log(`  hashes: A ${A.hash} (tick ${A.tick}, ${A.at}), B ${B.hash}, reloaded mid-day ${C.end}; moments ${JSON.stringify(A.shotsAt)}`);

@@ -28,20 +28,22 @@
 const { openGame, screenshotPath } = require('./browser');
 
 // The walking distances the layout promises (u, on the walk grid), plans/proto-tech.md section 1.
-// T (2026-11-10): with track 1 4.0u from track 2, platform 1 1u deeper, platform 2 1.2u wider (W3, E3 2.08u further
-// out) and the two footbridges; the over-the-bridge walks are measured with the walkway shut (crossings removed).
+// D27 foundation (plans/d27-tech.md 1.3, 1.4, 8.2): the D27 layout's: the lever frames by platform 1's ends (all four
+// switches' levers), the cart crossing at x 37 (platform 2 is the raised cargo platform, reached from the ground by its
+// ramps), the footbridges' flights out to x +-24.5, the main street behind the station; the over-the-bridge walks are
+// measured with the crossing shut (crossings removed).
 const PROMISE = {
-  'platform 1 east end to switch E1': 9,
-  'platform 1 west end to switch W1': 7,
-  'platform 1 east end to platform 2 east end (the walkway)': 12,
-  'platform 2 east end to switch E3': 14,
-  'platform 2 west end to switch W3': 16,
-  'the schedule board to the walkway onto platform 2': 20,
-  'the station door side to the general store\'s door': 26,
-  'platform 1 to platform 2 over the west footbridge': 30,
-  'platform 1 to platform 2 over the east footbridge': 30,
-  'platform 1 middle to switch W3 (over the west footbridge)': 54,
-  'platform 1 middle to switch E3 (over the walkway)': 40,
+  'platform 1 east end to the east lever frame (E1)': 9,
+  'platform 1 west end to the west lever frame (W1)': 9,
+  'platform 1 east end to platform 2 east end (the cart crossing and the east ramp)': 42,
+  'platform 2 east end to the east lever frame (E3, over the cart crossing)': 43,
+  'platform 2 west end to the west lever frame (W3, over the west footbridge)': 46,
+  'the schedule board to the cart crossing': 26,
+  'the station door side to the general store\'s door': 34,
+  'platform 1 to platform 2 over the west footbridge': 40,
+  'platform 1 to platform 2 over the east footbridge': 40,
+  'platform 1 middle to switch W3 (the west lever frame)': 36,
+  'platform 1 middle to switch E3 (the east lever frame)': 36,
 };
 
 module.exports = async function checkProtoWorld() {
@@ -63,7 +65,7 @@ module.exports = async function checkProtoWorld() {
           const R = window.__railhead, Wd = R.world, Pr = R.proto, S = R.state, T = S.track, P = Pr.PROTO, out = { bad: [], dist: {} }, B = m => out.bad.push(m), SC = R.CFG.SCALE;
           // A new game.
           if (T.world !== 'proto') B(`a new game is in the "${T.world}" world`);
-          if (S.schemaVersion !== 18) B(`schema ${S.schemaVersion}, expected 18`);
+          if (S.schemaVersion !== R.CFG.SCHEMA_VERSION || S.schemaVersion < 18) B(`schema ${S.schemaVersion}, expected ${R.CFG.SCHEMA_VERSION}`);
           if (!S.rr || !S.rr.on) B('the railroad\'s store is off');
           if (!S.pd || !S.pd.on || S.pd.day !== 0 || S.pd.ph !== 'morning') B(`the day store: ${JSON.stringify(S.pd && { on: S.pd.on, day: S.pd.day, ph: S.pd.ph })}`);
           if ((S.time + R.CFG.DAY_START_S) % 86400 !== 6 * 3600) B(`a new game starts at ${(S.time + R.CFG.DAY_START_S) / 3600}h, not 06:00`);
@@ -83,7 +85,7 @@ module.exports = async function checkProtoWorld() {
           const saved = T.switches.map(W => W.state);
           T.switches.forEach(W => { W.state = 'N'; });
           const wk = R.trackWalk(T, R.rr.rrEntry(T, 'W'), 1000);
-          if (!(wk.moved > P.LINE.x1 - P.LINE.x0 - 40)) B(`with every switch straight a train runs ${wk.moved.toFixed(1)}u, not the whole line`);
+          if (!(wk.moved > P.LINE.x1 - (P.LINE.x0 + 2 + (Pr.RR_WORLDS.proto.ROOM || 32)) - 6)) B(`with every switch straight a train runs ${wk.moved.toFixed(1)}u, not the whole line`);
           T.switches.forEach((W, i) => { W.state = saved[i]; });
           if (T.switches.length !== 4) B(`${T.switches.length} switches, expected 4`);
           for (const [k, id] of Object.entries(Pr.PROTO_SW)) {
@@ -94,7 +96,7 @@ module.exports = async function checkProtoWorld() {
           }
           for (const [nm, z] of [['track 1', -P.D1], ['track 3', P.D3]]) for (const x of [-20, -10, 0, 10, 20]) if (!Pr.protoTrackAt(T, z, x)) B(`${nm} is not straight at x ${x}`);
           out.d = { D1: P.D1, D3: P.D3, sw: P.SW };
-          if (T.crossings.length !== 2 || T.crossings.some(c => Math.abs(c.x - P.WALKWAY.x) > 0.01 || !(c.z < 0.01 && c.z > -P.D1 - 0.01))) B(`the walkway's pads: ${JSON.stringify(T.crossings)}`);
+          if (T.crossings.length !== 2 || T.crossings.some(c => Math.abs(c.x - P.XING_CART.x) > 0.01 || !(c.z < 0.01 && c.z > -P.D1 - 0.01))) B(`the cart crossing's pads: ${JSON.stringify(T.crossings)}`);
           // Footprints.
           const fps = R.world.buildingFootprints(), ids = fps.map(f => f.id);
           for (const id of ['platform1', 'platform2', 'station', 'storage', 'shop_store', 'shop_smithy', 'shop_saloon']) if (!ids.includes(id)) B(`no building ${id}`);
@@ -112,11 +114,11 @@ module.exports = async function checkProtoWorld() {
                 if (d < need - 1e-6) { B(`${f.id} is ${d.toFixed(3)}u from edge ${E.id} (needs ${need}u)`); break; }
               }
             }
-            for (const W of T.switches) for (const [x, z] of [[W.stand.x, W.stand.z], [W.stand.ux, W.stand.uz]]) if (dist(f, x, z) < 0.5) B(`${f.id} is within 0.5u of switch ${W.id}'s stand`);
+            if (f.kind !== 'leverframe') for (const W of T.switches) for (const [x, z] of [[W.stand.x, W.stand.z], [W.stand.ux, W.stand.uz]]) if (dist(f, x, z) < 0.5) B(`${f.id} is within 0.5u of switch ${W.id}'s stand`);   // (D27: the levers stand in their frame)
           }
           const p1 = fps.find(f => f.id === 'platform1'), p2 = fps.find(f => f.id === 'platform2');
-          if (Math.abs((p1.z + p1.d / 2) - (-P.D1 - 0.9 * SC)) > 1e-6) B('platform 1 is not flush with track 1');
-          if (Math.abs((p2.z - p2.d / 2) - 0.9 * SC) > 1e-6 || Math.abs((p2.z + p2.d / 2) - (P.D3 - 0.9 * SC)) > 1e-6) B('platform 2 is not flush with tracks 2 and 3');
+          if (Math.abs((p1.z + p1.d / 2) - (-P.D1 - P.EDGE)) > 1e-6) B('platform 1 is not flush with track 1');   // D27: decks P.EDGE (2.3u) from their tracks
+          if (Math.abs((p2.z - p2.d / 2) - P.EDGE) > 1e-6 || Math.abs((p2.z + p2.d / 2) - (P.D3 - P.EDGE)) > 1e-6) B('platform 2 is not flush with tracks 2 and 3');
           const overlap = (a, b) => Math.abs(a.x - b.x) < (Math.abs(Math.cos(a.yaw)) * a.w + Math.abs(Math.sin(a.yaw)) * a.d + Math.abs(Math.cos(b.yaw)) * b.w + Math.abs(Math.sin(b.yaw)) * b.d) / 2 - 1e-6
             && Math.abs(a.z - b.z) < (Math.abs(Math.sin(a.yaw)) * a.w + Math.abs(Math.cos(a.yaw)) * a.d + Math.abs(Math.sin(b.yaw)) * b.w + Math.abs(Math.cos(b.yaw)) * b.d) / 2 - 1e-6;
           for (let i = 0; i < fps.length; i++) for (let j = i + 1; j < fps.length; j++) {
@@ -128,7 +130,7 @@ module.exports = async function checkProtoWorld() {
           const ST = P.STREET;
           if (!(ST.z1 - ST.z0 > 3 * (ST.x1 - ST.x0))) B('the main street does not run away from the station (north)');
           for (const sh of Pr.PROTO_SHOPS) {
-            if (!(sh.door.x > ST.x0 - 1.2 && sh.door.x < ST.x1 + 1.2 && sh.door.z > ST.z0 && sh.door.z < ST.z1)) B(`${sh.name}'s door (${sh.door.x.toFixed(1)}, ${sh.door.z.toFixed(1)}) is not on the main street`);
+            if (!(sh.door.x > ST.x0 - (ST.walk || 1.2) && sh.door.x < ST.x1 + (ST.walk || 1.2) && sh.door.z > ST.z0 && sh.door.z < ST.z1)) B(`${sh.name}'s door (${sh.door.x.toFixed(1)}, ${sh.door.z.toFixed(1)}) is not on the main street`);   // (D27: on its boardwalk)
             const f = fps.find(q => q.id === sh.bld), fx = Math.sin(f.yaw), toSt = -Math.sign(f.x);
             if (Math.abs(fx) < 0.99 || Math.sign(fx) !== toSt) B(`${sh.name} does not face the main street`);
           }
@@ -146,18 +148,19 @@ module.exports = async function checkProtoWorld() {
           };
           const use = id => [T.switches[id].stand.ux, T.switches[id].stand.uz], SW = Pr.PROTO_SW, P1 = P.P1, P2 = P.P2;
           const p1z = P1.z1 - 0.5, p2z = P2.z0 + 2.0;   // clear of the footbridges' stair bands
+          const FX = P.FB.OUT + 1;   // D27: just past the footbridges' flights
           const legs = {
-            'platform 1 east end to switch E1': [[P1.x1 - 0.6, p1z], use(SW.E1)],
-            'platform 1 west end to switch W1': [[P1.x0 + 0.6, p1z], use(SW.W1)],
-            'platform 1 east end to platform 2 east end (the walkway)': [[P1.x1 - 0.6, p1z], [P2.x1 - 0.6, p2z]],
-            'platform 2 east end to switch E3': [[P2.x1 - 0.6, p2z], use(SW.E3)],
-            'platform 2 west end to switch W3': [[P2.x0 + 0.6, p2z], use(SW.W3)],
-            'the schedule board to the walkway onto platform 2': [[S.player.x, S.player.z], [P.WALKWAY.x, p2z]],
+            'platform 1 east end to the east lever frame (E1)': [[P1.x1 - 0.6, p1z], use(SW.E1)],
+            'platform 1 west end to the west lever frame (W1)': [[P1.x0 + 0.6, p1z], use(SW.W1)],
+            'platform 1 east end to platform 2 east end (the cart crossing and the east ramp)': [[P1.x1 - 0.6, p1z], [P2.x1 - 0.6, p2z]],
+            'platform 2 east end to the east lever frame (E3, over the cart crossing)': [[P2.x1 - 0.6, p2z], use(SW.E3)],
+            'platform 2 west end to the west lever frame (W3, over the west footbridge)': [[P2.x0 + 0.6, p2z], use(SW.W3)],
+            'the schedule board to the cart crossing': [[S.player.x, S.player.z], [P.XING_CART.x, P.XING_CART.z0 - 0.5]],
             'the station door side to the general store\'s door': [[0, P1.z0 + 0.6], [Pr.PROTO_SHOPS[0].door.x, Pr.PROTO_SHOPS[0].door.z]],
-            'platform 1 to platform 2 over the west footbridge': [[-14, p1z], [-14, p2z]],
-            'platform 1 to platform 2 over the east footbridge': [[12.5, p1z], [12.5, p2z]],
-            'platform 1 middle to switch W3 (over the west footbridge)': [[0, p1z], use(SW.W3)],
-            'platform 1 middle to switch E3 (over the walkway)': [[0, p1z], use(SW.E3)],
+            'platform 1 to platform 2 over the west footbridge': [[-FX, p1z - 3], [-FX, p2z + 2]],
+            'platform 1 to platform 2 over the east footbridge': [[FX, p1z - 3], [FX, p2z + 2]],
+            'platform 1 middle to switch W3 (the west lever frame)': [[0, p1z], use(SW.W3)],
+            'platform 1 middle to switch E3 (the east lever frame)': [[0, p1z], use(SW.E3)],
           };
           for (const [k, [a, b]] of Object.entries(legs)) {
             const w = walk(a, b, /footbridge/.test(k));
@@ -180,7 +183,7 @@ module.exports = async function checkProtoWorld() {
           }
           // Reachability from the start; platform 2's side only by the walkway or the footbridges.
           const places = [];
-          for (const W of T.switches) places.push([`switch ${W.id}'s stand`, W.stand.ux, W.stand.uz, W.id === SW.W3 || W.id === SW.E3]);
+          for (const W of T.switches) places.push([`switch ${W.id}'s stand`, W.stand.ux, W.stand.uz, false]);   // D27: every lever by platform 1
           const nearOpen = (G, x, z) => { let best = null; for (let dz = -1; dz <= 1.001; dz += 0.25) for (let dx = -1; dx <= 1.001; dx += 0.25) { const c = cell(x + dx, z + dz); if (G.cost[c] > 0 && (!best || Math.hypot(dx, dz) < best[2])) best = [x + dx, z + dz, Math.hypot(dx, dz)]; } return best; };
           for (const [b, v] of Object.entries(R.cargo.BLD_BAYS)) v.bays.forEach((q, i) => { const o = nearOpen(G, q.x, q.z); if (!o) B(`${b} bay ${i}: no open cell within 1u`); else places.push([`${b} bay ${i}`, o[0], o[1], true]); });
           for (const t of R.carry.TOOL_PARK) places.push([`${t.k} spot`, t.x / 100, t.z / 100, true]);
@@ -200,7 +203,7 @@ module.exports = async function checkProtoWorld() {
           for (const [nm, x, z, island] of places) { const c = cell(x, z); if (island ? seen[c] : !seen[c]) B(`without the walkway and the footbridges, ${nm} ${island ? 'can still be reached: the track is crossed elsewhere' : 'cannot be reached'}`); }
           Wd.walkGrid(T);   // the grid in use again
           out.places = places.length;
-          for (const t of R.carry.TOOL_PARK) for (const f of fps) if (!f.flush && dist(f, t.x / 100, t.z / 100) < 0.3 + (t.k === 'cart' ? 1.05 : 0.4)) B(`the ${t.k} parking spot is too close to ${f.id}`);
+          for (const t of R.carry.TOOL_PARK) for (const f of fps) if (!f.flush && dist(f, t.x / 100, t.z / 100) < 0.3 + (t.k === 'cart' ? 1.05 : t.k === 'cart27' ? 1.8 : 0.4)) B(`the ${t.k} parking spot is too close to ${f.id}`);
           // Trains: the first passenger train and the first freight train, with the switches set by hand.
           const s = JSON.parse(JSON.stringify(S)), evs = [], run = (n, cmds) => { for (let i = 0; i < n; i++) evs.push(...R.simTick(s, i === 0 ? cmds || [] : [])); };
           const runOf = svc => s.rr.runs.find(q => q.svc === svc && q.day === 0), standing = svc => { const q = runOf(svc); return q && q.ph === 'stand'; };
@@ -219,8 +222,9 @@ module.exports = async function checkProtoWorld() {
             const tr = s.trains[runOf('p1').slot], ps = R.trainPoses(s.track, tr), xs = ps.map(p => [p.x - p.len / 2, p.x + p.len / 2]).flat();
             const x0 = Math.min(...xs), x1 = Math.max(...xs);
             out.p1 = [+x0.toFixed(2), +x1.toFixed(2)];
-            if (ps.some(p => Math.abs(p.z + P.D1) > 0.01) || x0 < P1.x0 - 2 || x1 > P1.x1 + 0.01) B(`p1 does not stand along platform 1 (x ${x0.toFixed(1)} to ${x1.toFixed(1)})`);
-            if (x1 > P.WALKWAY.x - R.world.walk.CELL * 0 - 3.7 / 2) B(`p1 stands on the walkway (its front at x ${x1.toFixed(2)})`);
+            // (D27: its coaches alongside platform 1; the engine may stand past its end, short of the cart crossing)
+            if (ps.some(p => Math.abs(p.z + P.D1) > 0.01) || ps.slice(1).some(p => p.x - p.len / 2 < P1.x0 - 0.01 || p.x + p.len / 2 > P1.x1 + 0.01)) B(`p1 does not stand along platform 1 (x ${x0.toFixed(1)} to ${x1.toFixed(1)})`);
+            if (x1 > P.XING_CART.x - 3.7 / 2) B(`p1 stands on the cart crossing (its front at x ${x1.toFixed(2)})`);
             const occ = R.occupiedSwitches(s);
             if (Object.values(occ).includes(tr.id)) B('p1 stands on a switch');
             throwSw(SW.W1, 'N'); throwSw(SW.E1, 'R');
@@ -253,7 +257,8 @@ module.exports = async function checkProtoWorld() {
           else {
             const tr = s.trains[runOf('f1').slot], ps = R.trainPoses(s.track, tr), xs = ps.map(p => [p.x - p.len / 2, p.x + p.len / 2]).flat();
             out.f1 = [+Math.min(...xs).toFixed(2), +Math.max(...xs).toFixed(2)];
-            if (ps.some(p => Math.abs(p.z - P.D3) > 0.01) || Math.min(...xs) < P2.x0 - 2.5 || Math.max(...xs) > P2.x1 + 0.5) B(`f1 does not stand along platform 2 (x ${out.f1})`);
+            // (D27: a 58u freight train is longer than the 52u cargo platform: it stands on track 3's straight, alongside the whole platform)
+            if (ps.some(p => Math.abs(p.z - P.D3) > 0.01) || !Pr.protoTrackAt(T, P.D3, Math.min(...xs)) || !Pr.protoTrackAt(T, P.D3, Math.max(...xs)) || !(Math.min(...xs) <= P2.x0 + 1 && Math.max(...xs) >= P2.x1 - 1)) B(`f1 does not stand along platform 2 (x ${out.f1})`);
             if (Object.values(R.occupiedSwitches(s)).includes(tr.id)) B('f1 stands on a switch');
             out.f1Late = runOf('f1').tArr - runOf('f1').arr;
           }

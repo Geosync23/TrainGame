@@ -279,8 +279,11 @@ module.exports = async function checkPixRender() {
             R.camera.zoom = zm; await new Promise(r => setTimeout(r, 150));
             const s = X.view.scale; out.steps.push(s);
             if (!Number.isInteger(s) || s < 1 || s > 8) B(`zoom ${zm}: scale ${s}`);
-            const cv = X.canvas, d = cv.getContext('2d').getImageData(0, Math.floor(cv.height / 2), cv.width, 1).data;
-            for (let x = 1; x < cv.width; x++) if (x % s && (d[4 * x] !== d[4 * x - 4] || d[4 * x + 1] !== d[4 * x - 3] || d[4 * x + 2] !== d[4 * x - 2])) { B(`zoom ${zm}: the colour changes inside a scaled pixel at x ${x}`); break; }
+            // D27 (R): the canvas holds the native pixels and the browser scales it by the whole number s (its CSS size,
+            // image-rendering: pixelated), so each native pixel is an s x s square of device pixels.
+            const cv = X.canvas, cw = parseFloat(cv.style.width) * devicePixelRatio, ch = parseFloat(cv.style.height) * devicePixelRatio, ir = getComputedStyle(cv).imageRendering;
+            if (Math.abs(cw - cv.width * s) > 0.01 || Math.abs(ch - cv.height * s) > 0.01) B(`zoom ${zm}: the canvas ${cv.width} x ${cv.height} is shown at ${cw} x ${ch} device px, not ${s} times`);
+            if (!/pixelated|crisp-edges/.test(ir)) B(`zoom ${zm}: the canvas is scaled smoothly (${ir})`);
           }
           if (out.steps.some((s, i) => i && s < out.steps[i - 1])) B(`scales do not rise with the zoom: ${out.steps}`);
           R.camera.zoom = 1.5;
@@ -294,11 +297,13 @@ module.exports = async function checkPixRender() {
           await page.screenshot({ path: screenshotPath(`pixrender-zoom-${nm}-portrait`) });
         }
       }
-      // 7. The view follows the player (2026-11-11): while he walks along platform 2 (carrying the crate) his sprite's anchor (his feet) is
-      // on the middle native pixel of the view every frame, and the view moves with him in whole pixels. A look away
-      // (as a drag) stays while he stands, eases back once he walks; the Centre button snaps back.
+      // 7. The view follows the player (2026-11-11; D27, R: with a dead zone and a look-ahead, plans/d27-tech.md 1.6):
+      // while he walks along platform 1 (carrying the crate) his feet stay inside the dead zone widened by the look-ahead
+      // every frame, never jump on the screen (at most 2 native px a frame), and the view moves with him in whole pixels.
+      // A look away (as a drag) stays while he stands, eases back once he walks; the Centre button snaps back.
       const fol = await page.evaluate(async () => {
-        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = R.proto.PROTO.P1.z0 + 2, out = { bad: [], n: 0, moved: 0 }, B = m => out.bad.push(m);   // (D27: along platform 1, behind the footbridge's flight)
+        const R = window.__railhead, X = R.pix, S = R.state, P2 = R.proto.PROTO.P2, z = R.proto.PROTO.P1.z0 + 2, out = { bad: [], n: 0, moved: 0, worst: [0, 0] }, B = m => out.bad.push(m), CM = X.PIX.CAM;
+        let last = null;   // (D27: along platform 1, behind the footbridge's flight)
         const raf = () => new Promise(r => requestAnimationFrame(r)), wait = ms => new Promise(r => setTimeout(r, ms));
         const feet = () => {
           const v = X.view, d = X.drawn.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key);
@@ -310,12 +315,16 @@ module.exports = async function checkPixRender() {
         const vx0 = X.view.vx;
         R.send({ t: 'walkTo', x: 1800, z: Math.round(z * 100) }); X.setSpeed(1);
         await wait(300);
-        for (let t0 = performance.now(); performance.now() - t0 < 1500;) {
+        for (let t0 = performance.now(); performance.now() - t0 < 3000;) {   // (D27: 3 s, the dead zone lets him walk a while first)
           await raf();
           const f = feet(), v = X.view;
           if (!f) { B('the player was not drawn'); break; }
           out.n++;
-          if (f[0] || f[1]) { B(`walking, his feet are ${f} native px from the view's middle`); break; }
+          const lx = Math.ceil(v.nw * CM.DEAD / 2 + 8 * CM.AHEAD) + 2, ly = Math.ceil(v.nh * CM.DEAD / 2 + 4 * CM.AHEAD) + 2;
+          out.worst = [Math.max(out.worst[0], Math.abs(f[0])), Math.max(out.worst[1], Math.abs(f[1]))];
+          if (Math.abs(f[0]) > lx || Math.abs(f[1]) > ly) { B(`walking, his feet are ${f} native px from the view's middle (the dead zone and look-ahead allow ${lx}, ${ly})`); break; }
+          if (last && (Math.abs(f[0] - last[0]) > 2 || Math.abs(f[1] - last[1]) > 2)) { B(`walking, his feet jumped on the screen from ${last} to ${f}`); break; }
+          last = f;
           if (!Number.isInteger(v.vx) || !Number.isInteger(v.vy)) { B(`the view is not on whole pixels (${v.vx}, ${v.vy})`); break; }
         }
         out.moved = X.view.vx - vx0;
@@ -330,7 +339,8 @@ module.exports = async function checkPixRender() {
         for (let i = 0; i < 100 && S.player.mode !== 'idle'; i++) await wait(100);   // he arrives
         await wait(300);   // and stands (a tick on)
         X.pixLookAt(S.player.x, S.player.z - 8); await wait(400);
-        if (!(off() > 7)) B(`a look away while he stands did not stay (offset ${off().toFixed(2)})`);
+        const v = X.view, mid = X.pixUnproject(v.vx + v.nw / 2, v.vy + v.nh / 2, 0);
+        if (!(off() > 3) || Math.hypot(mid.x - S.player.x, mid.z - (S.player.z - 8)) > 1) B(`a look away while he stands did not stay (offset ${off().toFixed(2)}, the view's middle at ${mid.x.toFixed(1)}, ${mid.z.toFixed(1)})`);
         if (centre.hidden) B('the Centre button is hidden while the view looks away');
         R.send({ t: 'walkTo', x: Math.round((S.player.x - 7) * 100), z: Math.round(z * 100) });
         await wait(1600);
@@ -343,7 +353,7 @@ module.exports = async function checkPixRender() {
         return out;
       });
       back.bad.forEach(P);
-      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet on the view's middle pixel in each; the view moved ${fol.moved} native px`);
+      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet at most ${fol.worst} native px from the view's middle; the view moved ${fol.moved} native px`);
       await page.evaluate(() => { if (window.__pixOrigDrawList) window.ppDrawList = window.__pixOrigDrawList; });
       if (errors.length) P('console errors: ' + errors.join(' | '));
     } finally { await browser.close(); }

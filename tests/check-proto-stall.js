@@ -21,7 +21,7 @@ const { openGame } = require('./browser');
 
 module.exports = async function checkProtoStall() {
   const problems = [], P = m => problems.push(m);
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d27=0' });
   try {
     // ---- 1. Goods for the town in hand in the day: the page keeps running ----
     const one = await page.evaluate(async () => {

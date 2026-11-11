@@ -1368,7 +1368,7 @@ const WORLDS = {
     // (P: tickets punched on board; parks the D25 line at the door, parked.doorline), handling (F: freight handling,
     // storage cells, the platform cart, delivery and pickup), town (W: the townsfolk), lessons (U: the six lessons; parks
     // the D25 first-day guide). While one is off, the D25 flow it replaces keeps playing on the D27 layout.
-    d27: { board: false, handling: false, town: false, lessons: false },
+    d27: { board: false, handling: true, town: false, lessons: false },   // handling on (F, 2026-11-11)
   },
 };
 // D27: the page's override of the D27 switches (?d27=0 all off, ?d27=all all on, ?d27=board,handling those on): for a
@@ -8571,100 +8571,1276 @@ function pgShedOpen(S) {
   return !!B && B.bays.some(b => Math.hypot(b.x - S.player.x, b.z - S.player.z) < PG.SHED_NEAR);
 }
 // ==== Section: freight handling (D27) ====
-// Owner: builder F (plans/d27-tech.md section 4). The foundation's stubs with the agreed names and safe defaults,
-// already wired in: the sim tick (frTick after cgTick), the command switch (frDoor, frTake, frPut, frCart, frDeliver,
-// frPickup: frCmd), the player's tick (playerModeTick calls frPlayerTick), the redirects while D27 handling is on
-// (d27On(T, 'handling'): cgConsist > frConsist, cgLoad > frLoad, cgReady > frReady, cgOnDepart > frOnDepart, pgNewDay
-// > frNewDay; the D25 pgTick is not run), the item store's new places (section "cargo": CAR with cell and layer, CELL,
-// CART, TRUCK, HAND, SHOP; cargo27Where, storeCellAt, storeCellOf) and itemAudit (which calls frAuditDay), the save
-// check (frCheckSaveShape), the debug scenarios (rh.scenario('d27freight' | 'd27evening') call frDebugScenario) and the
-// test hooks (__railhead.fr is FR_TEST: add to it here). While handling is off the D25 goods ("prototype goods (D25)")
-// play on the D27 layout: the freight house's 4 bays, the platform cart as the handcart, the three D25 shops.
-// The tables are the foundation's (F owns them now): GOODS27, SHOP_GOODS27 (section "cargo"), SHOPS27, STORE27_OUT,
-// PROTO.STORE, PROTO.CART_LANE, PROTO.LOAD_EDGE (section "starting world layout"), PROTO_STOCK.boxcar (door, cells).
-// The contract (plans/d27-tech.md 4.6):
-// - S.fr (optional; frSt): { doors: { [stock]: { o: 0..1, mv } }, job: { k, item, from, to, t0, dur, verb } | null,
-//   made: [run ids loaded], picks: { day, put: [shop ids] }, tot: { unloaded, loaded, stored, delivered, picked } }.
-// - Commands: { t: 'frDoor', stock }, { t: 'frTake', item }, { t: 'frPut', to }, { t: 'frCart', act: 'grab' | 'park',
-//   x, z }, { t: 'frDeliver', shop }, { t: 'frPickup', shop }. Events: frDoor { stock, open }, frTaken { id }, frPut {
-//   id, to }, frUnloaded { run, id }, frLoaded { run, id }, frStored { id }, frDelivered { shop, id }, frPicked { shop,
-//   id }, frRefused { why }. Figures: pdCount(S, 'unloaded' | 'loaded' | 'delivered' | 'picked').
-// - For R: frDrawList(S) [{ id, kind, variant, tag, x, y, z, rot, frame, place }], frPose(S) { verb, phase, prog, f } |
-//   null, frCartPose(S) / frTruckPose(S) { x, y, z, f, held, tilt } | null, frDoorOpen(S, stock) 0..1. For U:
-//   frCarStatus(S, stock) { unload, load, doorOpen, spot }, frStorage(S), frToDeliver(S), frPickups(S) (by shop),
-//   frJobHint(S) (the next handling step for the Next job line).
+// Owner: builder F (plans/d27-tech.md section 4). Every handling step is a timed, visible action of the player: the
+// boxcar door slides open, he walks in and takes each good by its verb (carry, shoulder, roll, drag, truck, heave),
+// walks it out to the platform cart parked at the door and sets it on a cart cell, pushes the cart along the cart lane
+// and stacks the goods in the storage cells of the raised cargo platform; loading is the same backwards. In the evening
+// he loads the cart with the town's goods, pushes it down the east ramp, over the cart crossing and up the cart path to
+// the main street, hands each shop its own goods at its door and loads the goods the shops put out at 17:00, to bring
+// them back to the cargo platform's OUT rows for the next day's trains. While D27 handling is off (d27On(T,
+// 'handling')) the D25 goods ("prototype goods (D25)") play instead; everything here is behind that switch.
+// Wiring (the foundation's): the sim tick (frTick after cgTick), the command switch (frDoor, frTake, frPut, frCart,
+// frDeliver, frPickup: frCmd), the player's tick (playerModeTick calls frPlayerTick), the redirects (cgConsist >
+// frConsist, cgLoad > frLoad, cgReady > frReady, cgOnDepart > frOnDepart, cgCarStatus > frCarStatus, pgNewDay >
+// frNewDay), the item store's places (section "cargo": CAR with cell and layer, CELL, CART, TRUCK, HAND, SHOP) and
+// itemAudit (which calls frAuditDay), the save check (frCheckSaveShape), the debug scenarios (rh.scenario('d27freight'
+// | 'd27evening')) and the test hooks (__railhead.fr: FR_TEST).
+//
+// Built (F, 2026-11-11):
+// - The handling job. One job at a time in S.fr.job = { k, steps, i, t0, go, ... }: a fixed list of steps worked out
+//   when the command is given, each timed in game seconds: { s: 'walk', x, z } (the ordinary walk, path-finding and
+//   all: the player's tick walks him), { s: 'go', pts, y, into, out } (a short straight walk inside a car, which the
+//   walk grid does not cover: through the door, along the clear aisle in front of it, to beside a good; S.fr.inCar is
+//   the car's stock id while he is in it, S.player.y its floor), { s: 'act', a, dur, ... } (a timed action: 'door'
+//   slide the door, 'pick' take a good by its verb, 'put' set it down, 'grab' take the cart's or the hand truck's
+//   handle, 'park' leave it, 'hand' hand a good in at a shop door). A good moves (itemMove) only at the end of its
+//   'pick' or 'put', so it is in exactly one place at every tick; R draws it in between from the job's progress (frPose,
+//   frDrawList). Any other command (a walk, a lever) stops the job; a stopped job leaves everything where it is (out of
+//   a car first). Nothing random; cells are chosen by fixed rules (frFirstSpot) when a command does not name one.
+// - Times (FR, provisional): the door 40 s; a pick-up and a put-down each carry 32, shoulder 40, roll 24 (tip, or stand
+//   up again), drag 16, truck 24, heave 64; onto the third layer of a stack or higher 8 more (stackHigh); taking or
+//   leaving the cart's handle 16; handing in at a shop door 24.
+// - Verbs: GOODS27[kind].verb. A 'truck' good (bale, stove, furniture) is wheeled on the hand truck when the truck is
+//   within FR.TRUCK_NEAR (the player fetches it on his way); otherwise it is heaved. Crates also go on a hand truck the
+//   player pushes (two stacked). In the hands: one good, or a pair of crates (HAND slots 0, 1).
+// - Grids and stacking (frFp, frSpotWhy): a car's floor (11 x 4 cells of 0.8u; cell = c + 11 r, c along the car from
+//   its west end for heading e (mirrored for w), r from the door side; columns 4 to 6, in front of the door, kept clear),
+//   the cart's bed (4 x 2 cells of 0.8u; cell = 2 c + r as A2's atlas list: c from the handle end, r across; GOODS27
+//   cells 1, 2, 4, 8 take 1 x 1, 2 x 1, 4 x 1, 4 x 2), the storage blocks (10 x 4 cells of 1.4u, a good as many cells
+//   along x as its length needs: lumber and bar iron 3, the plough and the piano 2). A good on layer k > 0 sits square
+//   on the good anchored under it (same footprint); in a storage cell a stack is one kind, GOODS27.stack high; on the
+//   cart and in a car the lower good must take one on top (GOODS27.layers, CARGO27.LAYERS). Only the top good of a
+//   stack can be taken.
+// - Unloading: a freight run's goods are made in its cars as it is made up (frLoad, once per run: SHOP_GOODS27.in for
+//   the run and the weekly specials; a flatcar at the back of Monday's f1 for the plough), in each car from its ends
+//   (far wall first). frReady: no goods for the town aboard, the player not in one of its cars, and its load aboard
+//   (SHOP_GOODS27.out for the run plus the weekly specials, or every good for the railroad at the station if fewer).
+//   frOnDepart: goods for the railroad aboard leave (itemConsume 'soldOutside', pdCount 'loaded'); goods for the town
+//   still aboard (only after a debug jump) are stowed by the crew; the doors are shut.
+// - Storage: a shop's goods go to its row (SHOPS27[i].row), goods for the railroad to the OUT rows (STORE27_OUT), else
+//   the first free cell (frStoreSpot; frStowPlace is the same for the save migration and the crew).
+// - The evening: frDeliver { shop } with the cart pushed: he pushes it to the shop's cart spot in the carriageway
+//   (FR.SHOP_CART_DX from the door spot), leaves it, then lifts each of that shop's goods off it in turn, carries it to
+//   the door spot and hands it in (the keeper takes it if in: tfAt; consumed 'business'); a shop takes only its own.
+//   At 17:00 each shop that sends goods puts them out at its pickup spot (SHOP places; SHOP_GOODS27.pickups, plus
+//   tomorrow's weekly OUT specials: the undertaker's furniture on Mondays, the smithy's mended wheel on Wednesdays),
+//   unless its spot still holds goods; frPickup { shop } loads them onto the cart; the next day's freight trains
+//   load them from the OUT rows. Day 0 starts with SHOP_GOODS27.OUT_DAWN in the OUT rows.
+// - The carts: the platform cart (tool 1, cart27) and the hand truck (tool 0) are pushed in front of the player (the
+//   cart's centre FR.PUSH_D ahead, the truck's FR.TRUCK_D) and left anywhere walkable off the track (frCart park with
+//   x, z, f puts the cart's centre there, facing f); S.tools keeps where each one is, also while it is pushed.
+//   Overnight the cart stays where it was left.
+// - frJobHint(S): the next handling step as a command the touch layer can send ({ cmd, text, x, z }), from the
+//   standing freight trains, what the player holds, the cart and the evening: the Next job line's freight part, and
+//   the checks' scripted player.
+// S.fr (optional; frSt): { doors: { [stock]: { o (game seconds open, 0..FR.DOOR_S), mv (1 opening, -1 shutting, 0) } },
+//   job, inCar (stock id or null), made: [run ids loaded], picks: { day, put: [shop ids] }, dawn (day 0's OUT goods
+//   made), tot: { unloaded, loaded, stored, delivered, picked }, aud: { made: { commodity: n }, exp: { commodity: n } } }.
+// Events: frDoor { stock, open }, frTaken { id, from }, frPut { id, to }, frUnloaded { run, id }, frLoaded { run, id },
+//   frStored { id }, frDelivered { shop, id, keeper }, frPicked { shop, id }, frPutOut { shop, ids }, frRefused { why },
+//   frJob { k }, frDone { k }, toolTaken { tool }, toolLeft { tool }. Figures: pdCount(S, 'unloaded' | 'loaded' |
+//   'delivered' | 'picked').
+// For R: frDrawList(S) [{ id, kind, variant, tag, x, y, z, rot ('x' | 'z' | 'side' | 'up'), frame, place ('car' | 'cell'
+//   | 'cart' | 'truck' | 'hand' | 'shop' | 'ground' | 'bay' | 'moving'), dir, verb, layer, stock, cell }], frPose(S)
+//   { verb, phase ('pick' | 'put' | 'hold' | 'push' | 'door' | 'grab' | 'park' | 'hand'), prog, f, key (A1's animation:
+//   'lift', 'stackHigh', 'shoulder/idle', 'shoulder/walk', 'carry', 'roll', 'drag', 'truck', 'heave', 'door',
+//   'handOver', 'push'), dir, walking, inCar, y } | null, frCartPose(S) / frTruckPose(S) { x, y, z, f (dir), frame, held,
+//   tilt (0..1), tool, loaded } | null, frDoorOpen(S, stock) 0..1, frInCar(S) (the stock id of the car the player is in).
+// For U: frCarStatus(S, stock) (pgCarStatus's fields plus doorOpen, door, spot, cartSpot), frStorage(S) { byShop, out,
+//   used, total }, frToDeliver(S) and frPickups(S) (by shop id), frJobHint(S).
 const FR = {
   DOOR_S: 40,        // sliding a boxcar door open or shut (game seconds, provisional)
+  PICK_S: { carry: 32, shoulder: 40, roll: 24, drag: 16, truck: 24, heave: 64 },   // a pick-up, and the same again for the put-down (provisional)
+  HIGH_S: 8,         // lifting onto (or off) the third layer of a stack or higher (stackHigh)
+  GRAB_S: 16,        // taking the cart's (or the hand truck's) handle
+  PARK_S: 16,        // leaving it
+  HAND_S: 24,        // handing a good in at a shop's door
+  PUSH_D: 2.5,       // the platform cart's centre ahead of the agent's feet (A2's pusher)
+  TRUCK_D: 1.75,     // the hand truck's axle ahead of them
+  TRUCK_NEAR: 40,    // a truck good goes on the hand truck when the truck is this near (u); farther, it is heaved
+  NEAR: 8,           // the cart is "at" a shop's door within this (u)
+  CART_EDGE_Z: 15.1, // the cart's centre when it stands on the loading edge at a door
+  CART_DOOR_DX: 3.2, // and its x from the door's middle (east of the doorway)
+  LANE_Z: 12.4,      // the cart lane's middle
+  DOOR_OUT: 2.4,     // the door spot on the loading edge, from the car's centre line (A2: z -2.4)
+  DOOR_IN: 1.5,      // just inside the door (A2: z -1.5)
+  AISLE: [4, 6],     // a car's floor columns kept clear in front of the door
+  STAND_IN: 0.45,    // inside a car the player stands this far from a good's near end, in the aisle
+  SHOP_CART_DX: 3.5, // the cart at a shop: in the carriageway, this far from its door spot
+  ARRIVE: 0.6,       // a walk step has arrived within this of its target
 };
+const FR_FP = { 1: [1, 1], 2: [2, 1], 4: [4, 1], 8: [4, 2] };
+const FR_GOOD0 = { size: [0.85, 0.65, 0.55], cells: 1, layers: 2, verb: 'carry', stack: 4, commodities: [] };   // an older kind (D25's crates, sacks, barrels)
+const FR_DIRS = { se: [1, 0], ne: [0, -1], nw: [-1, 0], sw: [0, 1] };
+const FR_VARIANT = { drygoods: 'dry', tinned: 'tins', linen: 'linen', soap: 'dry', flour: 'flour', seed: 'seed', grain: 'grain', oresample: 'ore', beer: 'beer', nails: 'beer',
+  kegempty: 'empty', whiskey: 'whiskey', nailbarrel: 'nails', wheelNew: 'new', wheelMended: 'mended' };
+const frGood = kind => GOODS27[kind] || FR_GOOD0;
+// A good's footprint on a grid ('car', 'cart', 'cell'): [cells along x (along the car, along the cart, along the block), across].
+function frFp(kind, g) { const G = frGood(kind); return g === 'cell' ? [Math.max(1, Math.ceil((G.size[0] - 0.3) / 1.4)), 1] : FR_FP[G.cells] || [1, 1]; }
+const frH = kind => kind === 'wheel' ? 0.2 : frGood(kind).size[2];   // its height on a stack (a wheel lies flat)
+function frMaxLayer(kind, g) { const G = frGood(kind); return g === 'cart' ? Math.min(G.layers, CARGO27.LAYERS.CART) : g === 'car' ? Math.min(G.stack, CARGO27.LAYERS.CAR) : Math.min(G.stack, CARGO27.LAYERS.CELL); }
+const frDirOf = (dx, dz) => Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 'se' : 'nw') : (dz >= 0 ? 'sw' : 'ne');
+const frYawDir = yaw => { const a = yaw / 256 * Math.PI * 2; return frDirOf(Math.cos(a), Math.sin(a)); };
+const frDirYaw = d => ({ se: 0, sw: 64, nw: 128, ne: 192 })[d];
+// S.fr for reading only (drawing, hints): never made by a read, so drawing does not change the state.
+const FR_NONE = { doors: {}, job: null, inCar: null };
+const frRead = S => S.fr && typeof S.fr === 'object' ? { ...FR_NONE, ...S.fr } : FR_NONE;
+const frInCar = S => (S.fr && Number.isInteger(S.fr.inCar) ? S.fr.inCar : null);
+const frOn = S => !!(S && S.track && protoWorld(S.track) && S.rr && d27On(S.track, 'handling'));
 function frSt(S) {
   if (!S.fr || typeof S.fr !== 'object') S.fr = {};
   const F = S.fr;
   if (!F.doors || typeof F.doors !== 'object') F.doors = {};
   if (F.job === undefined) F.job = null;
+  if (F.inCar === undefined) F.inCar = null;
   if (!Array.isArray(F.made)) F.made = [];
   if (!F.picks || typeof F.picks !== 'object') F.picks = { day: -1, put: [] };
   if (!F.tot || typeof F.tot !== 'object') F.tot = {};
   for (const k of ['unloaded', 'loaded', 'stored', 'delivered', 'picked']) if (!Number.isInteger(F.tot[k])) F.tot[k] = 0;
+  if (!F.aud || typeof F.aud !== 'object') F.aud = { made: {}, exp: {} };
   return F;
 }
-// Step 8 of the sim tick (after cgTick): the handling job in hand, doors, pickups at 17:00. Only with D27 handling on.
-function frTick(S, ev) {
-  if (!S.rr || !S.rr.on || !d27On(S.track, 'handling')) return;
+const frToolId = (S, k) => { const t = (S.tools || []).find(q => q.k === k); return t ? t.id : null; };
+const frCartId = S => frToolId(S, 'cart27');
+const frTruckId = S => frToolId(S, 'truck');
+const frShop = id => SHOPS27.find(q => q.id === id) || null;
+const frIsOut = (S, id) => itemTag(S.items.waybill[id]) === 'OUTSIDE';
+const frShopOf = (S, id) => { const wb = S.items.waybill[id]; return wb && wb.consignee && wb.consignee.kind === 'BUSINESS' && frShop(wb.consignee.id) ? wb.consignee.id : null; };
+const frTagOf = (S, id) => frShopOf(S, id) || (frIsOut(S, id) ? 'out' : 'any');
+const frWb = (commodity, shop) => pgWb(commodity, shop);
+
+// ---- Grids, places and positions ----
+// The grid a place belongs to ({ g, id, nx, nz, stock | tool | block }), or null.
+function frGridOf(w) {
+  if (!w) return null;
+  const C = PROTO_STOCK.boxcar.cells;
+  if (w.kind === 'CAR' && Number.isInteger(w.cell)) return { g: 'car', id: 'C' + w.stockId, stock: w.stockId, nx: C.nx, nz: C.nz };
+  if (w.kind === 'CART') return { g: 'cart', id: 'K' + w.tool, tool: w.tool, nx: 4, nz: 2 };
+  if (w.kind === 'CELL' && PROTO.STORE[w.block]) return { g: 'cell', id: 'L' + w.block, block: w.block, nx: PROTO.STORE[w.block].nc, nz: PROTO.STORE[w.block].nr };
+  return null;
 }
-function frCmd(S, c, ev) {
-  if (!d27On(S.track, 'handling')) { ev.push({ t: 'frRefused', why: 'Goods are carried by hand, hand truck and handcart here' }); return; }
-  ev.push({ t: 'frRefused', why: 'Freight handling is not built yet' });
+const frCarGrid = stock => frGridOf({ kind: 'CAR', stockId: stock, cell: 0 });
+const frCartGrid = tool => frGridOf({ kind: 'CART', tool, cell: 0 });
+const frBlockGrid = block => frGridOf({ kind: 'CELL', block, c: 0, r: 0 });
+function frCR(w) { const nx = PROTO_STOCK.boxcar.cells.nx; return w.kind === 'CAR' ? { c: w.cell % nx, r: Math.floor(w.cell / nx) } : w.kind === 'CART' ? { c: w.cell >> 1, r: w.cell & 1 } : { c: w.c, r: w.r }; }
+function frPlace(gr, c, r, layer) {
+  if (gr.g === 'car') return { kind: 'CAR', stockId: gr.stock, cell: c + gr.nx * r, layer };
+  if (gr.g === 'cart') return { kind: 'CART', tool: gr.tool, cell: c * 2 + r, layer };
+  return { kind: 'CELL', block: gr.block, c, r, layer };
 }
-// The player at a handling step, from playerModeTick: true when it handled the player's tick, false otherwise.
-function frPlayerTick(S, ev, poseCache) { return false; }
-// The start of each prototype day (and of a new game, day 0), in place of pgNewDay while handling is on.
-function frNewDay(S, day, ev) { }
-// The cars of a freight run (consist entries without ids) and its goods put in once it is made up (T calls them through
-// cgConsist / cgLoad); ready, and the train leaving (through cgReady / cgOnDepart). Until F builds them: the D25 rules.
-function frConsist(S, run) { return pgConsist(S, run); }
-function frLoad(S, run, tr, ev) { return { cars: 0, items: 0 }; }
-function frReady(S, run, tr) { return true; }
-function frOnDepart(S, run, tr, ev) { return pgOnDepart(S, run, tr, ev); }
-function frDrawList(S) { return []; }
-function frPose(S) { return null; }
-function frCartPose(S) { return null; }
-function frTruckPose(S) { return null; }
-function frDoorOpen(S, stock) { return 0; }
-function frCarStatus(S, stock) { return null; }
-function frStorage(S) { return {}; }
-function frToDeliver(S) { return {}; }
-function frPickups(S) { return {}; }
-function frJobHint(S) { return null; }
-// itemAudit's day check (the day's goods created and consumed per kind against SHOP_GOODS27): a list of problems.
-function frAuditDay(S) { return []; }
-// Stows a good in storage (a migrated save's goods, the crew's set-down): its shop's row of cells (SHOPS27[i].row) or
-// the OUT rows (STORE27_OUT) for goods for the railroad, first free cell in a fixed order, as high as its kind stacks
-// (GOODS27.stack); if the rows are full, any free cell. The foundation's simple rule; F may refine it. Returns the
-// place or null (no room).
-function frStowPlace(S, id) {
-  const wb = S.items.waybill[id], tag = itemTag(wb), kind = itemType(S, id), G = GOODS27[kind], stack = G ? Math.min(G.stack, CARGO27.LAYERS.CELL) : 1;
-  const shop = SHOPS27.find(q => q.tag === tag), rows = shop ? [shop.row] : tag === 'OUTSIDE' ? STORE27_OUT : [];
-  const all = [];
-  for (const block of Object.keys(PROTO.STORE)) for (let r = 0; r < PROTO.STORE[block].nr; r++) all.push({ block, r, c0: 0, c1: PROTO.STORE[block].nc - 1 });
-  for (const row of rows.concat(all)) for (let c = row.c0; c <= row.c1; c++) {
-    for (let layer = 0; layer < stack; layer++) {
-      const w = { kind: 'CELL', block: row.block, c, r: row.r, layer };
-      if (!itemCanMove(S, id, w)) return w;
-      if (itemsAt(S, { kind: 'CELL', block: row.block, c, r: row.r, layer }).length === 0) break;   // a gap: not higher
-    }
+// What is on a grid: cov (cell and layer covered: 'c,r,layer' > id), anc (where goods are anchored, same keys).
+function frOcc(S, gr) {
+  const I = S.items, cov = new Map(), anc = new Map();
+  for (let i = 0; i < I.next; i++) {
+    const w = I.alive[i] ? I.where[i] : null, q = w && frGridOf(w);
+    if (!q || q.id !== gr.id) continue;
+    const { c, r } = frCR(w), [fx, fz] = frFp(itemType(S, i), gr.g);
+    anc.set(c + ',' + r + ',' + w.layer, i);
+    for (let a = 0; a < fx; a++) for (let b = 0; b < fz; b++) cov.set((c + a) + ',' + (r + b) + ',' + w.layer, i);
+  }
+  return { cov, anc };
+}
+// Why a good of this kind may not be set at (c, r, layer) on this grid, or null. ignore: the good being moved.
+function frSpotWhy(S, gr, c, r, layer, kind, occ, ignore) {
+  const [fx, fz] = frFp(kind, gr.g);
+  if (c < 0 || r < 0 || c + fx > gr.nx || r + fz > gr.nz) return 'It does not fit there';
+  if (gr.g === 'car' && c + fx > FR.AISLE[0] && c <= FR.AISLE[1]) return 'Keep the doorway clear';
+  if (layer < 0 || layer >= frMaxLayer(kind, gr.g)) return 'It does not stack that high';
+  for (let a = 0; a < fx; a++) for (let b = 0; b < fz; b++) { const o = occ.cov.get((c + a) + ',' + (r + b) + ',' + layer); if (o !== undefined && o !== ignore) return 'That place is taken'; }
+  if (layer > 0) {
+    const below = occ.anc.get(c + ',' + r + ',' + (layer - 1));
+    if (below === undefined || below === ignore) return 'There is nothing there to stack it on';
+    const bk = itemType(S, below), bf = frFp(bk, gr.g);
+    if (bf[0] !== fx || bf[1] !== fz) return 'It does not sit square on what is there';
+    if (gr.g === 'cell' ? bk !== kind : layer >= frMaxLayer(bk, gr.g)) return gr.g === 'cell' ? 'A stack holds one kind of goods' : 'Nothing goes on top of that';
   }
   return null;
 }
+// The highest layer anchored at (c, r), or -1.
+function frTop(occ, c, r) { let L = -1; while (occ.anc.has(c + ',' + r + ',' + (L + 1))) L++; return L; }
+// The first place for a good of this kind among candidate anchors [{ gr, c, r }] (in order: on top of a stack first,
+// then a free floor place), checked by okFn(place) too (null: fine). Returns a place or null.
+function frFirstSpot(S, kind, cands, ignore, okFn) {
+  const occs = {};
+  const occOf = gr => occs[gr.id] || (occs[gr.id] = frOcc(S, gr));
+  for (const pass of [1, 0]) for (const q of cands) {
+    const occ = occOf(q.gr), L = frTop(occ, q.c, q.r) + 1;
+    if ((pass === 1) !== (L > 0)) continue;
+    if (frSpotWhy(S, q.gr, q.c, q.r, L, kind, occ, ignore)) continue;
+    const w = frPlace(q.gr, q.c, q.r, L);
+    if (!okFn || !okFn(w)) return w;
+  }
+  return null;
+}
+// Candidate anchors: a car from its ends (the far wall first), the cart from its front, a storage row.
+function frCarCands(stock) {
+  const gr = frCarGrid(stock), out = [];
+  for (let r = gr.nz - 1; r >= 0; r--) for (const c of [0, 10, 1, 9, 2, 8, 3, 7]) out.push({ gr, c, r });
+  return out;
+}
+function frCartCands(tool) { const gr = frCartGrid(tool), out = []; for (let c = 3; c >= 0; c--) for (let r = 0; r < 2; r++) out.push({ gr, c, r }); return out; }
+function frRowCands(rows) { const out = []; for (const row of rows) { const gr = frBlockGrid(row.block); for (let c = row.c0; c <= row.c1; c++) out.push({ gr, c, r: row.r }); } return out; }
+function frAllCellCands() { const out = []; for (const b of Object.keys(PROTO.STORE)) { const gr = frBlockGrid(b); for (let r = 0; r < gr.nz; r++) for (let c = 0; c < gr.nx; c++) out.push({ gr, c, r }); } return out; }
+// A storage place for a good: its shop's row or the OUT rows first, then any free cell. kind/tag: for a good not made yet.
+function frStoreSpot(S, id, kind, tag) {
+  if (id !== null && id !== undefined) { kind = itemType(S, id); tag = itemTag(S.items.waybill[id]); }
+  const shop = SHOPS27.find(q => q.tag === tag), rows = shop ? [shop.row] : tag === 'OUTSIDE' ? STORE27_OUT : [];
+  const ok = w => id === null || id === undefined ? null : itemCanMove(S, id, w);
+  return frFirstSpot(S, kind, frRowCands(rows), id, ok) || frFirstSpot(S, kind, frAllCellCands(), id, ok);
+}
+function frStowPlace(S, id) { return frStoreSpot(S, id); }
+// Is this good the top of its stack (nothing anchored on it)?
+function frOnTop(S, id) {
+  const w = S.items.where[id], gr = frGridOf(w);
+  if (!gr) return true;
+  const { c, r } = frCR(w);
+  return !frOcc(S, gr).anc.has(c + ',' + r + ',' + (w.layer + 1));
+}
+
+// ---- Cars, tools and spots on the map ----
+// A standing car's geometry: its centre, heading (dir 1 east, -1 west: A2 mirrors x for w), floor height, the door spot
+// outside on the loading edge (out) and just inside (in); at(lx, lz): a point of the car's own frame on the map.
+function frCarGeo(S, stock) {
+  const f = Number.isInteger(stock) ? carryCarOf(S, stock) : null;
+  if (!f || trainOff(f.tr)) return null;
+  const p = trainPoses(S.track, f.tr)[f.i];
+  if (!p) return null;
+  const dir = Math.cos(p.yaw) >= 0 ? 1 : -1, y = f.car.k === 'flatcar' ? (f.car.h || 1.9) : (f.car.floor || PROTO.DOCK_Y);
+  const at = (lx, lz) => ({ x: p.x + dir * lx, z: p.z + lz });
+  return { f, tr: f.tr, car: f.car, k: f.car.k, x: p.x, z: p.z, dir, y, at, out: at(0, -FR.DOOR_OUT), in: at(0, -FR.DOOR_IN) };
+}
+// Can the player work this car now (standing at track 3, a freight car)? Why not, or null.
+function frCarWhy(S, stock) { return carryCarWhy(S, stock); }
+// A good's middle in a car (its footprint's centre) and where the player stands for it (in the aisle, beside its near end).
+function frCarSpot(S, w, kind) {
+  const g = frCarGeo(S, w.stockId), C = PROTO_STOCK.boxcar.cells, { c, r } = frCR(w), [fx, fz] = frFp(kind, 'car');
+  if (!g) return null;
+  const lx0 = C.x0 + C.size * c, lx1 = lx0 + C.size * fx, lz = C.z0 + C.size * (r + fz / 2);
+  const sx = lx1 <= -1.2 + 1e-6 ? lx1 + FR.STAND_IN : lx0 - FR.STAND_IN, sz = Math.max(-FR.DOOR_IN, Math.min(1.5, lz));
+  return { g, good: g.at((lx0 + lx1) / 2, lz), stand: g.at(sx, sz), y: g.y + (w.layer || 0) * frH(kind) };
+}
+// Where a tool is: { x, y, z, dir, held }: in front of the player while he pushes it, else where it was left.
+function frToolPose(S, id) {
+  const t = S.tools && S.tools[id], P = S.player;
+  if (!t) return null;
+  if (P.tool === id) {
+    const dir = frDirOf(Math.sin(P.f), Math.cos(P.f)), u = FR_DIRS[dir], d = t.k === 'truck' ? FR.TRUCK_D : FR.PUSH_D, x = P.x + u[0] * d, z = P.z + u[1] * d;
+    return { x, z, y: S.fr && S.fr.inCar !== null && typeof P.y === 'number' ? P.y : walkDeckY(S.track, x, z), dir, held: true };
+  }
+  const x = t.x / 100, z = t.z / 100;
+  return { x, z, y: walkDeckY(S.track, x, z), dir: frYawDir(t.yaw), held: false };
+}
+// A cart cell's (footprint's) middle on the map, for a cart pose.
+function frCartCellAt(pose, c, r, fx, fz) {
+  const u = FR_DIRS[pose.dir], v = [-u[1], u[0]], a = -1.2 + 0.8 * (c + fx / 2 - 0.5), b = -0.4 + 0.8 * (r + fz / 2 - 0.5);
+  return { x: pose.x + u[0] * a + v[0] * b, z: pose.z + u[1] * a + v[1] * b };
+}
+// Is (x, z) a cell the player can walk on (cart: the cart's grid)?
+function frOpen(S, x, z, cart) { const G = walkGrid(S.track, !!cart); return G.cost[walkCell(x, z)] > 0; }
+// The nearest walkable cell's middle to (x, z) (itself if open), so a walk there ends exactly on it.
+function frSnap(S, x, z, cart) {
+  if (frOpen(S, x, z, cart)) return { x, z };
+  const G = walkGrid(S.track, !!cart), i0 = walkCell(x, z), n = WALK.N, ci = i0 % n, ri = (i0 - ci) / n;
+  let best = null;
+  for (let k = 1; k <= 4 && !best; k++) for (let dr = -k; dr <= k; dr++) for (let dc = -k; dc <= k; dc++) {
+    if (Math.max(Math.abs(dr), Math.abs(dc)) !== k) continue;
+    const c = ci + dc, r = ri + dr;
+    if (c < 0 || r < 0 || c >= n || r >= WALK.NZ || !(G.cost[r * n + c] > 0)) continue;
+    const [cx, cz] = walkCentre(r * n + c), d = Math.hypot(cx - x, cz - z);
+    if (!best || d < best.d - 1e-9) best = { x: cx, z: cz, d };
+  }
+  return best ? { x: best.x, z: best.z } : { x, z };
+}
+// Where the player stands to take from or put on a cart cell: beside the bed on the cell's side, else the other side.
+function frCartStand(S, pose, c, r, fx, fz) {
+  const g = frCartCellAt(pose, c, r, fx, fz), u = FR_DIRS[pose.dir], v = [-u[1], u[0]], out = 0.8 + 0.45, sd = r === 0 ? -1 : 1;
+  const ax = pose.x + (g.x - pose.x) * Math.abs(u[0]), az = pose.z + (g.z - pose.z) * Math.abs(u[1]);   // the cell's place along the bed
+  for (const s of [sd, -sd]) { const x = ax + v[0] * out * s, z = az + v[1] * out * s; if (frOpen(S, x, z)) return { x, z }; }
+  return frSnap(S, ax + v[0] * out * sd, az + v[1] * out * sd);
+}
+// A storage cell's (footprint's) middle and the spot south of it (towards the cart lane).
+function frCellSpot(S, w, kind) {
+  const p = storeCellAt(w.block, w.c, w.r), [fx] = frFp(kind, 'cell'), x = p.x + (fx - 1) * PROTO.STORE[w.block].cell / 2;
+  return { good: { x, z: p.z }, y: PROTO.DOCK_Y + (w.layer || 0) * frH(kind), stand: frSnap(S, x, p.z + 0.95) };
+}
+// A shop's pickup slot on its boardwalk (two goods across, rows along the street) and the spot in front of it.
+function frShopSlot(S, shop, slot) {
+  const sh = frShop(shop), s = sh.side === 'W' ? 1 : -1, x = sh.pickup.x + (slot & 1 ? -0.45 : 0.45) * s, z = sh.pickup.z + (slot >> 1) * 0.9;
+  return { good: { x, z }, y: sh.doorY || 0, stand: frSnap(S, sh.pickup.x + 1.3 * s, z) };
+}
+// The cart's spot at a car's door (on the loading edge, east of the doorway) and at a shop (in the carriageway).
+function frCartDoorSpot(S, stock) { const g = frCarGeo(S, stock); return g ? { x: g.out.x + FR.CART_DOOR_DX, z: FR.CART_EDGE_Z, axis: 'x' } : null; }
+function frShopCartSpot(shop) { const sh = frShop(shop); return { x: sh.door.x + (sh.side === 'W' ? 1 : -1) * FR.SHOP_CART_DX, z: sh.door.z, axis: 'z' }; }
+// The cart's spot in the lane by a storage row's middle.
+function frLaneSpot(row) { const B = PROTO.STORE[row.block]; return { x: B.x0 + (row.c0 + row.c1 + 1) / 2 * B.cell, z: FR.LANE_Z, axis: 'x' }; }
+// Where a good is now ({ x, y, z } of its middle on the map) and where the player stands to take it (or, with to, to
+// put a good of this kind there): { good, y, stand, car (the geometry, if in a car) } or null.
+function frSpotOf(S, w, kind) {
+  if (!w) return null;
+  if (w.kind === 'CAR' && Number.isInteger(w.cell)) { const q = frCarSpot(S, w, kind); return q && { good: q.good, y: q.y, stand: q.stand, car: q.g }; }
+  if (w.kind === 'CELL') return frCellSpot(S, w, kind);
+  if (w.kind === 'CART') {
+    const pose = frToolPose(S, w.tool), { c, r } = frCR(w), [fx, fz] = frFp(kind, 'cart');
+    return { good: frCartCellAt(pose, c, r, fx, fz), y: pose.y + 0.85 + (w.layer || 0) * frH(kind), stand: frCartStand(S, pose, c, r, fx, fz) };
+  }
+  if (w.kind === 'SHOP') return frShopSlot(S, w.shop, w.slot);
+  if (w.kind === 'GROUND') { const x = w.x / 100, z = w.z / 100; return { good: { x, z }, y: walkDeckY(S.track, x, z), stand: frSnap(S, x, z + 0.8) }; }
+  if (w.kind === 'BAY') { const B = BLD_BAYS[w.buildingId], b = B && B.bays[w.bay]; return b ? { good: { x: b.x, z: b.z }, y: PROTO.DOCK_Y, stand: frSnap(S, b.x, b.z + 1) } : null; }
+  return null;
+}
+
+// ---- What the player has ----
+// The goods the player has (in the hands, or on the hand truck he pushes), lowest slot first.
+function frHeld(S) {
+  const I = S.items, P = S.player, out = [];
+  for (let i = 0; i < I.next; i++) { const w = I.alive[i] ? I.where[i] : null; if (w && (w.kind === 'HAND' || (w.kind === 'TRUCK' && P.tool === w.tool))) out.push(i); }
+  return out.sort((a, b) => I.where[a].slot - I.where[b].slot || a - b);
+}
+const frHands = S => itemsAt(S, { kind: 'HAND' });
+// How a good the player has is handled: on the truck 'truck'; in the hands its verb ('heave' for a truck good without the truck).
+function frHeldVerb(S, id) { const w = S.items.where[id], v = frGood(itemType(S, id)).verb; return w && w.kind === 'TRUCK' ? 'truck' : v === 'truck' ? 'heave' : v; }
+// The verb for taking this good now (ctx: the player as the plan stands; at: where the good is).
+function frVerbFor(S, id, ctx, at) {
+  const kind = itemType(S, id), v = frGood(kind).verb, tk = frTruckId(S);
+  if (kind === 'crate' && tk !== null && ctx.tool === tk) return 'truck';
+  if (v !== 'truck') return v;
+  if (tk === null) return 'heave';
+  const t = frToolPose(S, tk);
+  return ctx.tool === tk || (t && Math.hypot(t.x - at.x, t.z - at.z) <= FR.TRUCK_NEAR) ? 'truck' : 'heave';
+}
+// The slot a good taken now goes to: HAND or TRUCK, slot 0, or 1 for the second of a pair of crates; null when full.
+function frFreeSlot(S, kind, onTruck) {
+  const tk = frTruckId(S), q = onTruck ? { kind: 'TRUCK', tool: tk } : { kind: 'HAND' }, there = itemsAt(S, q);
+  if (!there.length) return onTruck ? { kind: 'TRUCK', tool: tk, slot: 0 } : { kind: 'HAND', slot: 0 };
+  if (there.length === 1 && kind === 'crate' && itemType(S, there[0]) === 'crate' && S.items.where[there[0]].slot === 0) return onTruck ? { kind: 'TRUCK', tool: tk, slot: 1 } : { kind: 'HAND', slot: 1 };
+  return null;
+}
+
+// ---- The plan of a job (worked out when a command is given) ----
+function frCtx(S) { const P = S.player; return { inCar: frInCar(S), tool: P.tool === undefined ? null : P.tool, x: P.x, z: P.z }; }
+const frWalk = (ctx, p) => { ctx.x = p.x; ctx.z = p.z; return { s: 'walk', x: Math.round(p.x * 1000) / 1000, z: Math.round(p.z * 1000) / 1000 }; };
+// Out of the car the player is in: along the aisle to the door row, out through the door onto the loading edge.
+function frExitSteps(S, ctx) {
+  if (ctx.inCar === null) return [];
+  const g = frCarGeo(S, ctx.inCar);
+  ctx.inCar = null;
+  if (!g) return [];
+  const st = { s: 'go', pts: [[ctx.x, g.in.z], [g.in.x, g.in.z], [g.out.x, g.out.z]], y: g.y, out: true };
+  ctx.x = g.out.x; ctx.z = g.out.z;
+  return [st];
+}
+// Into a car (or within it) to a stand spot.
+function frIntoSteps(S, ctx, g, stand) {
+  const steps = [];
+  if (ctx.inCar === g.f.car.id) { steps.push({ s: 'go', pts: [[ctx.x, stand.z], [stand.x, stand.z]], y: g.y }); }
+  else {
+    steps.push(...frExitSteps(S, ctx), frWalk(ctx, frSnap(S, g.out.x, g.out.z)));
+    steps.push({ s: 'go', pts: [[g.in.x, g.in.z], [stand.x, g.in.z], [stand.x, stand.z]], y: g.y, into: g.f.car.id });
+    ctx.inCar = g.f.car.id;
+  }
+  ctx.x = stand.x; ctx.z = stand.z;
+  return steps;
+}
+// Leave the tool the player pushes where it stands (out of any car first).
+function frParkHereSteps(S, ctx) {
+  if (ctx.tool === null) return [];
+  const steps = frExitSteps(S, ctx), tool = ctx.tool;
+  ctx.tool = null;
+  return steps.concat({ s: 'act', a: 'park', tool, dur: FR.PARK_S });
+}
+// Take a tool's handle (leaving another one first), from behind it.
+function frGrabSteps(S, ctx, tool) {
+  if (ctx.tool === tool) return [];
+  const steps = frParkHereSteps(S, ctx).concat(frExitSteps(S, ctx)), pose = frToolPose(S, tool), u = FR_DIRS[pose.dir], d = S.tools[tool].k === 'truck' ? FR.TRUCK_D : FR.PUSH_D;
+  steps.push(frWalk(ctx, frSnap(S, pose.x - u[0] * d, pose.z - u[1] * d)));
+  steps.push({ s: 'act', a: 'grab', tool, dur: FR.GRAB_S, fx: pose.x, fz: pose.z });
+  ctx.tool = tool;
+  return steps;
+}
+// Walk to a place to work it (into a car if it is in one).
+function frApproach(S, ctx, w, sp) {
+  if (sp.car) return frIntoSteps(S, ctx, sp.car, sp.stand);
+  return frExitSteps(S, ctx).concat(frWalk(ctx, sp.stand));
+}
+const frActS = (verb, layer, g) => FR.PICK_S[verb] + (g === 'cell' && layer >= 2 ? FR.HIGH_S : 0);
+// The steps to take good id (or a refusal).
+function frTakeSteps(S, ctx, id) {
+  const I = S.items, w = I.where[id], kind = itemType(S, id);
+  if (!w) return 'That good is gone';
+  if (w.kind === 'HAND' || (w.kind === 'TRUCK' && S.player.tool === w.tool)) return 'You have it already';
+  if (w.kind === 'TRUCK') return 'It is on the hand truck: take the hand truck';
+  if (!['CAR', 'CELL', 'CART', 'SHOP', 'GROUND', 'BAY'].includes(w.kind) || (w.kind === 'CAR' && !Number.isInteger(w.cell))) return 'That cannot be taken from there';
+  if (w.kind === 'CAR') {
+    const no = frCarWhy(S, w.stockId);
+    if (no) return no;
+    if (frDoorFrac(S, w.stockId) < 1) return 'Open the door first';
+  }
+  if (!frOnTop(S, id)) return 'Something is stacked on it: take that first';
+  const sp0 = frSpotOf(S, w, kind);
+  if (!sp0) return 'That cannot be taken from there';
+  const verb = frVerbFor(S, id, ctx, sp0.good), onTruck = verb === 'truck', tk = frTruckId(S);
+  const hands = frHands(S);
+  if (hands.length && (onTruck || !(kind === 'crate' && hands.length === 1 && itemType(S, hands[0]) === 'crate'))) return 'Your hands are full: put that down first';
+  const slot = frFreeSlot(S, kind, onTruck);
+  if (!slot) return onTruck ? 'The hand truck is loaded: unload it first' : 'Your hands are full: put that down first';
+  const steps = [];
+  if (w.kind === 'CART' && ctx.tool === w.tool) steps.push(...frParkHereSteps(S, ctx));   // let go of the cart's handle to unload it
+  if (onTruck) steps.push(...frGrabSteps(S, ctx, tk));
+  else steps.push(...frParkHereSteps(S, ctx));
+  const sp = frSpotOf(S, w, kind);   // (again: a cart just left where it stands)
+  steps.push(...frApproach(S, ctx, w, sp));
+  steps.push({ s: 'act', a: 'pick', id, from: { ...w }, to: slot, verb, dur: frActS(verb, w.layer || 0, frGridOf(w) && frGridOf(w).g), fx: sp.good.x, fz: sp.good.z });
+  return steps;
+}
+// Where a good can go for a put command's target (to: a full place, or { kind: 'CART' | 'CELL' | 'CAR', ... } for the
+// first free place there): the place, or a refusal.
+function frPutDest(S, id, to) {
+  const kind = itemType(S, id), cart = frCartId(S), P = S.player;
+  if (!to || typeof to !== 'object') return 'Where to? Name a place';
+  const okMove = w => { const why = itemCanMove(S, id, w); return why ? carryWhy(why) : null; };
+  const check = w => {
+    const gr = frGridOf(w);
+    if (gr) { const { c, r } = frCR(w), why = frSpotWhy(S, gr, c, r, w.layer || 0, kind, frOcc(S, gr), id); if (why) return why; }
+    return okMove(w);
+  };
+  if (to.kind === 'CART') {
+    const tool = Number.isInteger(to.tool) ? to.tool : cart;
+    if (tool === null || !S.tools[tool] || !toolIsCart(S.tools[tool].k)) return 'There is no such cart';
+    if (P.tool === tool && frHands(S).length) return 'Leave the cart first';
+    if (Number.isInteger(to.cell)) { const w = { kind: 'CART', tool, cell: to.cell, layer: Number.isInteger(to.layer) ? to.layer : 0 }; return check(w) || w; }
+    return frCartFree(S, id, tool) || 'The cart is full';
+  }
+  if (to.kind === 'CELL') {
+    if (to.block !== undefined) {
+      const gr = PROTO.STORE[to.block] ? frBlockGrid(to.block) : null;
+      if (!gr || !Number.isInteger(to.c) || !Number.isInteger(to.r)) return 'There is no such storage cell';
+      const L = Number.isInteger(to.layer) ? to.layer : frTop(frOcc(S, gr), to.c, to.r) + 1, w = { kind: 'CELL', block: to.block, c: to.c, r: to.r, layer: L };
+      return check(w) || w;
+    }
+    return frStoreSpot(S, id) || 'The storage is full';
+  }
+  if (to.kind === 'CAR') {
+    const no = frCarWhy(S, to.stockId);
+    if (no) return no;
+    if (frDoorFrac(S, to.stockId) < 1) return 'Open the door first';
+    if (!frIsOut(S, id)) return 'Goods for the town stay here: stack them in storage';
+    const f = carryCarOf(S, to.stockId), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+    if (run) { const load = frRunOutN(S, run); if (!load) return `${run.name} takes no goods on here`; if (frAboard(S, f.tr).out >= load) return `${run.name} takes only ${load} goods`; }
+    if (Number.isInteger(to.cell)) { const w = { kind: 'CAR', stockId: to.stockId, cell: to.cell, layer: Number.isInteger(to.layer) ? to.layer : 0 }; return check(w) || w; }
+    return frFirstSpot(S, kind, frCarCands(to.stockId), id, okMove) || 'The car is full';
+  }
+  if (to.kind === 'GROUND') {
+    if (!Number.isInteger(to.x) || !Number.isInteger(to.z)) return 'Ground places are whole hundredths';
+    if (!frOpen(S, to.x / 100, to.z / 100)) return 'You cannot set it down there';
+    const w = { kind: 'GROUND', x: to.x, z: to.z };
+    return okMove(w) || w;
+  }
+  return 'Goods are set down on the cart, in storage, in a car or on the ground';
+}
+// The steps to put the good the player has on top (the second crate of a pair first) at dest (a place).
+function frPutSteps(S, ctx, id, dest) {
+  const kind = itemType(S, id), verb = frHeldVerb(S, id), sp = frSpotOf(S, dest, kind);
+  if (!sp) return 'You cannot set it down there';
+  const steps = frApproach(S, ctx, dest, sp), gr = frGridOf(dest);
+  steps.push({ s: 'act', a: 'put', id, to: { ...dest }, verb, dur: frActS(verb, dest.layer || 0, gr && gr.g), fx: sp.good.x, fz: sp.good.z });
+  return steps;
+}
+// The cart (or truck) left at a spot ({ x, z, axis }): walk there pushing it (it ends with its centre on the spot,
+// along the axis, facing the way the player comes from), then leave it.
+function frParkAtSteps(S, ctx, tool, spot, f) {
+  const d = S.tools[tool].k === 'truck' ? FR.TRUCK_D : FR.PUSH_D;
+  const dir = f || (spot.axis === 'z' ? (ctx.z >= spot.z ? 'ne' : 'sw') : (ctx.x <= spot.x ? 'se' : 'nw')), u = FR_DIRS[dir];
+  const stand = frSnap(S, spot.x - u[0] * d, spot.z - u[1] * d, toolIsCart(S.tools[tool].k));
+  const steps = frGrabSteps(S, ctx, tool);
+  steps.push(frWalk(ctx, stand), { s: 'act', a: 'park', tool, dur: FR.PARK_S, dir, x: stand.x + u[0] * d, z: stand.z + u[1] * d });
+  ctx.tool = null;
+  return steps;
+}
+// A delivery or a pickup in progress: the next good's steps (or null when that shop is done).
+function frLoopSteps(S, J) {
+  const ctx = frCtx(S), cart = frCartId(S), held = frHeld(S);
+  if (J.k === 'deliver') {
+    const sh = frShop(J.shop), mine = held.filter(id => frShopOf(S, id) === J.shop);
+    if (mine.length) {
+      const id = mine[mine.length - 1], steps = frExitSteps(S, ctx);
+      steps.push(frWalk(ctx, frSnap(S, sh.door.x, sh.door.z)), { s: 'act', a: 'hand', id, shop: J.shop, verb: frHeldVerb(S, id), dur: frHandS(S, id), fx: sh.door.x - (sh.side === 'W' ? 2 : -2), fz: sh.door.z });
+      return steps;
+    }
+    if (held.length) return null;
+    const next = frCartGoods(S).filter(id => frShopOf(S, id) === J.shop && frOnTop(S, id)).sort((a, b) => S.items.where[b].layer - S.items.where[a].layer || a - b)[0];
+    if (next === undefined) return null;
+    const steps = frTakeSteps(S, ctx, next);
+    return typeof steps === 'string' ? null : steps;
+  }
+  if (J.k === 'pickup') {
+    if (held.length) {
+      const id = held[held.length - 1];
+      if (!frIsOut(S, id)) return null;
+      const dest = frPutDest(S, id, { kind: 'CART', tool: cart });
+      if (typeof dest === 'string') { J.why = dest; return null; }
+      const steps = frPutSteps(S, ctx, id, dest);
+      return typeof steps === 'string' ? null : steps;
+    }
+    const next = itemsAt(S, { kind: 'SHOP', shop: J.shop }).sort((a, b) => S.items.where[a].slot - S.items.where[b].slot)[0];
+    if (next === undefined) return null;
+    if (!frCartFree(S, next, cart)) { J.why = 'The cart is full'; return null; }
+    const steps = frTakeSteps(S, ctx, next);
+    return typeof steps === 'string' ? null : steps;
+  }
+  return null;
+}
+const frHandS = (S, id) => { const v = frHeldVerb(S, id); return v === 'carry' || v === 'shoulder' ? FR.HAND_S : FR.PICK_S[v]; };
+// The first free place on the cart for good id, on top of a good for a shop the cart reaches after this one's (or for
+// the same shop), never burying it under one delivered later (FR_SHOP_ORDER); null when there is none.
+function frCartFree(S, id, tool) {
+  if (tool === undefined) tool = frCartId(S);
+  if (tool === null) return null;
+  const gr = frCartGrid(tool), occ = frOcc(S, gr), ord = q => { const s = frShopOf(S, q); return s ? FR_SHOP_ORDER.indexOf(s) : -1; }, mine = ord(id);
+  return frFirstSpot(S, itemType(S, id), frCartCands(tool), id, w => {
+    const why = itemCanMove(S, id, w);
+    if (why || !w.layer) return why;
+    const { c, r } = frCR(w), below = occ.anc.get(c + ',' + r + ',' + (w.layer - 1));
+    return below !== undefined && mine >= 0 && ord(below) >= 0 && ord(below) < mine ? 'It would bury a good delivered first' : null;
+  });
+}
+// The goods on the platform cart.
+const frCartGoods = S => { const c = frCartId(S); return c === null ? [] : itemsAt(S, { kind: 'CART', tool: c }); };
+
+// ---- Commands ----
+function frCmd(S, c, ev) {
+  const no = why => { ev.push({ t: 'frRefused', why, cmd: c.t }); };
+  if (!d27On(S.track, 'handling')) return no('Goods are carried by hand, hand truck and handcart here');
+  if (!S.rr || !protoWorld(S.track)) return no('There is no freight handling here');
+  const F = frSt(S), ctx = frCtx(S), P = S.player, I = S.items;
+  let job = null;
+  if (c.t === 'frDoor') {
+    const no2 = frCarWhy(S, c.stock);
+    if (no2) return no(no2);
+    const g = frCarGeo(S, c.stock);
+    if (g.k !== 'boxcar') return no('Only a boxcar has a door');
+    if (frHands(S).length) return no('Put down what you carry first');
+    const D = F.doors[c.stock], o = D ? D.o : 0, open = !(o >= FR.DOOR_S || (D && D.mv > 0));
+    const steps = frParkHereSteps(S, ctx).concat(frExitSteps(S, ctx), frWalk(ctx, frSnap(S, g.out.x, g.out.z)));
+    steps.push({ s: 'act', a: 'door', stock: c.stock, open, dur: open ? FR.DOOR_S - o : o, fx: g.out.x, fz: g.z });
+    job = { k: 'door', steps };
+  } else if (c.t === 'frTake') {
+    const id = c.item;
+    if (!Number.isInteger(id) || id < 0 || id >= I.next || !I.alive[id]) return no('There is no such good');
+    const steps = frTakeSteps(S, ctx, id);
+    if (typeof steps === 'string') return no(steps);
+    job = { k: 'take', steps, item: id };
+  } else if (c.t === 'frPut') {
+    const held = frHeld(S);
+    if (!held.length) return no('You are not carrying anything');
+    const id = held[held.length - 1], dest = frPutDest(S, id, c.to);
+    if (typeof dest === 'string') return no(dest);
+    const steps = frPutSteps(S, ctx, id, dest);
+    if (typeof steps === 'string') return no(steps);
+    job = { k: 'put', steps, item: id };
+  } else if (c.t === 'frCart') {
+    const tool = Number.isInteger(c.tool) ? c.tool : frCartId(S);
+    if (tool === null || !S.tools[tool]) return no('There is no such cart');
+    const name = S.tools[tool].k === 'truck' ? 'hand truck' : 'cart';
+    if (c.act === 'grab') {
+      if (ctx.tool === tool) return no(`You have the ${name} already`);
+      if (frHands(S).length) return no('Put down what you carry first');
+      job = { k: 'grab', steps: frGrabSteps(S, ctx, tool) };
+    } else if (c.act === 'park') {
+      if (ctx.tool !== tool) return no(`You are not pushing the ${name}`);
+      if (Number.isInteger(c.x) && Number.isInteger(c.z)) {
+        const x = c.x / 100, z = c.z / 100;
+        if (!frOpen(S, x, z, toolIsCart(S.tools[tool].k))) return no(`The ${name} cannot stand there`);
+        job = { k: 'park', steps: frExitSteps(S, ctx).concat(frParkAtSteps(S, ctx, tool, { x, z, axis: c.f === 'ne' || c.f === 'sw' ? 'z' : 'x' }, FR_DIRS[c.f] ? c.f : null)) };
+      } else {
+        if (ctx.inCar !== null) return no(`Wheel the ${name} out of the car first`);
+        job = { k: 'park', steps: frParkHereSteps(S, ctx) };
+      }
+    } else return no('Take the cart (grab) or leave it (park)');
+  } else if (c.t === 'frDeliver' || c.t === 'frPickup') {
+    const sh = frShop(c.shop), cart = frCartId(S), k = c.t === 'frDeliver' ? 'deliver' : 'pickup';
+    if (!sh) return no('There is no such shop');
+    const held = frHeld(S), cartPose = cart === null ? null : frToolPose(S, cart);
+    if (k === 'deliver') {
+      const mine = held.some(id => frShopOf(S, id) === sh.id), onCart = frCartGoods(S).some(id => frShopOf(S, id) === sh.id);
+      if (!mine && !onCart) return no(`Nothing on the cart is for the ${sh.name}`);
+      if (held.length && !mine) return no('Put down what you carry first');
+    } else {
+      if (!itemsAt(S, { kind: 'SHOP', shop: sh.id }).length) return no(`The ${sh.name} has nothing waiting`);
+      if (held.length) return no('Put down what you carry first');
+      const next = itemsAt(S, { kind: 'SHOP', shop: sh.id })[0];
+      if (!frCartFree(S, next, cart)) return no('The cart is full');
+    }
+    let steps = [];
+    if (!held.length) {
+      if (ctx.tool === cart) steps = frParkAtSteps(S, ctx, cart, frShopCartSpot(sh.id));
+      else if (!cartPose || Math.hypot(cartPose.x - sh.door.x, cartPose.z - sh.door.z) > FR.NEAR) return no(`Bring the cart to the ${sh.name} first`);
+      else steps = frParkHereSteps(S, ctx);
+    }
+    job = { k, steps, shop: sh.id };
+  } else return no('Unknown handling command');
+  frStart(S, job, ev);
+}
+function frStart(S, job, ev) {
+  const F = frSt(S), P = S.player;
+  F.job = Object.assign(job, { i: 0, t0: -1, go: 0 });
+  P.mode = 'idle'; P.use = null; P.act = null;
+  ev.push({ t: 'frJob', k: job.k });
+}
+
+// ---- The player at a handling step (from playerModeTick) ----
+// True when it handled the player's tick (he is in a car, or at a timed action), false when the ordinary walk moves him.
+function frPlayerTick(S, ev, poseCache) {
+  if (!frOn(S)) return false;
+  const F = frSt(S), P = S.player;
+  if (!F.job && F.inCar === null) return false;
+  if (!F.job) {
+    if (P.mode === 'idle' && !P.use && !P.act) return true;   // standing in a car
+    frExitThen(S, ev);   // a walk or another command from inside a car: out through the door first, then that
+  }
+  for (let n = 0; n < 12 && F.job; n++) {
+    const J = F.job, st = J.steps[J.i];
+    if (!st) { frJobEnd(S, ev); continue; }
+    const r = frStep(S, J, st, ev);
+    if (r === 'next') { J.i++; J.t0 = -1; J.go = 0; continue; }
+    if (r === 'cancel') continue;
+    return r === 'hold';
+  }
+  return F.inCar !== null;
+}
+// Out of the car, then on with what the player was told (a walk, a carry, a lever).
+function frExitThen(S, ev) {
+  const F = S.fr, P = S.player, resume = { mode: P.mode, tx: P.tx, tz: P.tz, a: P.a, use: P.use || null, act: P.act || null };
+  const ctx = frCtx(S);
+  F.job = { k: 'exit', steps: frExitSteps(S, ctx), i: 0, t0: -1, go: 0, resume };
+  P.mode = 'idle'; P.use = null; P.act = null;
+}
+function frCancel(S, ev, why) {
+  const F = S.fr, k = F.job ? F.job.k : null;
+  F.job = null;
+  if (why) ev.push({ t: 'frRefused', why, k });
+  if (F.inCar !== null) frExitThen(S, ev);
+  return 'cancel';
+}
+function frJobEnd(S, ev) {
+  const F = S.fr, J = F.job, P = S.player;
+  if (J.k === 'deliver' || J.k === 'pickup') {
+    const steps = frLoopSteps(S, J);
+    if (steps && steps.length) { J.steps = steps; J.i = 0; J.t0 = -1; J.go = 0; return; }
+    if (J.why) ev.push({ t: 'frRefused', why: J.why, k: J.k });
+  }
+  F.job = null;
+  ev.push({ t: 'frDone', k: J.k });
+  if (J.resume) { const r = J.resume; P.mode = r.mode; P.tx = r.tx; P.tz = r.tz; P.a = r.a; P.use = r.use; P.act = r.act; }
+}
+// One step: 'walk' (the ordinary walk moves him this tick), 'hold' (handled), 'next' (done: on to the next step now),
+// 'cancel' (the job was stopped).
+function frStep(S, J, st, ev) {
+  const P = S.player, F = S.fr;
+  const interrupted = () => P.use || P.act || P.mode === 'dir' || P.mode === 'to';
+  if (st.s === 'walk') {
+    if (J.t0 < 0) { P.mode = 'to'; P.tx = clampX(st.x); P.tz = clampZ(st.z); P.use = null; P.act = null; J.t0 = S.time; J.tx = P.tx; J.tz = P.tz; return 'walk'; }
+    if (P.use || P.act || P.mode === 'dir' || (P.mode === 'to' && (Math.abs(P.tx - J.tx) > 1e-9 || Math.abs(P.tz - J.tz) > 1e-9))) return frCancel(S, ev, null);
+    if (P.mode === 'to') return 'walk';
+    if (Math.hypot(P.x - J.tx, P.z - J.tz) <= FR.ARRIVE) return 'next';
+    return frCancel(S, ev, 'You cannot get there');
+  }
+  if (st.s === 'go') {
+    if (J.t0 < 0) {
+      J.t0 = S.time;
+      if (st.into !== undefined) { const g = frCarGeo(S, st.into), no = frCarWhy(S, st.into); if (!g || no) return frCancel(S, ev, no || 'The car has gone'); F.inCar = st.into; }
+    } else if (interrupted()) return frCancel(S, ev, null);
+    P.mode = 'idle';
+    let left = playerWalkSpeed(S.track, P.tool !== null && P.tool !== undefined) * DT_MIN;
+    while (left > 1e-9 && J.go < st.pts.length) {
+      const [x, z] = st.pts[J.go], d = Math.hypot(x - P.x, z - P.z);
+      if (d > 1e-9) P.f = Math.atan2(x - P.x, z - P.z);
+      if (d <= left) { P.x = x; P.z = z; left -= d; J.go++; }
+      else { P.x += (x - P.x) / d * left; P.z += (z - P.z) / d * left; left = 0; }
+    }
+    P.y = st.y;
+    if (J.go < st.pts.length) return 'hold';
+    if (st.out) { F.inCar = null; delete P.y; }
+    return 'next';
+  }
+  // 'act'
+  if (J.t0 < 0) {
+    const why = frActWhy(S, st);
+    if (why) return frCancel(S, ev, why);
+    J.t0 = S.time; P.mode = 'idle'; P.use = null; P.act = null;
+    if (st.a === 'park' && st.dir) { const u = FR_DIRS[st.dir]; P.f = Math.atan2(u[0], u[1]); }
+    else if (st.fx !== undefined && Math.hypot(st.fx - P.x, st.fz - P.z) > 1e-6) P.f = Math.atan2(st.fx - P.x, st.fz - P.z);
+    if (st.a === 'door') { const D = F.doors[st.stock] || (F.doors[st.stock] = { o: 0, mv: 0 }); D.mv = st.open ? 1 : -1; J.o0 = D.o; }
+    ev.push({ t: 'frStep', a: st.a, id: st.id, dur: st.dur });
+  } else if (interrupted()) {
+    if (st.a === 'door' && F.doors[st.stock]) F.doors[st.stock].mv = 0;
+    return frCancel(S, ev, null);
+  }
+  const el = S.time - J.t0;
+  if (st.a === 'door') { const D = F.doors[st.stock]; if (D) D.o = Math.max(0, Math.min(FR.DOOR_S, J.o0 + (st.open ? el : -el))); }
+  if (el < st.dur) return 'hold';
+  const why = frActDo(S, J, st, ev);
+  if (why) return frCancel(S, ev, why);
+  return 'next';
+}
+// Can this action start (still)? A refusal, or null.
+function frActWhy(S, st) {
+  const I = S.items;
+  if (st.a === 'pick') {
+    if (!I.alive[st.id] || !cargoSame(I.where[st.id], st.from)) return 'That good has been moved';
+    if (!frOnTop(S, st.id)) return 'Something is stacked on it: take that first';
+    if (st.from.kind === 'CAR') { const no = frCarWhy(S, st.from.stockId); if (no) return no; }
+    return itemCanMove(S, st.id, st.to) ? 'Your hands are full: put that down first' : null;
+  }
+  if (st.a === 'put') {
+    if (!I.alive[st.id] || !['HAND', 'TRUCK'].includes((I.where[st.id] || {}).kind)) return 'You no longer have it';
+    if (st.to.kind === 'CAR') { const no = frCarWhy(S, st.to.stockId); if (no) return no; }
+    const gr = frGridOf(st.to);
+    if (gr) { const { c, r } = frCR(st.to), why = frSpotWhy(S, gr, c, r, st.to.layer || 0, itemType(S, st.id), frOcc(S, gr), st.id); if (why) return why; }
+    const why = itemCanMove(S, st.id, st.to);
+    return why ? carryWhy(why) : null;
+  }
+  if (st.a === 'hand') return I.alive[st.id] && ['HAND', 'TRUCK'].includes((I.where[st.id] || {}).kind) ? null : 'You no longer have it';
+  if (st.a === 'door') return frCarWhy(S, st.stock);
+  if (st.a === 'grab') return S.player.tool !== null && S.player.tool !== undefined ? 'Your hands are on another handle' : null;
+  if (st.a === 'park') return S.player.tool === st.tool ? null : 'You are not pushing it';
+  return null;
+}
+// The end of an action: the good moves (or the door, the cart). A refusal, or null.
+function frActDo(S, J, st, ev) {
+  const F = S.fr, P = S.player, I = S.items;
+  if (st.a === 'door') {
+    const D = F.doors[st.stock] || (F.doors[st.stock] = { o: 0, mv: 0 });
+    D.o = st.open ? FR.DOOR_S : 0; D.mv = 0;
+    ev.push({ t: 'frDoor', stock: st.stock, open: st.open });
+    return null;
+  }
+  if (st.a === 'pick') {
+    const r = itemMove(S, st.id, st.to, ev);
+    if (!r.ok) return carryWhy(r.why);
+    ev.push({ t: 'frTaken', id: st.id, from: st.from });
+    if (st.from.kind === 'CAR' && !frIsOut(S, st.id)) {
+      const f = carryCarOf(S, st.from.stockId), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+      ev.push({ t: 'frUnloaded', run: run ? run.id : null, id: st.id });
+      pdCount(S, 'unloaded'); F.tot.unloaded++;
+    }
+    if (st.from.kind === 'SHOP') { ev.push({ t: 'frPicked', shop: st.from.shop, id: st.id }); pdCount(S, 'picked'); F.tot.picked++; }
+    return null;
+  }
+  if (st.a === 'put') {
+    const r = itemMove(S, st.id, st.to, ev);
+    if (!r.ok) return carryWhy(r.why);
+    ev.push({ t: 'frPut', id: st.id, to: st.to });
+    if (st.to.kind === 'CELL') { ev.push({ t: 'frStored', id: st.id }); F.tot.stored++; }
+    if (st.to.kind === 'CAR') { const f = carryCarOf(S, st.to.stockId), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null; ev.push({ t: 'frLoaded', run: run ? run.id : null, id: st.id }); }
+    return null;
+  }
+  if (st.a === 'grab') {
+    P.tool = st.tool;
+    ev.push({ t: 'toolTaken', tool: st.tool });
+    return null;
+  }
+  if (st.a === 'park') {
+    const p = frToolPose(S, st.tool), t = S.tools[st.tool];
+    t.x = Math.round(p.x * 100); t.z = Math.round(p.z * 100); t.yaw = frDirYaw(p.dir);
+    P.tool = null;
+    ev.push({ t: 'toolLeft', tool: st.tool });
+    return null;
+  }
+  if (st.a === 'hand') {
+    if (frShopOf(S, st.id) !== st.shop) return 'That is not for this shop';
+    const keeper = typeof tfAt === 'function' ? !!tfAt(S, frShop(st.shop).bld) : true;
+    const r = itemConsume(S, st.id, 'business', ev);
+    if (!r.ok) return carryWhy(r.why);
+    ev.push({ t: 'frDelivered', shop: st.shop, id: st.id, keeper });
+    pdCount(S, 'delivered'); F.tot.delivered++;
+    return null;
+  }
+  return null;
+}
+
+// ---- The trains' goods (through the cg* redirects) ----
+// The day of the week of a run (0 Monday, as clockText), and the goods it brings ([[shop, commodity]]) and takes (count).
+const frWeekday = (S, run) => (run && Number.isInteger(run.day) ? run.day : rrDayOf(S)) % 7;
+function frRunIn(S, run) {
+  const sv = pgSvc(run) || {}, wd = frWeekday(S, run), G = SHOP_GOODS27, out = [];
+  for (const [shop, c, n] of G.in[sv.id] || []) for (let k = 0; k < n; k++) out.push([shop, c]);
+  for (const [svc, shop, c, n] of ((G.weekly[wd] || {}).in || [])) if (svc === sv.id) for (let k = 0; k < n; k++) out.push([shop, c]);
+  return out;
+}
+function frRunOutN(S, run) {
+  const sv = pgSvc(run) || {}, wd = frWeekday(S, run), G = SHOP_GOODS27;
+  let n = 0;
+  for (const [, k] of G.out[sv.id] || []) n += k;
+  for (const [svc, , k] of ((G.weekly[wd] || {}).out || [])) if (svc === sv.id) n += k;
+  return n;
+}
+function frConsist(S, run) {
+  const sv = pgSvc(run) || {}, n = Number.isInteger(run.ncars) ? run.ncars : Number.isInteger(run.cars) ? run.cars : sv.cars || 4;
+  const flat = frRunIn(S, run).some(([, c]) => COMMODITIES[c] && COMMODITIES[c].type === 'plough');
+  return Array.from({ length: n }, (_, i) => ({ ...PROTO_STOCK.cars[flat && i === n - 1 ? 'flatcar' : 'boxcar'] }));
+}
+function frCount(S, key, c, n) { const A = frSt(S).aud; A[key][c] = (A[key][c] || 0) + (n === undefined ? 1 : n); }
+// Makes a good (the tables' only way in: a run's cars, a shop's pickup, the dawn of day 0), counted for the audit.
+function frCreate(S, commodity, shop, where, ev) {
+  frCount(S, 'exp', commodity);
+  const r = itemCreate(S, frWb(commodity, shop), where, ev || null);
+  if (r.ok) frCount(S, 'made', commodity);
+  return r;
+}
+function frLoad(S, run, tr, ev) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr) return { cars: 0, items: 0 };
+  const F = frSt(S);
+  if (run.id !== undefined && run.day !== undefined && F.made.includes(run.id)) return { cars: 0, items: 0 };
+  const cars = tr.consist.filter(c => CARGO_CAR_RULES[c.k]), boxes = cars.filter(c => c.k === 'boxcar'), flats = cars.filter(c => c.k === 'flatcar'), used = new Set();
+  let items = 0;
+  frRunIn(S, run).forEach(([shop, c], i) => {
+    const kind = COMMODITIES[c].type, pool = kind === 'plough' && flats.length ? flats : boxes.length ? boxes : cars;
+    const order = [pool[i % pool.length]].concat(pool, cars);
+    const okNew = w => cargoRoomProblem(S, kind, w, -1, c);
+    let place = null;
+    for (const car of order) { place = frFirstSpot(S, kind, frCarCands(car.id), -1, okNew); if (place) break; }
+    if (!place) { frCount(S, 'exp', c); return; }
+    const r = frCreate(S, c, shop, place, ev);
+    if (r.ok) { items++; used.add(place.stockId); }
+  });
+  if (run.id !== undefined && run.day !== undefined) F.made = F.made.filter(id => S.rr.runs.some(r => r.id === id)).concat(run.id);
+  return { cars: used.size, items };
+}
+// Goods in this train's cars: { town, out, ids }.
+function frAboard(S, tr) {
+  const cars = new Set(tr.consist.map(c => c.id)), I = S.items, o = { town: 0, out: 0, ids: [] };
+  for (let i = 0; i < I.next; i++) { const w = I.alive[i] ? I.where[i] : null; if (w && w.kind === 'CAR' && cars.has(w.stockId)) { o.ids.push(i); if (frIsOut(S, i)) o.out++; else o.town++; } }
+  return o;
+}
+// Goods for the railroad at the station (anywhere but in a car or still at a shop).
+function frOutWaiting(S) {
+  const I = S.items, out = [];
+  for (let i = 0; i < I.next; i++) { const w = I.alive[i] ? I.where[i] : null; if (w && w.kind !== 'CAR' && w.kind !== 'SHOP' && frIsOut(S, i)) out.push(i); }
+  return out;
+}
+function frNeed(S, run, tr) { return Math.min(frRunOutN(S, run), frAboard(S, tr).out + frOutWaiting(S).length); }
+function frReady(S, run, tr) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr || trainOff(tr)) return true;
+  const a = frAboard(S, tr);
+  return a.town === 0 && a.out >= frNeed(S, run, tr);
+}
+// The player out of a car that is leaving or gone: onto the loading edge at its door (or where he is).
+function frEject(S, ev) {
+  const F = frSt(S), P = S.player, g = F.inCar !== null ? frCarGeo(S, F.inCar) : null;
+  if (g) { const p = frSnap(S, g.out.x, g.out.z); P.x = p.x; P.z = p.z; }
+  F.inCar = null; F.job = null; delete P.y;
+  P.mode = 'idle'; P.use = null; P.act = null;
+  if (ev) ev.push({ t: 'frRefused', why: 'The train is leaving: you step off onto the platform' });
+}
+function frOnDepart(S, run, tr, ev) {
+  tr = tr || rrTrainOf(S, run);
+  if (!tr) return { sold: 0, paid: 0, setDown: 0 };
+  const F = frSt(S), ids = new Set(tr.consist.map(c => c.id));
+  if (F.inCar !== null && ids.has(F.inCar)) frEject(S, ev);
+  if (F.job && F.job.steps.some(st => (st.into !== undefined && ids.has(st.into)) || (st.stock !== undefined && ids.has(st.stock)) || (st.to && st.to.kind === 'CAR' && ids.has(st.to.stockId)) || (st.from && st.from.kind === 'CAR' && ids.has(st.from.stockId)))) F.job = null;
+  let sold = 0, down = 0;
+  for (const id of frAboard(S, tr).ids) {
+    if (frIsOut(S, id)) { if (itemConsume(S, id, 'soldOutside', ev).ok) sold++; continue; }
+    const to = frStowPlace(S, id) || { kind: 'GROUND', x: Math.round((PROTO.CARGO.x0 + 2 + down * 0.8) * 100), z: Math.round((PROTO.CART_LANE.z0 - 0.5) * 100) };
+    if (itemMove(S, id, to, ev).ok) down++;
+  }
+  for (const c of tr.consist) delete F.doors[c.id];
+  if (sold) { pdCount(S, 'loaded', sold); F.tot.loaded += sold; }
+  return { sold, paid: 0, setDown: down };
+}
+
+// ---- Each tick (after cgTick) and each new day ----
+function frTick(S, ev) {
+  if (!S.rr || !S.rr.on || !d27On(S.track, 'handling')) return;
+  const F = frSt(S), P = S.player, I = S.items;
+  // The tool being pushed is where it is drawn (so it stays there when let go, overnight too).
+  if (P.tool !== null && P.tool !== undefined && S.tools[P.tool]) {
+    const p = frToolPose(S, P.tool), t = S.tools[P.tool];
+    t.x = Math.round(p.x * 100); t.z = Math.round(p.z * 100); t.yaw = frDirYaw(p.dir);
+  }
+  // Goods in the freight house's bays (a save from before D27 handling) go into the storage cells.
+  for (let i = 0; i < I.next; i++) if (I.alive[i] && I.where[i].kind === 'BAY') { const w = frStowPlace(S, i); if (w) itemMove(S, i, w, ev); }
+  // Doors of cars that are gone; the player out of a car that has gone or moves.
+  for (const k of Object.keys(F.doors)) if (!frCarGeo(S, +k)) delete F.doors[k];
+  if (F.inCar !== null && frCarWhy(S, F.inCar)) frEject(S, ev);
+  // 17:00: the shops put out their goods for the railroad.
+  const day = rrDayOf(S);
+  if (rrSod(S.time) >= SHOP_GOODS27.PICKUP_S && F.picks.day !== day) frPutOut(S, day, ev);
+}
+// What each shop puts out today at 17:00: SHOP_GOODS27.pickups, plus tomorrow's weekly OUT specials from the shop that
+// makes them (GOODS27 kind in SHOPS27[i].sends): { shop: [[commodity, n]] }.
+function frPickupList(day) {
+  const G = SHOP_GOODS27, out = {};
+  for (const [shop, list] of Object.entries(G.pickups)) out[shop] = list.map(q => q.slice());
+  for (const [, c, n] of ((G.weekly[(day + 1) % 7] || {}).out || [])) {
+    const sh = SHOPS27.find(q => q.sends.includes(COMMODITIES[c].type) && !G.pickups[q.id]) || SHOPS27.find(q => q.sends.includes(COMMODITIES[c].type));
+    if (sh) (out[sh.id] = out[sh.id] || []).push([c, n]);
+  }
+  return out;
+}
+function frPutOut(S, day, ev) {
+  const F = frSt(S), put = [];
+  for (const [shop, list] of Object.entries(frPickupList(day))) {
+    if (itemsAt(S, { kind: 'SHOP', shop }).length) continue;   // still waiting from before: nothing new
+    const ids = [];
+    let slot = 0;
+    for (const [c, n] of list) for (let k = 0; k < n; k++) { const r = frCreate(S, c, null, { kind: 'SHOP', shop, slot: slot++ }, ev); if (r.ok) ids.push(r.id); }
+    put.push(shop);
+    if (ev) ev.push({ t: 'frPutOut', shop, ids });
+  }
+  F.picks = { day, put };
+}
+function frNewDay(S, day, ev) {
+  const F = frSt(S), P = S.player;
+  F.job = null;
+  if (F.inCar !== null) { F.inCar = null; delete P.y; }
+  if (P.tool !== null && P.tool !== undefined) P.tool = null;   // left where it was (S.tools keeps it)
+  if (S.rr) F.made = F.made.filter(id => S.rr.runs.some(r => r.id === id));
+  if (day === 0 && !F.dawn) {
+    for (const [c, n] of SHOP_GOODS27.OUT_DAWN) for (let k = 0; k < n; k++) { const w = frStoreSpot(S, null, COMMODITIES[c].type, 'OUTSIDE'); if (w) frCreate(S, c, null, w, ev); else frCount(S, 'exp', c); }
+    F.dawn = 1;
+  }
+  const I = S.items;
+  for (let i = 0; i < I.next; i++) if (I.alive[i] && I.where[i].kind === 'BAY') { const w = frStowPlace(S, i); if (w) itemMove(S, i, w, ev); }
+}
+
+// ---- For the renderer (R) ----
+function frDoorFrac(S, stock) {
+  const f = carryCarOf(S, stock);
+  if (f && f.car.k === 'flatcar') return 1;   // no door
+  const D = S.fr && S.fr.doors && S.fr.doors[stock];
+  return D ? D.o / FR.DOOR_S : 0;
+}
+function frDoorOpen(S, stock) { const f = carryCarOf(S, stock); return f && f.car.k === 'boxcar' ? frDoorFrac(S, stock) : 0; }
+// The player's base height (a car floor, else the deck under him).
+const frBaseY = S => typeof S.player.y === 'number' ? S.player.y : walkDeckY(S.track, S.player.x, S.player.z);
+// The good the player has, drawn at his hands (or rolled, dragged, heaved ahead of him), by its verb.
+function frHeldAt(S, id, verb) {
+  const P = S.player, fx = Math.sin(P.f), fz = Math.cos(P.f), y = frBaseY(S), slot = S.items.where[id].slot || 0;
+  const ahead = { carry: 0.35, shoulder: 0, roll: 0.55, drag: 0.35, heave: 0.3, truck: FR.TRUCK_D }[verb] || 0.35;
+  const lift = { carry: 1.0 + slot * frH(itemType(S, id)), shoulder: 1.75, roll: 0, drag: 0, heave: 0, truck: 0 }[verb] || 0;
+  return { x: P.x + fx * ahead, z: P.z + fz * ahead, y: y + lift };
+}
+// Every good on the map, as plain data for drawing (see the head of this section).
+function frDrawList(S) {
+  if (!frOn(S)) return [];
+  const I = S.items, P = S.player, F = frRead(S), J = F.job, st = J && J.steps[J.i], out = [];
+  const moving = st && st.s === 'act' && J.t0 >= 0 && (st.a === 'pick' || st.a === 'put' || st.a === 'hand') ? st : null;
+  const prog = moving ? Math.max(0, Math.min(1, (S.time - J.t0) / st.dur)) : 0, dir = frDirOf(Math.sin(P.f), Math.cos(P.f));
+  for (let id = 0; id < I.next; id++) {
+    const w = I.alive[id] ? I.where[id] : null;
+    if (!w) continue;
+    const kind = itemType(S, id), c = I.waybill[id].commodity;
+    const o = { id, kind, variant: FR_VARIANT[c] || null, tag: frTagOf(S, id), commodity: c, place: null, x: 0, y: 0, z: 0, rot: 'x', frame: 0, layer: w.layer || 0 };
+    if (w.kind === 'HAND' || (w.kind === 'TRUCK' && P.tool === w.tool)) {
+      const verb = frHeldVerb(S, id), h = w.kind === 'TRUCK' ? frToolPose(S, w.tool) : frHeldAt(S, id, verb);
+      Object.assign(o, { place: w.kind === 'TRUCK' ? 'truck' : 'hand', x: h.x, y: h.y, z: h.z, dir, verb, slot: w.slot,
+        rot: verb === 'roll' ? (kind === 'wheel' ? 'up' : 'side') : 'x', frame: verb === 'roll' ? Math.floor((Math.abs(P.x) + Math.abs(P.z)) / 0.3) % 4 : 0 });
+      if (moving && moving.id === id && moving.a !== 'pick') {   // set down (or handed in): from the hands to the place
+        const sp = moving.a === 'hand' ? { good: { x: moving.fx, z: moving.fz }, y: frBaseY(S) + 1.0 } : frSpotOf(S, moving.to, kind);
+        if (sp) Object.assign(o, { place: 'moving', x: h.x + (sp.good.x - h.x) * prog, y: h.y + (sp.y - h.y) * prog, z: h.z + (sp.good.z - h.z) * prog, prog, a: moving.a });
+      }
+    } else if (w.kind === 'TRUCK') { const p = frToolPose(S, w.tool); Object.assign(o, { place: 'truck', x: p.x, y: p.y, z: p.z, dir: p.dir, slot: w.slot }); }
+    else {
+      const sp = frSpotOf(S, w, kind);
+      if (!sp) continue;
+      Object.assign(o, { place: { CAR: 'car', CELL: 'cell', CART: 'cart', SHOP: 'shop', GROUND: 'ground', BAY: 'bay' }[w.kind], x: sp.good.x, y: sp.y, z: sp.good.z });
+      if (w.kind === 'CAR') { o.stock = w.stockId; o.cell = w.cell; }
+      if (w.kind === 'CART') { o.cell = w.cell; const p = frToolPose(S, w.tool); o.rot = p.dir === 'se' || p.dir === 'nw' ? 'x' : 'z'; o.dir = p.dir; }
+      if (w.kind === 'SHOP') { o.rot = 'z'; o.shop = w.shop; o.slot = w.slot; }
+      if (moving && moving.id === id && moving.a === 'pick') {   // lifted: from its place to the hands
+        const h = frHeldAt(S, id, moving.verb);
+        Object.assign(o, { place: 'moving', x: o.x + (h.x - o.x) * prog, y: o.y + (h.y - o.y) * prog, z: o.z + (h.z - o.z) * prog, prog, a: 'pick', verb: moving.verb, dir });
+      }
+    }
+    out.push(o);
+  }
+  return out;
+}
+// The agent's handling pose (A1's animations), or null when he is not handling anything.
+function frPose(S) {
+  if (!frOn(S)) return null;
+  const F = frRead(S), P = S.player, J = F.job, st = J && J.steps[J.i], dir = frDirOf(Math.sin(P.f), Math.cos(P.f));
+  const walking = P.mode === 'to' || P.mode === 'dir' || (!!st && st.s === 'go' && J.t0 >= 0), base = { dir, walking, inCar: F.inCar, y: frBaseY(S) };
+  if (st && st.s === 'act' && J.t0 >= 0) {
+    const prog = Math.max(0, Math.min(1, (S.time - J.t0) / st.dur)), fr = n => Math.min(n - 1, Math.floor(prog * n)), back = n => n - 1 - fr(n);
+    if (st.a === 'door') return { ...base, verb: 'door', phase: 'door', prog, key: 'door', f: fr(3), stock: st.stock, open: st.open };
+    if (st.a === 'grab' || st.a === 'park') return { ...base, verb: 'push', phase: st.a, prog, key: 'push', f: 0, tool: st.tool };
+    const high = (st.a === 'pick' ? st.from : st.to) && ((st.a === 'pick' ? st.from : st.to).layer || 0) >= 2;
+    const verb = st.verb, n = { roll: 4, drag: 4, truck: 4, heave: 4 }[verb] || 3;
+    const key = high && (verb === 'carry' || verb === 'shoulder') ? 'stackHigh' : verb === 'carry' || verb === 'shoulder' ? (st.a === 'hand' && verb === 'carry' ? 'handOver' : 'lift') : verb;
+    const f = key === 'handOver' ? fr(2) : st.a === 'pick' ? fr(n) : back(n);
+    return { ...base, verb, phase: st.a === 'hand' ? 'hand' : st.a, prog, key, f, id: st.id };
+  }
+  const held = frHeld(S);
+  if (held.length) {
+    const verb = frHeldVerb(S, held[held.length - 1]);
+    return { ...base, verb, phase: 'hold', prog: 0, key: verb === 'shoulder' ? (walking ? 'shoulder/walk' : 'shoulder/idle') : verb, f: null, id: held[held.length - 1] };
+  }
+  if (P.tool !== null && P.tool !== undefined && S.tools[P.tool]) return { ...base, verb: S.tools[P.tool].k === 'truck' ? 'truck' : 'push', phase: 'push', prog: 0, key: S.tools[P.tool].k === 'truck' ? 'truck' : 'push', f: null, tool: P.tool };
+  return null;
+}
+function frToolDraw(S, id) {
+  if (id === null || !frOn(S)) return null;
+  const p = frToolPose(S, id), F = frRead(S), J = F.job, st = J && J.steps[J.i], t = S.tools[id];
+  const loaded = t.k === 'truck' ? itemsAt(S, { kind: 'TRUCK', tool: id }).length > 0 : itemsAt(S, { kind: 'CART', tool: id }).length > 0;
+  let tilt = t.k === 'truck' && loaded ? 1 : 0;
+  if (t.k === 'truck' && st && st.s === 'act' && J.t0 >= 0 && st.verb === 'truck' && (st.a === 'pick' || st.a === 'put')) { const prog = Math.max(0, Math.min(1, (S.time - J.t0) / st.dur)); tilt = st.a === 'pick' ? prog : 1 - prog; }
+  return { x: p.x, y: p.y, z: p.z, f: p.dir, frame: Math.floor((Math.abs(p.x) + Math.abs(p.z)) / 0.25) % 2, held: p.held, tilt, tool: id, loaded };
+}
+function frCartPose(S) { return frToolDraw(S, frCartId(S)); }
+function frTruckPose(S) { return frToolDraw(S, frTruckId(S)); }
+
+// ---- For the screens (U) ----
+function frCarStatus(S, stock) {
+  const f = carryCarOf(S, stock);
+  if (!f) return null;
+  const R = CARGO_CAR_RULES[f.car.k], ids = itemsAt(S, { kind: 'CAR', stockId: stock }), run = f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+  const out = ids.filter(id => frIsOut(S, id)).length, g = frCarGeo(S, stock), D = S.fr && S.fr.doors && S.fr.doors[stock];
+  const want = run && run.kind === 'freight' ? Math.max(0, frNeed(S, run, f.tr) - frAboard(S, f.tr).out) : 0;
+  return { stock, k: f.car.k, run: run ? run.id : null, items: ids.length, town: ids.length - out, hub: ids.length - out, out, want, unload: ids.length - out, load: want,
+    used: R ? ids.reduce((s, id) => s + (R.cost[itemType(S, id)] || 0), 0) : 0, cap: R ? R.cap : 0, why: carryCarWhy(S, stock),
+    doorOpen: frDoorFrac(S, stock), door: f.car.k !== 'boxcar' ? 'none' : D && D.mv > 0 ? 'opening' : D && D.mv < 0 ? 'shutting' : frDoorFrac(S, stock) >= 1 ? 'open' : 'shut',
+    spot: g ? { x: g.out.x, z: g.out.z } : null, cartSpot: frCartDoorSpot(S, stock) };
+}
+// What is in storage: { byShop: { shop: n }, out (goods for the railroad), used (cells with goods), total (cells) }.
+function frStorage(S) {
+  const by = {}, I = S.items, cells = new Set();
+  for (const q of SHOPS27) by[q.id] = 0;
+  let out = 0;
+  for (let i = 0; i < I.next; i++) {
+    const w = I.alive[i] ? I.where[i] : null;
+    if (!w || w.kind !== 'CELL') continue;
+    const [fx] = frFp(itemType(S, i), 'cell');
+    for (let a = 0; a < fx; a++) cells.add(w.block + (w.c + a) + ',' + w.r);
+    const s = frShopOf(S, i);
+    if (s) by[s]++; else if (frIsOut(S, i)) out++;
+  }
+  return { byShop: by, out, used: cells.size, total: Object.values(PROTO.STORE).reduce((n, B) => n + B.nc * B.nr, 0) };
+}
+// Goods still to deliver, by shop (everything alive addressed to a shop, wherever it is).
+function frToDeliver(S) { const out = {}, I = S.items; for (const q of SHOPS27) out[q.id] = 0; for (let i = 0; i < I.next; i++) { if (!I.alive[i]) continue; const s = frShopOf(S, i); if (s) out[s]++; } return out; }
+// Goods waiting at each shop's pickup spot.
+function frPickups(S) { const out = {}; for (const q of SHOPS27) out[q.id] = itemsAt(S, { kind: 'SHOP', shop: q.id }).length; return out; }
+// Is the cart (a pose) on the cargo platform?
+function frOnDock(p) { const C = PROTO.CARGO; return !!p && p.x > C.x0 - 1 && p.x < C.x1 + 1 && p.z > C.z0 - 1 && p.z < C.z1 + 1; }
+// The shops in the order the cart passes them (nearest the station first; west before east).
+const FR_SHOP_ORDER = SHOPS27.slice().sort((a, b) => b.lot - a.lot || (a.side === 'W' ? -1 : 1)).map(q => q.id);
+// The standing freight trains at track 3 and what they still need: [{ run, tr, town, need (goods for the railroad still to load) }].
+function frStanding(S) {
+  const out = [];
+  for (const run of S.rr.runs) {
+    if (run.kind !== 'freight' || run.track !== 't3' || run.ph !== 'stand') continue;
+    const tr = rrTrainOf(S, run);
+    if (!tr || trainOff(tr)) continue;
+    const a = frAboard(S, tr);
+    out.push({ run, tr, town: a.town, need: Math.max(0, frNeed(S, run, tr) - a.out) });
+  }
+  return out;
+}
+// The next handling step for the Next job line: { cmd, text, x, z } (a command the touch layer can send as it is),
+// { busy, k, text } while a job runs, or null when freight has nothing for the player now.
+function frJobHint(S) {
+  if (!frOn(S)) return null;
+  const F = frRead(S), P = S.player, cart = frCartId(S), I = S.items;
+  if (F.job) return { busy: true, k: F.job.k, text: { door: 'Sliding the door', take: 'Taking the good', put: 'Setting it down', grab: 'Taking the handle', park: 'Leaving it',
+    deliver: 'Handing in the goods', pickup: 'Loading the pickups', exit: 'Stepping out' }[F.job.k] || 'Working' };
+  const hint = (cmd, text, at) => ({ cmd, text, x: at ? at.x : P.x, z: at ? at.z : P.z });
+  const trains = frStanding(S), held = frHeld(S), evening = !!(S.pd && S.pd.ph === 'evening');
+  const cartPose = cart === null ? null : frToolPose(S, cart), onCart = frCartGoods(S);
+  const cartAt = spot => cartPose && !cartPose.held && Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) < 0.75;
+  const cartTo = (spot, text) => P.tool === cart ? hint({ t: 'frCart', act: 'park', x: Math.round(spot.x * 100), z: Math.round(spot.z * 100), f: spot.axis === 'z' ? (P.z >= spot.z ? 'ne' : 'sw') : (P.x <= spot.x ? 'se' : 'nw') }, text, spot)
+    : hint({ t: 'frCart', act: 'grab' }, 'Take the platform cart', cartPose);
+  const cartRoom = id => cart !== null && !!frCartFree(S, id, cart);
+  const loadCar = t => t.tr.consist.find(c => c.k === 'boxcar') || t.tr.consist.find(c => CARGO_CAR_RULES[c.k]);
+  const top = ids => ids.filter(id => frOnTop(S, id));
+  const storeRowOf = id => { const sh = SHOPS27.find(q => q.tag === itemTag(I.waybill[id])); return sh ? sh.row : STORE27_OUT[0]; };
+  // 1. Something in hand: where it goes.
+  if (held.length) {
+    const id = held[held.length - 1], here = { x: P.x, z: P.z };
+    if (frIsOut(S, id)) {
+      const t = trains.find(q => q.need > 0);
+      if (t) {
+        const car = loadCar(t), g = frCarGeo(S, car.id), near = F.inCar === car.id || Math.hypot(g.out.x - P.x, g.out.z - P.z) < 6;
+        if (!near && cartPose && !cartPose.held && Math.hypot(cartPose.x - P.x, cartPose.z - P.z) < 6 && cartRoom(id) && onCart.filter(q => frIsOut(S, q)).length < t.need) return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
+        return hint({ t: 'frPut', to: { kind: 'CAR', stockId: car.id } }, `Load it into ${t.run.name}`, g.out);
+      }
+      if (!evening || !cartPose || cartPose.held || frOnDock(cartPose) || Math.hypot(cartPose.x - P.x, cartPose.z - P.z) > 6 || !cartRoom(id)) return hint({ t: 'frPut', to: { kind: 'CELL' } }, 'Stack it in the goods for the railroad', storeCellAt(STORE27_OUT[0].block, 5, STORE27_OUT[0].r));
+      return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
+    }
+    const nearCart = cartPose && !cartPose.held && Math.hypot(cartPose.x - P.x, cartPose.z - P.z) < 8 && cartRoom(id) && (evening || frGood(itemType(S, id)).verb !== 'truck');
+    const atDoor = trains.some(t => t.tr.consist.some(c => { const sp = CARGO_CAR_RULES[c.k] ? frCartDoorSpot(S, c.id) : null; return sp && cartAt(sp); }));
+    if (nearCart && (atDoor || evening)) return hint({ t: 'frPut', to: { kind: 'CART', tool: cart } }, 'Put it on the cart', cartPose);
+    const row = storeRowOf(id);
+    return hint({ t: 'frPut', to: { kind: 'CELL' } }, 'Stack it in storage', storeCellAt(row.block, row.c0, row.r));
+  }
+  // 2. Unloading the standing freight trains: the goods that go on the cart first, from the car nearest the cart, until
+  // nothing more fits (then the cart's load goes to storage, 3); the hand truck's goods (and anything too big for the
+  // cart) once the cart holds no goods for the town.
+  const unload = [], dist = (p, q) => Math.hypot(p.x - q.x, p.z - q.z);
+  for (const t of trains) if (t.town) for (const car of t.tr.consist) {
+    const ids = top(itemsAt(S, { kind: 'CAR', stockId: car.id }).filter(id => !frIsOut(S, id)));
+    if (!ids.length) continue;
+    const g = frCarGeo(S, car.id), d = id => dist(frCarSpot(S, I.where[id], itemType(S, id)).good, g.in);
+    ids.sort((a, b) => d(a) - d(b) || a - b);
+    for (const id of ids) unload.push({ t, car, g, id, truck: frVerbFor(S, id, frCtx(S), g.out) === 'truck' });
+  }
+  if (unload.length) {
+    const ref = cartPose && !cartPose.held ? cartPose : P, door = u => hint({ t: 'frDoor', stock: u.car.id }, `Open the door of ${u.t.run.name}'s car`, u.g.out);
+    const fit = unload.filter(u => !u.truck && cartRoom(u.id)).sort((a, b) => dist(a.g.out, ref) - dist(b.g.out, ref));
+    if (fit.length) {
+      const u = fit[0], spot = frCartDoorSpot(S, u.car.id);
+      if (u.car.k === 'boxcar' && frDoorFrac(S, u.car.id) < 1) return door(u);
+      if (!cartAt(spot)) return cartTo(spot, 'Bring the cart to the car door');
+      return hint({ t: 'frTake', item: u.id }, 'Unload the next good', u.g.out);
+    }
+    if (!onCart.some(id => !frIsOut(S, id))) {
+      const u = unload.find(q => q.truck) || unload[0];
+      if (u.car.k === 'boxcar' && frDoorFrac(S, u.car.id) < 1) return door(u);
+      return hint({ t: 'frTake', item: u.id }, u.truck ? 'Take it out with the hand truck' : 'Take it out', u.g.out);
+    }
+  }
+  // 3. Goods for the town on the cart in the day: stack them in storage.
+  const town = top(onCart.filter(id => !frIsOut(S, id)));
+  if (town.length && !evening) {
+    const laneOf = id => frLaneSpot(storeRowOf(id)), d = id => Math.hypot(laneOf(id).x - cartPose.x, laneOf(id).z - cartPose.z);
+    town.sort((a, b) => d(a) - d(b) || a - b);
+    const spot = laneOf(town[0]);
+    if (!cartAt(spot) && (cartPose.held || Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) > 10)) return cartTo(spot, 'Push the cart to the storage cells');
+    if (P.tool === cart) return hint({ t: 'frCart', act: 'park' }, 'Leave the cart', cartPose);
+    return hint({ t: 'frTake', item: town[0] }, 'Take the goods off the cart', cartPose);
+  }
+  // 4. Loading a standing freight train.
+  for (const t of trains) {
+    if (!t.need) continue;
+    const car = loadCar(t), g = frCarGeo(S, car.id);
+    if (car.k === 'boxcar' && frDoorFrac(S, car.id) < 1) return hint({ t: 'frDoor', stock: car.id }, `Open the door of ${t.run.name}'s car`, g.out);
+    const outCart = top(onCart.filter(id => frIsOut(S, id)));
+    const stored = top(frOutWaiting(S).filter(id => ['CELL', 'GROUND', 'BAY'].includes(I.where[id].kind)));
+    const truckGood = stored.find(id => frVerbFor(S, id, frCtx(S), frSpotOf(S, I.where[id], itemType(S, id)).good) === 'truck');
+    const fits = stored.filter(id => id !== truckGood && cartRoom(id));
+    if (outCart.length && (outCart.length >= t.need || !fits.length)) {
+      const spot = frCartDoorSpot(S, car.id);
+      if (!cartAt(spot)) return cartTo(spot, 'Bring the cart to the car door');
+      return hint({ t: 'frTake', item: outCart[0] }, 'Take the goods off the cart', cartPose);
+    }
+    if (truckGood !== undefined && !outCart.length) return hint({ t: 'frTake', item: truckGood }, 'Fetch it with the hand truck', frSpotOf(S, I.where[truckGood], itemType(S, truckGood)).good);
+    if (fits.length) {
+      const first = fits[0], sp = frSpotOf(S, I.where[first], itemType(S, first)), spot = I.where[first].kind === 'CELL' ? frLaneSpot({ block: I.where[first].block, c0: I.where[first].c, c1: I.where[first].c }) : { x: sp.good.x, z: FR.LANE_Z, axis: 'x' };
+      if (!cartAt(spot) && (!cartPose || cartPose.held || Math.hypot(cartPose.x - sp.good.x, cartPose.z - sp.good.z) > 6)) return cartTo(spot, 'Bring the cart to the goods for the railroad');
+      if (P.tool === cart) return hint({ t: 'frCart', act: 'park' }, 'Leave the cart', cartPose);
+      return hint({ t: 'frTake', item: first }, `Take the goods for ${t.run.name}`, sp.good);
+    }
+  }
+  if (!evening) {
+    // Goods for the railroad on the cart with no train for them: into the OUT rows.
+    const outCart = top(onCart.filter(id => frIsOut(S, id)));
+    if (outCart.length && !trains.some(t => t.need)) return frHintStore(S, outCart[0], cartPose, cartAt, cartTo, hint);
+    return frHintOut(S, hint);
+  }
+  // 5. The evening: the cart loaded with the town's goods (while it is on the cargo platform and they fit), to the shops
+  // in the order the street passes them, then the shops' goods back.
+  const stored = top(Array.from({ length: I.next }, (_, i) => i).filter(i => I.alive[i] && I.where[i].kind === 'CELL' && frShopOf(S, i)));
+  stored.sort((a, b) => FR_SHOP_ORDER.indexOf(frShopOf(S, a)) - FR_SHOP_ORDER.indexOf(frShopOf(S, b)) || a - b);
+  const outCart = top(onCart.filter(id => frIsOut(S, id))), atStation = frOnDock(cartPose);
+  const fit = outCart.length || (town.length && !atStation) ? undefined : stored.find(id => cartRoom(id));
+  if (fit !== undefined) {
+    const w = I.where[fit], spot = frLaneSpot({ block: w.block, c0: w.c, c1: w.c });
+    if (!cartAt(spot) && (cartPose.held || Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) > 6)) return cartTo(spot, 'Bring the cart to the town\'s goods');
+    if (P.tool === cart) return hint({ t: 'frCart', act: 'park' }, 'Leave the cart', cartPose);
+    return hint({ t: 'frTake', item: fit }, 'Load the cart for town', frSpotOf(S, w, itemType(S, fit)).good);
+  }
+  if (town.length) {
+    const shop = FR_SHOP_ORDER.find(s => town.some(id => frShopOf(S, id) === s)), sh = frShop(shop);
+    if (P.tool !== cart && Math.hypot(cartPose.x - sh.door.x, cartPose.z - sh.door.z) > FR.NEAR) return hint({ t: 'frCart', act: 'grab' }, 'Take the platform cart', cartPose);
+    return hint({ t: 'frDeliver', shop }, `Deliver to the ${sh.name}`, sh.door);
+  }
+  const waiting = FR_SHOP_ORDER.filter(s => itemsAt(S, { kind: 'SHOP', shop: s }).length && cartRoom(itemsAt(S, { kind: 'SHOP', shop: s })[0]));
+  if (waiting.length && !stored.length) {
+    const near = waiting.slice().sort((a, b) => Math.hypot(frShop(a).door.x - P.x, frShop(a).door.z - P.z) - Math.hypot(frShop(b).door.x - P.x, frShop(b).door.z - P.z))[0], sh = frShop(near);
+    if (P.tool !== cart && Math.hypot(cartPose.x - sh.door.x, cartPose.z - sh.door.z) > FR.NEAR) return hint({ t: 'frCart', act: 'grab' }, 'Take the platform cart', cartPose);
+    return hint({ t: 'frPickup', shop: near }, `Pick up the ${sh.name}'s goods`, sh.pickup);
+  }
+  if (outCart.length) return frHintStore(S, outCart[0], cartPose, cartAt, cartTo, hint);
+  return frHintOut(S, hint);
+}
+// Nothing more to handle: out of the car the player stands in (so the train can be waved off), else nothing.
+function frHintOut(S, hint) {
+  const c = frInCar(S), g = c === null ? null : frCarGeo(S, c);
+  if (!g) return null;
+  const p = frSnap(S, g.out.x, g.out.z - 1);
+  return hint({ t: 'walkTo', x: Math.round(p.x * 100), z: Math.round(p.z * 100) }, 'Step out of the car', p);
+}
+// The goods on the cart to their storage row: push the cart to the lane beside it, leave it, take each one off.
+function frHintStore(S, id, cartPose, cartAt, cartTo, hint) {
+  const sh = SHOPS27.find(q => q.tag === itemTag(S.items.waybill[id])), row = sh ? sh.row : STORE27_OUT[0], spot = frLaneSpot(row), P = S.player;
+  if (!cartAt(spot) && (cartPose.held || Math.hypot(cartPose.x - spot.x, cartPose.z - spot.z) > 6)) return cartTo(spot, 'Push the cart back to the storage cells');
+  if (P.tool === frCartId(S)) return hint({ t: 'frCart', act: 'park' }, 'Leave the cart', cartPose);
+  return hint({ t: 'frTake', item: id }, 'Take the goods off the cart', cartPose);
+}
+
+// ---- The audit, the save and the debug scenarios ----
+// itemAudit's freight check: every good the tables called for was made; goods used up only as the rules say (handed in
+// at a shop from the hands, or gone in a car for the railroad); goods at a shop's pickup spot are for the railroad; no
+// two goods share a cell and layer on any grid (footprints).
+function frAuditDay(S) {
+  const out = [], F = frSt(S), I = S.items;
+  for (const c of Object.keys(F.aud.exp)) if ((F.aud.made[c] || 0) !== F.aud.exp[c]) out.push(`freight: ${F.aud.made[c] || 0} ${c} made, the tables called for ${F.aud.exp[c]}`);
+  for (const u of I.used) {
+    const wb = I.waybill[u.id], C = wb && COMMODITIES[wb.commodity];
+    if (!C || !GOODS27[C.type] || !u.from) continue;
+    if (u.reason === 'business' && (!frShopOf(S, u.id) || !['HAND', 'TRUCK', 'CARRIED'].includes(u.from.kind))) out.push(`freight: good ${u.id} used up as business from ${u.from.kind}`);
+    if (u.reason === 'soldOutside' && (itemTag(wb) !== 'OUTSIDE' || u.from.kind !== 'CAR')) out.push(`freight: good ${u.id} sold from ${u.from.kind}`);
+  }
+  const grids = new Map();
+  for (let i = 0; i < I.next; i++) {
+    const w = I.alive[i] ? I.where[i] : null;
+    if (w && w.kind === 'SHOP' && !frIsOut(S, i)) out.push(`freight: good ${i} waits at a shop but is not for the railroad`);
+    const gr = w && frGridOf(w);
+    if (!gr) continue;
+    const { c, r } = frCR(w), [fx, fz] = frFp(itemType(S, i), gr.g), m = grids.get(gr.id) || new Map();
+    grids.set(gr.id, m);
+    if (c + fx > gr.nx || r + fz > gr.nz) out.push(`freight: good ${i} sticks out of its ${gr.g}`);
+    for (let a = 0; a < fx; a++) for (let b = 0; b < fz; b++) { const k = (c + a) + ',' + (r + b) + ',' + w.layer; if (m.has(k)) out.push(`freight: goods ${m.get(k)} and ${i} overlap (${gr.id} ${k})`); else m.set(k, i); }
+  }
+  return out;
+}
 // Shape check of S.fr (a save being loaded): true, or throws.
 function frCheckSaveShape(st) {
-  if (st.fr !== undefined && (!st.fr || typeof st.fr !== 'object')) throw new Error('damaged save: freight handling');
+  const F = st.fr, bad = why => { throw new Error('damaged save: freight handling' + (why ? ' (' + why + ')' : '')); };
+  if (F === undefined) return true;
+  if (!F || typeof F !== 'object') bad();
+  if (F.doors !== undefined && (!F.doors || typeof F.doors !== 'object' || Object.values(F.doors).some(d => !d || !Number.isFinite(d.o)))) bad('doors');
+  if (F.job !== undefined && F.job !== null && (typeof F.job !== 'object' || !Array.isArray(F.job.steps) || !Number.isInteger(F.job.i))) bad('the job in hand');
+  if (F.inCar !== undefined && F.inCar !== null && !Number.isInteger(F.inCar)) bad('the car the player is in');
+  if (F.made !== undefined && !Array.isArray(F.made)) bad('runs');
   return true;
 }
-// rh.scenario('d27freight' | 'd27evening'): F sets the goods up (name is the scenario's).
-function frDebugScenario(S, name) { return S; }
-// The test hooks (__railhead.fr): F adds what its checks need.
-const FR_TEST = { FR, frSt, frTick, frCmd, frPlayerTick, frNewDay, frConsist, frLoad, frReady, frOnDepart, frDrawList, frPose, frCartPose, frTruckPose, frDoorOpen,
-  frCarStatus, frStorage, frToDeliver, frPickups, frJobHint, frAuditDay, frStowPlace, frCheckSaveShape, frDebugScenario };
+// rh.scenario('d27freight'): f1 standing at track 3 with its goods aboard, the player on the cargo platform's cart lane.
+// rh.scenario('d27evening'): day 0's goods for the town (f1, f2, f3, Monday) stacked in their storage rows, every run
+// gone, 20:30 (the shops' goods are put out on the first tick), the player beside the platform cart.
+function frDebugScenario(S, name) {
+  if (!frOn(S)) return S;
+  const F = frSt(S), P = S.player;
+  if (name === 'd27freight') Object.assign(P, { x: 4, z: FR.LANE_Z, mode: 'idle', use: null, act: null });
+  if (name === 'd27evening') {
+    for (const run of S.rr.runs.filter(r => r.day === 0 && r.kind === 'freight' && !r.through)) {
+      if (F.made.includes(run.id)) continue;
+      for (const [shop, c] of frRunIn(S, run)) { const w = frStoreSpot(S, null, COMMODITIES[c].type, CARGO_SHOP_TAGS[shop]); if (w) frCreate(S, c, shop, w, null); else frCount(S, 'exp', c); }
+      F.made.push(run.id);
+    }
+    const cp = frToolPose(S, frCartId(S));
+    Object.assign(P, { x: cp.x - 3, z: FR.LANE_Z, mode: 'idle', use: null, act: null });
+  }
+  return S;
+}
+// The test hooks (__railhead.fr).
+const FR_TEST = { FR, FR_FP, FR_DIRS, FR_SHOP_ORDER, frSt, frTick, frCmd, frPlayerTick, frNewDay, frConsist, frLoad, frReady, frOnDepart, frDrawList, frPose, frCartPose, frTruckPose,
+  frDoorOpen, frDoorFrac, frInCar, frCarStatus, frStorage, frToDeliver, frPickups, frJobHint, frAuditDay, frStowPlace, frStoreSpot, frCheckSaveShape, frDebugScenario,
+  frFp, frGridOf, frCR, frOcc, frSpotWhy, frFirstSpot, frCarGeo, frCarSpot, frToolPose, frSpotOf, frHeld, frHeldVerb, frVerbFor, frRunIn, frRunOutN, frAboard,
+  frOutWaiting, frNeed, frStanding, frCartGoods, frCartFree, frPickupList, frCartDoorSpot, frShopCartSpot, frLaneSpot, frOnTop, frEject };
 
 // ==== Section: prototype day (D25) ====
 // Owner: builder U (the sim side of the day is small; plans/proto-tech.md section 5). The prototype's day, the same

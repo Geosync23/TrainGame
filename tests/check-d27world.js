@@ -16,7 +16,7 @@
 //   (no step down onto track 2 or 3), its height 1.6u on it and sloping on the ramps (walkDeckY).
 // - Saving: schema 19; save-v18.json migrates to the next morning on the D27 layout (trains and travellers cleared, the
 //   goods kept and audited, the player at the schedule board); a new game's save reloads with the same hash.
-// - The D27 switches start as each builder left them (on: board (P), handling (F), town (W)), ?d27=all turns them all on, and the stubs keep a day
+// - The D27 switches start as each builder left them (on: board (P), handling (F), town (W), lessons (U); all on at the integration), ?d27=all turns them all on, and the stubs keep a day
 //   running.
 const fs = require('fs');
 const path = require('path');
@@ -60,7 +60,7 @@ module.exports = async function checkD27World() {
       for (const sh of D.SHOPS27) if (!R.cargo.CARGO_TAGS[sh.tag]) B(`no cargo tag for ${sh.id}`);
       const daily = Object.values(D.SHOP_GOODS27.in).reduce((n, l) => n + l.reduce((m, q) => m + q[2], 0), 0);
       if (daily !== 14) B(`the day's goods for the town: ${daily}, expected 14`);
-      if (JSON.stringify(D.flags()) !== JSON.stringify({ board: true, handling: true, town: true, lessons: false })) B(`the D27 switches: ${JSON.stringify(D.flags())} (expected on: board (P), handling (F), town (W))`);
+      if (JSON.stringify(D.flags()) !== JSON.stringify({ board: true, handling: true, town: true, lessons: true })) B(`the D27 switches: ${JSON.stringify(D.flags())} (expected on: board (P), handling (F), town (W), lessons (U); all on at the integration)`);
       // ---- Clearances ----
       const half = Math.max(St.cars.coach.wid, St.cars.boxcar.wid, St.loco.wid) / 2;
       if (!(half < P.EDGE)) B(`a car's half width ${half} reaches the deck edge (${P.EDGE} from its track)`);

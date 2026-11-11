@@ -3259,16 +3259,27 @@ const RR_SCHEDULE = [
 // (every handling step is shown); p3 and p5 are 2 coaches. Each end of the line is single track beyond the switches, so
 // a train leaving towards an end and one coming in from it are kept about 30 game minutes apart. The D25 version is in
 // git history (4e9ef96).
+// T (2026-11-11, re-timed for the D27 walks; provisional, for the designer): the lever frames are 66u (22 game minutes)
+// apart and every train needs the player at both ends, so the day is laid out for one careful player walking it: each
+// stopping train's way in is set at the frame it comes in by before it arrives and its way out at the other frame while
+// it stands (W1 and E1 lie reverse all day but for x1; W3 and E3 are thrown for each freight train). Passenger trains
+// stand 40 to 55 minutes (the plan's 30 were too short: the riders step off, the lines stand along 40u of coaches and
+// the agent walks them), p1 longest (the morning's switches first); f1 and p2 no longer overlap (f1 leaves before p2
+// comes in); x1 comes an hour after p2 has gone west, so both frames can be set straight and back for it and p3; p4
+// stands while f2 is unloaded and loaded (f2 leaves east after p4 has gone west, so E3 is thrown once p4 is in); p5
+// and f3 earlier so the evening starts at 20:15. With the D25 flows and their bot (tests/proto-bot.js) the worst
+// lateness over two days is 13 minutes (seeds 1866, 3, 5, 7, 11, 42; the foundation's first cut: 91); check-levers.js
+// plays it with the lever frames only.
 const PROTO_SCHEDULE = [
-  { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(6, 50), dep: RR_H(7, 20), cars: 3 },
-  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 20), dep: RR_H(10, 50), cars: 4, unload: 6, load: 0 },
-  { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(9, 40), dep: RR_H(10, 10), cars: 3 },
-  { id: 'x1', kind: 'freight', from: 'W', to: 'E', track: 't2', arr: RR_H(11, 30), dep: RR_H(11, 30), cars: 4, through: true },
-  { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(12, 15), dep: RR_H(12, 45), cars: 2 },
-  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 't3', arr: RR_H(13, 20), dep: RR_H(16, 10), cars: 4, unload: 4, load: 4 },   // dep 16:10 (the plan's 15:50): the lever frames and f2's engine are 30 minutes' walk apart after p4 leaves west
-  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(15, 0), dep: RR_H(15, 30), cars: 3 },
-  { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(17, 0), dep: RR_H(17, 30), cars: 2 },
-  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(18, 15), dep: RR_H(20, 15), cars: 4, unload: 4, load: 2 },
+  { id: 'p1', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(6, 55), dep: RR_H(7, 50), cars: 3 },
+  { id: 'f1', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(8, 40), dep: RR_H(10, 20), cars: 4, unload: 6, load: 0 },
+  { id: 'p2', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(10, 50), dep: RR_H(11, 35), cars: 3 },
+  { id: 'x1', kind: 'freight', from: 'W', to: 'E', track: 't2', arr: RR_H(12, 20), dep: RR_H(12, 20), cars: 4, through: true },
+  { id: 'p3', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(13, 5), dep: RR_H(13, 50), cars: 2 },
+  { id: 'f2', kind: 'freight', from: 'W', to: 'E', track: 't3', arr: RR_H(14, 10), dep: RR_H(16, 50), cars: 4, unload: 4, load: 4 },
+  { id: 'p4', kind: 'pax', from: 'E', to: 'W', track: 't1', arr: RR_H(15, 20), dep: RR_H(16, 10), cars: 3 },
+  { id: 'p5', kind: 'pax', from: 'W', to: 'E', track: 't1', arr: RR_H(17, 20), dep: RR_H(18, 0), cars: 2 },
+  { id: 'f3', kind: 'freight', from: 'E', to: 'W', track: 't3', arr: RR_H(18, 45), dep: RR_H(20, 15), cars: 4, unload: 4, load: 2 },
 ];
 // D27 (plans/d27-tech.md 1.2; the foundation's, T owns it afterwards): the prototype's stock at the D27 scale. Engine and
 // tender are one vehicle, as RR.LOCO. cars: what a consist is made of ({ k, len, mass, ... } copied into each vehicle;
@@ -3457,6 +3468,57 @@ function protoTrackAt(T, z, x, dirX) {
   }
   return null;
 }
+// D27 (T): the cars of a stopping prototype run where they stand at its track, for P (boarding at the coaches' ends)
+// and F (the boxcars' doors): [{ stock (its stock id, null before the train is made up), k, i (0 behind the engine),
+// cx, cz (the car's centre), len, front (+1: the car's end towards the engine is east, -1 west) }], back from the
+// engine. While the train stands (or waits to leave) from the train itself (trainPoses); before (and while it comes
+// in) from its stopping place (PROTO.STOP) and the stock's lengths, so the same places either way. A through run, or
+// a run gone or cancelled: [].
+function protoRunCars(S, run) {
+  const T = S.track;
+  if (!run || run.through || !protoWorld(T) || !PROTO.STOP[run.track]) return [];
+  const W = rrW(T), tr = rrTrainOf(S, run), on = !!tr && !trainOff(tr), dir = run.to === 'E' ? -1 : 1, front = -dir;
+  if (on && (run.ph === 'stand' || (run.ph === 'out' && !run.go))) {
+    return trainPoses(T, tr).slice(1).map((p, i) => ({ stock: tr.consist[i + 1].id, k: tr.consist[i + 1].k, i, cx: p.x, cz: p.z, len: p.len, front }));
+  }
+  if (run.ph === 'gone' || run.ph === 'cxl') return [];
+  const n = rrNcars(run), x0 = PROTO.STOP[run.track][run.to], z = run.track === 't1' ? -PROTO.D1 : PROTO.D3, out = [];
+  const kinds = on ? tr.consist.slice(1).map(c => c.k) : Array.from({ length: n }, () => (run.kind === 'pax' ? 'coach' : 'boxcar'));
+  let a = W.LOCO.len + COUPLER_GAP;
+  kinds.forEach((k, i) => {
+    const len = (W.CARS[k] || W.CARS.boxcar).len;
+    out.push({ stock: on ? tr.consist[i + 1].id : null, k, i, cx: x0 + dir * (a + len / 2), cz: z, len, front });
+    a += len + COUPLER_GAP;
+  });
+  return out;
+}
+// D27 (T, for P): each coach's two ends (open end platforms with steps; PROTO_STOCK.coach.ends) on the platform's
+// side (north: platform 1 for track 1): [{ stock, i, cx, ends: [{ end ('front': towards the engine | 'back'), x, z
+// (the end door, in the end wall on the coach's centre line), steps: { x, z } (the corner steps on the platform's
+// side), spot: { x, z } (where a person stands on the deck to step up: 0.35u in from its track-side edge, as a car's
+// door spot), bridge (true when that spot is on a footbridge's flight or deck: board at the other end) }] }], in u.
+function protoCarEnds(S, run) {
+  const E = PROTO_STOCK.coach.ends, T = S.track;
+  return protoRunCars(S, run).filter(c => c.k === 'coach').map(c => ({ stock: c.stock, i: c.i, cx: c.cx,
+    ends: ['front', 'back'].map(end => {
+      const sx = (end === 'front' ? 1 : -1) * c.front, spot = { x: c.cx + sx * E.steps.x, z: c.cz - (PROTO.EDGE + 0.35) };
+      return { end, x: c.cx + sx * E.door.x, z: c.cz, steps: { x: c.cx + sx * E.steps.x, z: c.cz - E.steps.z }, spot, bridge: walkBridgeAt(T, spot.x, spot.z) > 0 };
+    }) }));
+}
+// D27 (T, for F): each freight car's door on the cargo platform's side (north, at track 3): [{ stock, k, i, x, z (the
+// door's middle in the car's side), w, x0, x1 (the opening along x), spot: { x, z } (the door spot on the deck, as
+// carryCarDoor's) }]. A boxcar's sliding door (PROTO_STOCK.boxcar.door); a flatcar has no door: its deck side between
+// the stakes (w: its length less 1u at each end), its middle given.
+function protoCarDoors(S, run) {
+  const D = PROTO_STOCK.boxcar.door;
+  return protoRunCars(S, run).filter(c => c.k === 'boxcar' || c.k === 'flatcar').map(c => {
+    const w = c.k === 'boxcar' ? D.w : c.len - 2;
+    return { stock: c.stock, k: c.k, i: c.i, x: c.cx, z: c.cz + D.zN, w, x0: c.cx - w / 2, x1: c.cx + w / 2, spot: { x: c.cx, z: c.cz - (PROTO.EDGE + 0.35) } };
+  });
+}
+// D27 (T): the lever of a prototype switch (PROTO_LEVERS: its name, frame 'W' or 'E', number, post and use spot), or null.
+const PROTO_SW_NAME = Object.fromEntries(Object.entries(PROTO_SW).map(([k, v]) => [v, k]));
+function protoLeverOf(T, sw) { return protoWorld(T) && PROTO_SW_NAME[sw] ? PROTO_LEVERS[PROTO_SW_NAME[sw]] : null; }
 const rrNcars = run => (Number.isInteger(run.ncars) ? run.ncars : Array.isArray(run.cars) ? run.cars.length : run.cars || 0);
 const rrLenOf = (run, T) => { const W = rrW(T); return W.LOCO.len + rrNcars(run) * (W.CARS.coach.len + COUPLER_GAP); };
 const rrAccelOf = (run, T) => { const W = rrW(T); return CFG.ACCEL_K * W.LOCO.power / (W.LOCO.mass + rrNcars(run) * W.CARS.coach.mass); };
@@ -3773,7 +3835,8 @@ function rrWaveOffCmd(S, c, ev) {
 // Switches each run needs, for the work board, the Next job line and the arrows, in the row shape of ttSwitchNeeds
 // (D20): [{ run, svc (the schedule's id, 'p1'), service, train (slot or null), trainName, stop: 0, move ('in' | 'out'),
 // station: 'hub', stationName, sw, want ('normal' | 'reverse'), byTime (S.time), by ('HH:MM'), spring, set, passed,
-// done }] in byTime order. A move under way lists its route's switches (passed once the whole train is over one); a
+// done, and in the prototype (D27, T) lever ('W1' ...: PROTO_LEVERS) and frame ('W' | 'E': the lever frame it is
+// thrown at) }] in byTime order. A move under way lists its route's switches (passed once the whole train is over one); a
 // move to come is planned from the entry or the stopping place, round the trains expected to stand then. byTime: when
 // the train should reach the switch (its time in proportion to the distance). A spring switch trailed is not listed.
 function rrSwitchNeeds(S) {
@@ -3784,10 +3847,11 @@ function rrSwitchNeeds(S) {
     for (const n of needs) {
       const W = T.switches[n.sw];
       if (!W || (W.spring && !n.face)) continue;
+      const Lv = protoLeverOf(T, n.sw);   // D27 (T): the lever's name and frame ('W1', 'W') for the board, the line and the arrow
       const byTime = Math.floor((t0 + time * (dist > 0 ? Math.max(0, Math.min(1, n.stopAt / dist)) : 0)) / 60) * 60;
       out.push({ run: run.id, svc: run.svc, service: run.name, train: run.slot, trainName: run.name, stop: 0, move, station: 'hub', stationName: 'Hub',
         sw: n.sw, want: swWant(n.state), byTime, by: ttClock(rrSod(byTime)), spring: !!W.spring, set: (W.spring ? W.lever : W.state) === n.state,
-        passed: done !== null && done > n.stopAt + L + 1 * SC, done: false });
+        passed: done !== null && done > n.stopAt + L + 1 * SC, done: false, ...(Lv ? { lever: Lv.name, frame: Lv.frame } : {}) });
     }
   };
   for (const run of R.runs) {
@@ -6364,6 +6428,9 @@ function walkPrefer(S, a, b) {
 }
 // A switch's two use spots: where the player stands beside its stand (ux, uz), and the far side of the trunk.
 function switchSpots(T, W) {
+  // D27 (T): in the prototype a switch is thrown only at its lever in a lever frame (rodded to the points far off), never
+  // at the points themselves.
+  if (protoWorld(T)) return { near: { x: W.stand.ux, z: W.stand.uz }, far: { x: W.stand.ux, z: W.stand.uz } };
   const N = T.nodes[W.node], st = W.stand, px = -st.hz, pz = st.hx;
   const sd = ((st.x - N.x) * px + (st.z - N.z) * pz) >= 0 ? 1 : -1, bx = N.x - st.hx * 0.4 * SC, bz = N.z - st.hz * 0.4 * SC;
   return { near: { x: st.ux, z: st.uz }, far: { x: clampX(bx - px * sd * XING.FAR), z: clampZ(bz - pz * sd * XING.FAR) } };
@@ -18909,6 +18976,7 @@ window.__railhead = {
   rr: { RR, RR_SCHEDULE, HUB_SW, rrNewStore, rrNewTrains, rrEntry, hubLineAt, rrDebugScenario, rrRunOf, rrPlanDay, rrSwitchNeeds, rrBoardRows, PX, pxReady, cgConsist, cgReady,
     rrDebugJump, rrStopPos, rrExitPos, rrEngineDist, rrWaveSpot, rrRunTime, rrTrainOf,   // TR
     protoDebugScenario, rrThroughTick, rrThroughLead, rrAtTrack, rrEnterAt, rrLineClear,   // D25 (T)
+    protoRunCars, protoCarEnds, protoCarDoors, protoLeverOf,   // D27 (T)
     CG_GOODS, cgLoad, cgOnDepart, cgTick, cgCarStatus, cgPlan, cgBook, cgOnCancel, cgNextFreight, cgFreightAfter, cgHubAboard, cgYardSpot },   // CG
   px: { PX, pxTk, pxCars: (st, pc) => pxCars(st || S, paxStation((st || S).track, 'hub'), pc || ridePoses(st || S)), pxCarStatus, pxRunStatus, pxReady, pxOnArrive, pxOnDepart, pxNearCar },   // D24: tickets on board (PX)
   // D24 (UI): the page side of the station rework (boards, Next job, buttons, cards, tutorial).

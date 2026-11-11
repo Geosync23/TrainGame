@@ -94,7 +94,9 @@ module.exports = async function checkProtoStall() {
     // ---- 3. The Next job line while a train's track is taken ----
     const three = await page.evaluate(() => {
       const R = window.__railhead, S = R.newState(1866, 'proto');
-      R.rr.protoDebugScenario(S, 14, 0, ['p3']);
+      // D27 (T re-timed the day): P3 stands from 20 minutes before P4 is due (the D25 day: 14:00, P4 at 14:20).
+      const t4 = R.proto.PROTO_SCHEDULE.find(v => v.id === 'p4').arr - 20 * 60;
+      R.rr.protoDebugScenario(S, Math.floor(t4 / 3600), Math.floor(t4 % 3600 / 60), ['p3']);
       R.importSave(JSON.stringify({ state: S }));
       const X = R.state, p4 = X.rr.runs.find(r => r.svc === 'p4' && r.day === 0), seen = {};
       let bad = null, named = false;

@@ -181,18 +181,20 @@ module.exports = async function checkD27World() {
         for (const k of ['board', 'handling', 'town', 'lessons']) if (!R.d27.d27On(S.track, k)) return { bad: 'd27=all did not turn ' + k + ' on' };
         R.simTick(S, [{ t: 'pdStart' }]);
         // A switchman sets each switch for the first train that needs it (no walking: the stubs are what is tested).
-        for (let i = 0; i < 450 * 4; i++) {
+        // Until 20 minutes after the third stopping run's time to stand (T re-times the day: read from the schedule).
+        const third = R.proto.PROTO_SCHEDULE.filter(v => !v.through).map(v => v.arr).sort((a, b) => a - b)[2], hours = (third + 1200 - 6 * 3600) / 3600;
+        for (let i = 0; i < 450 * hours; i++) {
           const seen = new Set();
           for (const n of R.rr.rrSwitchNeeds(S)) if (!n.passed && !seen.has(n.sw)) { seen.add(n.sw); S.track.switches[n.sw].state = n.want === 'reverse' ? 'R' : 'N'; }
           for (const run of S.rr.runs) if (run.ph === 'stand' && run.ready && S.time > run.dep) { const tr = S.trains[run.slot], sp = R.rr.rrWaveSpot(S, tr.id); S.player.x = sp.x; S.player.z = sp.z; for (const e of R.simTick(S, [{ t: 'rrWaveOff', tr: tr.id }])) { if (e.t === 'rrRefused') ev['refused: ' + e.why] = 1; ev[e.t] = (ev[e.t] || 0) + 1; } }
           for (const e of R.simTick(S, [])) ev[e.t] = (ev[e.t] || 0) + 1;
         }
         const cmds = ['pbEnter', 'pbWalk', 'pbPunch', 'pbLeave', 'frDoor', 'frTake', 'frPut', 'frCart', 'frDeliver', 'frPickup'].map(t => R.simTick(S, [{ t }]).filter(e => /Refused$/.test(e.t)).length);
-        return { ev, cmds, audit: R.d27.itemAudit(S), sod: (S.time + 18000) % 86400 / 3600, runs: S.rr.runs.filter(r => r.day === 0).map(r => r.svc + ':' + r.ph + (r.ready ? '+' : '')).join(' ') };
+        return { ev, cmds, hours, audit: R.d27.itemAudit(S), sod: (S.time + 18000) % 86400 / 3600, runs: S.rr.runs.filter(r => r.day === 0).map(r => r.svc + ':' + r.ph + (r.ready ? '+' : '')).join(' ') };
       });
       if (r.bad) P(r.bad);
       else {
-        if (!(r.ev.rrArrived >= 3) || !(r.ev.rrWavedOff >= 1)) P(`with every D27 switch on (the stubs), ${r.ev.rrArrived || 0} trains came in and ${r.ev.rrWavedOff || 0} were sent off over four hours (${r.runs}; ${Object.keys(r.ev).filter(k => /^refused/.test(k)).join('; ')})`);
+        if (!(r.ev.rrArrived >= 3) || !(r.ev.rrWavedOff >= 1)) P(`with every D27 switch on (the stubs), ${r.ev.rrArrived || 0} trains came in and ${r.ev.rrWavedOff || 0} were sent off over ${r.hours.toFixed(1)} hours (${r.runs}; ${Object.keys(r.ev).filter(k => /^refused/.test(k)).join('; ')})`);
         if (r.cmds.some(n => n !== 1)) P(`the D27 commands with the stubs: refusals ${r.cmds}`);
         if (r.audit.length) P('with every D27 switch on: item audit: ' + r.audit.slice(0, 3).join('; '));
         console.log(`  every D27 switch on (the stubs): to ${r.sod.toFixed(1)}h, ${r.ev.rrArrived || 0} trains in, ${r.ev.rrWavedOff || 0} sent off, the commands each refused once`);

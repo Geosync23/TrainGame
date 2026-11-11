@@ -150,7 +150,7 @@ Code: `tools/pixelart/town27.py` (buildings), `props27.py` (street furniture), `
 `sprites_ground.py` (tiles), `pal27.py` (nine muted ramps appended to the engine palette: sage, rock, creek, straw,
 brick, umber, slate, pine, bloom). Registered by `town27_reg.py` from `sprites_town.py`. Review: `python3
 tools/pixelart/street27_scene.py` after `build.py` writes `out/d27-street-scene.png` (+ `-3x`), `out/d27-buildings.png`,
-`out/d27-nature-props.png`. Positions come from the plan's numbers until the layout export carries the D27 town.
+`out/d27-nature-props.png`, `out/d27-station-scene.png` (+ `-3x`). Positions come from the plan's numbers until the layout export carries the D27 town.
 
 **Street buildings** `bld/shop_<kind>/<f>/<part>`. Kinds (plan 2.4): west row (`f` = `e`, fronts to +x) `store`,
 `hotel`, `bank`, `smithy`, `livery`, `feed`; east row (`f` = `w`, fronts to -x, turned away) `saloon`, `newspaper`,
@@ -202,5 +202,28 @@ variant by a hash of the cell. Textures are per-pixel noise, so variants and kin
 the D25 parts `bld/shop_smithy/e/anvil`, `bld/sign_saloon` (now the saloon's `sign` part), the old `bld/house/1-3`,
 `bld/house/1/e`, `bld/tree/1-3` (now `nat/...`), `bld/fence_x|z`, `bld/hitch_x|z`, `bld/bench_x|z`, `bld/horse` (now
 `prop/...`), `prop/tuft/*` (now `nat/grass`, `nat/flowers`). `bld/church`, `bld/watertower`, `bld/lamp(_lit)`,
-`prop/barrels`, `prop/crates`, `prop/sacks`, `prop/water_barrel` keep their keys at the new scale. Not redrawn yet
-(still D25): the station, canopy, freight house, dock tiles, footbridges, lever frames and schedule board.
+`prop/barrels`, `prop/crates`, `prop/sacks`, `prop/water_barrel` keep their keys at the new scale. The D25 storage
+shed (`bld/storage`, `bld/storage_open`) is replaced by the freight house below.
+
+**The station area** (`tools/pixelart/station27.py`; numbers from d27-tech.md 1.3 and 1.4; every part has
+`extra.box` = `[x0, z0, x1, z1, height]` in u from its anchor):
+
+| Key | Anchor (ground level) | Notes |
+|---|---|---|
+| `bld/station`, `bld/station_lit` | the depot's footprint centre (0, -21.8) | 18 x 9u, eaves 5.5u, ridge 8u, a storey and a half (dormers to the platform), the telegrapher's bay, ticket window, waiting-room door, baggage and freight doors, RAILHEAD on the +x gable; on a plinth at platform 1's deck height. `_lit`: night windows. `extra.door` (the waiting-room door's spot on platform 1) and `extra.ticket` (in front of the ticket window), u from the anchor |
+| `bld/canopy` | the canopy's centre (0, -14.3) | 30 x 6u, underside 4.2u, posts every 5u along z -11.6, two hanging lamps; fade it when the player is under it |
+| `bld/schedboard` | between the posts, (14, -16.9) | face 3.2u wide, from 1.2u to 3.0u, a TRAINS header; `extra.board` = the blank green face in sprite pixels (top_left, top_right, bottom_left) as before |
+| `bld/freighthouse/body`, `/roof` | its footprint centre (0, 6.3) | x -8..8, z 3.3..9.3 on the cargo deck (floor 1.6u); open on the track 3 side; shelves, the platform scale, the clerk's desk; roof underside 4.2u over the deck, ridge 6.0u over it; the roof is separate so it can fade like the canopy |
+| `bld/footbridge/<part>` | x = the bridge's centre line (-14 or 14), z = 0 | as D25's parts and `extra.height` fields (`walk_y`, `walk_z`, `walk_top`, `walk_bottom`, `walk_landing`, `y0`), at D27 sizes: deck z -10.3..5.0, top 7.6u, underside 7.2u, 1.4u wide; `bent0` platform 1, `bent1` a thin pair at z -3 between tracks 1 and 2, `bent2` on the cargo platform (feet at 1.6u); `stair_p1_<e|w>` and `stair_p2_<e|w>` (`p2` = the cargo platform): 28 steps along x from the deck's side to 10.5u out (x 24.5 for the east bridge running `e`, -24.5 for the west running `w`), each with its near handrail `_rail` |
+| `bld/leverframe/<W|E>` | the stage's centre, (-33, -11) or (33, -11) | a plank stage 3 x 2u with the iron frame, a number board (W1 W3, E1 E3) and a lamp; `extra.levers` = where to draw the two levers (u from the anchor: lever 1 then lever 2), `extra.use` = where the agent stands to pull |
+| `bld/lever/<N|R>` | the lever's pivot foot | 1.6u, red with a white grip; N leans back (to -z), R is pulled over to +z |
+| `bld/rodding_x` | the -x end | 2u of point rodding on stools along x, to repeat from a frame out to its points |
+| `dock/face_s`, `/bumper`, `/post` | the face's -x end on the cargo platform's +z edge (z 16.3) | 1u of the loading edge along track 3 from the ground to the deck (13 px): sheathing and a rubbing strip; variants with an iron bumper plate or a timber post |
+| `dock/face_e`, `/post` | the face's -z end on the +x end (x 26) | 1u of the east end face |
+| `dock/top/1-2` | the cell corner (x, z) | a 1u deck cell drawn 13 px up (planks across the platform) |
+| `dock/cell` | the storage cell's corner | a 1.4u chalk square on the deck (13 px up), for the 2 x 40 storage cells |
+| `dock/ramp_e`, `dock/ramp_w` | the ramp's footprint centre, (30, 12.4) or (-30, 12.4) | 8 x 3u, 1 in 5, planked with cleats; walkers rise from 0 at the outer end to 1.6u at the platform |
+
+The faces that the fixed view cannot see (the cargo platform's north side and west end) are not drawn. Platform 1's
+low deck keeps the D25 `plat/` tiles (its deck is still 3 px). `sw/lever` (the plan's name) is `bld/lever` here,
+because `sw/` belongs to the track module.

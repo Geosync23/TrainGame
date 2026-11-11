@@ -67,54 +67,15 @@ class _Game:
 
 def register(reg):
     reg = _Game(reg)
-    # ---------------- station ----------------
-    img = one(TW.station, after=lambda: (TW.station_name(), TW.station_board_rows()), **NOSHADOW)
-    ax, ay = img[0][1]
-    reg.add('bld/station', 'town_station', img,
-            dict(anchor=CENTRE, footprint=[12, 5.5], height=4.9, front='+z (platform 1)',
-                 board=TW.station_board_area(ax, ay), deck_mu=TW.DECK,
-                 note='board-and-batten depot on a plinth at deck height; ticket window kept as decoration; '
-                      'the RAILHEAD name board is on the +x end'))
-    reg.add('bld/canopy', 'town_station', one(TW.canopy, **NOSHADOW),
-            dict(anchor=CENTRE, footprint=[16, 4], underside=2.6, note='posts every 3.75 u along both long edges'))
-    reg.add('bld/storage', 'town_station', one(lambda: TW.storage(False), **NOSHADOW),
-            dict(anchor=CENTRE, footprint=[10, 2.4], height=3.2, doors='+z side (track 3): four freight doors, one per bay',
-                 bays=[round((-TW.STORAGE['a'] + d0 + TW.STORAGE_DW / 2) / U, 3) for d0 in TW.STORAGE_BAYS],
-                 bays_note='x of each door centre, u from the anchor; the door sill is at z = +1.2 u'))
-    reg.add('bld/storage_open', 'town_station', one(lambda: TW.storage(True), **NOSHADOW),
-            dict(anchor=CENTRE, footprint=[10, 2.4], note='the same shed with its doors slid open: shelves of goods'))
-    img = one(TW.schedboard, **NOSHADOW)
-    ax, ay = img[0][1]
-    reg.add('bld/schedboard', 'town_station', img, dict(anchor='between the two posts at ground level', footprint=[2.4, 0.3],
-                                                      board=TW.schedboard_area(ax, ay)))
-    # ---------------- footbridges (platform 1 over tracks 1 and 2 to platform 2) ----------------
-    FBA = 'the bridge anchor: x = the bridge centre line, z = 0 (track 2), ground level; draw every part there'
-    boxes = TW.footbridge_boxes()
-    parts = {'deck': TW.footbridge_deck, 'rail': TW.footbridge_rail}
-    for k in range(3):
-        parts[f'bent{k}'] = (lambda k=k: TW.footbridge_bent(k))
-    for plat in ('p1', 'p2'):
-        for d in ('e', 'w'):
-            parts[f'stair_{plat}_{d}'] = (lambda p=plat, d=d: TW.footbridge_stair(p, d))
-            parts[f'stair_{plat}_{d}_rail'] = (lambda p=plat, d=d: TW.footbridge_stair_rail(p, d))
-    notes = {'deck': 'the span with its floor and far railing; walkers on it are drawn at walk_y',
-             'rail': 'the near (+x) railing of the span: draw it after walkers on the deck',
-             'bent0': 'trestle bent on platform 1', 'bent1': 'thin post pair at z -2.0 between tracks 1 and 2 '
-                                                             '(0.85 u clear of each train)',
-             'bent2': 'trestle bent on platform 2'}
-    for nm, fn in parts.items():
-        ex = dict(boxes[nm])
-        bx = ex.pop('box')
-        note = notes.get(nm, 'stair flight ' + nm[6:8] + (' near handrail' if nm.endswith('_rail') else '') +
-                         ', running down towards ' + ('+x' if '_e' in nm else '-x'))
-        reg.add(f'bld/footbridge/{nm}', 'town_bridge', one(fn, **NOSHADOW),
-                dict(anchor=FBA, note=note, box=bx, height=ex))
+    # ---------------- station area: D27 (station27.py, registered by town27_reg.register_station) -------------
+    # The D25 depot, canopy, storage shed (now the freight house), schedule board and footbridges are replaced.
     reg.add('prop/shelf', 'town_props', one(TW.shelf, **NOSHADOW), dict(anchor='centre of the shelf; its back to -z'))
     # ---------------- D27: the town at the new scale (town27.py, props27.py; registered by town27_reg.py) -------
     # The D25 shops, houses, church, water tower, trees, lamps, fences, hitching rails, benches, horse, tufts and the
     # saloon's free-standing sign are replaced by these (same keys where the meaning is the same).
     import town27_reg
     town27_reg.register(reg)
+    town27_reg.register_station(reg)
     # ---------------- goods, tags, cart ----------------
     for kind in ('crate', 'sack', 'barrel', 'keg', 'bale', 'mailSack', 'longBundle'):
         x, z, y = TW.GOODS_TOP[kind]

@@ -8,6 +8,7 @@
 #   d27-street-scene-3x.png   the middle of the street at 3x (what a phone shows at the default zoom, roughly)
 #   d27-buildings.png         each street building put together from its parts, 2x, labelled
 #   d27-nature-props.png      every nature, prop and tile sprite, 3x, labelled
+#   d27-station-scene.png     the station, platform 1, the tracks and the cargo platform (+ -3x)
 import os, sys, json, re
 import numpy as np
 from PIL import Image
@@ -195,6 +196,7 @@ def main():
         os.path.join(OUT, 'd27-street-scene-3x.png'))
     buildings_sheet(info, frame)
     nature_sheet(info, frame)
+    station_scene(info, frame)
     print('wrote d27-street-scene.png', img.shape[1], 'x', img.shape[0])
 
 
@@ -241,7 +243,7 @@ def buildings_sheet(info, frame, scale=2):
 
 def nature_sheet(info, frame, scale=3, width=640):
     F = info['frames']
-    keys = [k for k in F if k.startswith(('nat/', 'tile/', 'prop/', 'bld/watertower', 'bld/lamp'))]
+    keys = [k for k in F if k.startswith(('nat/', 'tile/', 'dock/', 'prop/', 'bld/watertower', 'bld/lamp', 'bld/lever', 'bld/rodding', 'bld/schedboard'))]
     groups = {}
     for k in keys:
         base = re.sub(r'/\d+$', '', k) if re.search(r'/(grass/\d+|tumbleweed|water|horse/.+)/\d+$', k) else k
@@ -274,6 +276,187 @@ def nature_sheet(info, frame, scale=3, width=640):
             sheet[y:y + c.shape[0], x:x + c.shape[1]] = c; x += c.shape[1] + 4
         y += max(c.shape[0] for c in r) + 4
     Image.fromarray(sheet).resize((width * scale, H * scale), Image.NEAREST).save(os.path.join(OUT, 'd27-nature-props.png'))
+
+
+def station_scene(info, frame):
+    """The station and the cargo platform at true scale (plan 1.3, 1.4, 2.1): platform 1 with the depot, canopy,
+    benches and schedule board, tracks 1, 2 and 3 (straight; the crossovers are left out), the raised cargo platform
+    with its freight house, chalked storage cells, cart lane and ramps, both footbridges, the lever frames and their
+    rodding, the water tower, telegraph poles, the cart crossing and path, and the creek to the south."""
+    import engine as E
+    import pal27  # noqa: F401
+    F = info['frames']; EX = info.get('extra', {})
+    X0, X1, Z0, Z1 = -60, 60, -34, 42
+    OX = int(8 * (Z1 - X0)) + 20
+    OY = int(-4 * (X0 + Z0)) + 160
+    W = int(8 * (X1 - X0 + Z1 - Z0)) + 40
+    Hh = int(4 * (X1 - X0 + Z1 - Z0)) + 200
+    img = np.zeros((Hh, W, 4), np.uint8)
+    img[..., :3] = (122, 146, 68); img[..., 3] = 255
+
+    def sxy(x, z, y=0.0):
+        return int(round(OX + 8 * (x - z))), int(round(OY + 4 * (x + z) - 8 * y))
+
+    def blit(key, x, z, y=0.0):
+        if key not in F:
+            print('  missing', key); return
+        im, (ax, ay) = frame(key)
+        sx, sy = sxy(x, z, y)
+        RV.blit(img, im, sx - ax, sy - ay)
+
+    def creek_z(x):
+        return 34.0 + 2.2 * np.sin(x / 9.0)
+    path_pts = [(34, 12.4), (37, 6), (37, -20), (14, -31)]
+
+    def near_path(x, z):
+        for (ax, az), (bx, bz) in zip(path_pts, path_pts[1:]):
+            dx, dz = bx - ax, bz - az
+            t = max(0, min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)))
+            if (x - ax - t * dx) ** 2 + (z - az - t * dz) ** 2 < 1.75 ** 2:
+                return True
+        return False
+
+    def kind(x, z):
+        cx, cz = x + 0.5, z + 0.5
+        zc = creek_z(cx)
+        if abs(cz - zc) < 2.0:
+            return 'water'
+        if abs(cz - zc) < 3.0:
+            return 'bank/s' if cz < zc else 'bank/n'
+        if -31 <= cz <= -26.3 and -24 <= cx <= 24:
+            return 'dirt'
+        if near_path(cx, cz):
+            return 'path'
+        if any(abs(cz - tz) < 2.3 and lo <= cx <= hi for tz, lo, hi in ((-6, -44, 44), (0, -99, 99), (18.6, -33, 33))):
+            return 'ballast'
+        if abs(cz - zc) < 6 or cz > 40:
+            return 'grass'
+        return 'grass' if hsh(int(x) // 3, int(z) // 3, 11) % 4 else 'drygrass'
+    nvar = {k: 1 for k in ('water', 'bank/s', 'bank/n')}
+    for k in F:
+        m = re.match(r'tile/([a-z]+)/(\d+)$', k)
+        if m:
+            nvar[m.group(1)] = max(nvar.get(m.group(1), 0), int(m.group(2)))
+    for z in range(Z0, Z1):
+        for x in range(X0, X1):
+            k = kind(x, z)
+            if k == 'water':
+                blit('tile/water/%d' % (hsh(x, z) % 2), x, z)
+            elif k.startswith('bank'):
+                blit('tile/' + k, x, z)
+            else:
+                blit(f'tile/{k}/{hsh(x, z) % nvar[k] + 1}', x, z)
+    # ---- the track (ties and rails) and platform 1's low deck, drawn with the engine straight onto a layer
+    E.begin(W, Hh, OX, OY)
+    U4, UY = 4.0, 16.0 / 3.0
+    def ties(face, X, Y, Z, idx):
+        return None, np.where(np.mod(X, 3.4) < 0.5, 3, idx)
+    for tz, lo, hi in ((-6, -44, 44), (0, -60, 60), (18.6, -33, 33)):
+        for k in range(int((hi - lo) / 0.85)):
+            x = lo + k * 0.85
+            E.box(x * U4, (tz - 1.85) * U4, 0, x * U4 + 1.1, (tz + 1.85) * U4, 0.9, 'wood', shades=(2, 2, 3), cast=False)
+        for r in (-1.03, 1.03):
+            E.box(lo * U4, (tz + r) * U4 - 0.35, 0.9, hi * U4, (tz + r) * U4 + 0.35, 2.2, 'iron', shades=(0, 2, 3),
+                  cast=False)
+    def p1tex(face, X, Y, Z, idx):
+        if face == 't':
+            seg = np.floor(X / 7.0).astype(int)
+            hb = E.hash2(np.floor(Y / 1.6).astype(int), seg) % 7
+            return None, np.where(np.mod(Y, 1.6) < 0.42, 2, np.where(hb == 0, 0, 1))
+        return None, np.where(np.mod(X, 3.0) < 0.5, 3, 2)
+    E.box(-30 * U4, -17.3 * U4, 0, 30 * U4, -8.3 * U4, 2.0, 'wood', tex=p1tex, cast=False)
+    # the cart crossing: planks between and beside the rails over tracks 1 and 2
+    def xing(face, X, Y, Z, idx):
+        return None, np.where(np.mod(Y, 2.0) < 0.5, 2, 1)
+    for tz in (-6, 0):
+        for (a, b) in ((-2.3, -1.2), (-0.85, 0.85), (1.2, 2.3)):
+            E.box(35.25 * U4, (tz + a) * U4, 0, 38.75 * U4, (tz + b) * U4, 2.0, 'wood', tex=xing, cast=False)
+    layer = E.render_rgba()
+    m = layer[..., 3] > 0
+    img[m] = layer[m]
+    # ---- the cargo platform: deck cells, chalked storage cells, the south and east faces, ramps
+    for z in range(3, 17):
+        for x in range(-26, 26):
+            blit('dock/top/%d' % (hsh(x, z) % 2 + 1), x, z - 0.7)
+    for block in (-24, 10):
+        for c in range(10):
+            for r in range(4):
+                blit('dock/cell', block + c * 1.4, 5.3 + r * 1.4)
+    for x in range(-26, 26):
+        blit('dock/face_s' + ('/bumper' if x % 5 == 2 else '/post' if x % 5 == 0 else ''), x, 16.3)
+    for z in range(2, 16):
+        blit('dock/face_e' + ('/post' if z == 15 else ''), 26, z + 0.3)
+    blit('dock/ramp_e', 30, 12.4)
+    blit('dock/ramp_w', -30, 12.4)
+    # ---- upright things, sorted back to front
+    objs = []
+
+    def put(key, x, z, depth=None, y=0.0):
+        if key not in F:
+            print('  missing', key); return
+        bx = EX.get(key, {}).get('box')
+        if depth is None and bx:
+            depth = x + z + (bx[0] + bx[2]) / 2 + (bx[1] + bx[3]) / 2
+        objs.append((x + z if depth is None else depth, len(objs), key, x, z, y))
+    put('bld/station', 0, -21.8)
+    put('bld/canopy', 0, -14.3, depth=-14.3 + 3.5)
+    put('bld/schedboard', 14, -16.9)
+    put('bld/freighthouse/body', 0, 6.3)
+    put('bld/freighthouse/roof', 0, 6.3, depth=6.3 + 3.2)
+    for bx, d in ((-14, 'w'), (14, 'e')):
+        for k in range(3):
+            put(f'bld/footbridge/bent{k}', bx, 0.0)
+        for plat in ('p1', 'p2'):
+            put(f'bld/footbridge/stair_{plat}_{d}', bx, 0.0)
+            put(f'bld/footbridge/stair_{plat}_{d}_rail', bx, 0.0)
+        put('bld/footbridge/deck', bx, 0.0, depth=1000 + bx)
+        put('bld/footbridge/rail', bx, 0.0, depth=1000.5 + bx)
+    for side, fx in (('W', -33), ('E', 33)):
+        put(f'bld/leverframe/{side}', fx, -11.0)
+        for i, (lx, lz) in enumerate(EX.get(f'bld/leverframe/{side}', {}).get('levers', [])):
+            put('bld/lever/' + ('R' if (side, i) == ('E', 0) else 'N'), fx + lx, -11.0 + lz, depth=fx - 11.0 + 0.2)
+        for k in range(5):
+            put('bld/rodding_x', fx + (1.5 + 2 * k if fx > 0 else -3.5 - 2 * k), -10.5, depth=-100)
+    put('bld/watertower', -48, -14)
+    put('prop/woodpile', 11.5, -28.5)
+    for x in (-26, -20, -8, 8, 20, 26):
+        put('prop/bench_s', x, -16.6)
+    for x in (-24, 24):
+        put('prop/lamp_lit', x, -9.2)
+    for x in (-50, -30, 30, 50):
+        put('prop/telegraph', x, -3.0)
+    put('prop/wagon_x', -16, -29.5)
+    put('prop/freight_tarp', -6, -29.0)
+    put('prop/barrels', 20, 4.0, y=1.6)
+    put('prop/crates', 17, 4.2, y=1.6)
+    for (x, z, k) in ((-40, 30.5, 'nat/cottonwood/1'), (-12, 29.5, 'nat/willow/1'), (8, 38.5, 'nat/willow/2'),
+                      (22, 30.0, 'nat/cottonwood/3'), (44, 37.5, 'nat/cottonwood/1'), (-28, 37.5, 'nat/willow/2'),
+                      (-50, -26, 'nat/cottonwood/2'), (50, -28, 'nat/juniper/1')):
+        put(k, x, z)
+    for i in range(18):
+        x = -55 + i * 6.3
+        put('nat/cattails/%d' % (i % 2 + 1), x, float(creek_z(x)) - 2.6)
+        put('nat/grass/%d/0' % (i % 6 + 1), x + 2.5, float(creek_z(x)) + 3.2)
+    rnd = np.random.RandomState(31)
+    for i in range(40):
+        x = rnd.uniform(-58, 58); z = rnd.uniform(-33, 28)
+        k = kind(int(np.floor(x)), int(np.floor(z)))
+        if k not in ('grass', 'drygrass') or (-31 < x < 31 and -18 < z < 18) or (-10 < x < 10 and z < -16):
+            continue
+        put(['nat/sage/1', 'nat/sage/2', 'nat/rabbitbrush/1', 'nat/grass/2/0', 'nat/grass/5/0', 'nat/sage/4'][i % 6], x, z)
+    for (k, x, z, y) in (('ppl/agent/walk/se/1', 6.0, -11.0, 0.375), ('ppl/man_top/idle/sw/0', -20.0, -15.4, 0.375),
+                         ('ppl/woman_bonnet/idle/se/0', -10.0, -12.0, 0.375), ('ppl/child/walk/se/0', -8.5, -12.6, 0.375),
+                         ('ppl/porter/walk/sw/2', 14.0, -2.0, 7.6), ('ppl/man_bag/walk/ne/1', 21.0, 4.3, 3.8),
+                         ('ppl/worker/idle/se/0', 4.0, 13.0, 1.6), ('ppl/storekeeper/walk/nw/0', 30.0, -26.0, 0.0)):
+        put(k, x, z, y=y)
+    for d, _, key, x, z, y in sorted(objs):
+        blit(key, x, z, y)
+    Image.fromarray(img).save(os.path.join(OUT, 'd27-station-scene.png'))
+    cx, cy = sxy(0, -2)
+    crop = img[cy - 250:cy + 200, cx - 330:cx + 330]
+    Image.fromarray(crop).resize((crop.shape[1] * 3, crop.shape[0] * 3), Image.NEAREST).save(
+        os.path.join(OUT, 'd27-station-scene-3x.png'))
+    print('wrote d27-station-scene.png', img.shape[1], 'x', img.shape[0])
 
 
 if __name__ == '__main__':

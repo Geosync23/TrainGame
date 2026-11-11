@@ -198,3 +198,71 @@ def register(reg):
                     [one(lambda fr=fr, c=coat, d=d: P.horse(fr, c, d=d), shadows=False, **MID)[0] for fr in (0, 1)],
                     dict(anchor='under the horse\'s middle on the ground; it stands along x, head to ' + ('+x' if d == 'e' else '-x'),
                          note='2 frames: the tail hangs, then flicks out (play 0 long, 1 short)'))
+
+
+def register_station(reg):
+    """The D27 station area: depot (day and lit), canopy, schedule board, freight house, footbridges, lever frames."""
+    import station27 as S
+    cx, cz = S.ST_CENTRE
+    A, B = S.ST['a'] / U, S.ST['b'] / U
+    stn = dict(anchor=f'the depot\'s footprint centre ({cx}, {cz}) at ground level; front (+z) on platform 1\'s back edge',
+               footprint=[18, 9], height=8.0, front='+z (platform 1)',
+               box=[-A, -B, A, B + 0.75, 8.0], box_note=BOXNOTE,
+               door=[-3.8, B + 0.8], door_note='the waiting-room door\'s spot on platform 1, u from the anchor',
+               ticket=[-1.4, B + 0.8], ticket_note='in front of the ticket window, u from the anchor',
+               note='a storey and a half: dormers to the platform, a telegrapher\'s bay, RAILHEAD on the +x gable')
+    after = lambda: (S.station_name(), S.station_letters())
+    reg.add('bld/station', 'town27_station', one(S.station_all, after=after), stn)
+    reg.add('bld/station_lit', 'town27_station', one(lambda: S.station_all(True), after=after),
+            dict(stn, note='the same depot at night: windows lit'))
+    reg.add('bld/canopy', 'town27_station', one(S.canopy, canvas=(640, 420), origin=(320, 300)),
+            dict(anchor=f'the canopy\'s centre {S.CAN_CENTRE} at ground level', footprint=[30, 6], underside=4.2,
+                 box=S.canopy_box(), box_note=BOXNOTE,
+                 note='posts every 5u along z -11.6 on platform 1; fade it when the player is under it'))
+    img = one(S.schedboard, after=S.schedboard_letters, **MID)
+    ax, ay = img[0][1]
+    reg.add('bld/schedboard', 'town27_station', img,
+            dict(anchor='between the two posts at ground level (14, -16.9)', footprint=[3.6, 0.5],
+                 board=S.schedboard_area(ax, ay), box=[-1.8, -0.2, 1.8, 0.5, 3.4], box_note=BOXNOTE))
+    fha = f'the freight house\'s footprint centre {S.FH_CENTRE} at ground level (its floor is the cargo deck, 1.6u)'
+    reg.add('bld/freighthouse/body', 'town27_station', one(S.freighthouse_body),
+            dict(anchor=fha, box=S.fh_box('body'), box_note=BOXNOTE, footprint=[16, 6],
+                 note='back wall, end walls, posts along the open (track 3) side, shelves, the scale and the desk'))
+    reg.add('bld/freighthouse/roof', 'town27_station', one(S.freighthouse_roof),
+            dict(anchor=fha, box=S.fh_box('roof'), box_note=BOXNOTE, underside=round(S.FH_UNDER / UY, 2),
+                 note='the roof alone, to fade like the canopy when the player is under it'))
+    FBA = 'the bridge anchor: x = the bridge centre line (-14 or 14), z = 0 (track 2), ground level; draw every part there'
+    boxes = S.footbridge_boxes()
+    parts = {'deck': S.footbridge_deck, 'rail': S.footbridge_rail}
+    for k in range(3):
+        parts[f'bent{k}'] = (lambda k=k: S.footbridge_bent(k))
+    for plat in ('p1', 'p2'):
+        for d in ('e', 'w'):
+            parts[f'stair_{plat}_{d}'] = (lambda p=plat, d=d: S.footbridge_stair(p, d))
+            parts[f'stair_{plat}_{d}_rail'] = (lambda p=plat, d=d: S.footbridge_stair_rail(p, d))
+    notes = {'deck': 'the span (z -10.3 to 5.0, top 7.6u, underside 7.2u) with its floor and far railing',
+             'rail': 'the near (+x) railing of the span: draw it after walkers on the deck',
+             'bent0': 'trestle bent on platform 1', 'bent1': 'thin post pair at z -3 between tracks 1 and 2',
+             'bent2': 'trestle bent on the cargo platform (its feet at 1.6u)'}
+    for nm, fn in parts.items():
+        ex = dict(boxes[nm])
+        bx = ex.pop('box')
+        note = notes.get(nm, ('flight from platform 1' if 'p1' in nm else 'flight from the cargo platform') +
+                         (' (near handrail)' if nm.endswith('_rail') else ', 28 steps') +
+                         ', running down towards ' + ('+x' if '_e' in nm else '-x'))
+        reg.add(f'bld/footbridge/{nm}', 'town27_bridge', one(fn), dict(anchor=FBA, note=note, box=bx, height=ex))
+    for side in ('W', 'E'):
+        reg.add(f'bld/leverframe/{side}', 'town27_station',
+                one(S.leverframe, after=lambda s=side: S.leverframe_letters(s), **MID),
+                dict(anchor='the stage\'s centre at ground level: west frame (-33, -11), east frame (33, -11)',
+                     footprint=[3, 2], box=[-1.5, -1.0, 1.5, 1.0, 2.4], box_note=BOXNOTE,
+                     levers=[[round(x / U, 2), 0.0] for x in S.LEVER_X],
+                     levers_note='where to draw bld/lever/N|R, u from the frame\'s anchor: lever 1 (W1/E1) then lever 2 '
+                                 '(W3/E3); the number board reads ' + side + '1 ' + side + '3',
+                     use=[0.0, 1.6], use_note='where the agent stands to pull (south of the frame), u from the anchor'))
+    for st in ('N', 'R'):
+        reg.add(f'bld/lever/{st}', 'town27_station', one(lambda st=st: S.lever(st), **MID),
+                dict(anchor='the lever\'s pivot foot at ground level (draw at the frame\'s anchor + extra.levers[i])',
+                     note={'N': 'normal: standing back (towards -z)', 'R': 'reversed: pulled over towards +z'}[st]))
+    reg.add('bld/rodding_x', 'town27_station', one(S.rodding, **MID),
+            dict(anchor='the -x end of 2u of point rodding along x, at ground level (rods on stools)'))

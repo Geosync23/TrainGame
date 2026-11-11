@@ -68,4 +68,9 @@ settles each one; nothing in the contract's names or anchors was changed quietly
   steps.
 - Big part frames are padded so the lot-centre anchor lies inside them (signs, yards, awnings): mostly clear pixels,
   cheap in the indexed PNGs.
-- registry.OWNERS gained `sprites_nature` (`nat/`) and `sprites_ground` (`tile/`).
+- registry.OWNERS gained `sprites_nature` (`nat/`) and `sprites_ground` (`tile/`, `dock/`).
+- Station area (station27.py): the plan's `sw/lever/<N|R>` is `bld/lever/<N|R>` (sw/ is the track module's);
+  the lever frames are `bld/leverframe/W` and `/E` (their number boards differ). The station mock scene draws
+  the track itself (straight, no crossovers) with the engine at the D27 gauge, only for the review picture.
+- The D25 baked ground layer (ground.png, about 136 KB of the atlas) is still built from the D25 layout by
+  sprites_town.ground(); it can go once R's chunked ground lands.

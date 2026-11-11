@@ -159,3 +159,32 @@ def register(reg):
                 dict(anchor=TILE, note='platform deck planks (boards across the platform, along z)'))
     reg.add('tile/crossing', 'tiles', [tile(planks('x', ramp='wood', step=2.0, seed=4))],
             dict(anchor=TILE, note='the cart crossing\'s planks, laid along x (with the rails)'))
+    register_dock(reg)
+
+
+def register_dock(reg):
+    """The raised cargo platform (x -26 .. 26, z 2.3 .. 16.3, top 1.6u) as pieces: faces, deck cells, ramps, chalk."""
+    import station27 as S
+    def one(draw, **kw):
+        o = dict(canvas=(200, 160), origin=(100, 110), outline=False, shadows=False)
+        o.update(kw)
+        return [H.render(draw, **o)]
+    for v, nm in ((0, ''), (1, '/bumper'), (2, '/post')):
+        reg.add('dock/face_s' + nm, 'tiles', one(lambda v=v: S.dock_face('s', v)),
+                dict(anchor='the face\'s -x end at ground level on the platform\'s +z edge (z 16.3); covers x .. x+1',
+                     note='the loading edge along track 3: plank sheathing, a rubbing strip' +
+                          {0: '', 1: ', an iron bumper plate', 2: ', a timber post at the -x end'}[v]))
+    for v, nm in ((0, ''), (2, '/post')):
+        reg.add('dock/face_e' + nm, 'tiles', one(lambda v=v: S.dock_face('e', v)),
+                dict(anchor='the face\'s -z end at ground level on the platform\'s +x end (x 26); covers z .. z+1',
+                     note='the east end face' + (', a corner post at the +z end' if v else '')))
+    for v in range(2):
+        reg.add(f'dock/top/{v + 1}', 'tiles', one(lambda v=v: S.dock_top(v)),
+                dict(anchor='the cell corner (x, z) at ground level; the deck is drawn 13 px up (1.6u)'))
+    reg.add('dock/cell', 'tiles', one(S.dock_cell),
+            dict(anchor='the storage cell\'s corner at ground level; a 1.4u chalk square drawn on the deck (13 px up)'))
+    for d in ('e', 'w'):
+        reg.add(f'dock/ramp_{d}', 'tiles', one(lambda d=d: S.dock_ramp(d), outline=True),
+                dict(anchor='the ramp\'s footprint centre at ground level: (30, 12.4) east, (-30, 12.4) west; 8 x 3u',
+                     note='sort on [x0 z0 x1 z1 h] = [-4, -1.5, 4, 1.5, 1.6] u; walkers rise from 0 at the outer end to '
+                          '1.6u at the platform'))

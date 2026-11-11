@@ -1,0 +1,360 @@
+<title>Overnight Build Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow column: the problem, the figures, one question slip; a fixed save bar at the foot. */
+:root {
+  --paper: #f3f1ea; --slip: #fffdf7; --ink: #262420; --muted: #6c675c;
+  --rule: #d9d3c4; --brass: #8a6418; --brass-soft: #f1e4c4; --ok: #2f6b3a; --ok-soft: #dcebd9; --warn: #9a4a1c; --warn-soft: #f6e0d2;
+  --f-display: "Zilla Slab", Georgia, serif;
+  --f-body: "Source Sans 3", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #1b1a17; --slip: #24221e; --ink: #ece7db; --muted: #a39d8f;
+  --rule: #3a372f; --brass: #d9aa4f; --brass-soft: #3a3020; --ok: #7bc187; --ok-soft: #22331f; --warn: #e39a6b; --warn-soft: #3a261a; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-body); }
+.wrap { max-width: 680px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 120px; display: grid; gap: 28px; }
+.wrap > section { display: grid; gap: 12px; min-width: 0; }
+h1 { font: 700 1.9rem/1.15 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 700 1.35rem/1.2 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 500 1.1rem/1.3 var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--brass); }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 .75rem var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.play { display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 4px;
+  background: var(--brass); color: var(--slip); font-weight: 600; text-decoration: none; justify-self: start; }
+.shots { display: grid; grid-auto-flow: column; grid-auto-columns: min(70%, 240px); gap: 12px; overflow-x: auto;
+  padding-bottom: 8px; scroll-snap-type: x mandatory; }
+.shots figure { margin: 0; scroll-snap-align: start; display: grid; gap: 6px; align-content: start; }
+.shots img { width: 100%; border: 1px solid var(--rule); border-radius: 4px; display: block; background: var(--slip); }
+.shots figcaption { font-size: .85rem; color: var(--muted); }
+.slip { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.res { display: grid; gap: 12px; }
+.res-row { display: grid; gap: 4px; }
+.pill { font: 500 .72rem var(--f-mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 3px; padding: 1px 6px; justify-self: start; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.you { background: var(--brass-soft); color: var(--brass); }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; }
+td.n { text-align: right; white-space: nowrap; }
+.gap { border-left: 3px solid var(--warn); padding-left: 10px; }
+details.group { background: var(--slip); border: 1px solid var(--rule); border-radius: 4px; }
+details.group > summary { list-style: none; cursor: pointer; padding: 14px 16px; min-height: 48px; box-sizing: border-box;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font: 500 1.2rem var(--f-mono); color: var(--brass); }
+details.group[open] > summary::after { content: "\2212"; }
+.gcount { font: 500 .75rem var(--f-mono); color: var(--muted); white-space: nowrap; }
+.gbody { padding: 0 16px 16px; display: grid; gap: 14px; }
+.keepall { justify-self: start; background: transparent; color: var(--brass); border: 1px solid var(--brass); }
+.item { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.item p { font-size: .95rem; }
+.who { font: 500 .7rem var(--f-mono); color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule);
+  border-radius: 4px; cursor: pointer; font-size: .95rem; }
+.seg label:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.seg input { accent-color: var(--brass); width: 18px; height: 18px; margin: 0; }
+.opts { display: grid; gap: 8px; border: 0; margin: 0; padding: 0; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px; min-height: 48px; box-sizing: border-box;
+  border: 1px solid var(--rule); border-radius: 4px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--brass); background: var(--brass-soft); }
+.opt input { margin-top: 4px; accent-color: var(--brass); width: 18px; height: 18px; flex: none; }
+.opt span { min-width: 0; }
+.tag { font: 500 .7rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--brass);
+  border: 1px solid var(--brass); border-radius: 3px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+label.note { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+textarea { font: 16px/1.4 var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 4px; padding: 8px 10px; min-height: 44px; resize: vertical; box-sizing: border-box; width: 100%; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--slip); border-top: 1px solid var(--rule);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+.bar-in { max-width: 680px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#status { font: 500 .8rem var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+#status.ok { color: var(--ok); }
+button { font: 600 1rem var(--f-body); min-height: 48px; padding: 0 20px; border-radius: 4px; border: 0;
+  background: var(--brass); color: var(--slip); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:12px">
+    <span class="eyebrow">Overnight build: review</span>
+    <h1>The working day, made visual</h1>
+    <p class="muted">Bigger trains with seats inside, punching tickets on board, freight handled step by step onto a cart, a wider raised cargo platform, the evening trip to town to deliver and pick up, a fuller main street with townsfolk going about their day, six lessons, night lights, and this morning's four fixes. Everything below was decided provisionally overnight; change anything you like.</p>
+    <a class="play" href="https://claude.ai/artifact/215immEY4Skh13fN9fN2db">Play it</a>
+  </header>
+  <section>
+    <h2>Pictures from the test bot's day</h2>
+    <div class="shots"><figure><img src="pixel/d27/morning.png" alt="Morning at the schedule board"><figcaption>Morning at the schedule board</figcaption></figure><figure><img src="pixel/d27/lesson.png" alt="A lesson card"><figcaption>A lesson card</figcaption></figure><figure><img src="pixel/d27/punch.png" alt="Punching tickets inside a coach"><figcaption>Punching tickets inside a coach</figcaption></figure><figure><img src="pixel/d27/unload.png" alt="Unloading a boxcar onto the cart"><figcaption>Unloading a boxcar onto the cart</figcaption></figure><figure><img src="pixel/d27/cargo.png" alt="The cargo platform"><figcaption>The cargo platform</figcaption></figure><figure><img src="pixel/d27/path.png" alt="The cart on the way to town"><figcaption>The cart on the way to town</figcaption></figure><figure><img src="pixel/d27/deliver.png" alt="A delivery: the keeper carries the goods in"><figcaption>A delivery: the keeper carries the goods in</figcaption></figure><figure><img src="pixel/d27/street.png" alt="The main street and its townsfolk"><figcaption>The main street and its townsfolk</figcaption></figure><figure><img src="pixel/d27/night.png" alt="Night"><figcaption>Night</figcaption></figure><figure><img src="pixel/d27/summary.png" alt="The end-of-day summary"><figcaption>The end-of-day summary</figcaption></figure><figure><img src="pixel/d27/station.png" alt="The station set back, with decking"><figcaption>The station set back, with decking</figcaption></figure></div>
+  </section>
+  <section>
+    <h2>What the test bot did over two days</h2>
+    <ul class="plain">
+      <li>All 8 trains in and out each day; worst lateness about 20 minutes.</li>
+      <li>28 travellers a day seated and punched on board, none missed.</li>
+      <li>8 or 9 goods unloaded and stored a day, all delivered to the right shops; 4 or 5 picked up and loaded the next day.</li>
+      <li class="gap">The evening runs about 4 game hours; the bot ended the days at 23:15 and 23:26 (question 2).</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Your answers</h2>
+    <div id="qs" style="display:grid;gap:16px"></div>
+  </section>
+  <section>
+    <details class="group"><summary><span>Every provisional choice made overnight</span><span class="gcount">full list</span></summary><div class="gbody"><h3>D27: the provisional choices, for the designer&#x27;s morning review</h3>
+<p>Every choice the D27 builders and the integrator made on their own while the designer was away (&quot;overnight mode&quot;),</p>
+<p>gathered in one list for the review page. Each has the suggested choice (what the game does now) and the</p>
+<p>alternatives, in plain words. The number in brackets is where it comes from: the plan (plans/d27-tech.md section 9),</p>
+<p>the foundation, the builders T (trains and levers), P (tickets on board), F (freight), W (townsfolk), U (lessons and</p>
+<p>screens), R (drawing), the artists, and the integrator (I).</p>
+<h3>Decided provisionally by the lead: the evening and the late Monday (2026-11-11)</h3>
+<p>The integration measured that the working day was too full for one player: taking a day&#x27;s goods to town and the</p>
+<p>shops&#x27; goods back took 4 to 5 game hours, the evening (from 20:15) ended at 23:00, and Monday ran up to 2.5 hours late.</p>
+<p>The lead decided, provisionally, for the designer&#x27;s review (every old value can be switched back in FR and PD):</p>
+<ol class="plain">
+<li><b>The keeper carries the goods in.</b> At a shop the player parks the cart at the door and taps Deliver once; the keeper (or, if he is away, a hand) walks from the door to the cart, takes each of his shop&#x27;s goods and carries it in, while the player waits by the cart. Pickups the same way: the keeper carries the shop&#x27;s outgoing goods out to the cart. Drawn: the keeper walking cart to door with the good in his arms (FR.KEEPER; false: the player carries, as F built it).
+<li><b>Handling about 40% shorter:</b> the door 24 s (was 40), lifting and setting down: carry 16, shoulder 24, roll 16, drag 16, hand truck 16, heave 40 (was 32, 40, 24, 16, 24, 64), the cart&#x27;s handle 8, handing in 16 (FR.TIME_K 0.6; 1 gives F&#x27;s times back).
+<li>Kept from the integration: the storage by the east ramp, the bigger cart, the goods packed in the fewest boxcars.
+</ol>
+<p>The integrator added these to try to reach the aim (about 3 hours for the evening, about 20 minutes&#x27; lateness at</p>
+<p>worst), each switchable:</p>
+<ol class="plain">
+<li><b>The plough is collected by the feed store</b> from its flatcar 20 minutes after Monday&#x27;s f1 stands (the player does not unload it; FR.COLLECT). Alternative: the player heaves it (as before).
+<li><b>The cart is a 5 x 4 cell dray</b> (4.2 x 3.2u; was 4 x 3 at the integration, 4 x 2 at first), so a whole day&#x27;s goods go to town in one trip; it stands partly over the cart lane when parked at a boxcar door.
+<li><b>At a shop, its pickups are loaded in the same stop</b> once its deliveries are done and nothing is left in storage, and goods for the railroad are never set on top of the town&#x27;s on the cart.
+<li><b>The cart may stay in town overnight</b> with the day&#x27;s pickups (FR.CART_NIGHT); the next day the Next job line brings it back and stacks them. Alternative: back to the OUT rows every evening (about 50 minutes more).
+<li><b>The day ends by itself at 23:59</b> (was 23:00): three hours after the last freight train leaves at 20:15.
+<li>Loading the cart for town takes the long goods first and the nearest along the lane; small goods fill the bed row by row, so whole rows stay free for lumber and bar iron.
+</ol>
+<p><b>What it gave</b> (measured, seed 1866): the evening&#x27;s work for a whole Monday&#x27;s goods (14, with 7 pickups), started</p>
+<p>from the storage, takes <b>3 hours 23 minutes</b> (was 8 hours 25); with the day as the bot plays it, though, the freight</p>
+<p>trains still run late (day 1: f2 92 minutes, f3 113; day 2: f2 89, f3 82), so the evening starts after 21:30 and does</p>
+<p>not finish by 23:59: in two days only one good reached the town. <b>The aims are not met</b>; the remaining</p>
+<p>bottleneck is the daytime freight work (unloading, stacking and loading by hand take 3.5 to 4 hours for f2, which</p>
+<p>stands 2 hours 40), with the punching of a passenger train at the same time. Options for the designer:</p>
+<p>- longer freight standing times or fewer runs (the schedule, T&#x27;s);</p>
+<p>- the crew unloads onto the loading edge and the player only stacks (or the reverse);</p>
+<p>- a porter who stacks while the player punches tickets;</p>
+<p>- fewer goods a day.</p>
+<h3>Decided provisionally by the lead: half the goods and a re-timed day (2026-11-11, second decision)</h3>
+<p>The day was still overloaded for one worker, so (switchable back: the page&#x27;s ?goods27=full and ?sched27=t):</p>
+<ol class="plain">
+<li><b>About half the goods:</b> 8 for the town and 4 for the railroad a day (was 14 and 6): f1 a crate of dry goods, a whiskey barrel and bar iron; f2 a furniture crate, newspapers and a hay bale; f3 the express box and lumber; out grain and hides (f2), mail and an empty keg (f3). Every kind still comes within the week: seed (Tuesday), a beer keg (Thursday), flour (Saturday), and the plough (Monday), the piano (Wednesday) and the wheels (Friday) as before. Alternative: the foundation&#x27;s table (14 and 6).
+<li><b>The day re-timed</b> (nine runs kept): p1 06:55-07:50, f1 08:40-10:00, p2 10:30-11:15, x1 12:05, p3 12:50-13:35, f2 14:00-15:50, p4 16:40-17:25, <b>p5 18:00-18:40 now from the east</b> (was from the west), f3 19:00-20:25. Each freight train stands for its measured handling plus about 20 minutes, passenger trains stand in the gaps, and a train leaving towards an end and the next one coming in from it are 50 minutes apart (the line is single track). Alternative: T&#x27;s day.
+<li>The integrator&#x27;s additions: <b>the cart stops in the middle of the street</b> (one stop for the two shops facing each other; FR.CART_MID); the cart is loaded for town from one place by the east block.
+</ol>
+<p><b>Result</b> (the bot, seed 1866): <b>day 1 runs on time (worst 19 minutes)</b>, every ticket punched, all goods unloaded</p>
+<p>and loaded; but the evening (from 21:21) delivers 6 of 9 goods by 23:59 and picks up none. Day 2 starts by fetching</p>
+<p>the cart left at the far end of the street, so f1 leaves 82 minutes late and the late morning follows (worst 33 in, 82</p>
+<p>out), and its evening does not finish either. The evening needs about 3 to 3.5 hours (loading about an hour, the push</p>
+<p>to town 35 minutes, the shops about 8 minutes a stop), which does not fit between f3 (20:25) and midnight.</p>
+<p><b>The aims are not met;</b> check-d27-day still fails on the evening. Options: f3 earlier (a freight train in the</p>
+<p>afternoon instead of the evening), the goods for town loaded onto the cart during the afternoon&#x27;s gaps, a shorter</p>
+<p>cart path (a crossing at the west end too), or the evening&#x27;s delivery the next morning before f1.</p>
+<h3>Decided provisionally by the lead: no freight train in the evening (2026-11-11, third decision)</h3>
+<ol class="plain">
+<li><b>The cart comes back every evening</b> (FR.CART_NIGHT off; the designer: &quot;when you deliver at night you also pickup and place on the cargo platform&quot;): load the cart, to town, deliver, pick up, back, the pickups stacked in the OUT rows, then End the day.
+<li><b>The day re-timed so the last freight train leaves before the evening:</b> p1 06:45-07:35, f1 08:25-09:45, p2 10:05-10:50, x1 11:40, f2 12:05-14:30, p3 14:50-15:35, f3 16:00-17:40, p4 18:00-18:45. **Eight runs: p5 is left out**; f3 and p4 now run west to east (the last train leaves by the east lever frame, near the cart crossing); at least 50 minutes between a train leaving towards an end and one coming in from it. Alternatives: keep p5 at about 19:00 (the evening then starts after it); T&#x27;s day (?sched27=t).
+<li>The integrator&#x27;s additions: the keeper walks a little faster (4u a minute, was 3); at each stop the shop&#x27;s pickups are loaded too; the cart parked once in the middle of the east block&#x27;s lane to load it; the cart may be loaded for town as soon as the last freight train has gone.
+</ol>
+<p><b>Result</b> (the bot, seed 1866; check-d27-day passes): both days every run in and out, worst lateness 9 minutes on</p>
+<p>arrival and 21 on departure (p4 out, day 2); every traveller seated and punched (28 a day); every good unloaded,</p>
+<p>loaded, delivered and picked up and the pickups stacked; the player ends the day at 23:15 (day 1) and 23:26 (day 2).</p>
+<p>The evening takes about 4 hours (from about 19:25), not the 3.5 hoped for (the walk to the cart, about an hour of</p>
+<p>loading, 35 minutes to town, about 6 to 8 minutes a stop, the way back and stacking).</p>
+<h3>Integrator (I)</h3>
+<ol class="plain">
+<li><b>The camera stays with the player, centred</b> (the designer asked): R&#x27;s dead zone, look-ahead and framing of the car he is in are switched off (PIX.CAM: DEAD 0, AHEAD 0, CAR false); his feet are on the middle pixel of the view at every frame, inside a coach too. Alternative: R&#x27;s version (he moves inside the middle third, the view looks 6u ahead, a car he is in is framed).
+<li><b>The storage moved next to the way to town:</b> the rows of the nine shops that get goods by rail are now in the east block of the cargo platform (nearest the east ramp, the busiest shops nearest the ramp); the goods for the railroad (OUT) in the east block&#x27;s row by the cart lane, then the west block&#x27;s; the barber, the sheriff and the assay office (nothing comes for them) in the west block. Alternative: the foundation&#x27;s (eight shops in the west block).
+<li><b>A bigger platform cart:</b> at the integration 4 x 3 cells (A2&#x27;s art widened), then 5 x 4 (see the lead&#x27;s decision, 5); the small goods (crates, sacks, kegs, newspapers, the express box) up to 3 high on it (was 2).
+<li><b>Trips to town between trains:</b> the Next job line (F&#x27;s hint) offers a delivery trip in the day when nothing is standing or coming and the next train is further off than the trip (about 100 minutes plus 2.5 a good), and a trip under way carries on; the cart is brought back to the cargo platform after a day trip. With the schedule as it is, such a gap seldom comes in a full day. Alternative: deliveries in the evening only.
+<li><b>Goods packed into as few boxcars as hold them,</b> the boxcar nearest the storage first (was: spread over the boxcars in turn): fewer doors to open and fewer cart moves.
+<li><b>Night windows in the town:</b> at night every shop, house, the church, the school and the freight house is drawn with its lit version (the follow-up art), and the point rodding turns at the points&#x27; end and runs across to them.
+<li>Older checks that test the D25 flows (check-protogoods, check-protoui, check-prototrains, check-protoworld, check-proto-day, check-proto-stall, check-pixrender, check-levers&#x27; D25 day) open the page with the D27 parts off (?d27=0); check-punch with the D25 line kept (?doorline=1). On the D27 layout the D25 handcart&#x27;s two evening trips can run past 23:00 (check-protogoods now checks the summary against what was handed in by then).
+</ol>
+<h3>Foundation (plan section 9; built 2026-11-11)</h3>
+<ol class="plain">
+<li><b>Scale:</b> a person 1.75 m = 2.5u; heights, widths, doors, seats and goods true; train lengths about three quarters (coach 13u, engine and tender 18u, boxcar 10u). Alternatives: true lengths (trains 80u long); two thirds.
+<li><b>Default zoom</b> scale 3 (people 33 CSS px). Alternative: scale 2 (the whole platform in view).
+<li><b>Coaches board at their ends</b> (open end platforms with steps). Alternative: side doors as in D25.
+<li><b>Departure</b> waits until everyone is seated, every ticket punched and the player is off. Alternative: unpunched travellers ride free, counted as missed (built: PB.RIDE_FREE).
+<li><b>The cargo platform</b> an island between tracks 2 and 3, 14u wide, raised to car-floor height with a ramp at each end. Alternatives: a low deck with gangplanks; a separate freight dock south of track 3.
+<li><b>Levers</b> in two lever frames at platform 1&#x27;s ends (W1 and W3 west, E1 and E3 east). Alternatives: all four at the station; one lever at each switch.
+<li><b>The cart&#x27;s way to town:</b> down the east ramp, over a plank crossing at x 37, up a dirt path to the depot square.
+<li><b>Numbers:</b> track spacing 6u, platform 1 60 x 9u, cargo platform 52 x 14u, footbridges at x -14 and 14.
+<li><b>The town:</b> six buildings a side, the church and the school closing the street; the east row seen from behind.
+<li><b>Goods:</b> 16 kinds, the week&#x27;s table (the piano on Wednesdays, the plough on Mondays), 6 goods out a day.
+<li><b>Handling times</b> slow enough to see each step; freight trains stand longer to match.
+<li><b>Pickups</b> appear at 17:00 at the shops that send goods; uncollected ones wait.
+<li><b>Townsfolk</b> with routines; they never block the player.
+<li><b>Lessons:</b> six, each the first time its moment comes; the first card holds the clock; replay from Settings.
+<li><b>Through riders</b> already aboard, tickets punched elsewhere.
+<li><b>The day:</b> nine runs, the evening to 23:00.
+<li><b>The atlas budget</b> raised to 700 KB (now 608 KB); the ground composed in the browser from tiles.
+<li><b>Speeds:</b> walking 3.0u a game minute, pushing 2.7; one game minute a real second; line speeds doubled. Alternative: a slower clock.
+<li><b>The D25 layout replaced</b> (old saves move to the next morning on the new layout). Alternative: keep it as a second world.
+<li>The walk grid&#x27;s cargo platform: its faces are walls; a walker goes up and down only by the ramps or the footbridges.
+</ol>
+<h3>T: trains, levers and the day</h3>
+<ol class="plain">
+<li><b>The day re-timed:</b> p1 06:55-07:50, f1 08:40-10:20, p2 10:50-11:35, x1 12:20, p3 13:05-13:50, f2 14:10-16:50, p4 15:20-16:10, p5 17:20-18:00, f3 18:45-20:15; passenger trains stand 40 to 55 minutes. Alternatives: longer freight standing times; fewer runs; 2-coach trains.
+<li><b>A switch is thrown only at its lever</b> in a lever frame (no spot by the points). Alternative: also at the points.
+<li><b>One end of a 3-coach train stands under a footbridge</b> (the coaches are too long for both bridges to clear every end): that coach boards at its other end. Alternative: footbridges moved further apart (a layout change).
+<li><b>W1 and E1 lie reverse all day</b> but for the through train x1; W3 and E3 are thrown for each freight train.
+</ol>
+<h3>P: tickets on board</h3>
+<ol class="plain">
+<li><b>4 to 10 travellers</b> a train; 2 to 6 through riders and 1 to 3 for the Hub in each coach.
+<li><b>Half wait on the benches</b>, the rest standing under the canopy.
+<li><b>Travellers take the coach end nearest where they waited</b> (so most fill the nearest coach). Alternative: spread them over the coaches.
+<li><b>30 game seconds a punch.</b>
+<li><b>The strict departure rule</b> (above, foundation 4).
+<li><b>Nobody bumps into anyone in the aisle</b> (people pass through each other).
+</ol>
+<h3>F: freight handling, delivery and pickup</h3>
+<ol class="plain">
+<li><b>Handling times:</b> the door 40 s; lifting and setting down each: carry 32, shoulder 40, roll 24, drag 16, hand truck 24, heave 64; the third layer or higher 8 more; the cart&#x27;s handle 16; handing in at a shop 24.
+<li><b>The hand truck</b> is used for the heavy goods (bale, stove, furniture) when it is within 40u; else they are heaved. Alternative: always fetch the hand truck.
+<li><b>Where the cart stands:</b> east of a boxcar&#x27;s doorway on the loading edge; in the street&#x27;s carriageway at a shop.
+<li><b>The express box does not go back yet</b> (the tables have no pickup for it). Alternative: the bank sends it every evening.
+<li><b>Deliveries in the evening only</b> (F) - changed by the integrator to also between trains (I 4).
+<li><b>The hand truck</b> is fetched within 40u (F&#x27;s); the integration tried 12u and went back.
+<li>The cart stays overnight where it was left; the next morning asks for it only when a freight train needs it.
+</ol>
+<h3>W: the townsfolk</h3>
+<ol class="plain">
+<li><b>19 people</b> (the twelve keepers, the preacher, the teacher, a laundress, two pupils, two cowhands); some names are the builder&#x27;s own (marked &quot;(p)&quot; in the code), for example Walt Hensley, the feed keeper.
+<li><b>Shops open 07:30 to 18:00</b> Monday to Saturday; school 08:00 to 15:00 weekdays; church Sunday 10:00 to about 11:45.
+<li><b>Who meets trains:</b> the hotelkeeper meets p1 and p3, the sheriff p2, the newspaper man f3 (weekdays).
+<li><b>Chats</b> in pairs at four times a day; two people standing near each other talk.
+<li><b>A delivery brings the keeper out</b> to his door for 4 minutes.
+<li>Townsfolk wait up to 6 game seconds for the player, then walk on through.
+</ol>
+<h3>U: lessons and screens</h3>
+<ol class="plain">
+<li>The switches lesson comes before the switch rows on the Next job line; the other lessons come after them (a train&#x27;s way out is still asked for while its lesson runs). Alternative: every lesson first.
+<li>A lesson still open the next morning closes (replay brings it back).
+<li>Replay starts every lesson again (no choice of one). Alternative: a list to pick from.
+<li>The slip of a later step can be folded with OK; the Next job line keeps saying it.
+<li>At most three buttons over the world everywhere, the D25 flows too.
+<li>The summary&#x27;s new lines: tickets seated and punched; goods unloaded, stored, loaded; town delivered, picked up.
+</ol>
+<h3>R: drawing</h3>
+<ol class="plain">
+<li><b>Night</b> from 19:00 to 21:00 the scene darkens to a deep blue, back from 05:00 to 06:30; lit windows and lamps glow. Alternative: darker or shorter nights.
+<li><b>The cut-away:</b> only the player&#x27;s coach (or a boxcar he is in or at the door of, or one with its door open) is drawn without its roof and near wall.
+<li><b>The ground</b> composed in chunks from the tiles (plain grass for a frame where a chunk is not ready).
+<li><b>The camera&#x27;s dead zone and look-ahead</b> (turned off by the integrator: I 1).
+<li>Tags on goods are left out at scale 1 (too small to read).
+</ol>
+<h3>The artists (A1, A2, A3 and the follow-up)</h3>
+<ol class="plain">
+<li>People 20 px tall (2.5u); the new townsfolk drawn from the travellers&#x27; types where the plan said.
+<li>The cart and the hand truck as A2 drew them (the cart widened by the integrator, I 3).
+<li>Small lanterns by the doors (dark glass by day, lit at night); lit night versions of every town building.
+<li>The east row&#x27;s fronts face away from the view: hanging signs and painted side walls carry the names.
+</ol></div></details>
+  </section>
+</div>
+<div class="bar"><div class="bar-in"><span id="status">Connecting...</span><button id="save" type="button">Save answers</button></div></div>
+
+<script>
+const QS = [
+  { id: 'feel', q: 'Overall, after playing: is this the working day you had in mind?',
+    o: [['yes', 'Yes, keep going and tune it.', 1], ['mostly', 'Mostly; some things to change (say in the note).'], ['no', 'Not yet (say what in the note).']] },
+  { id: 'evening', q: 'The evening (deliver, pick up, bring the pickups back) takes about 4 game hours, so a careful day ends about 23:15. What should change?',
+    o: [['keep', 'Keep it: a long evening is fine.', 1], ['gaps', 'Let me load the cart for town in the afternoon gaps.'], ['faster', 'A faster cart, or a horse and wagon for the trip to town.'], ['fewer', 'Fewer goods a day.']] },
+  { id: 'keeper', q: 'At each shop the keeper comes out and carries the goods in from your cart (and loads the pickups onto it). You park and tap Deliver.',
+    o: [['keep', 'Keep it.', 1], ['me', 'I want to carry them in myself.']] },
+  { id: 'goods', q: 'About 8 goods come in and 4 go out a day (half the first plan), with every kind of goods still appearing across the week.',
+    o: [['keep', 'Keep 8 in, 4 out.', 1], ['more', 'More goods, even if it is harder.'], ['less', 'Fewer still.']] },
+  { id: 'runs', q: 'The day has 8 trains (4 passenger, 3 freight, 1 through). A 5th passenger train was dropped so no freight train runs in the evening.',
+    o: [['keep', 'Keep 8.', 1], ['p5', 'Bring back the evening passenger train.']] },
+  { id: 'depart', q: 'A passenger train cannot leave until every ticket is punched and you are off the train.',
+    o: [['strict', 'Keep it strict.', 1], ['free', 'Let it leave; anyone unpunched rides free and counts as missed.']] },
+  { id: 'punch', q: 'Punching one ticket takes 30 game seconds.',
+    o: [['keep', 'Keep 30 seconds.', 1], ['faster', 'Faster.'], ['slower', 'Slower.']] },
+  { id: 'handling', q: 'Freight handling speed: each lift, roll or stack takes about 16 to 40 game seconds, so every step is seen but the day fits.',
+    o: [['keep', 'Keep it.', 1], ['slower', 'Slower: I want to watch each step more.'], ['faster', 'Faster.']] },
+  { id: 'levers', q: 'Switches are thrown only at the two lever frames at the ends of the main platform.',
+    o: [['keep', 'Keep the two lever frames.', 1], ['points', 'Also let me throw them at the points themselves.']] },
+  { id: 'zoom', q: 'The default zoom shows about one and a half coaches across a portrait phone.',
+    o: [['keep', 'Keep it.', 1], ['out', 'Start further out (the whole platform in view).']] },
+  { id: 'town', q: 'The town: 19 townsfolk with their own errands (shops, school, church, saloon, meeting trains). Some names are invented.',
+    o: [['keep', 'Keep them.', 1], ['more', 'More people and more going on.'], ['change', 'Change something (say in the note).']] },
+  { id: 'lessons', q: 'Six lessons, each the first time its moment comes; the first card pauses the clock; replay from Settings.',
+    o: [['keep', 'Keep them as they are.', 1], ['change', 'Change something (say in the note).']] },
+  { id: 'camera', q: 'Is the camera smooth now, in every direction?',
+    o: [['yes', 'Yes.', 1], ['no', 'Still hitchy (say where in the note).']] },
+  { id: 'else', q: 'Anything else? (The full list of overnight choices is below; note any you want changed.)', o: [] },
+];
+const answers = {};
+const statusEl = document.getElementById('status'), saveBtn = document.getElementById('save');
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function noteBox(key, label) {
+  const nl = el('label', 'note', label); const ta = el('textarea'); ta.id = 'note-' + key; ta.rows = 1;
+  ta.addEventListener('input', () => setA(key, 'note', ta.value)); nl.append(ta); return nl;
+}
+const qsEl = document.getElementById('qs');
+QS.forEach((Q, i) => {
+  const s = el('section', 'slip'); s.append(el('div', 'eyebrow', 'Question ' + (i + 1) + ' of ' + QS.length));
+  const h = el('h3', null, Q.q); h.id = 'q-' + Q.id; s.append(h);
+  if (Q.ctx) s.append(el('p', 'muted', Q.ctx));
+  if (Q.o.length) {
+    const fs = el('fieldset', 'opts'); fs.setAttribute('aria-labelledby', h.id);
+    for (const [v, label, sug] of Q.o) {
+      const l = el('label', 'opt'); const r = el('input'); r.type = 'radio'; r.name = 'q.' + Q.id; r.value = v; r.id = 'q.' + Q.id + '-' + v;
+      r.addEventListener('change', () => setA('q.' + Q.id, 'choice', v));
+      const t = el('span', null, label); if (sug) t.append(el('span', 'tag', 'Suggested'));
+      l.append(r, t); fs.append(l);
+    }
+    s.append(fs);
+  }
+  s.append(noteBox('q.' + Q.id, Q.o.length ? 'Note (optional)' : 'Your answer')); qsEl.append(s);
+});
+function render() {
+  for (const Q of QS) {
+    const key = 'q.' + Q.id, a = answers[key] || {};
+    for (const [v] of Q.o) document.getElementById(key + '-' + v).checked = a.choice === v;
+    const ta = document.getElementById('note-' + key); if (document.activeElement !== ta) ta.value = a.note || '';
+  }
+}
+render();
+let ref = null, dirty = false, saving = false, timer = null;
+function setA(id, k, v) { answers[id] = Object.assign({}, answers[id], { [k]: v }); dirty = true; status('Not saved yet'); clearTimeout(timer); timer = setTimeout(save, 1500); }
+function status(t, ok) { statusEl.textContent = t; statusEl.className = ok ? 'ok' : ''; }
+async function save() {
+  if (!ref) { status('Saving is not available here'); return; }
+  if (saving) { clearTimeout(timer); timer = setTimeout(save, 800); return; }
+  if (!dirty) return;
+  saving = true; dirty = false; saveBtn.disabled = true;
+  try { await ref.set({ answers, savedAt: Date.now() }); status('Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), true); }
+  catch (e) { dirty = true; status('Could not save: ' + ((e && e.message) || 'try again')); }
+  finally { saving = false; saveBtn.disabled = false; }
+}
+saveBtn.addEventListener('click', () => { dirty = true; clearTimeout(timer); save(); });
+(async () => {
+  const to = setTimeout(() => status('Still connecting; your choices are kept on screen'), 10000);
+  let db = null;
+  try { db = window.claude ? await window.claude.use('db') : null; } catch (e) { db = null; }
+  clearTimeout(to);
+  if (!db) { status('Saving is not available here'); saveBtn.disabled = true; return; }
+  ref = db.doc('answers/d27-review');
+  try {
+    const snap = await ref.get();
+    if (snap.exists) { const d = snap.data(); if (d && d.answers) for (const k in d.answers) if (!answers[k]) answers[k] = d.answers[k]; render(); status('Loaded your saved answers', true); }
+    else status('Nothing saved yet');
+  } catch (e) { status('Could not load saved answers'); }
+})();
+</script>

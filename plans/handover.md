@@ -3,7 +3,8 @@
 ## Latest (2026-11-10): D25 prototype built
 - D25 (the streamlined prototype in pixel art) is built and merged: switches, ticket lines and punching, freight unload/load, the evening handcart to three shops, the end-of-day summary. It is the default world; ?world=hub etc. still open the parked 3D game.
 - Checks: 54, including check-proto-day (a bot plays two full days). See DEV_NOTES "Prototype (D25)".
-- Open with the designer: station placement (https://claude.ai/artifact/BSiGDpCg3JWu8YKXTfbsBM, answers/station-place); the 'mid' style question (https://claude.ai/artifact/BK9crSPmx8SK1BYTWgH1FJ); the D25 review survey of the builders' provisional choices.
+- Station placement answered 2026-11-11: back behind the platform roof (done). Style: the designer wants the new art style next, before reviewing the prototype; the richer one stays on deck. Plan page https://claude.ai/artifact/CCcToxUJ81G3jT9EeV42Qe (answers/art-plan) waits on answers; nothing drawn until it is signed off. The prototype review https://claude.ai/artifact/CPVGkAAmr81A2CGCLkHAMW (answers/d25-review) waits until after the art round.
+- Saves are kept per world (2026-11-11): an old save from another world is moved aside to world-<id> / railhead-quicksave-<id>, so the prototype's page no longer reopens an old 3D game.
 - Known weak point: with the far switches W3/E3 a long walk from platform 1, even the bot runs trains 15 to 45 minutes late.
 - Art: python3 tools/pixelart/build.py then embed.py after any sprite change; the layout comes from node tools/pixelart/export-layout.js.
 

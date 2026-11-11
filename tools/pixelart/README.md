@@ -46,10 +46,14 @@ Needs Python 3 with numpy and Pillow. Where the art reads the contract in its ow
 | `embed.py` | writes atlas.js into index.html | pipeline |
 | `font.py`, `sprites_font.py` | pixel font: capitals, digits, small letters, punctuation (`font/<code>`) | pipeline |
 | `shapes.py` | the mockup's shape library (textures, cars, buildings, props), kept as it was drawn | shared, read only: copy a function into your own file to change it |
-| `stock.py`, `sprites_trains.py` | loco with tender, freight loco, coach, boxcar, flatcar, steam (`veh/`, `fx/`) | pipeline, trains and track |
+| `stock27.py`, `sprites_trains.py` | D27: loco with tender, freight loco, coach (whole, lit, cut away) and its inside parts, boxcar (whole, cut away, sliding door), flatcar, steam (`veh/`, `fx/`) | A2 (vehicles) |
+| `goods27.py`, `sprites_goods.py`, `sprites_carts.py` | D27: the 16 goods in every handling state, shop tags and row boards (`goods/`, `tag/`); the platform cart and the hand truck (`cart27/`, `truck/`) | A2 |
+| `geom27.py` | A2's helpers: shapes in game units, oriented (tilted) boxes and cylinders | A2 |
+| `review_a2.py` | A2's review sheets `out/a2-*.png` (run after build.py) | A2 |
+| `stock.py` | the D25 rolling stock, kept for the record, no longer built | |
 | `track.py`, `sprites_track.py` | track in the ground layer, switch points overlays, switch stands (`sw/`) | pipeline, trains and track |
 | `people.py`, `sprites_people.py` | all characters and animations (`ppl/`); first version from the mockup's pixel maps, still with the first build's names | people artist |
-| `town.py`, `sprites_town.py` | station, storage shed, shops, houses, trees, props, goods, tags, handcart, platforms, walkway, ground tiles (`bld/`, `goods/`, `tag/`, `cart/`); first version from the mockup's shapes, still with the first build's names | buildings and town artist |
+| `town.py`, `sprites_town.py` | station, storage shed, shops, houses, trees, props, the D25 handcart (goods and tags moved to sprites_goods.py for D27), platforms, walkway, ground tiles (`bld/`, `cart/`); first version from the mockup's shapes, still with the first build's names | buildings and town artist |
 | `proto-layout.json` | the layout, exported by the game (`node tools/pixelart/export-layout.js`, the architect's) | architect |
 
 Each artist edits only their own files. If you need a change in a shared file (engine, harness, registry,

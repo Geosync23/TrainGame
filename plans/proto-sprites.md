@@ -142,3 +142,140 @@ higher than a deck (buildings, stands, lamps) is in it. Until it exists, R draws
   tracks. Deck top 0.3u (drawn 3 px).
 - The four switches lie on track 2 (z = 0): crossover legs are radius 12.8u arcs of 30 degrees with a straight between
   them; see `proto-layout.json` for every point.
+
+## 6. D27: vehicles, interiors, goods and carts (artist A2, 2026-11-11)
+
+The D27 art list (plans/d27-tech.md 7.2) at the anchor scale (1u = 8 px across, 8 px up; a person 2.5u). Drawing code
+`tools/pixelart/stock27.py` and `goods27.py` (helpers `geom27.py`), sprite modules `sprites_trains.py`,
+`sprites_goods.py`, `sprites_carts.py`; review sheets `tools/pixelart/out/a2-*.png` (`python3
+tools/pixelart/review_a2.py` after `build.py`). These keys **replace** the D25 vehicles and goods at the new sizes
+(same key names where the plan kept them). All positions below are in u; `y` is height above the rail foot level
+(the ground at the track's centre line); a car floor is at **y = 1.6**, level with the cargo platform.
+The layouts are also in the atlas: `PIX_ATLAS.extra['veh/coach_in/<e|w>/floor'].layout` and
+`extra['veh/boxcar_in/<e|w>/floor'].layout`, so the game can read them instead of copying numbers.
+
+### 6.1 Vehicles (`veh/...`, `fx/...`)
+
+| Key | Frames | Size (u) | Anchor | Notes |
+|---|---|---|---|---|
+| `veh/loco/<hdg>/<f>`, `veh/loco_freight/<hdg>/<f>` | 10 headings x 2 | 18 x 4 x 6.4 (engine 11, tender 7) | footprint centre, y = 0 | 4-4-0 green and brass (passenger); black 2-6-0 with a diamond stack (freight). Frames: wheels and rods half a turn apart. `extra.stack`: the stack top (u along the heading from the centre, y) for `fx/smoke` |
+| `veh/coach/<hdg>`, `veh/coach_lit/<hdg>` | 10 each | 13 x 4.2 x 5.6 (body 11.6, end platforms 0.7) | same | lit: lamplit windows for night. Symmetric: `w+N` is the rectangle of `e-N` |
+| `veh/boxcar/<hdg>` | 10 | 10 x 4 x 5.3 | same | outside-braced, doors shut |
+| `veh/boxcar_open/<e\|w>` | 2 | | same | D25 key kept: the south (near) door open; e and w only now (other headings fall back to `veh/boxcar`) |
+| `veh/flatcar/<hdg>` | 10 | 10 x 4, deck top 1.9 | same | stakes 1.2u high (`veh/flatcar_loaded` dropped: goods on a flatcar are drawn one by one) |
+| `fx/smoke/<f>` | 4 | about 1 to 3u across | centre of the puff | bigger; frames 2 and 3 thinned with a checker |
+
+Wheels stand on the rail top at 0.34u (as D25). Gauge 2.05u (wheels at z +-1.03); car wheels 1.1u across, the
+4-4-0's drivers 2.1u. At this view the bodies overhang the wheels, so only the bottoms of the car wheels show.
+
+### 6.2 The coach cut away (`veh/coach_in/<e|w>/...`) and its inside parts
+
+Drawn for the two straight headings only. `e`: the coach's front is east (+x); its **stove is at the west (-x) end**
+and the walk-over benches face east (sitters face `se`). `w` is the same coach turned round: x mirrored, the stove at
+the east end, sitters face `nw`. The shell pictures are the same for e and w (same rectangles); the parts' places
+differ (layout below).
+
+Draw order (all at the coach's own anchor, its footprint centre at y = 0, unless said):
+1. `veh/coach_in/<h>/floor`: running gear, floor with the aisle runner, the far (north) wall with windows, curtains,
+   coat hooks and the luggage rack, the west end wall with its door, the west end platform.
+2. The inside parts and the people, sorted together by depth (x + z of their anchors; each part has `extra.box`,
+   `[x0, z0, x1, z1, height]` u from its anchor): benches, stove, cooler, closet, rack bags, lamps, seated and walking
+   people.
+3. `veh/coach_in/<h>/sill`: the near (south) wall cut to 0.5u above the floor (y 2.1).
+4. `veh/coach_in/<h>/end`: the open east end: the end wall's stub (the doorway open) and the east end platform.
+
+Parts (anchor: the part's footprint centre at the floor, y = 1.6, unless said):
+
+| Key | Frames | What |
+|---|---|---|
+| `veh/seat/<f>` | se, nw, ne, sw | a double walk-over bench 1.4u across the coach, seat top 0.64u, back 1.3u; `f` is the sitters' facing |
+| `veh/sidebench/<f>` | se, nw, ne, sw | a one-seat bench 0.8u long against a side wall |
+| `veh/stove/<f>` | 2 (the fire's glow) | base-burner, pipe to the roof (3.35u), wood box |
+| `veh/cooler` | 1 | water cooler on its cabinet |
+| `veh/closet` | 1 | the closet in the corner (0.9 x 1.4u, 2.6u high): an extra to the plan's list |
+| `veh/lamp/<f>` | 2 (0 unlit, 1 lit) | hanging oil lamp; anchor its **bottom** (y 4.35) |
+| `veh/rack_bag/<n>` | 0 carpetbag, 1 hatbox, 2 valise | anchor its bottom centre, on the rack (y 4.64, z -1.72, x anywhere from -5.3 to 5.3) |
+
+**The layout for heading e** (u from the coach's centre; for w negate every x and use the mirrored facings):
+
+- Inside: x -5.6 to 5.6, z -1.95 to 1.95; aisle z -0.5 to 0.5; floor y 1.6. Stove zone x -5.6 to -4.7; rows x -4.7
+  to 4.68; cooler zone x 4.68 to 5.6.
+- **Rows** k = 0..6 (k = 0 at the stove end) at **x_k = -4.03 + 1.34 k** (-4.03, -2.69, -1.35, -0.01, 1.33, 2.67,
+  4.01). Benches `veh/seat/se` at (x_k, 1.6, -1.22) north and (x_k, 1.6, +1.22) south.
+- **Seat anchors** (where a seated person is drawn): the **hip point on the seat top**, y = 2.24 (0.64 above the
+  floor), x = x_k - 0.10; z = -0.86 (N aisle), -1.56 (N window), +0.86 (S aisle), +1.56 (S window). Feet on the floor
+  at x_k + 0.32, same z. Sitters face `se` (w: `nw`). 28 seats. In the atlas: `layout.seats[]` `{ row, side, pos, x, y,
+  z, feet, f }` (rows numbered from the coach's west end for e, from its east end for w; P may renumber).
+- **Side seat**: one, against the south wall at the stove end: hip (-5.15, 2.2, 1.62), feet (-5.15, 1.6, 1.1),
+  facing `ne`; its bench `veh/sidebench/ne` at (-5.15, 1.6, 1.68). (The plan's second side bench has no room beside
+  the stove in a 0.9u zone; the facings `ne` (here) and `sw` (the bench sprite exists) are both drawable.)
+- **Stove** (-5.18, 1.6, -1.45) north corner; **closet** (5.15, 1.6, -1.25) north corner at the far end; **cooler**
+  (5.3, 1.6, 1.6) south corner; **lamps** at (-2.68, 4.35, 0) and (2.68, 4.35, 0).
+- **Doors**: end doors 1.0 wide, 2.9 high, centred (z = 0) in the end walls at x = -5.8 (W) and 5.8 (E), sill at the
+  floor (1.6). **End platforms** x -6.5 to -5.8 and 5.8 to 6.5, deck y 1.55. **Steps** at all four corners: (+-6.15,
+  +-1.9), treads at y 1.15 and 0.8 (platform 1's deck is 0.375): the boarding spot from platform 1 (north) is
+  (+-6.15, -2.3) on the ground, then up the treads to (+-6.15, 1.55, -1.6), then through the door at (+-5.8, 1.6, 0).
+
+**For A1 (seated people):** the proposal is that a `sit`/`sitTicket` frame's anchor is the **hip point** (the middle
+of the seat under the person), so R draws it at the seat anchor above. The stand-in sitters on
+`out/a2-coach-in.png` (standing frames with the legs cut) are placed that way. A seated adult from seat to crown is
+about 15 px.
+
+### 6.3 The boxcar cut away and its door
+
+`veh/boxcar_in/<e|w>/floor` (running gear, floor, the far wall's inside with its framing and **the door opening left
+clear**, the west end wall), then `veh/boxcar_door/<e|w>/<f>`, then goods and people inside, then
+`veh/boxcar_in/<e|w>/sill` (the south and east walls cut to y 2.1). All at the car's anchor.
+
+- The used door is the **north** one (track 3's cargo platform is north of the car). Opening x -1.3 to 1.3, y 1.6 to
+  4.6, in the wall at z -2.0. The door slides on the outside towards -x (west). `veh/boxcar_door/<h>/<f>`: f 0 shut,
+  1 and 2 sliding, 3 open; f = round(open x 3). It is the door seen from inside through the opening, so it shows only
+  while the car is cut away; with the car whole, the north door is hidden by the body (suggestion for R: cut the car
+  away from the moment the player stands at its door spot).
+- **Door anchors (the player's door spots)**: the doorway's centre (0, 1.6, -2.0); standing on the loading edge
+  outside it: (0, 1.6, -2.4); just inside it: (0, 1.6, -1.5).
+- Inside x -4.68 to 4.68, z -1.88 to 1.88. **Floor grid** for goods: 11 x 4 cells of 0.8u from (-4.4, -1.6)
+  (`layout.cells`), cell (c, r) centred at (-4.4 + 0.8 (c + 0.5), 1.6, -1.6 + 0.8 (r + 0.5)).
+
+### 6.4 Goods (`goods/...`) and tags (`tag/...`)
+
+16 kinds at the plan's sizes (4.1). Anchor: the **centre of the bottom face**, at the surface it rests on, unless
+said. `extra.tag_at` on the resting keys: the pixel offset from the anchor where a `tag/<shop>` mark is centred.
+
+| Key | What |
+|---|---|
+| `goods/<kind>` | resting, its length along x |
+| `goods/<kind>/z` | resting along z (every kind but the round ones: barrel, keg, mailSack, wheel) |
+| `goods/<kind>/<variant>[/z]` | crate `dry` (= `goods/crate`), `tins`, `linen`; sack `flour` (= `goods/sack`), `seed`, `grain`, `ore`; keg `beer`, `empty` (a chalk cross); barrel `whiskey`, `nails` |
+| `goods/<kind>/held/<dir>` | the good in its verb's held state, for the agent facing `dir` (four keys for every kind) |
+| `goods/barrel/roll/<dir>/<f>`, `goods/wheel/roll/<dir>/<f>` | rolling towards `dir`, 4 frames |
+| `goods/barrel/tip/<dir>/<f>` | tipping from upright towards `dir`: 2 frames (30, 60 degrees); anchor the barrel's foot |
+| `goods/barrel/side/<x\|z>`, `goods/keg/side/<x\|z>` | lying on the side, axis along x or z |
+| `goods/<kind>/truck/<dir>` | on the tilted hand truck: crate (a pair), barrel, bale, stove, furniture, piano; anchor the truck's axle point (draw right after `truck/<dir>/tilt`) |
+| `goods/crate/carried`, `goods/sack/carried`, `goods/barrel/carried`, `goods/longBundle` | D25 keys kept for the old flows (the tagged `carried/<tag>` variants are gone: the renderer draws the tag) |
+
+Held states by verb (`held/<dir>`): **carry** (crate, keg, paper, strongbox): anchor at the agent's hands offset (A1's
+`extra.hands`), long side across the body; **shoulder** (sack, mailSack): anchor at A1's shoulder offset, lying along
+the facing; **drag** (lumber, ironBars, hides, bale with the hay hook): the end at the hands lifted 0.85u, the far end on
+the ground ahead; anchor the ground point under the lifted end, placed `extra.ahead` 0.35u ahead of the agent's feet;
+**roll** (barrel on its side, wheel upright): anchor the ground contact, 0.55u ahead; **heave** (plough, piano): tipped
+up at the agent's end, anchor the near bottom edge, 0.3u ahead; **truck** (stove, furniture): the same picture as
+`goods/<kind>/truck/<dir>`.
+
+Tags: `tag/<shop>` 5 x 5, anchor the centre, for store, hotel, bank, smithy, livery, feed, saloon, newspaper, barber,
+undertaker, assay, school, plus `tag/out` and `tag/any` (the D25 store, smithy, saloon, out and any marks unchanged).
+`tag/board/<shop>` (and `tag/board/out`) 10 x 8, a row board on a short post: anchor the post's foot. Shop ids are the
+art's guess until `SHOPS27` exists (the sheriff takes and sends nothing, so has no tag); rename keys to match it.
+
+### 6.5 The platform cart (`cart27/...`) and the hand truck (`truck/...`)
+
+| Key | Frames | Anchor | Extra |
+|---|---|---|---|
+| `cart27/<dir>/<f>` | 4 dirs x 2 (wheels) | the cart's centre at the ground | |
+| `cart27/<dir>` | = frame 0 | same | `bedTop` 0.85; `cells` (8: `c` 0..3 from the handle end, `r` 0..1, `x, z` u from the anchor, `px` the cell centre on the bed top); `pusher` (the agent's feet, u) and `grip` (x, z, y of the handle bar) |
+| `cart27/<dir>/loaded` | 1 | same | a full load drawn in, for previews |
+| `truck/<dir>/<upright\|tilt>` | 4 dirs x 2 | the axle's point on the ground | `grip` (x, z, y), `pusher` (feet), `nose` (where a good stands on the plate when upright: draw `goods/<kind>` there) |
+
+`<dir>` is the way it travels (se +x, ne -z, nw -x, sw +z); the pusher is behind it: for the cart 2.5u behind the
+centre (handle bar 1.03u high, 2.1u behind), for the tilted truck 1.75u behind the axle (grips 1.16u high). Bed 3.4 x
+1.6u at 0.85u, 4 x 2 cells of 0.8u; a second layer sits on the goods below. The tilted truck leans back 55 degrees.

@@ -629,30 +629,30 @@ def truck_load(kind):
 
 
 # ---------------------------------------------------------------- the platform cart
-CART_L, CART_W, CART_TOP = 3.4, 2.4, 0.85   # D27 integration: 4 x 3 cells (was 1.6 wide, 4 x 2), the integrator's provisional bigger cart
-CART_ROWS = 3
+CART_L, CART_W, CART_TOP = 4.2, 3.2, 0.85   # D27 integration: 5 x 4 cells (was 3.4 x 1.6, 4 x 2), the integrator's provisional bigger cart
+CART_ROWS, CART_COLS = 4, 5
 CART_R = 0.3
 CELL = 0.8
 
 
 def cart_cells():
-    """The bed's 4 x 3 cells in the cart's own frame (a forwards, b to the left of travel... here +z), u from the
+    """The bed's 5 x 3 cells in the cart's own frame (a forwards, b to the left of travel... here +z), u from the
     cart's centre: [(c, r, a, b)]; c 0..3 from the handle end to the front, r 0 (left, -b) to 2 (+b)."""
     out = []
-    for c in range(4):
+    for c in range(CART_COLS):
         for r in range(CART_ROWS):
-            out.append((c, r, -1.6 + CELL * (c + 0.5), -CART_W / 2 + CELL * (r + 0.5)))
+            out.append((c, r, -CELL * CART_COLS / 2 + CELL * (c + 0.5), -CART_W / 2 + CELL * (r + 0.5)))
     return out
 
 
 def platform_cart(phase=0.0, o=None):
-    """The four-wheel station cart: a plank bed 3.4 x 2.4 u at 0.85 u on an iron-strapped frame, four small iron
+    """The four-wheel station cart: a plank bed 4.2 x 2.4 u at 0.85 u on an iron-strapped frame, four small iron
     wheels, low rails along the sides, a push handle at the rear (-x) end at 1.0 u. Facing +x. Anchor: its centre
     at the ground."""
     o = o or new_oid(True)
     hl, hw = CART_L / 2, CART_W / 2
     # wheels (both sides), axles
-    for ax in (-1.15, 1.15):
+    for ax in (-hl + 0.55, hl - 0.55):
         for bz, near in ((hw - 0.18, True), (-hw + 0.18, False)):
             def wt(part, s, ang, rho, idx):
                 a = ang + phase
@@ -664,7 +664,7 @@ def platform_cart(phase=0.0, o=None):
     # frame and bed
     B(-hl + 0.1, -hw + 0.12, 0.58, hl - 0.1, -hw + 0.24, 0.72, 'iron', shades=(1, 2, 3), oid=o)
     B(-hl + 0.1, hw - 0.24, 0.58, hl - 0.1, hw - 0.12, 0.72, 'iron', shades=(1, 2, 3), oid=o)
-    for ax in (-1.15, 1.15):
+    for ax in (-hl + 0.55, hl - 0.55):
         B(ax - 0.12, -hw + 0.3, CART_R + 0.04, ax + 0.12, hw - 0.3, 0.6, 'iron', shades=(1, 2, 3), oid=o)   # spring blocks
     def bed(face, x, z, y, idx):
         rr = np.full(x.shape, R('wood'))

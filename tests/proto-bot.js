@@ -232,7 +232,7 @@ function protoBotFactory(R, mem0) {
         // platform, pbPunch at a coach with tickets to punch (it walks in at the nearer end); else wait at a coach end.
         const I = P.in, rs = R.pb.pbRunStatus(S, run), mineC = c => tr.consist.some(q => q.id === c);
         if (I && I.tr === tr.id) {
-          if (I.out || I.clm < 0) return [];
+          if (I.out || I.clm < 0 || I.ts) return [];   // (D27 integration: on his way along the aisle already: the punch is not sent again every tick)
           const cands = S.pax.list.filter(p => p.s === 'sitting' && !p.punched && mineC(p.stock) && !skipped(S, 'punch' + p.stock + ':' + p.seat));
           const rx = p => R.pb.pbSeatLocal(p.seat).rx;
           cands.sort((a, b) => (a.stock === I.stock ? 0 : 1) - (b.stock === I.stock ? 0 : 1) || Math.abs(rx(a) - I.s) - Math.abs(rx(b) - I.s) || a.seat - b.seat);
@@ -370,7 +370,7 @@ function protoBotFactory(R, mem0) {
       const n = frNext(S);
       // (a step that starts a new piece of work only with time in hand before the next job: the walk there, 20 minutes
       // of work and the walk on to the next job; walking off to the cart and being called back to a lever wastes the walk)
-      const hx = n && Number.isFinite(n.h.x), there = hx ? walkS(P, n.h.x, n.h.z, S) : 0, back = j && hx ? d2(n.h.x, n.h.z, j.at[0], j.at[1]) * 1.33 / walkU(S) * 60 : 0;
+      const hx = n && Number.isFinite(n.h.x), there = hx ? walkS(P, n.h.x, n.h.z, S) * 1.4 : 0, back = j && hx ? d2(n.h.x, n.h.z, j.at[0], j.at[1]) * 1.9 / walkU(S) * 60 : 0;   // (the ways over the footbridges are longer than the straight line)
       const nearHint = hx && d2(P.x, P.z, n.h.x, n.h.z) < 4;
       if (n && (h.length || nearHint || !j || j.start - S.time > there + 1200 + back)) return frDo(S, n);
       if (h.length) return [];

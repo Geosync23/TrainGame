@@ -127,9 +127,11 @@ module.exports = async function checkHandling() {
         const S = X.frDebugScenario(R.rr.protoDebugScenario(R.newState(1866, 'proto'), 8, 30, ['f1']), 'd27freight'), P = S.player, pl = player(S);
         const run = S.rr.runs.find(q => q.svc === 'f1' && q.day === 0), tr = S.trains[run.slot], cars = tr.consist.slice(1);
         if (cars.map(c => c.k).join() !== 'boxcar,boxcar,boxcar,flatcar') B(`Monday's f1: ${cars.map(c => c.k).join()} (expected three boxcars and a flatcar for the plough)`);
+        // (D27 integration: the goods the shop collects itself, FR.COLLECT (the plough), are not counted as the player's to unload)
+        const coll = id => X.FR.COLLECT.includes(R.cargo.itemType(S, id)), all = [].concat(...cars.map(c => R.cargo.itemsAt(S, { kind: 'CAR', stockId: c.id })));
         const want = X.frRunIn(S, run).length, ab = X.frAboard(S, tr);
-        if (ab.town !== want || want !== 7) B(`Monday's f1 brings ${ab.town} goods, the tables say ${want} (7)`);
-        for (const id of ab.ids) {
+        if (ab.town + all.filter(coll).length !== want || want !== 7) B(`Monday's f1 brings ${ab.town} goods and ${all.filter(coll).length} collected, the tables say ${want} (7)`);
+        for (const id of all) {
           const w = S.items.where[id], cr = X.frCR(w), [fx] = X.frFp(R.cargo.itemType(S, id), 'car');
           if (cr.c + fx > 4 && cr.c <= 6) B(`good ${id} stands in the doorway's aisle (cell ${w.cell})`);
           if (R.cargo.itemType(S, id) === 'plough' && cars.find(c => c.id === w.stockId).k !== 'flatcar') B('the plough is not on the flatcar');

@@ -33,7 +33,7 @@ const RUNNER = `window.__d27 = (() => {
   const sod = S => (S.time + 18000) % 86400;
   function newRec() { return { days: {}, runs: {}, swOther: 0, shots: {}, sums: [], audit: [], hours: 0, needs: {}, sw0: {}, les: [], best: {} }; }
   function start(seed) { const S = R.newState(seed, 'proto'), bot = factory(R); return { S, bot, rec: newRec() }; }
-  const dayRec = (rec, d) => rec.days[d] = rec.days[d] || { came: 0, seated: 0, punched: 0, missed: 0, inWant: 0, outWant: 0, unloaded: 0, loaded: 0, stored: 0, delivered: 0, wrongShop: 0, putOut: 0, picked: 0,
+  const dayRec = (rec, d) => rec.days[d] = rec.days[d] || { came: 0, seated: 0, punched: 0, missed: 0, inWant: 0, unWant: 0, collected: 0, outWant: 0, unloaded: 0, loaded: 0, stored: 0, delivered: 0, wrongShop: 0, putOut: 0, picked: 0,
     throws: 0, waves: 0, arrived: 0, onTime: 0, late: 0, worstLate: 0, soldOutside: 0, keeper: 0 };
   const save = S => JSON.stringify({ state: S });
   function step(Xr, n) {
@@ -61,7 +61,8 @@ const RUNNER = `window.__d27 = (() => {
         if (e.t === 'rrWavedOff' && !e.auto) D.waves++;
         if (e.t === 'pdLesson' || e.t === 'pdLessonDone' || e.t === 'pdLessonReplay') rec.les.push(hm(S) + ' ' + e.t + ' ' + (e.id || '') + (e.step !== undefined ? ' ' + e.step : '') + (e.skipped ? ' skipped' : ''));
         if (e.t === 'hour') { rec.hours++; const a = D27.itemAudit(S); if (a.length && rec.audit.length < 6) rec.audit.push(hm(S) + ': ' + a.slice(0, 2).join('; ')); }
-        if (e.t === 'rrArrived' && run && run.kind === 'freight') { D.inWant += X.frRunIn(S, run).length; D.outWant += X.frRunOutN(S, run); }
+        if (e.t === 'rrArrived' && run && run.kind === 'freight') { const L = X.frRunIn(S, run); D.inWant += L.length; D.unWant += L.filter(([, c]) => !X.FR.COLLECT.includes(R.cargo.COMMODITIES[c].type)).length; D.outWant += X.frRunOutN(S, run); }
+        if (e.t === 'frDelivered' && e.collected) D.collected++;
         if (/^rr(Due|Arrived|WavedOff|Left|Cancelled|Passed)$/.test(e.t) && run) {
           const o = rec.runs[e.run] = rec.runs[e.run] || { svc: run.svc, day: run.day, through: !!run.through, ph: 'due', arrLate: null, depLate: null, auto: false };
           if (e.t === 'rrArrived') { o.arrLate = run.tArr - run.arr; o.ph = 'stand'; }
@@ -160,7 +161,7 @@ module.exports = async function checkD27Day() {
         if (D.waves !== W.stop) P(`${tag}: ${D.waves} trains waved off by the player, expected ${W.stop}`);
         if (!(D.throws >= A.minThrows[d])) P(`${tag}: ${D.throws} switch throws, but the day's trains needed at least ${A.minThrows[d]}`);
         if (!(D.came > 0) || D.punched !== D.came || D.seated !== D.came || D.missed) P(`${tag}: travellers ${D.came} came, ${D.seated} seated, ${D.punched} punched, ${D.missed} missed`);
-        if (D.unloaded !== D.inWant || D.loaded !== D.outWant) P(`${tag}: goods ${D.unloaded} unloaded of ${D.inWant} the trains brought, ${D.loaded} loaded of ${D.outWant} for the railroad`);
+        if (D.unloaded !== D.unWant || D.loaded !== D.outWant) P(`${tag}: goods ${D.unloaded} unloaded of ${D.unWant} the trains brought for the player to unload (${D.collected} collected by their shop), ${D.loaded} loaded of ${D.outWant} for the railroad`);
         if (D.delivered !== D.inWant || D.wrongShop) P(`${tag}: ${D.delivered} goods delivered to the town of ${D.inWant} brought (${D.wrongShop} at the wrong shop)`);
         if (D.picked !== D.putOut) P(`${tag}: ${D.picked} goods picked up of ${D.putOut} the shops put out`);
         const want = { trains: D.arrived, onTime: D.onTime, late: D.late, punched: D.punched, missed: D.missed, unloaded: D.unloaded, delivered: D.delivered, seated: D.seated };
@@ -192,7 +193,7 @@ module.exports = async function checkD27Day() {
       for (let d = 0; d < DAYS; d++) {
         const D = A.days[d] || {}, runs = A.runs.filter(r => r.day === d);
         console.log(`  day ${d + 1}: runs (minutes late in/out) ${runs.map(r => `${r.svc} ${mins(r.arrLate)}/${mins(r.depLate)}`).join(', ')}; worst ${Math.round((D.worstLate || 0) / 60)}`);
-        console.log(`  day ${d + 1}: ${D.throws} throws (needed ${A.minThrows[d]}), ${D.waves} waved off; travellers ${D.came} came / ${D.seated} seated / ${D.punched} punched / ${D.missed} missed; goods ${D.unloaded}/${D.inWant} unloaded, ${D.stored} stored, ${D.loaded}/${D.outWant} loaded, ${D.delivered}/${D.inWant} delivered (keeper took ${D.keeper}), ${D.picked}/${D.putOut} picked up; summary at ${(A.sums[d] || {}).at}`);
+        console.log(`  day ${d + 1}: ${D.throws} throws (needed ${A.minThrows[d]}), ${D.waves} waved off; travellers ${D.came} came / ${D.seated} seated / ${D.punched} punched / ${D.missed} missed; goods ${D.unloaded}/${D.unWant} unloaded (${D.collected} collected by their shop), ${D.stored} stored, ${D.loaded}/${D.outWant} loaded, ${D.delivered}/${D.inWant} delivered (keeper took ${D.keeper}), ${D.picked}/${D.putOut} picked up; summary at ${(A.sums[d] || {}).at}`);
       }
       console.log(`  goods left at the end: to deliver ${JSON.stringify(A.left)}, at the shops ${JSON.stringify(A.picks)}`);
       console.log(`  bot ${JSON.stringify(A.stats)}; refusals ${JSON.stringify(A.refusals)}${A.notes.length ? '; notes ' + A.notes.join(', ') : ''}`);

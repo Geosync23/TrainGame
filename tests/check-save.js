@@ -5,10 +5,12 @@
 // - A damaged save (in IndexedDB or the quick save) does not stop the game: it starts fresh, keeps the
 //   bad save under a 'broken-<time>' key, and logs no console errors.
 // - Of the IndexedDB save and the quick save in localStorage, the one with the higher tick is loaded.
+// - Settings' Start over (polish, 2026-11-11): asks first (Cancel keeps the game), then deletes this world's saves
+//   (IndexedDB 'auto' and 'world-proto', the quick saves) and reloads to a new game; another world's save is kept.
 
 const fs = require('fs');
 const path = require('path');
-const { openGame, waitReady } = require('./browser');
+const { openGame, waitReady, screenshotPath } = require('./browser');
 
 module.exports = async function checkSave() {
   const problems = [];
@@ -57,6 +59,7 @@ module.exports = async function checkSave() {
   await checkBadSave(problems);
   await checkNewestWins(problems);
   await checkWorldSaves(problems);
+  await checkStartOver(problems);
   return problems;
 };
 
@@ -147,5 +150,47 @@ async function checkWorldSaves(problems) {
     if (b.world !== 'start' || b.h !== s.h) problems.push(`opening ?world=start did not bring the start save back (${b.world})`);
     if (errors.length) problems.push('console errors: ' + errors.join(' | '));
     else if (!problems.length) console.log('  saves by world: an old start save set aside on the prototype page and brought back with ?world=start');
+  } finally { await browser.close(); }
+}
+
+// Polish (2026-11-11, the designer: "a button in the settings to reset the save file").
+async function checkStartOver(problems) {
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+  const P = m => problems.push('start over: ' + m);
+  try {
+    // A prototype game played on, saved everywhere this world's game can be (and an old start-world save set aside).
+    const s = await page.evaluate(async () => {
+      const R = window.__railhead, h0 = R.hash();   // a new game, as the page starts one
+      R.step(200);
+      const json = R.exportSave(), tick = R.state.tick;
+      await R.saveGame();
+      localStorage.setItem('railhead-quicksave', json); localStorage.setItem('railhead-quicksave-proto', json); localStorage.setItem('railhead-quicksave-start', '{}');
+      await new Promise((res, rej) => { const r = indexedDB.open('railhead', 1); r.onsuccess = () => { const db = r.result, tx = db.transaction('saves', 'readwrite'), st = tx.objectStore('saves'); st.put({ gz: false, data: json }, 'world-proto'); st.put({ gz: false, data: '{}' }, 'world-start'); tx.oncomplete = () => { db.close(); res(); }; tx.onerror = () => rej(tx.error); }; });
+      return { tick, world: R.state.track.world, h0 };
+    });
+    if (s.world !== 'proto' || !(s.tick > 0)) P(`the game to start over is not a played prototype game (${s.world}, tick ${s.tick})`);
+    let keys = await storedKeys(page);
+    if (!keys.idb.includes('auto') || !keys.idb.includes('world-proto') || !keys.ls.includes('railhead-quicksave')) P('the saves were not planted: ' + JSON.stringify(keys));
+    // Settings > Start over asks; Cancel keeps everything.
+    await page.evaluate(() => { window.__railhead.pdui.closeBoard(); document.getElementById('setBtn').click(); });   // (the morning's board stands over the panel)
+    await page.click('#setReset');
+    const ask = await page.evaluate(() => ({ shown: !document.getElementById('setResetAsk').hidden, text: document.getElementById('setResetAsk').textContent }));
+    if (!ask.shown || !/This deletes your saved game\. Start over\?/.test(ask.text)) P(`no confirm step (${JSON.stringify(ask)})`);
+    await page.screenshot({ path: screenshotPath('polish-reset-confirm-portrait') });
+    await page.click('#setResetNo');
+    keys = await storedKeys(page);
+    const kept = await page.evaluate(() => ({ tick: window.__railhead.state.tick, ask: document.getElementById('setResetAsk').hidden }));
+    if (kept.tick !== s.tick || !keys.idb.includes('auto') || !kept.ask) P('Cancel did not keep the game');
+    // Yes: the page reloads into a new game; this world's saves are gone, the other world's kept.
+    await page.click('#setReset');
+    await Promise.all([page.waitForNavigation({ timeout: 15000 }), page.click('#setResetYes')]);
+    await waitReady(page);
+    const f = await page.evaluate(() => { const R = window.__railhead; return { tick: R.state.tick, world: R.state.track.world, h: R.hash() }; });
+    keys = await storedKeys(page);
+    if (f.tick !== 0 || f.world !== 'proto' || f.h !== s.h0) P(`after Start over the game is not new (world ${f.world}, tick ${f.tick})`);
+    if (keys.idb.includes('world-proto') || keys.ls.includes('railhead-quicksave') || keys.ls.includes('railhead-quicksave-proto')) P('a save of this world is left: ' + JSON.stringify(keys));
+    if (!keys.idb.includes('world-start') || !keys.ls.includes('railhead-quicksave-start')) P('another world\'s save was deleted: ' + JSON.stringify(keys));
+    if (errors.length) P('console errors: ' + errors.join(' | '));
+    else if (!problems.some(m => m.startsWith('start over'))) console.log(`  start over: asked first (Cancel kept tick ${s.tick}), then a new game (tick 0, a new game's hash); other world's save kept`);
   } finally { await browser.close(); }
 }

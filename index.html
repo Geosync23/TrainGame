@@ -283,6 +283,7 @@
   #panelRr .row { display: flex; gap: 6px; }
   #settings .row { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); line-height: 1.3; }
   #settings .row button[aria-pressed] { min-width: 64px; }
+  #setResetYes { background: #8c2f25; color: #fff4dc; }
   #tutTask .tools { display: flex; gap: 6px; justify-content: flex-end; }
   @media (orientation: landscape) and (max-height: 500px) {
     #nextJob { top: calc(env(safe-area-inset-top) + 10px); width: 360px; }
@@ -436,6 +437,8 @@
   <div class="row"><span class="grow">First-time cards: the game pauses to explain something the first time it happens.</span><button id="setCards" aria-pressed="true">On</button></div>
   <div class="row"><span class="grow">Train messages: a short note when a train is due, comes in, is ready or leaves. Refusals always show.</span><button id="setTrainMsgs" aria-pressed="true">On</button></div>
   <div class="row" id="setLesRow" hidden><span class="grow">Lessons: the six short lessons (switches, tickets, unloading, loading, delivery, pickup) come again, each at its moment.</span><button id="setLessons">Replay</button></div>
+  <div class="row" id="setResetRow"><span class="grow">Start over: delete this saved game and begin a new one.</span><button id="setReset">Start over</button></div>
+  <div class="row" id="setResetAsk" hidden><span class="grow"><b>This deletes your saved game. Start over?</b></span><button id="setResetYes">Start over</button><button id="setResetNo">Cancel</button></div>
 </div>
 <div id="fcard" class="hud" role="dialog" aria-labelledby="fcardTitle" hidden>
   <h2 id="fcardTitle"></h2>
@@ -1093,7 +1096,15 @@ const PROTO = (() => {
     // inside platform 1, 6u short of the cart crossing; a freight train inside track 3's straight.
     STOP: { t1: { E: 31, W: -31 }, t3: { E: 29, W: -29 } },
     // The station building (18 x 9u, eaves 5.5, ridge 8; the agent lives upstairs), its front door on platform 1.
-    STATION: { x: 0, z: -21.8, x0: -9, x1: 9, z0: -26.3, z1: -17.3, eaves: 5.5, ridge: 8.0, door: { x: -3.8, z: -16.5 } },
+    // Polish (2026-11-11, the designer: "a few notches back from the platform for visibility but add extra wood too"):
+    // set back 2.5u from platform 1's back edge (was against it: z -21.8, front -17.3), the gap planked (APRON).
+    STATION: { x: 0, z: -24.3, x0: -9, x1: 9, z0: -28.8, z1: -19.8, eaves: 5.5, ridge: 8.0, door: { x: -3.8, z: -19.0 } },
+    // Polish (2026-11-11): platform 1's planks. The deck reaches the lever frames' stages at each end (x +-31.5, the
+    // designer: "a needless gap" between the platform, the footbridge's foot and the frame), and the apron joins it to
+    // the depot's front, so the walk from the door is on boards. P1 (the platform's 60u for the trains and travellers)
+    // is unchanged; PROTO_DECKS, the drawn deck and the layout export use these.
+    P1_DECK: { x0: -31.5, x1: 31.5, z0: P1.z0, z1: P1.z1 },
+    APRON: { x0: -10, x1: 10, z0: -19.8, z1: P1.z0 },
     CANOPY: { x0: -15, x1: 15, z0: -17.3, z1: -11.3, y: 4.2, postZ: -11.6 },
     SCHEDBOARD: { x: 14, z: -16.9 },
     BENCHES: [-27, -22, -12, 4, 9, 22].map(x => ({ x, z: -16.6, len: 2.4, seat: 0.64 })),   // along platform 1's back edge (drawn; P and W seat people)
@@ -1176,7 +1187,7 @@ function protoBridgeYOf(b, x, z) {
 // The low decks people stand on at ground level in the prototype, with their heights (walkDeckY): platform 1, and the
 // boardwalks in front of the lots (added from TOWN27, section "starting world layout": the feed store's is a loading
 // dock 1u high). [{ id, x0, x1, z0, z1, y }].
-const PROTO_DECKS = [{ id: 'platform1', x0: PROTO.P1.x0, x1: PROTO.P1.x1, z0: PROTO.P1.z0, z1: PROTO.P1.z1, y: PROTO.DECK_Y }];
+const PROTO_DECKS = [{ id: 'platform1', ...PROTO.P1_DECK, y: PROTO.DECK_Y }, { id: 'p1apron', ...PROTO.APRON, y: PROTO.DECK_Y }];
 // Builds the prototype's track (D27 sizes). Edge 0 is track 2's west end (off the map), so s = x - LINE.x0 on it.
 function buildProtoWorld() {
   const T = trackNew(), P = PROTO, X = P.SW, ST = P.LIM_ST, n = x => trackNode(T, x, 0);
@@ -5409,7 +5420,7 @@ function townGraphBuild() {
   const PZ = -12.6, BZ = P.BENCHES[0].z;
   node('p1_w', -17, -14, 'walk', { ax: 'x' }); node('p1_e', 17, -14, 'walk', { ax: 'x' });
   ['wait0', 'wait1', 'wait2'].forEach((id, i) => node(id, -7 + 7 * i, PZ, 'wait', { ax: 'x', f: 0 }));
-  node('door_station', P.STATION.door.x, -16.0, 'door', { bld: 'station', ax: 'x', f: 0 });
+  node('door_station', P.STATION.door.x, P.STATION.door.z + 0.5, 'door', { bld: 'station', ax: 'x', f: 0 });   // (polish: follows the set-back depot; was -16.0)
   for (const b of P.BENCHES.filter(q => Math.abs(q.x) <= 12)) node('benchP' + b.x, b.x, BZ + 1.3, 'bench', { ax: 'x', f: 0, sf: 0, seats: [[-0.55, -1.15], [0.55, -1.15]] });
   link('sta_w', 'p1_w'); link('sta_e', 'p1_e');
   chain(['p1_w', 'benchP-12', 'wait0', 'wait1', 'benchP4', 'benchP9', 'wait2', 'p1_e']);
@@ -19035,7 +19046,7 @@ $('nextJob').addEventListener('click', () => {
 const setUi = { open: false };
 function openSettings() {
   closePanel(); closeCarPanel(); closeTelPanel(); closeOffice(); closeInbox(); closeLook(); closeWorkCard();
-  setUi.open = true; $('settings').hidden = false; settingsUpdate();
+  setUi.open = true; $('settings').hidden = false; settingsResetAsk(false); settingsUpdate();
 }
 function closeSettings() { setUi.open = false; $('settings').hidden = true; $('setBtn').setAttribute('aria-pressed', 'false'); }
 function settingsUpdate() {
@@ -19054,6 +19065,20 @@ $('setNext').addEventListener('click', () => nextJobSetPref(!nextJobOn()));
 $('setArrows').addEventListener('click', () => { guideSetPref(!guideOn()); guideHud(); settingsUpdate(); });
 $('setCards').addEventListener('click', () => cardsSetPref(!cardsOn()));
 $('setTrainMsgs').addEventListener('click', () => rrMsgSetPref(!rrMsgOn()));
+// Polish (2026-11-11, the designer: "a button in the settings to reset the save file"): Start over asks first, then
+// deletes this world's saved games (IndexedDB 'auto' and 'world-<id>', the quick save 'railhead-quicksave' and
+// 'railhead-quicksave-<id>' in localStorage) and reloads the page, which starts a new game. Saving stops first (no save
+// on the way out puts it back); other worlds' saves and the Settings choices are kept.
+function settingsResetAsk(on) { $('setResetRow').hidden = on; $('setResetAsk').hidden = !on; }
+async function saveDeleteAll() {
+  savingOff = true; clearTimeout(saveTimer);
+  if (saveBusy) await saveBusy.catch(() => {});
+  try { await idbDo('readwrite', st => { st.delete('world-' + PAGE_WORLD); return st.delete(SAVE_KEY); }); } catch (e) { console.warn('Could not delete the saved game:', e && e.message); }
+  try { localStorage.removeItem(QUICK_KEY); localStorage.removeItem(QUICK_KEY + '-' + PAGE_WORLD); } catch (e) { /* no storage */ }
+}
+$('setReset').addEventListener('click', () => settingsResetAsk(true));
+$('setResetNo').addEventListener('click', () => settingsResetAsk(false));
+$('setResetYes').addEventListener('click', async () => { $('setResetYes').disabled = true; await saveDeleteAll(); location.reload(); });
 // ---- First-time cards (D22 (1)) ----
 // The first time each of these happens in a game, the game pauses (the speed control, as II does) and a short card
 // says what happened, why, and what to do: "Show me" puts the helper arrow on the place (guideUi.card, read by
@@ -20850,8 +20875,21 @@ function pixScale() {
   return Math.max(PIX.MIN, Math.min(PIX.MAX, Math.round(base * cam.zoom / PIX.Z0)));
 }
 // CSS pixels to the world (on the ground, or at height y) and back, through the current camera.
-function pixToNative(px, py) { return { x: PIX.vx + px * PIX.dpr / PIX.scale, y: PIX.vy + py * PIX.dpr / PIX.scale }; }
-function pixToScreen(x, y, z) { const p = pixProject(x, y, z); return { x: (p.x - PIX.vx) * PIX.scale / PIX.dpr, y: (p.y - PIX.vy) * PIX.scale / PIX.dpr }; }
+// (Polish: through the camera's exact place, PIX.camX and camY: the whole pixel PIX.vx plus the canvas's shift.)
+function pixToNative(px, py) { return { x: PIX.camX + px * PIX.dpr / PIX.scale, y: PIX.camY + py * PIX.dpr / PIX.scale }; }
+function pixToScreen(x, y, z) { const p = pixProject(x, y, z); return { x: (p.x - PIX.camX) * PIX.scale / PIX.dpr, y: (p.y - PIX.camY) * PIX.scale / PIX.dpr }; }
+// Polish (2026-11-11): puts the view's top-left at (cx, cy) native px (fractions allowed): the art at the whole pixel
+// PIX.vx, PIX.vy, the canvas shifted left and up by the rest, rounded to whole device pixels (so each native pixel stays
+// a crisp square of PIX.scale device pixels); PIX.camX, camY: where the view really is.
+PIX.camX = 0; PIX.camY = 0; PIX.fx = 0; PIX.fy = 0;
+function pixCamSet(cx, cy) {
+  const s = PIX.scale;
+  let vx = Math.floor(cx), vy = Math.floor(cy), fx = Math.round((cx - vx) * s), fy = Math.round((cy - vy) * s);
+  if (fx >= s) { vx++; fx = 0; } if (fy >= s) { vy++; fy = 0; }
+  PIX.vx = vx; PIX.vy = vy; PIX.camX = vx + fx / s; PIX.camY = vy + fy / s;
+  if (PIX.canvas && (fx !== PIX.fx || fy !== PIX.fy || !PIX.canvas.style.transform)) PIX.canvas.style.transform = `translate3d(${-fx / PIX.dpr}px, ${-fy / PIX.dpr}px, 0)`;
+  PIX.fx = fx; PIX.fy = fy;
+}
 function pixGroundAt(px, py, y) { const n = pixToNative(px, py), w = pixUnproject(n.x, n.y, y || 0); return new THREE.Vector3(w.x, y || 0, w.z); }
 // A tap on a train (the prototype): the vehicle whose box holds the tap's ray at some height, the nearest the viewer.
 function pixPickTrain(px, py) {
@@ -21185,10 +21223,20 @@ function pixBuildGround(T) {
 // cattails, the wash bridge, the point rodding from each lever frame). Chunks are kept in a cache (PIX.CH_MAX, about
 // 10 MB) and made within a time budget per frame (PIX.CH_MS, at least one a frame; a missing one shows as flat grass
 // for that frame), then the ones round the view in idle time.
-PIX.CH = 256; PIX.CH_MAX = 40; PIX.CH_MS = 8;
+// Polish (2026-11-11, the designer's hitchy walk): walking made the chunks coming into view in the frame itself (two or
+// three at a time: 20 to 50 ms frames on a 4x-throttled CPU, a jolt each time a row of chunks came in). Now the ones
+// within PIX.CH_AHEAD native px round the view (twice that on the side the view is moving to) are made ahead, one at a
+// time in idle time (requestIdleCallback, or a timer after the frame where there is none), so walking finds them made;
+// the cache keeps that ring (never less than PIX.CH_MAX chunks). The in-frame budget is now PIX.CH_MS 4 (a jump to a new
+// place still makes the first one at once). Chunks are 128 px at the usual zooms (scale 3 and up: a quarter of the work
+// each, about 0.5 ms, 2 to 5 ms on a 4x-throttled CPU, so making one in idle time never holds up the next frame; a 256 px
+// one took up to 60 ms there) and 256 px zoomed out (scale 1 and 2, where 128 px ones cost about 1 ms more a frame in
+// copies); PIX.CH_MAX is for 256 px chunks (about 10 MB), four times as many of 128 px.
+PIX.CH = 256; PIX.CH_MAX = 40; PIX.CH_MS = 4; PIX.CH_AHEAD = 160;
+function pixChunkSize() { return PIX.scale <= 2 ? 256 : 128; }
 // D27 track sizes (plans/d27-tech.md 1.3): rails at +-1.025 (gauge 2.05), ties 3.7 long every 0.85, ballast 4.6 wide.
 PIX.GAUGE = 1.025; PIX.TIE = [1.85, 0.85, 0.3]; PIX.BAL = 2.3;
-PIX.chunks = new Map(); PIX.chunkT = null; PIX.chunkStats = { built: 0, ms: 0, worst: 0, missing: 0 };
+PIX.chunks = new Map(); PIX.chunkT = null; PIX.chunkStats = { built: 0, ms: 0, worst: 0, missing: 0, inFrame: 0, inFrameMax: 0, ahead: 0 };
 const PIX_GEO = new WeakMap();
 function pixHash(i, j) { let h = (i * 374761393 + j * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 // The track's edges with plan boxes (for a quick test per point), and the along / across of a point on an edge.
@@ -21326,12 +21374,15 @@ function pixChunkBuild(T, ci, cj) {
     g.putImageData(img, 0, 0);
   }
   // Platform 1's low deck (D25 plat/ tiles, drawn 3 px up): its cells, the +z edge, the +x end and the corner.
-  const D = PROTO.P1;
-  if (D.x1 + 2 > w0 && D.x0 - 2 < w1 && D.z1 + 2 > v0 && D.z0 - 2 < v1) {
+  // Polish (2026-11-11): the deck to the lever frames (P1_DECK) and the apron to the depot's front (APRON, no +z edge:
+  // it joins the platform). A side not a whole number of units long ends with a cell laid back from its far end.
+  const cells = (a, b) => { const o = []; for (let v = a; v < b - 1e-6; v += 1) o.push(Math.min(v, b - 1)); return o; };
+  for (const [D, south] of [[PROTO.P1_DECK, true], [PROTO.APRON, false]]) if (D.x1 + 2 > w0 && D.x0 - 2 < w1 && D.z1 + 2 > v0 && D.z0 - 2 < v1) {
     const put = (key, x, z) => { const f = pixF(key); if (!f) return; const p = pixProject(x, 0, z); g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], Math.round(p.x) - l - f[5], Math.round(p.y) - t - f[6], f[3], f[4]); };
-    for (let j = 0; j < Math.round(D.z1 - D.z0); j++) for (let i = 0; i < Math.round(D.x1 - D.x0); i++) put(`plat/deck/v${Math.floor(pixHash(i, j + 50) * 4) % 4}`, D.x0 + i, D.z0 + j);
-    for (let i = 0; i < Math.round(D.x1 - D.x0); i++) put(`plat/edge_s/v${i % 2}`, D.x0 + i, D.z1);
-    for (let j = 0; j < Math.round(D.z1 - D.z0); j++) put('plat/edge_e', D.x1, D.z0 + j);
+    const xs = cells(D.x0, D.x1), zs = cells(D.z0, D.z1);
+    zs.forEach(z => xs.forEach(x => put(`plat/deck/v${Math.floor(pixHash(Math.round(x - D.x0), Math.round(z - D.z0) + 50) * 4) % 4}`, x, z)));
+    if (south) xs.forEach((x, i) => put(`plat/edge_s/v${i % 2}`, x, D.z1));
+    zs.forEach(z => put('plat/edge_e', D.x1, z));
   }
   for (const q of pixFlatList()) {
     if (q.r <= l || q.l >= l + N || q.b <= t || q.t >= t + N) continue;
@@ -21350,6 +21401,7 @@ function pixGroundDraw(g, all) {
     PIX.chunkT = T;
   }
   if (!PIXA.ready) return;
+  if (pixChunkSize() !== N) { PIX.CH = pixChunkSize(); PIX.chunks.clear(); PIX.aheadWant = null; return pixGroundDraw(g, all); }   // (a zoom across scale 2 and 3)
   const cmax = Math.ceil(PIX_PROJ.W / N) - 1, rmax = Math.ceil(PIX_PROJ.H / N) - 1;
   const c0 = Math.max(0, Math.floor(PIX.vx / N)), c1 = Math.min(cmax, Math.floor((PIX.vx + PIX.nw) / N)), r0 = Math.max(0, Math.floor(PIX.vy / N)), r1 = Math.min(rmax, Math.floor((PIX.vy + PIX.nh) / N));
   const t0 = performance.now(), stamp = PIX.chunkStats.frame = (PIX.chunkStats.frame || 0) + 1;
@@ -21364,15 +21416,42 @@ function pixGroundDraw(g, all) {
     g.drawImage(C.cv, ci * N - PIX.vx, cj * N - PIX.vy);
     PIX.stats.draws++;
   }
-  PIX.chunkStats.missing = missing;
-  // Idle time: one chunk of the ring round the view (nearest the view first).
-  if (!made && !missing && PIX.chunks.size < PIX.CH_MAX - 4) {   // (only while the cache has room: no churn)
-    let best = null;
-    for (let cj = Math.max(0, r0 - 1); cj <= Math.min(rmax, r1 + 1); cj++) for (let ci = Math.max(0, c0 - 1); ci <= Math.min(cmax, c1 + 1); ci++) if (!PIX.chunks.has(ci + ',' + cj)) { best = [ci, cj]; break; }
-    if (best) { make(best[0], best[1]); PIX.chunks.get(best[0] + ',' + best[1]).used = stamp - 1; }
+  PIX.chunkStats.missing = missing; PIX.chunkStats.inFrame = made; PIX.chunkStats.inFrameMax = Math.max(PIX.chunkStats.inFrameMax, made);
+  // Polish: the ring round the view (PIX.CH_AHEAD native px, twice that on the side the view moves to) is kept and made
+  // ahead in idle time; the cache keeps at least the ring.
+  const mv = PIX.camMove || [0, 0], M = PIX.CH_AHEAD, sx = Math.sign(mv[0]), sy = Math.sign(mv[1]);
+  const a0 = Math.max(0, Math.floor((PIX.vx - M * (sx < 0 ? 2 : 1)) / N)), a1 = Math.min(cmax, Math.floor((PIX.vx + PIX.nw + M * (sx > 0 ? 2 : 1)) / N));
+  const b0 = Math.max(0, Math.floor((PIX.vy - M * (sy < 0 ? 2 : 1)) / N)), b1 = Math.min(rmax, Math.floor((PIX.vy + PIX.nh + M * (sy > 0 ? 2 : 1)) / N));
+  const want = [];
+  for (let cj = b0; cj <= b1; cj++) for (let ci = a0; ci <= a1; ci++) {
+    const C = PIX.chunks.get(ci + ',' + cj);
+    if (C) C.used = Math.max(C.used, stamp - 1);
+    else want.push([ci, cj, Math.hypot((ci + 0.5) * N - (PIX.vx + PIX.nw / 2 + mv[0] * 30), (cj + 0.5) * N - (PIX.vy + PIX.nh / 2 + mv[1] * 30))]);
   }
-  // The cache: the least recently drawn go first.
-  if (PIX.chunks.size > PIX.CH_MAX) [...PIX.chunks.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, PIX.chunks.size - PIX.CH_MAX).forEach(([k]) => PIX.chunks.delete(k));
+  want.sort((p, q) => p[2] - q[2]);
+  PIX.aheadWant = want;
+  if (want.length && !PIX.aheadPending) pixChunkAhead();
+  // The cache: the least recently drawn go first (never the ring).
+  const max = Math.max(PIX.CH_MAX * (256 / N) * (256 / N), (a1 - a0 + 1) * (b1 - b0 + 1) + 8);
+  if (PIX.chunks.size > max) [...PIX.chunks.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, PIX.chunks.size - max).forEach(([k]) => PIX.chunks.delete(k));
+}
+// Polish: one chunk of the ring made in idle time (the nearest first, towards where the view moves): after this frame,
+// when the browser is idle (requestIdleCallback), or by a timer where it has none; never more than one at a time.
+function pixChunkAhead() {
+  PIX.aheadPending = true;
+  const run = dl => {
+    PIX.aheadPending = false;
+    const w = PIX.aheadWant, T = PIX.chunkT;
+    if (!w || !w.length || !T || !PIXA.ready || !pixOn()) return;
+    if (dl && !dl.didTimeout && dl.timeRemaining() < Math.min(6, PIX.chunkStats.ms + 1)) { pixChunkAhead(); return; }   // not idle enough: next time
+    const [ci, cj] = w.shift(), k = ci + ',' + cj;
+    if (PIX.chunks.has(k)) return;
+    const a = performance.now(), cv = pixChunkBuild(T, ci, cj), ms = performance.now() - a;
+    PIX.chunks.set(k, { cv, used: (PIX.chunkStats.frame || 0) - 1 });
+    PIX.chunkStats.built++; PIX.chunkStats.ahead++; PIX.chunkStats.ms = ms; PIX.chunkStats.worst = Math.max(PIX.chunkStats.worst, ms);
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 120 });
+  else setTimeout(run, 0);
 }
 
 // ---- D27 (R): what the other builders give to draw (plans/d27-tech.md 3.2, 4.6, 5.3) ----
@@ -22366,7 +22445,7 @@ function protoLayoutExport() {
     // down ('e' or 'w'), and their parts and walking path with heights, for the art's ground shadows.
     footbridges: PROTO_BRIDGES.map(b => ({ id: b.id, x: b.x, p1: b.p1, p2: b.p2, top: b.top, under: b.under, parts: b.parts, path: b.path })), fb: PROTO_FB,
     d27: {
-      scale: { M: r3(P.M), personH: 2.5 }, deckY: P.DECK_Y, dockY: P.DOCK_Y, p1: P.P1, cargo: P.CARGO, ramps: P.RAMPS, freighthouse: P.FREIGHTHOUSE, store: P.STORE, storeOut: STORE27_OUT,
+      scale: { M: r3(P.M), personH: 2.5 }, deckY: P.DECK_Y, dockY: P.DOCK_Y, p1: P.P1, p1Deck: P.P1_DECK, apron: P.APRON, cargo: P.CARGO, ramps: P.RAMPS, freighthouse: P.FREIGHTHOUSE, store: P.STORE, storeOut: STORE27_OUT,
       cartLane: P.CART_LANE, loadEdge: P.LOAD_EDGE, crossing: X, cartPath: P.CART_PATH, pathW: P.PATH_W, levers: PROTO_LEVERS, leverFrames: P.LEVERS,
       benches: P.BENCHES, square: P.SQUARE, lots: P.LOTS, lanes: P.LANES, houses: P.HOUSES, wash: P.WASH,
       creek: (() => { const pts = []; for (let x = P.BOUNDS.x0; x <= P.BOUNDS.x1; x += 2) { const c = protoCreekAt(x); pts.push([x, r3(c.z), r3(c.hw)]); } return { z0: P.CREEK.z0, z1: P.CREEK.z1, pts }; })(),
@@ -22484,12 +22563,15 @@ function pixFrame(alpha, dt) {
   // Size: the visible canvas in device pixels; the buffer in native pixels (a whole number of device pixels each).
   const dpr = window.devicePixelRatio || 1, dw = Math.round(window.innerWidth * dpr), dh = Math.round(window.innerHeight * dpr);
   PIX.dpr = dpr; PIX.scale = pixScale();
-  const nw = Math.ceil(dw / PIX.scale), nh = Math.ceil(dh / PIX.scale);
+  // Polish (2026-11-11, the designer's "very hitchy" camera): the buffer is one native pixel bigger each way than the
+  // screen needs, so the camera can sit between native pixels: the art is drawn on whole native pixels at the whole
+  // pixel PIX.vx, PIX.vy and the canvas is shifted by the rest (PIX.fx, fy: whole device pixels) with a CSS transform.
+  const vwF = dw / PIX.scale, vhF = dh / PIX.scale, nw = Math.ceil(vwF) + 1, nh = Math.ceil(vhF) + 1;
   if (PIX.buf.width !== nw || PIX.buf.height !== nh || PIX.cssScale !== PIX.scale || PIX.cssDpr !== dpr) {
     PIX.buf.width = nw; PIX.buf.height = nh; PIX.cssScale = PIX.scale; PIX.cssDpr = dpr;
     PIX.canvas.style.width = (nw * PIX.scale / dpr) + 'px'; PIX.canvas.style.height = (nh * PIX.scale / dpr) + 'px';
   }
-  PIX.nw = nw; PIX.nh = nh;
+  PIX.nw = nw; PIX.nh = nh; PIX.vw = vwF; PIX.vh = vhF;
   // Game time for the animations (game minutes), and how much passed since the last frame.
   PIX.tg = (S.time + (speed > 0 ? alpha : 0) * CFG.TICK_GAME_S) / 60;
   PIX.dtg = PIX.tgLast === null || PIX.tgLast > PIX.tg || PIX.tg - PIX.tgLast > 5 ? 0 : PIX.tg - PIX.tgLast;
@@ -22543,16 +22625,21 @@ function pixFrame(alpha, dt) {
     const b = pixUnproject(K.cx, K.cy, 0), cx = clampX(b.x + cam.ox), cz = clampZ(b.z + cam.oz);
     cam.ox = cx - b.x; cam.oz = cz - b.z;
   }
-  // Whole pixels: his rounded point plus the rounded offset of the resting centre from him (steady while it follows
-  // him at the dead zone's edge, so neither he nor the world shimmers), plus the look away.
-  const dx = 8 * (cam.ox - cam.oz), dy = 4 * (cam.ox + cam.oz), hw = Math.floor(nw / 2), hh = Math.floor(nh / 2);
-  const wx = Math.round(q.x) + Math.round(K.cx - q.x) + Math.round(dx) - hw, wy = Math.round(q.y) + Math.round(K.cy - q.y) + Math.round(dy) - hh;
-  PIX.vx = wx; PIX.vy = wy;
+  // Polish (2026-11-11): the camera moves continuously (before, it moved in whole native pixels: walking at any angle
+  // but straight across the screen, x and y stepped on different frames, a stair-step of 3-device-pixel jumps). The
+  // view's top-left (native px, a fraction) puts the resting centre plus the look away on the screen's middle (the
+  // middle of his feet's pixel when locked on him); the art is drawn at its whole part and the canvas shifted by the
+  // rest in whole device pixels, so he stays within half a native pixel of the middle and the world glides.
+  const dx = 8 * (cam.ox - cam.oz), dy = 4 * (cam.ox + cam.oz);
+  const wx = K.cx + 0.5 + dx - vwF / 2, wy = K.cy + 0.5 + dy - vhF / 2;
+  let cx = wx, cy = wy;
   // Kept on the ground layer where it is big enough, so nothing past its edge shows.
   const GW = PIX_PROJ.W, GH = PIX_PROJ.H;
-  if (nw <= GW) PIX.vx = Math.max(0, Math.min(GW - nw, PIX.vx)); if (nh <= GH) PIX.vy = Math.max(0, Math.min(GH - nh, PIX.vy));
+  if (vwF <= GW) cx = Math.max(0, Math.min(GW - vwF, cx)); if (vhF <= GH) cy = Math.max(0, Math.min(GH - vhF, cy));
+  PIX.camMove = PIX.camLast ? [cx - PIX.camLast[0], cy - PIX.camLast[1]] : [0, 0]; PIX.camLast = [cx, cy];
+  pixCamSet(cx, cy);
   if (cam.ox || cam.oz) {   // a drag past the edge does not pile up: the part of it the edge stopped is dropped
-    const ex = PIX.vx - wx, ey = PIX.vy - wy;
+    const ex = cx - wx, ey = cy - wy;
     let ax = dx, ay = dy;
     if (ex * ax < 0) ax = Math.abs(ex) >= Math.abs(ax) ? 0 : ax + ex;
     if (ey * ay < 0) ay = Math.abs(ey) >= Math.abs(ay) ? 0 : ay + ey;
@@ -22882,7 +22969,8 @@ window.__railhead = {
     // Checks: put the player at (x, z) with no walk between (y: a height given by the sim, as T's bridges will).
     placePlayer(x, z, y) { S.player.x = x; S.player.z = z; if (y === undefined) delete S.player.y; else S.player.y = y; prevPlayer = { x, z }; },
     setSpeed: n => setSpeed(n), frameOf: k => pixF(k),
-    get view() { return { vx: PIX.vx, vy: PIX.vy, nw: PIX.nw, nh: PIX.nh, scale: PIX.scale, dpr: PIX.dpr }; },
+    // (Polish: camX, camY the view's exact top-left, vw, vh the screen's size, native px; nw, nh the buffer, one more.)
+    get view() { return { vx: PIX.vx, vy: PIX.vy, nw: PIX.nw, nh: PIX.nh, scale: PIX.scale, dpr: PIX.dpr, camX: PIX.camX, camY: PIX.camY, vw: PIX.vw, vh: PIX.vh }; },
     get canvas() { return PIX.canvas; }, get ground() { return PIX.ground; },
     // D27 (R): the ground's chunks made at once (warm(true): every missing one in view each frame; checks and
     // screenshots), the frame's parts (prof), the camera's resting centre, the lists read this frame, the cut-away cars.

@@ -78,8 +78,10 @@ module.exports = async function checkPixRender() {
         const S = R.state, P = R.proto.PROTO;
         if (!on(S.player.x, S.player.z, 0, 0)) B('the player is not on the screen');
         // Since 2026-11-11 the view starts (and stays) centred on the player: his feet on the middle native pixel.
-        const q = X.pixPlayerPoint(S.player.x, S.player.z), off = [Math.round(q.x) - v.vx - Math.floor(v.nw / 2), Math.round(q.y) - v.vy - Math.floor(v.nh / 2)];
-        if (off[0] || off[1]) B(`the default view is not centred on the player (his feet ${off} native px from the middle)`);
+        // (Polish, 2026-11-11: the camera sits between native pixels, so the middle of his feet's pixel is within half a
+        // native pixel, plus one device pixel's rounding, of the screen's middle.)
+        const q = X.pixPlayerPoint(S.player.x, S.player.z), off = [Math.round(q.x) + 0.5 - v.camX - v.vw / 2, Math.round(q.y) + 0.5 - v.camY - v.vh / 2];
+        if (Math.abs(off[0]) > 0.5 + 1 / v.scale + 1e-6 || Math.abs(off[1]) > 0.5 + 1 / v.scale + 1e-6) B(`the default view is not centred on the player (his feet ${off.map(a => a.toFixed(2))} native px from the middle)`);
         // What shows round him (he starts on platform 1 in front of the schedule board): portrait is narrow (about
         // 260 native px), so platform 2's east half, track 3 and the station's front show in landscape.
         // D27: things are about twice D25's size, so the default view (about 32u of track: plans/d27-tech.md 1.6) shows
@@ -174,7 +176,7 @@ module.exports = async function checkPixRender() {
           if (d.see && d.see.some(r => u >= r[0] && w >= r[1] && u < r[2] && w < r[3])) return false; return d.si < 0 || alphaOf(d.si, d.fx + u, d.fy + w) > 0; };
         const cv = {}; const alphaOf = (si, x, y) => { let c = cv[si]; if (!c) { const im = X.PIXA.imgs[si], k = document.createElement('canvas'); k.width = im.width; k.height = im.height; const g = k.getContext('2d'); g.drawImage(im, 0, 0); c = cv[si] = { w: k.width, d: g.getImageData(0, 0, k.width, k.height).data }; } return c.d[4 * (y * c.w + x) + 3]; };
         const top = (nx, ny) => { for (let i = D.length - 1; i >= 0; i--) if (solid(D[i], nx, ny)) return D[i]; return null; };
-        const css = (nx, ny) => [(nx + 0.5 - v.vx) * v.scale / v.dpr, (ny + 0.5 - v.vy) * v.scale / v.dpr];
+        const css = (nx, ny) => [(nx + 0.5 - v.camX) * v.scale / v.dpr, (ny + 0.5 - v.camY) * v.scale / v.dpr];
         const same = (h, r) => h && r && h.k === r.k && h.id === r.id && h.stock === r.stock;
         const inView = d => { const [x, y] = css(d.l + d.w / 2, d.t + d.h / 2); return x > 8 && y > 8 && x < innerWidth - 8 && y < innerHeight - 8; };
         const want = { sw: 0, tr: 0, pp: 0, item: 0, bld: 0, player: 0 };
@@ -308,7 +310,7 @@ module.exports = async function checkPixRender() {
         const raf = () => new Promise(r => requestAnimationFrame(r)), wait = ms => new Promise(r => setTimeout(r, ms));
         const feet = () => {
           const v = X.view, d = X.drawn.find(q => q.hit && q.hit.k === 'player'), f = d && X.frameOf(d.key);
-          return d && f ? [d.l + f[5] - v.vx - Math.floor(v.nw / 2), d.t + f[6] - v.vy - Math.floor(v.nh / 2)] : null;
+          return d && f ? [d.l + f[5] + 0.5 - v.camX - v.vw / 2, d.t + f[6] + 0.5 - v.camY - v.vh / 2] : null;   // (polish: from the screen's middle, native px)
         };
         R.camera.zoom = 1.5; R.camera.ox = 0; R.camera.oz = 0;
         X.placePlayer(2, z); S.player.mode = 'idle'; S.player.use = null; S.player.act = null;
@@ -322,8 +324,8 @@ module.exports = async function checkPixRender() {
           const f = feet(), v = X.view;
           if (!f) { B('the player was not drawn'); break; }
           out.n++;
-          out.worst = [Math.max(out.worst[0], Math.abs(f[0])), Math.max(out.worst[1], Math.abs(f[1]))];
-          if (f[0] || f[1]) { B(`walking, his feet are ${f} native px from the view's middle`); break; }
+          out.worst = [Math.max(out.worst[0], +Math.abs(f[0]).toFixed(2)), Math.max(out.worst[1], +Math.abs(f[1]).toFixed(2))];
+          if (Math.abs(f[0]) > 0.5 + 1 / v.scale + 1e-6 || Math.abs(f[1]) > 0.5 + 1 / v.scale + 1e-6) { B(`walking, his feet are ${f.map(a => a.toFixed(2))} native px from the view's middle`); break; }
           if (!Number.isInteger(v.vx) || !Number.isInteger(v.vy)) { B(`the view is not on whole pixels (${v.vx}, ${v.vy})`); break; }
         }
         out.moved = X.view.vx - vx0;
@@ -338,7 +340,7 @@ module.exports = async function checkPixRender() {
         for (let i = 0; i < 100 && S.player.mode !== 'idle'; i++) await wait(100);   // he arrives
         await wait(300);   // and stands (a tick on)
         X.pixLookAt(S.player.x, S.player.z - 8); await wait(400);
-        const v = X.view, mid = X.pixUnproject(v.vx + v.nw / 2, v.vy + v.nh / 2, 0);
+        const v = X.view, mid = X.pixUnproject(v.camX + v.vw / 2, v.camY + v.vh / 2, 0);
         if (!(off() > 3) || Math.hypot(mid.x - S.player.x, mid.z - (S.player.z - 8)) > 1) B(`a look away while he stands did not stay (offset ${off().toFixed(2)}, the view's middle at ${mid.x.toFixed(1)}, ${mid.z.toFixed(1)})`);
         if (centre.hidden) B('the Centre button is hidden while the view looks away');
         R.send({ t: 'walkTo', x: Math.round((S.player.x - 7) * 100), z: Math.round(z * 100) });
@@ -352,7 +354,44 @@ module.exports = async function checkPixRender() {
         return out;
       });
       back.bad.forEach(P);
-      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet at most ${fol.worst} native px from the view's middle (on its middle pixel in each); the view moved ${fol.moved} native px`);
+      console.log(`  ${orient}: follow: ${fol.n} frames walking, feet at most ${fol.worst} native px from the view's middle; the view moved ${fol.moved} native px`);
+      // 8. A smooth camera (polish, 2026-11-11; the designer: "if I walk exactly right or left it's smooth. Any deflection
+      // in that angle and it judders"): walking at several angles on open ground at 1x, the view moves every frame by
+      // what the time since the last frame asks (his speed), to within one device pixel and a half on each axis: no
+      // stair-steps of a whole native pixel, no frame where it stands still while he walks; and the ground is made ahead,
+      // so no frame makes more than one chunk (none, normally).
+      const sm = await page.evaluate(async () => {
+        const R = window.__railhead, X = R.pix, CS = X.PIX.chunkStats, out = { bad: [], runs: [] }, B = m => out.bad.push(m);
+        const raf = () => new Promise(r => requestAnimationFrame(r)), wait = ms => new Promise(r => setTimeout(r, ms));
+        const w0 = !!X.PIX.warm; R.camera.zoom = 1.5; R.camera.ox = 0; R.camera.oz = 0; X.warm(false);
+        for (const [name, a, x, z] of [['along x (down-right)', 0, 66, -86], ['25 degrees off screen-right', 242, 62, -70], ['10 degrees off screen-right', 231, 64, -110], ['screen-down', 32, 60, -100], ['screen-right', 224, 62, -80]]) {
+          X.setSpeed(0); X.placePlayer(x, z); R.state.player.mode = 'idle'; R.state.player.use = null; R.state.player.act = null;
+          await wait(400);   // the ring round the view is made in idle time
+          CS.inFrameMax = 0; const b0 = CS.built, i0 = CS.ahead;
+          R.send({ t: 'walkDir', a }); X.setSpeed(1);
+          const rec = [];
+          for (let t0 = performance.now(); performance.now() - t0 < 1600;) { const ts = await raf(); const v = X.view; rec.push({ t: ts, x: v.camX, y: v.camY, s: v.scale, dpr: v.dpr }); }   // (the frame's own time, as the game's loop has it)
+          R.send({ t: 'walkDir', a: null }); X.setSpeed(0);
+          const r = rec.slice(8), n = r.length - 1, T = r[n].t - r[0].t, vx = (r[n].x - r[0].x) / T, vy = (r[n].y - r[0].y) / T, s = r[0].s;
+          let worst = 0, stalls = 0, maxCss = 0;
+          for (let i = 1; i <= n; i++) {
+            const dt = r[i].t - r[i - 1].t, dx = r[i].x - r[i - 1].x, dy = r[i].y - r[i - 1].y;
+            worst = Math.max(worst, Math.abs(dx - vx * dt) * s, Math.abs(dy - vy * dt) * s);   // device px
+            if (Math.hypot(vx, vy) * dt * s >= 1.5 && !dx && !dy) stalls++;
+            maxCss = Math.max(maxCss, Math.hypot(dx, dy) * s / r[i].dpr);
+          }
+          const run = { name, frames: n, cssPerFrame: +(Math.hypot(vx, vy) * (T / n) * s / r[0].dpr).toFixed(2), maxCss: +maxCss.toFixed(2), worstDev: +worst.toFixed(2), stalls, chunks: CS.built - b0, ahead: CS.ahead - i0, inFrameMax: CS.inFrameMax };
+          out.runs.push(run);
+          if (!(Math.hypot(vx, vy) * T > 20)) B(`${name}: the view moved only ${(Math.hypot(vx, vy) * T).toFixed(1)} native px (he did not walk?)`);
+          if (worst > 1.5) B(`${name}: the view's step strays ${worst.toFixed(2)} device px from an even glide (stair-steps)`);
+          if (stalls) B(`${name}: the view stood still on ${stalls} frames while he walked`);
+          if (CS.inFrameMax > 1) B(`${name}: a frame made ${CS.inFrameMax} ground chunks`);
+        }
+        X.warm(w0);
+        return out;
+      });
+      sm.bad.forEach(P);
+      for (const q of sm.runs) console.log(`  ${orient}: smooth walk ${q.name}: ${q.frames} frames, ${q.cssPerFrame} CSS px a frame (largest step ${q.maxCss}), worst ${q.worstDev} device px off an even glide, ${q.stalls} stalls; ground chunks made ${q.chunks} (${q.ahead} ahead, at most ${q.inFrameMax} in a frame)`);
       await page.evaluate(() => { if (window.__pixOrigDrawList) window.ppDrawList = window.__pixOrigDrawList; });
       if (errors.length) P('console errors: ' + errors.join(' | '));
     } finally { await browser.close(); }

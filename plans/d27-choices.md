@@ -72,6 +72,26 @@ to town 35 minutes, the shops about 8 minutes a stop), which does not fit betwee
 afternoon instead of the evening), the goods for town loaded onto the cart during the afternoon's gaps, a shorter
 cart path (a crossing at the west end too), or the evening's delivery the next morning before f1.
 
+## Decided provisionally by the lead: no freight train in the evening (2026-11-11, third decision)
+
+1. **The cart comes back every evening** (`FR.CART_NIGHT` off; the designer: "when you deliver at night you also pickup
+   and place on the cargo platform"): load the cart, to town, deliver, pick up, back, the pickups stacked in the OUT
+   rows, then End the day.
+2. **The day re-timed so the last freight train leaves before the evening:** p1 06:45-07:35, f1 08:25-09:45, p2
+   10:05-10:50, x1 11:40, f2 12:05-14:30, p3 14:50-15:35, f3 16:00-17:40, p4 18:00-18:45. **Eight runs: p5 is left
+   out**; f3 and p4 now run west to east (the last train leaves by the east lever frame, near the cart crossing); at
+   least 50 minutes between a train leaving towards an end and one coming in from it. Alternatives: keep p5 at about
+   19:00 (the evening then starts after it); T's day (`?sched27=t`).
+3. The integrator's additions: the keeper walks a little faster (4u a minute, was 3); at each stop the shop's pickups
+   are loaded too; the cart parked once in the middle of the east block's lane to load it; the cart may be loaded for
+   town as soon as the last freight train has gone.
+
+**Result** (the bot, seed 1866; check-d27-day passes): both days every run in and out, worst lateness 9 minutes on
+arrival and 21 on departure (p4 out, day 2); every traveller seated and punched (28 a day); every good unloaded,
+loaded, delivered and picked up and the pickups stacked; the player ends the day at 23:15 (day 1) and 23:26 (day 2).
+The evening takes about 4 hours (from about 19:25), not the 3.5 hoped for (the walk to the cart, about an hour of
+loading, 35 minutes to town, about 6 to 8 minutes a stop, the way back and stacking).
+
 ## Integrator (I)
 
 1. **The camera stays with the player, centred** (the designer asked): R's dead zone, look-ahead and framing of the car

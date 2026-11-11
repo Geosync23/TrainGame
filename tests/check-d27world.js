@@ -55,7 +55,7 @@ module.exports = async function checkD27World() {
       const St = D.PROTO_STOCK;
       if (St.loco.len !== 18 || St.cars.coach.len !== 13 || St.cars.boxcar.len !== 10 || St.cars.flatcar.len !== 10 || St.cars.coach.wid !== 4.2 || St.loco.h !== 6.4) B('the stock\'s sizes');
       if (St.coach.rows !== 7 || St.coach.seats !== 28 || St.boxcar.door.w !== 2.6) B('the stock\'s interiors');
-      if (Pr.PROTO_SCHEDULE.length !== 9) B(`${Pr.PROTO_SCHEDULE.length} runs in the day, expected 9 (plans/d27-tech.md 8.5)`);
+      if (Pr.PROTO_SCHEDULE.length !== 8) B(`${Pr.PROTO_SCHEDULE.length} runs in the day, expected 8 (D27 integration: no freight train in the evening, p5 left out; plans/d27-tech.md 8.5 had 9)`);
       if (D.TOWN27.buildings.length !== 12 || D.SHOPS27.length !== 12 || D.TOWN27.houses.length !== 8 || Object.keys(D.GOODS27).length !== 16) B('the town\'s or the goods\' tables are not complete');
       for (const sh of D.SHOPS27) if (!R.cargo.CARGO_TAGS[sh.tag]) B(`no cargo tag for ${sh.id}`);
       const daily = Object.values(D.SHOP_GOODS27.in).reduce((n, l) => n + l.reduce((m, q) => m + q[2], 0), 0);

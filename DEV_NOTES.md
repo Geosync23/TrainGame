@@ -852,14 +852,26 @@ Provisional, every old value switchable (plans/d27-choices.md, "Decided provisio
 - **Measured** (check-d27-day): day 1 worst 19 minutes; day 2 worst 82 (the cart fetched from the end of the street
   first); the evenings do not finish (day 1: 6 of 9 delivered, no pickups). check-d27-day fails on the evening.
 
+
+### No freight train in the evening (2026-11-11, the lead's third decision)
+
+- `FR.CART_NIGHT` off: the cart comes back each evening and the pickups are stacked in the OUT rows.
+- `PROTO_SCHEDULE_I` now has eight runs (p5 left out; f3 and p4 west to east; the last freight train leaves at 17:40,
+  p4 at 18:45); check-d27world expects 8.
+- `FR.KEEPER_U` 4.0; `FR.NEAR` 10 (the stop in the middle of the street serves both shops); pickups at the same stop
+  whatever is left in storage; the cart parked in the middle of the block's lane to load it; preload once the last
+  freight train has gone.
+- **Measured** (check-d27-day passes): worst lateness 9 minutes in, 21 out; everything delivered, picked up and stacked;
+  the bot ends the day at 23:15 and 23:26.
+
 ## Next
 
 Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays
 two days and `check-d27-day.js` reports them (see "D27", "The integration"). The day works end to end except that the
 evening cannot carry a day's goods in time; the lead's provisional evening decision is built (the keeper carries,
-shorter handling: see "The lead's evening decision") and the evening's own work is down to about 3.4 hours, and with half the
-goods and the re-timed day the first day runs on time, but the evening still does not fit before midnight, so the aims are
-not met yet; every provisional choice is in
+shorter handling: see "The lead's evening decision") and the evening's own work is down to about 3.4 hours, with half the goods, a
+day with no freight train in the evening (eight runs) and the cart back each evening, check-d27-day passes (worst 21
+minutes late, everything delivered and picked up, the player ends the day by 23:30); every provisional choice is in
 `plans/d27-choices.md` for the designer's morning review. Next: the lead's review, the review page with the choices,
 then the designer's decision on the evening's workload.
 

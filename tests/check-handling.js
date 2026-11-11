@@ -135,7 +135,8 @@ module.exports = async function checkHandling() {
           if (R.cargo.itemType(S, id) === 'plough' && cars.find(c => c.id === w.stockId).k !== 'flatcar') B('the plough is not on the flatcar');
         }
         if (R.rr.cgReady(S, run)) B('f1 is ready with its goods aboard');
-        const car = cars[0], id = X.frAboard(S, { consist: [car] }).ids.find(q => X.frOnTop(S, q));
+        // (D27 integration: the town's goods are packed into the boxcar nearest the storage first, so the first boxcar with goods)
+        const car = cars.find(c => c.k === 'boxcar' && X.frAboard(S, { consist: [c] }).ids.length), id = X.frAboard(S, { consist: [car] }).ids.find(q => X.frOnTop(S, q));
         let e = pl.send({ t: 'frTake', item: id });
         if (!e.some(x => x.t === 'frRefused' && /door/.test(x.why))) B('a good was taken through a shut door');
         const fr = [];
@@ -196,7 +197,8 @@ module.exports = async function checkHandling() {
       if (L.hours < 15) B(`only ${L.hours} game hours were audited`);
       for (const m of L.audit) B('the day: audit: ' + m);
       for (const m of L.refused) B('the day: refused: ' + m);
-      if (S.fr.tot.unloaded !== 15 || S.fr.tot.stored < 15) B(`totals ${JSON.stringify(S.fr.tot)}`);
+      // (D27 integration: a trip to town between trains may hand goods in from the cart, unstored: stored or delivered)
+      if (S.fr.tot.unloaded !== 15 || S.fr.tot.stored + S.fr.tot.delivered < 15) B(`totals ${JSON.stringify(S.fr.tot)}`);
       out.info.day = { waved: L.waved, hints: L.hints, sum: { unloaded: sum.unloaded, loaded: sum.loaded, delivered: sum.delivered }, tot: S.fr.tot, hash: a.hash };
       // A save made in the middle of a step reloads and plays on to the same state.
       if (!L.mid) B('no save was made mid-step');

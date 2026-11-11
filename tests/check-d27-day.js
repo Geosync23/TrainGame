@@ -232,6 +232,26 @@ module.exports = async function checkD27Day() {
         }, [s.save, s.k, LOOK[s.k] || null]);
         await page.screenshot({ path: screenshotPath(`d27-${s.k}-${orient}`) });
         if (s.k === 'punch' && !f.cut.length) P(`${orient}: the punch moment: no coach drawn cut away`);
+        // U's buttons over the world against the real P and F (portrait): at the punch moment a Punch button, at the
+        // cargo platform and the delivery moments a goods button (Lift, Put, Deliver, Take or Leave cart): a tap sends its
+        // command and the sim takes it (no refusal).
+        if (orient === 'portrait' && ['punch', 'deliver', 'cargo'].includes(s.k)) {
+          const tap = await page.evaluate(async k => {
+            const R = window.__railhead, W = window, ost = W.simTick, seen = [];
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            await new Promise(r => setTimeout(r, 300));
+            const want = k === 'punch' ? /Punch/ : /Lift|Put|Deliver|Pick up|Take cart|Leave cart|Open door|Close door/;
+            const b = [...document.querySelectorAll('.pdAct')].find(x => !x.hidden && want.test(x.textContent));
+            if (!b) return { none: [...document.querySelectorAll('.pdAct')].filter(x => !x.hidden).map(x => x.textContent) };
+            W.simTick = function (S, cmds) { const ev = ost(S, cmds); for (const c of cmds || []) seen.push('cmd ' + c.t); for (const e of ev) if (/Refused$/.test(e.t)) seen.push('refused ' + e.why); return ev; };
+            const label = b.textContent;
+            try { b.click(); R.step(3); } finally { W.simTick = ost; }
+            return { label, seen };
+          }, s.k);
+          if (tap.none) P(`${orient} ${s.k}: no button for it over the world (${tap.none.join(' / ')})`);
+          else if (!tap.seen.some(x => /^cmd (pb|fr)/.test(x)) || tap.seen.some(x => /^refused/.test(x))) P(`${orient} ${s.k}: a tap on "${tap.label}": ${tap.seen.join(', ') || 'no command sent'}`);
+          else console.log(`  ${s.k}: the "${tap.label}" button sent ${tap.seen.join(', ')}`);
+        }
         if (s.k === 'summary' && !f.sum) P(`${orient}: the summary card is not shown`);
         frames.push(`${orient} ${s.k} (${s.at}): ${f.ms} ms, ${f.items} items, ${f.draws} sprites`);
       }

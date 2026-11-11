@@ -28,10 +28,10 @@ exported to `tools/pixelart/proto-layout.json` (`node tools/pixelart/export-layo
 ground layer and the buildings exactly where the game has them. Re-export after any layout change.
 
 Scale: 1u is 8 px across the screen per unit of x. People are drawn bigger than their 3D size: **an adult is about
-26 px from heel to crown (3.25u; a top hat adds 2 px), a child about 18 px** (people v2, the designer's sign-off of
-2026-11-11, size raised from 20 to about 26 px by the lead the same day, provisional). They were 14 px (1.75u, the
-mockup's) before; that set is parked in `tools/pixelart/people_v1.py`. The renderer sorts a person as a box
-`PIX.PERSON_H` (3.25u) tall. Note that a 26 px person is taller than a coach's roof (2.8u, about 22 px). The
+20 px from heel to crown (2.5u; a top hat adds 1 px), a child about 14 px** (people v2: the designer signed off the
+sample on 2026-11-11 and, after a 26 px trial the same day, chose "about 20, the size of the sample you saw"). They
+were 14 px (1.75u, the mockup's) before; that set is parked in `tools/pixelart/people_v1.py`. The renderer sorts a
+person as a box `PIX.PERSON_H` (2.5u) tall. The
 prototype's trains are drawn bigger than the 3D game's (see the sizes below) so they keep the
 mockup's proportions.
 
@@ -96,9 +96,9 @@ the same rectangle twice).
 | `ppl/<who>/hands` | 1 | (optional) the hands' pixel offset, if not the default |
 
 Anchor: the point between the feet, on the ground. Carry: an item is drawn with its anchor at the agent's anchor plus
-the hands offset: R reads `PIX_ATLAS.extra['ppl/agent/carry/<dir>'].hands` (people v2: se, sw (0, -6); ne (6, -11),
-nw (-6, -11), drawn before the body and to the side so it shows past the shoulder), else `PIX_HANDS`. The push frames give `extra[...].grip`, the hands' offset (se, ne
-(6, -6); sw, nw (-6, -6)).
+the hands offset: R reads `PIX_ATLAS.extra['ppl/agent/carry/<dir>'].hands` (people v2: se, sw (0, -3); ne (5, -8),
+nw (-5, -8), drawn before the body and to the side so it shows past the shoulder), else `PIX_HANDS`. The push frames give `extra[...].grip`, the hands' offset (se, ne
+(5, -6); sw, nw (-5, -6)).
 
 ### Goods, cart, switches (`goods/`, `tag/`, `cart/`, `sw/`)
 

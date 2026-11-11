@@ -1,11 +1,12 @@
-# People, version 2 (signed off by the designer 2026-11-11, size raised to about 26 px the same day):
+# People, version 2 (signed off by the designer 2026-11-11 at the sample's size, about 20 px):
 # 1866 travellers, townsfolk and the station agent as hand-made pixel art assembled by code.
 # The version before (14 px people) is parked in people_v1.py (not built).
 #
 # The look: the richer style test's form (big head, readable face, hats with brim and band, coat lapels, buttons,
 # folds, hands), in our palette (engine.py ramps), our light (from the upper left) and our outline rule (1 px, the
 # darkest shade of the neighbouring colour's ramp, never pure black), hard alpha, no blush, no sparkle, no bounce.
-# An adult is 26 px from heel to crown (without outline; a top hat adds 2), a child 18.
+# An adult is 20 px from heel to crown (without outline; a top hat adds 1), a child 14. (A 26 px set was tried the
+# same day; the designer chose 20, "the size of the sample you saw".)
 #
 # How a frame is made
 #   Each type is put together from parts drawn as pixel maps: a hat or hair part, a face (front view) or back of
@@ -15,13 +16,13 @@
 #   -z (ne, upper right, three quarters back). sw and nw are se and ne mirrored, then re-lit so the light still comes
 #   from the upper left (to_rgba). All four facings are stored; the renderer never mirrors people.
 #
-# Units: one map cell is one native pixel. Maps are 15 columns wide, column 7 is x = 0 (the anchor, between the feet,
-#   is the left edge of column 7). y counts up from the ground row (y = 0 is the row of the shoes).
+# Units: one map cell is one native pixel. Maps are 13 columns wide, column 6 is x = 0 (the anchor, between the feet,
+#   is the left edge of column 6). y counts up from the ground row (y = 0 is the row of the shoes).
 import numpy as np
 import engine as E
 
-W_COLS = 15
-X0 = -7
+W_COLS = 13
+X0 = -6
 
 # ---------------------------------------------------------------------------------------------------------------
 # Codes in the maps (each type maps them to a palette ramp and shade: cmap)
@@ -41,469 +42,387 @@ def part(ybot, rows):
     return (ybot, rows)
 
 
-# ---- hats and hair (drawn over the face) ----
+# ---- hats and hair (drawn over the face; the face's top row is y15) ----
 HATS = {
-    'cap': (part(21, [
-        ".....JHHHHh....",
-        "....JHHHHHHh...",
-        "....JHHGHHHhh..",
-        "....RRRRRRRRr..",
-        "...aAAhkkkkkkk.",
-    ]), part(21, [
-        ".....JHHHHh....",
-        "....JHHHHHHh...",
-        "....JHHHHHHhh..",
-        "....RRRRRRRRr..",
-        "...aAAAAAAhkkk.",
-    ])),
-    'tophat': (part(21, [
-        "....JHHHHHh....",
-        "....JHHHHHh....",
-        "....JHHHHHh....",
-        "....JHHHHHh....",
-        "....JHHHHHh....",
-        "....RRRRRRr....",
-        "..kkkkkkkkkkk..",
-    ]),) * 2,
-    'bowler': (part(21, [
-        "......JHHh.....",
-        ".....JHHHHh....",
-        "....JHHHHHHh...",
-        "....RRRRRRRr...",
-        "...kkkkkkkkkk..",
-    ]),) * 2,
-    'slouch': (part(20, [
-        ".....JHHHHh....",
-        "....JHHHHHHh...",
-        "....RRRRRRRr...",
-        ".hkkkkkkkkkkkh.",
-        ".k...........k.",
-    ]),) * 2,
-    'cowboy': (part(21, [
-        ".....JH.Hh.....",
-        ".....JHHHHh....",
-        "....JHHHHHHh...",
-        "kh..RRRRRRRr.hk",
-        ".kkkkkkkkkkkkk.",
-    ]),) * 2,
-    'bonnet': (part(14, [
-        ".....JHHHh.....",
-        "....JHHHHHHh...",
-        "...JHHHHHHHHh..",
-        "..JHHHhhhhhhHk.",
-        "..JHHh......hk.",
-        "..JHHh.......k.",
-        "..JHh........k.",
-        "..JHh........k.",
-        "...Hh..........",
-        "....R.......R..",
-        ".....R..RRr....",
+    'cap': (part(16, [
+        "....JHHHh....",
+        "...JHHGHhh...",
+        "...RRRRRRrr..",
+        "...aAAhkkkkk.",
     ]), part(16, [
-        ".....JHHHh.....",
-        "....JHHHHHHh...",
-        "...JHHHHHHHHh..",
-        "..JHHHHHHHHHhk.",
-        "..JHHHHHHHHHhk.",
-        "..JHHHHHHHhhk..",
-        "..JHHHHHhhhk...",
-        "...hhhhhhhhk...",
-        "...hhhhhhhh....",
+        "....JHHHh....",
+        "...JHHHHhh...",
+        "...RRRRRRrr..",
+        "...aAAAAhkkk.",
     ])),
-    'bun': (part(20, [
-        "......aAAa.....",
-        "...aaAAAAAAa...",
-        ".aAAAAAAAAAAa..",
-        ".aa............",
-    ]), part(20, [
-        "......aAAa.....",
-        "...aAAAAAAAa...",
-        "..aAAAAAAAAAa..",
-        "..AAAaaAAAAAa..",
+    'tophat': (part(16, [
+        "....JHHHh....",
+        "....JHHhh....",
+        "....JHHhh....",
+        "....RRRRr....",
+        "..kkkkkkkkk..",
+    ]),) * 2,
+    'bowler': (part(16, [
+        "....JHHHh....",
+        "...JHHHHhh...",
+        "...RRRRRRr...",
+        "..kkkkkkkkk..",
+    ]),) * 2,
+    'slouch': (part(15, [
+        "....JHHHh....",
+        "...RRRRRRr...",
+        ".hkkkkkkkkkh.",
+        ".k.........k.",
+    ]),) * 2,
+    'cowboy': (part(16, [
+        "....JH.Hh....",
+        "...JHHHHh....",
+        "kh.RRRRRr.hk.",
+        ".kkkkkkkkkkk.",
+    ]),) * 2,
+    'bonnet': (part(11, [
+        "....JHHHh....",
+        "...JHHHHHh...",
+        "..JHHhhhhHk..",
+        "..JHhAAAAhk..",
+        "..JHh.....k..",
+        "..JHh.....k..",
+        "...HR....R...",
+        "....R...R....",
+        ".....RRr.....",
+    ]), part(13, [
+        "....JHHHh....",
+        "...JHHHHHh...",
+        "..JHHHHHHHk..",
+        "..JHHHHHHhk..",
+        "..JHHHHHhhk..",
+        "...hhhhhhhk..",
+        "...hhhhhhh...",
     ])),
-    'short': (part(21, [
-        ".....aAAAa.....",
-        "...aAAAAAAAa...",
+    'bun': (part(15, [
+        ".....AAa.....",
+        "...aAAAAa....",
+        "..aAAAAAAa...",
+        "..a..........",
+    ]), part(16, [
+        "....aAAa.....",
+        "...aAAAAa....",
+        "...AAAaAAa...",
+    ])),
+    'short': (part(16, [
+        ".....aAAa....",
+        "...aAAAAAa...",
     ]),) * 2,
-    'parted': (part(21, [
-        ".....aAAAa.....",
-        "...aAAAAaAAAa..",
+    'parted': (part(16, [
+        ".....aAAa....",
+        "...aAAAaAAa..",
     ]),) * 2,
-    'balding': (part(21, [
-        "...............",
-        "...aASSSSSSs...",
-    ]), part(21, [
-        "...............",
-        "...aASSSSSsa...",
+    'balding': (part(16, [
+        "...aASSSSs...",
+    ]), part(16, [
+        "...aASSSsa...",
     ])),
 }
 
-# ---- faces (front view) and the back of the head; rows y20 (forehead) to y14 (chin) ----
+# ---- faces (front view) and the back of the head; rows y15 (forehead) to y11 (chin) ----
 FACES = {
-    'moustache': part(14, [
-        "...aAASSSSSSs..",
-        "...aASSSSSSSs..",
-        "...aSSSeSSeSs..",
-        "...sSSSeSSeSs..",
-        "...sSSSSSSSsS..",
-        "....SSaaaaaSs..",
-        ".....sSSSSs....",
+    'moustache': part(11, [
+        "...aASSSSSs..",
+        "...aSSeSeS...",
+        "...sSSSSSSs..",
+        "....SSaaaS...",
+        ".....SSSs....",
     ]),
-    'shaven': part(14, [
-        "...aAASSSSSSs..",
-        "...aASSSSSSSs..",
-        "...aSSSeSSeSs..",
-        "...sSSSeSSeSs..",
-        "...sSSSSSSSsS..",
-        "....SSSSmmSs...",
-        ".....sSSSSs....",
+    'shaven': part(11, [
+        "...aASSSSSs..",
+        "...aSSeSeS...",
+        "...sSSSSSSs..",
+        "....SSSmS....",
+        ".....SSSs....",
     ]),
-    'chops': part(14, [
-        "...aAASSSSSSs..",
-        "...aASSSSSSSs..",
-        "...aaSSeSSeSs..",
-        "...aaSSeSSeSs..",
-        "...aaSSSSSSsS..",
-        "....aaSSmmSs...",
-        ".....aSSSSs....",
+    'chops': part(11, [
+        "...aASSSSSs..",
+        "...aaSeSeS...",
+        "...aaSSSSSs..",
+        "....aSSmS....",
+        ".....aSSs....",
     ]),
-    'beard': part(13, [
-        "...aAASSSSSSs..",
-        "...aASSSSSSSs..",
-        "...aSSSeSSeSs..",
-        "...sSSSeSSeSs..",
-        "...aSSSSSSSsS..",
-        "...aASaaaaaAs..",
-        "....aAAAAAAa...",
-        ".....aAAAa.....",
+    'beard': part(10, [
+        "...aASSSSs...",
+        "...aSSeSeS...",
+        "...sSSSSSSs..",
+        "...aASaaaA...",
+        "....aAAAAa...",
+        ".....aAa.....",
     ]),
-    'bigmoustache': part(14, [
-        "...aAASSSSSSs..",
-        "...aASSSSSSSs..",
-        "...aSSSeSSeSs..",
-        "...sSSSeSSeSs..",
-        "...sSSSSSSSsS..",
-        "...aaaaaaaaaa..",
-        ".....sSSSSs....",
+    'bigmoustache': part(11, [
+        "...aASSSSSs..",
+        "...aSSeSeS...",
+        "...sSSSSSSs..",
+        "...aaaaaaaa..",
+        ".....SSSs....",
     ]),
-    'woman': part(14, [
-        "...aAASSSSSSs..",
-        "...aASSSSSSSs..",
-        "...aSSSeSSeSs..",
-        "...aSSSeSSeSs..",
-        "...sSSSSSSSsS..",
-        "....SSSSmSSs...",
-        ".....sSSSs.....",
+    'woman': part(11, [
+        "...aASSSSs...",
+        "...aSSeSeS...",
+        "...sSSSSSs...",
+        "....SSSmS....",
+        ".....SSs.....",
     ]),
 }
 BACKS = {
-    'short': part(14, [
-        "...aAAAAAAAa...",
-        "...AAAAAAAAaS..",
-        "...AAAAAAAaSs..",
-        "...AAAAAAaaSs..",
-        "...aAAAAAaaSs..",
-        "....aAAAaaSs...",
-        ".....sSSSSs....",
+    'short': part(11, [
+        "...aAAAAAa...",
+        "...AAAAAaSs..",
+        "...AAAAaaSs..",
+        "....aAaaSs...",
+        ".....sSSs....",
     ]),
-    'beard': part(14, [
-        "...aAAAAAAAa...",
-        "...AAAAAAAAaS..",
-        "...AAAAAAAaSs..",
-        "...AAAAAAaaSs..",
-        "...aAAAAAaaAa..",
-        "....aAAAaaAa...",
-        ".....sSSSAa....",
+    'beard': part(11, [
+        "...aAAAAAa...",
+        "...AAAAAaSs..",
+        "...AAAAaaSs..",
+        "....aAaaAa...",
+        ".....sSAa....",
     ]),
-    'woman': part(14, [
-        "...aAAAAAAAa...",
-        "...AAAAAAAAaS..",
-        "...AAAAAAAaSs..",
-        "...AAaAAAaaSs..",
-        "...aAAAAAaaS...",
-        "....aAAAaaS....",
-        ".....sSSSs.....",
+    'woman': part(11, [
+        "...aAAAAAa...",
+        "...AAAAAaS...",
+        "...AAaAaaS...",
+        "....aAaaS....",
+        ".....SSs.....",
     ]),
 }
 
-# ---- bodies (front, back); men's coats end at y5 (legs below), long coats and aprons at y3, skirts at y1 ----
+# ---- bodies (front, back); men's coats end at y4 (legs below), long coats and aprons at y2, skirts at y1 ----
 BODIES = {
-    'uniform': (part(5, [
-        "...ICcWNWcq....",
-        "...ICLWNWLq....",
-        "...ICcLGcGq....",
-        "...ICccLccq....",
-        "...ICcGcGcq....",
-        "...ICcLccLq....",
-        "...ICcGcGcq....",
-        "...ICccLccq....",
-        "...IcCcccqq....",
-    ]), part(5, [
-        "...ICCCCccq....",
-        "...ICCCCccq....",
-        "...ICCcCccq....",
-        "...ICCcCccq....",
-        "...ICCLCccq....",
-        "...IGCLCGcq....",
-        "...ICCLCccq....",
-        "...ICcLcccq....",
-        "...IcCLccqq....",
+    'uniform': (part(4, [
+        "...ICWNWcq...",
+        "...ILGcGcq...",
+        "...ICLccLq...",
+        "...ICGcGcq...",
+        "...ICcLccq...",
+        "...ICGcGcq...",
+        "...IcCcccq...",
+    ]), part(4, [
+        "...ICCCccq...",
+        "...ICCCccq...",
+        "...ICcCccq...",
+        "...ICcCccq...",
+        "...IGcCGcq...",
+        "...ICcLccq...",
+        "...IcCLccq...",
     ])),
-    'frock': (part(3, [
-        "...ILWNNWLq....",
-        "...ICLVNVLq....",
-        "...ICLVGVcq....",
-        "...ICcLVVcq....",
-        "...ICcLVVcq....",
-        "...ICcLcccq....",
-        "...ICccLccq....",
-        "...ICcccLcq....",
-        "...ICcLccLq....",
-        "..IICccLcccq...",
-        "..IIcccLccqq...",
-    ]), part(3, [
-        "...ICCCCccq....",
-        "...ICCCCccq....",
-        "...ICCcCccq....",
-        "...ICCcCccq....",
-        "...ICCcCccq....",
-        "...IGCcCGcq....",
-        "...ICCLCccq....",
-        "...ICcLcccq....",
-        "...ICcLcccq....",
-        "..IICcLccccq...",
-        "..IIccLcccqq...",
+    'frock': (part(2, [
+        "...ICWNWcq...",
+        "...ILVNVLq...",
+        "...ICLVGcq...",
+        "...ICcVVcq...",
+        "...ICcLccq...",
+        "...ICccLcq...",
+        "...ICcccLq...",
+        "..IIcccccqq..",
+        "..IIccLccqq..",
+    ]), part(2, [
+        "...ICCCccq...",
+        "...ICCCccq...",
+        "...ICcCccq...",
+        "...ICcCccq...",
+        "...IGcCGcq...",
+        "...ICcLccq...",
+        "...ICcLccq...",
+        "..IIccLccqq..",
+        "..IIccLcqqq..",
     ])),
-    'sack': (part(5, [
-        "...ICcWNWcq....",
-        "...ILVWNVLq....",
-        "...ICLVNVLq....",
-        "...ICcLVVcq....",
-        "...ICcLGVcq....",
-        "...ICccLccq....",
-        "...ICccGccq....",
-        "...ICcLcLcq....",
-        "...IcCcLccq....",
-    ]), part(5, [
-        "...ICCCCccq....",
-        "...ICCCCccq....",
-        "...ICCcCccq....",
-        "...ICCLCccq....",
-        "...ICCLCccq....",
-        "...ICCLCccq....",
-        "...ICcLcccq....",
-        "...ICcLcccq....",
-        "...IcCLccqq....",
+    'sack': (part(4, [
+        "...ICWNWcq...",
+        "...ILVNVLq...",
+        "...ICLVVcq...",
+        "...ICcLGcq...",
+        "...ICcLccq...",
+        "...ICcLGcq...",
+        "...IcCcccq...",
+    ]), part(4, [
+        "...ICCCccq...",
+        "...ICCCccq...",
+        "...ICCLccq...",
+        "...ICcLccq...",
+        "...ICcLccq...",
+        "...ICcLcqq...",
+        "...IcCLccq...",
     ])),
-    'shirt': (part(5, [
-        "...ICcWWcCq....",
-        "...INcCcNcq....",
-        "...INcCGNcq....",
-        "...INcCcNcq....",
-        "...INcLcNcq....",
-        "...INcCGNcq....",
-        "...INcCcNcq....",
-        "...zzzGzzzz....",
-        "...QTTTTtTt....",
-    ]), part(5, [
-        "...ICCCCccq....",
-        "...ICNCCNcq....",
-        "...ICCNNccq....",
-        "...ICCNNccq....",
-        "...ICNCcNcq....",
-        "...INCCccNq....",
-        "...INCCccNq....",
-        "...zzzzzzzz....",
-        "...QTTTTtTt....",
+    'shirt': (part(4, [
+        "...ICWWWcq...",
+        "...INcCcNq...",
+        "...INcGcNq...",
+        "...INcCcNq...",
+        "...INcLcNq...",
+        "...zzzGzzz...",
+        "...QTTTtTt...",
+    ]), part(4, [
+        "...ICCCccq...",
+        "...ICNCNcq...",
+        "...ICCNccq...",
+        "...ICNCNcq...",
+        "...INCccNq...",
+        "...zzzzzzz...",
+        "...QTTTtTt...",
     ])),
-    'cowhand': (part(5, [
-        "...VRRRRRvv....",
-        "...VCRRRCvv....",
-        "...VCCRCCvv....",
-        "...VCCCCCvv....",
-        "...VCCGCCvv....",
-        "...VVCCCVvv....",
-        "...VVCCCVvv....",
-        "...zzzGzzzz....",
-        "...QTTTTtTt....",
-    ]), part(5, [
-        "...VRRRRRvv....",
-        "...VVVVVVvv....",
-        "...VVVVVVvv....",
-        "...VVVvVVvv....",
-        "...VVVvVVvv....",
-        "...VVVvVvvv....",
-        "...ICCCCccq....",
-        "...zzzzzzzz....",
-        "...QTTTTtTt....",
+    'cowhand': (part(4, [
+        "...VRRRRvv...",
+        "...VCRRCvv...",
+        "...VCCRCvv...",
+        "...VCCGCvv...",
+        "...VVCCVvv...",
+        "...zzzGzzz...",
+        "...QTTTtTt...",
+    ]), part(4, [
+        "...VRRRRvv...",
+        "...VVVVVvv...",
+        "...VVVvVvv...",
+        "...VVVvVvv...",
+        "...ICCCccq...",
+        "...zzzzzzz...",
+        "...QTTTtTt...",
     ])),
-    'smith': (part(3, [
-        "...WWRRRWww....",
-        "...WPWRWPww....",
-        "...WPPPPPpw....",
-        "...WPPPPPpw....",
-        "...PPPPPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-    ]), part(3, [
-        "...WWWWWWww....",
-        "...WNWWWNww....",
-        "...WWNWNWww....",
-        "...WWWNWWww....",
-        "...WWNWNWww....",
-        "...NWWWWWNw....",
-        "...PPPPPPpp....",
-        "...QTTTTtTt....",
-        "...QTTTTtTt....",
-        "...QTTT.tTt....",
-        "...QTTT.tTt....",
+    'smith': (part(2, [
+        "...WWRRWww...",
+        "...WPWRPww...",
+        "...WPPPPpw...",
+        "...PPPPPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+    ]), part(2, [
+        "...WWWWWww...",
+        "...WNWWNww...",
+        "...WWNNWww...",
+        "...WNWWNww...",
+        "...PPPPPpp...",
+        "...QTTTtTt...",
+        "...QTTTtTt...",
+        "...QTT.tTt...",
+        "...QTT.tTt...",
     ])),
-    'store': (part(3, [
-        "...WWWNWWww....",
-        "...VVWNWVvv....",
-        "...VVWGWVvv....",
-        "...VVWGWVvv....",
-        "...PPPPPPpp....",
-        "...PPPPPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-    ]), part(3, [
-        "...WWWWWWww....",
-        "...VVVVVVvv....",
-        "...VVVVVVvv....",
-        "...VVVvVVvv....",
-        "...PPPPPPpp....",
-        "...QTPPPTtt....",
-        "...QTTTTtTt....",
-        "...QTTTTtTt....",
-        "...QTTTTtTt....",
-        "...QTTT.tTt....",
-        "...QTTT.tTt....",
+    'store': (part(2, [
+        "...WWWNWww...",
+        "...VVWNWvv...",
+        "...VVWGWvv...",
+        "...PPPPPpp...",
+        "...PPPPPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+    ]), part(2, [
+        "...WWWWWww...",
+        "...VVVVVvv...",
+        "...VVVvVvv...",
+        "...PPPPPpp...",
+        "...QTPPPtt...",
+        "...QTTTtTt...",
+        "...QTTTtTt...",
+        "...QTT.tTt...",
+        "...QTT.tTt...",
     ])),
-    'bar': (part(3, [
-        "...WWWNWWww....",
-        "...VWWNWWvv....",
-        "...VVWNWVvv....",
-        "...VVWGWVvv....",
-        "...VVVGVVvv....",
-        "...PPPPPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-        "...PPPpPPpp....",
-    ]), part(3, [
-        "...WWWWWWww....",
-        "...VVVVVVvv....",
-        "...VVVVVVvv....",
-        "...VVVvVVvv....",
-        "...VVVvVVvv....",
-        "...PPPPPPpp....",
-        "...QTTTTtTt....",
-        "...QTTTTtTt....",
-        "...QTTTTtTt....",
-        "...QTTT.tTt....",
-        "...QTTT.tTt....",
+    'bar': (part(2, [
+        "...WWWNWww...",
+        "...VWWNWvv...",
+        "...VVWGWvv...",
+        "...VVVGVvv...",
+        "...PPPPPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+        "...PPPpPpp...",
+    ]), part(2, [
+        "...WWWWWww...",
+        "...VVVVVvv...",
+        "...VVVvVvv...",
+        "...VVVvVvv...",
+        "...PPPPPpp...",
+        "...QTTTtTt...",
+        "...QTTTtTt...",
+        "...QTT.tTt...",
+        "...QTT.tTt...",
     ])),
     'lady': (part(1, [
-        "....EWWWWd.....",
-        "...EDDWGWDf....",
-        "...EDDDGDdf....",
-        "...EDDDGDdf....",
-        "...EDDDDDdf....",
-        "...dRRRRRRf....",
-        "...EDDdDDddf...",
-        "..EDDDdDDddf...",
-        "..EDDdDDDdddf..",
-        "..EDDdDDddddf..",
-        ".EDDDdDDdDddf..",
-        ".EDDdDDDdDddf..",
-        ".ffffffffffff..",
+        "....EWWWd....",
+        "...EDDGDdf...",
+        "...EDDDGdf...",
+        "...dRRRRRf...",
+        "...EDDdDddd..",
+        "..EDDDdDddd..",
+        "..EDDdDDddd..",
+        "..EDDdDdddd..",
+        ".EDDdDDdddd..",
+        ".fffffffffff.",
     ]), part(1, [
-        "....EDDDDd.....",
-        "...EDDDDDDf....",
-        "...EDDDDDdf....",
-        "...EDDdDDdf....",
-        "...EDDdDDdf....",
-        "...dRRRRRRf....",
-        "...EDRRRDddf...",
-        "..EDDRdRDddf...",
-        "..EDDdRDDdddf..",
-        "..EDDdDDddddf..",
-        ".EDDDdDDdDddf..",
-        ".EDDdDDDdDddf..",
-        ".ffffffffffff..",
+        "....EDDDd....",
+        "...EDDDDdf...",
+        "...EDDdDdf...",
+        "...dRRRRRf...",
+        "...EDRRRddd..",
+        "..EDDRdRddd..",
+        "..EDDdDDddd..",
+        "..EDDdDdddd..",
+        ".EDDdDDdddd..",
+        ".fffffffffff.",
     ])),
     'shawl': (part(1, [
-        "...UUUUUUuu....",
-        "..UUUUUUUuuu...",
-        "..UUUUUUUuuu...",
-        "...UUUUUUuu....",
-        "....UUUUuu.....",
-        "...DDPPPPdf....",
-        "...DPPPPPPdf...",
-        "..DDPPPpPPdf...",
-        "..DDPPPpPPddf..",
-        "..DDPPpPPPddf..",
-        ".DDDPPpPPPddf..",
-        ".DDDdPPPPpddf..",
-        ".ffffffffffff..",
+        "...UUUUUuu...",
+        "..UUUUUUuuu..",
+        "...UUUUUuu...",
+        "...DPPPPPd...",
+        "...DPPPPpdd..",
+        "..DDPPpPPdd..",
+        "..DDPPpPpdd..",
+        "..DDPPPPpdd..",
+        ".DDDdPPPpddd.",
+        ".fffffffffff.",
     ]), part(1, [
-        "...UUUUUUuu....",
-        "..UUUUUUUuuu...",
-        "..UUUUUUUuuu...",
-        "...UUUUUUuu....",
-        "...DUUUUUudf...",
-        "...DDUUUudf....",
-        "...DDDUudddf...",
-        "..DDDDdDDddf...",
-        "..DDDdDDDdddf..",
-        "..DDDdDDddddf..",
-        ".DDDDdDDdDddf..",
-        ".DDDdDDDdDddf..",
-        ".ffffffffffff..",
+        "...UUUUUuu...",
+        "..UUUUUUuuu..",
+        "...UUUUUuu...",
+        "...DUUUUudd..",
+        "...DDUUuddd..",
+        "..DDDDUdddd..",
+        "..DDDdDDddd..",
+        "..DDDdDDddd..",
+        ".DDDDdDDdddd.",
+        ".fffffffffff.",
     ])),
 }
 
-# ---- the child (about 18 px): its own parts ----
+# ---- the child (about 14 px): its own parts ----
 CHILD = {
-    'front': part(4, [
-        "......JHHh.....",
-        ".....JHHHHh....",
-        "....aAkkkkkkk..",
-        "....aASSSSSs...",
-        "....aSSeSeSs...",
-        "....sSSSSSsS...",
-        ".....SSSmSs....",
-        "......sSSs.....",
-        "....ICWWcq.....",
-        "....ICcGcq.....",
-        "....ICcLcq.....",
-        "....ICcGcq.....",
-        "....ICcLcq.....",
-        "....IcCccq.....",
+    'front': part(3, [
+        ".....JHHh....",
+        "....aAkkkkk..",
+        "....aSeSeS...",
+        "....sSSSSSs..",
+        ".....SSmS....",
+        "......SSs....",
+        "....ICWWq....",
+        "....ICGcq....",
+        "....ICLcq....",
+        "....ICGcq....",
+        "....IcCcq....",
     ]),
-    'back': part(4, [
-        "......JHHh.....",
-        ".....JHHHHh....",
-        "....aAAAAhkkk..",
-        "....AAAAAaSs...",
-        "....AAAAaaSs...",
-        "....aAAAaaS....",
-        ".....aAaaS.....",
-        "......sSs......",
-        "....ICCCcq.....",
-        "....ICCCcq.....",
-        "....ICCccq.....",
-        "....ICCccq.....",
-        "....ICCccq.....",
-        "....IcCccq.....",
+    'back': part(3, [
+        ".....JHHh....",
+        "....aAAAhkk..",
+        "....AAAAaS...",
+        "....AAAaaS...",
+        ".....aAaS....",
+        "......sS.....",
+        "....ICCCq....",
+        "....ICCcq....",
+        "....ICCcq....",
+        "....ICCcq....",
+        "....IcCcq....",
     ]),
 }
 
@@ -521,16 +440,18 @@ TYPES = {
     'storekeeper': dict(build='man', hat='balding', face='shaven', back='short', body='store'),
     'barkeep':     dict(build='man', hat='parted', face='bigmoustache', back='short', body='bar'),
     'lady':        dict(build='woman', hat='bonnet', face='woman', back='woman', body='lady'),
-    'farmwife':    dict(build='woman', hat='bun', face='woman', back='woman', body='shawl'),
+    'farmwife':    dict(build='shawl', hat='bun', face='woman', back='woman', body='shawl'),
     'child':       dict(build='child'),
 }
-# near / far: the arm's inner column; top: the shoulder row; thick: the arm's width in px.
+# near / far: the arm's column; top: the shoulder row; short: rows taken off a hanging arm (hands at the waist);
+# legs: LEGS table or 'skirt'.
 BUILD = {
-    'man':   dict(near=2, far=11, top=12, thick=2, legs='man'),
-    'woman': dict(near=2, far=11, top=12, thick=2, legs='skirt', short=2),
-    'child': dict(near=3, far=10, top=9, thick=1, legs='child', short=2),
+    'man':   dict(near=2, far=10, top=10, legs='man'),
+    'woman': dict(near=2, far=10, top=9, legs='skirt', short=3),
+    'shawl': dict(near=2, far=10, top=8, legs='skirt', short=3),
+    'child': dict(near=3, far=9, top=7, legs='child', short=2),
 }
-HEAD_Y = {'man': 14, 'woman': 14, 'child': 10}       # rows at and above this are the head (breathing moves them)
+HEAD_Y = {'man': 11, 'woman': 11, 'shawl': 11, 'child': 8}       # rows at and above this are the head (breathing)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -684,245 +605,207 @@ def body_grid(tname, back):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Legs: rows from y = 4 down to y = 0 (15 columns). Near leg lit ('Q' highlight, 'T'), far leg 't' (never the
+# Legs: rows from y = 3 down to y = 0 (13 columns). Near leg lit ('Q' highlight, 'T'), far leg 't' (never the
 # outline's colour, so a stride reads); shoes 'B' near, 'b' far. (body lift, rows).
 # ---------------------------------------------------------------------------------------------------------------
 LEGS = {
     'man': {
-        'stand':   (0, ["....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "....BBBBbbbb..."]),
-        'stand2':  (0, ["....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "...QTT..ttt....",
-                        "...QTT..ttt....",
-                        "...BBBB.bbbb..."]),
-        'back':    (0, ["....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "....BBB.bbb...."]),
-        'back2':   (0, ["....QTT.ttt....",
-                        "....QTT.ttt....",
-                        "...QTT..ttt....",
-                        "...QTT..ttt....",
-                        "...BBB..bbb...."]),
+        'stand':   (0, ["....QT.tt....",
+                        "....QT.tt....",
+                        "....QT.tt....",
+                        "....BBBbbb..."]),
+        'stand2':  (0, ["....QT.tt....",
+                        "...QT..tt....",
+                        "...QT..tt....",
+                        "...BBB.bbb..."]),
+        'back':    (0, ["....QT.tt....",
+                        "....QT.tt....",
+                        "....QT.tt....",
+                        "....BB.bb...."]),
+        'back2':   (0, ["....QT.tt....",
+                        "...QT..tt....",
+                        "...QT..tt....",
+                        "...BB..bb...."]),
         # walk: pass (far foot lifted behind), stride (near leg forward), pass (near foot lifted), stride (far forward)
-        'pass1':   (0, [".....tQTT......",
-                        "....ttQTT......",
-                        "...tt.QTT......",
-                        "..bbb.QTT......",
-                        "......BBBB....."]),
-        'stride1': (0, [".....ttQTT.....",
-                        ".....tt.QTT....",
-                        "....ttt.QTT....",
-                        "....tt...QTT...",
-                        "...bbb...BBBB.."]),
-        'pass2':   (0, [".....QTTtt.....",
-                        ".....QTTttt....",
-                        "....QTT.ttt....",
-                        "...BBB..ttt....",
-                        "........bbbb..."]),
-        'stride2': (0, [".....QTTtt.....",
-                        "....QTT..tt....",
-                        "....QTT..ttt...",
-                        "...QTT....tt...",
-                        "...BBB....bbbb."]),
+        'pass1':   (0, ["....tQT......",
+                        "...t.QT......",
+                        "..bb.QT......",
+                        ".....BBB....."]),
+        'stride1': (0, ["....tQT......",
+                        "...tt.QT.....",
+                        "...t...QT....",
+                        "..bb...BBB..."]),
+        'pass2':   (0, ["....QTtt.....",
+                        "....QT.t.....",
+                        "...BB..t.....",
+                        ".......bbb..."]),
+        'stride2': (0, ["....QTtt.....",
+                        "...QT...t....",
+                        "...QT....t...",
+                        "..BBB....bbb."]),
         # stepping up (board): the near foot on the step
-        'step1':   (0, [".....QTT.ttt...",
-                        ".....QTT.ttt...",
-                        ".....BBBB.ttt..",
-                        ".........ttt...",
-                        ".........bbbb.."]),
-        'lean':    (0, ["....QTT.ttt....",
-                        "...QTT...ttt...",
-                        "...QTT...ttt...",
-                        "..QTT.....ttt..",
-                        "..BBBB....bbbb."]),
-        'crouch':  (-1, ["...QTTTtttt....",
-                         "...QTT..ttt....",
-                         "...QTT..ttt....",
-                         "...BBBB.bbbb..."]),
+        'step1':   (0, ["....QT.tt....",
+                        "....BBB.tt...",
+                        "........tt...",
+                        "........bbb.."]),
+        'lean':    (0, ["....QT.tt....",
+                        "...QT...tt...",
+                        "..QT.....tt..",
+                        "..BBB....bbb."]),
+        'crouch':  (-1, ["...QTTttt....",
+                         "...QT..tt....",
+                         "...BBB.bbb..."]),
     },
     'child': {
-        'stand':   (0, [".....QT.tt.....",
-                        ".....QT.tt.....",
-                        ".....BBBbbb...."]),
-        'stand2':  (0, [".....QT.tt.....",
-                        "....QT..tt.....",
-                        "....BBB.bbb...."]),
-        'back':    (0, [".....QT.tt.....",
-                        ".....QT.tt.....",
-                        ".....BB.bb....."]),
-        'back2':   (0, [".....QT.tt.....",
-                        "....QT..tt.....",
-                        "....BB..bb....."]),
-        'pass1':   (0, ["......tQT......",
-                        ".....t.QT......",
-                        "....bb.BBB....."]),
-        'stride1': (0, [".....tQT.......",
-                        "....tt..QT.....",
-                        "....bb..BBB...."]),
-        'pass2':   (0, ["......QTt......",
-                        ".....QT.t......",
-                        "....BB..bbb...."]),
-        'stride2': (0, [".....QTtt......",
-                        "....QT...tt....",
-                        "....BB...bbb..."]),
-        'step1':   (0, [".....QT.tt.....",
-                        ".....BBBtt.....",
-                        "........bbb...."]),
-        'lean':    (0, [".....QT.tt.....",
-                        "....QT...tt....",
-                        "....BBB..bbb..."]),
-        'crouch':  (0, [".....QT.tt.....",
-                        ".....QT.tt.....",
-                        ".....BBBbbb...."]),
+        'stand':   (0, [".....Q.t.....",
+                        ".....Q.t.....",
+                        ".....BBbb...."]),
+        'stand2':  (0, [".....Q.t.....",
+                        "....Q..t.....",
+                        "....BB.bb...."]),
+        'back':    (0, [".....Q.t.....",
+                        ".....Q.t.....",
+                        ".....B.b....."]),
+        'back2':   (0, [".....Q.t.....",
+                        "....Q..t.....",
+                        "....B..b....."]),
+        'pass1':   (0, [".....tQ......",
+                        "....t.Q......",
+                        "...bb.BB....."]),
+        'stride1': (0, [".....tQ......",
+                        "....t..Q.....",
+                        "...bb..BB...."]),
+        'pass2':   (0, [".....Qt......",
+                        ".....Q.t.....",
+                        "....BB.bb...."]),
+        'stride2': (0, [".....Qt......",
+                        "....Q...t....",
+                        "...BB...bb..."]),
+        'step1':   (0, [".....Q.t.....",
+                        ".....BBt.....",
+                        ".......bb...."]),
+        'lean':    (0, [".....Q.t.....",
+                        "....Q...t....",
+                        "....BB..bb..."]),
+        'crouch':  (0, [".....Q.t.....",
+                        ".....Q.t.....",
+                        ".....BBbb...."]),
     },
 }
 # Skirts: the hem row (y1) and what shows under it (y0) for each step: (body lift, [y1, y0]).
 SKIRT = {
-    'stand':   (0, [".ffffffffffff..", ".....BBBbbb...."]),
-    'stand2':  (0, [".ffffffffffff..", "....BBB..bbb..."]),
-    'back':    (0, [".ffffffffffff..", ".....BB..bb...."]),
-    'back2':   (0, [".ffffffffffff..", "....BB...bb...."]),
-    'pass1':   (0, [".ffffffffffff..", "......BBBB....."]),
-    'stride1': (0, ["fffffffffffff..", "..bbb....BBBB.."]),
-    'pass2':   (0, [".ffffffffffff..", ".........bbbb.."]),
-    'stride2': (0, [".fffffffffffff.", "..BBB....bbbb.."]),
-    'step1':   (0, [".BBBfffffffff..", "........bbbb..."]),
-    'lean':    (0, [".fffffffffffff.", "..BBB....bbbb.."]),
-    'crouch':  (0, [".ffffffffffff..", ".....BBBbbb...."]),
+    'stand':   (0, [".fffffffffff.", "....BBBbbb..."]),
+    'stand2':  (0, [".fffffffffff.", "...BBB.bbb..."]),
+    'back':    (0, [".fffffffffff.", "....BB.bb...."]),
+    'back2':   (0, [".fffffffffff.", "...BB..bb...."]),
+    'pass1':   (0, [".fffffffffff.", ".....BBB....."]),
+    'stride1': (0, ["ffffffffffff.", "..bbb...BBB.."]),
+    'pass2':   (0, [".fffffffffff.", ".......bbb..."]),
+    'stride2': (0, [".ffffffffffff", "..BBB...bbb.."]),
+    'step1':   (0, [".BBBffffffff.", ".......bbb..."]),
+    'lean':    (0, [".ffffffffffff", "..BBB...bbb.."]),
+    'crouch':  (0, [".fffffffffff.", "....BBBbbb..."]),
 }
 
 # ---------------------------------------------------------------------------------------------------------------
-# Arms. A pose is (path, hand): the path is the arm's inner line from the shoulder (0, 0) (dx forward, towards the
-# facing, screen right; dy up), drawn with the build's thickness (outwards for an upright piece, upwards for a level
-# one); hand cells are (dx, dy, out) where out=1 means one cell outwards.
+# Arms. A pose is (path, hand): the path is the arm's line from the shoulder (0, 0) (dx forward, towards the
+# facing, screen right; dy up), 1 px wide; where it runs level (a forearm held out) it is 2 px: lit on top and shaded
+# underneath, so it reads against the coat. hand: one cell.
 # ---------------------------------------------------------------------------------------------------------------
 def _down(n, sx=0):
     return [(0, -k) for k in range(n - 2)] + [(sx, -(n - 2)), (sx, -(n - 1))]
 
 
 POSES = {
-    'down':     (_down(6), [(0, -6, 0), (0, -6, 1), (0, -7, 0), (0, -7, 1)]),
-    'fwd':      (_down(6, 1), [(1, -6, 0), (1, -6, 1), (1, -7, 0), (1, -7, 1)]),
-    'back':     (_down(6, -1), [(-1, -6, 0), (-1, -6, 1), (-1, -7, 0), (-1, -7, 1)]),
-    'out':      ([(0, 0), (0, -1), (0, -2), (0, -3), (1, -3), (2, -3), (3, -3), (4, -3)],
-                 [(5, -3, 0), (6, -3, 0), (5, -2, 0), (6, -2, 0)]),
-    'chest':    ([(0, 0), (0, -1), (0, -2), (0, -3), (1, -4), (2, -4), (3, -4), (4, -4)],
-                 [(5, -4, 0), (6, -4, 0), (5, -3, 0), (6, -3, 0)]),
-    'carry':    ([(0, 0), (0, -1), (0, -2), (0, -3), (1, -4), (2, -4)],
-                 [(3, -4, 0), (3, -3, 0), (3, -5, 0)]),
-    'push':     ([(0, 0), (0, -1), (1, -2), (1, -3), (2, -4), (3, -5)],
-                 [(4, -5, 0), (4, -6, 0), (5, -5, 0), (5, -6, 0)]),
-    'reach':    ([(0, 0), (1, -1), (1, -2), (2, -3), (2, -4), (3, -5), (3, -6)],
-                 [(3, -7, 0), (4, -7, 0), (3, -8, 0), (4, -8, 0)]),
-    'pull':     ([(0, 0), (0, -1), (0, -2), (0, -3), (0, -4)],
-                 [(1, -5, 0), (2, -5, 0), (1, -4, 0), (2, -4, 0)]),
-    'up':       ([(0, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)],
-                 [(1, 6, 0), (1, 6, 1), (1, 7, 0), (1, 7, 1)]),
-    'up2':      ([(0, 0), (1, 1), (1, 2), (1, 3), (2, 4), (2, 5)],
-                 [(3, 6, 0), (3, 6, 1), (3, 7, 0), (3, 7, 1)]),
-    'shoulder': ([(0, 0), (0, 1), (0, 2), (0, 3)],
-                 [(0, 4, 0), (0, 4, 1), (0, 5, 0), (0, 5, 1)]),
-    'none':     ([], []),
+    'down':     (_down(5), (0, -5)),
+    'fwd':      (_down(5, 1), (1, -5)),
+    'back':     (_down(5, -1), (-1, -5)),
+    'out':      ([(0, 0), (0, -1), (1, -2), (2, -2), (3, -2)], (4, -2)),
+    'chest':    ([(0, 0), (0, -1), (0, -2), (1, -3), (2, -3), (3, -3)], (4, -3)),
+    'carry':    ([(0, 0), (0, -1), (0, -2), (1, -3)], (2, -3)),
+    'push':     ([(0, 0), (0, -1), (1, -2), (2, -3)], (3, -4)),
+    'reach':    ([(0, 0), (1, -1), (1, -2), (2, -3), (2, -4)], (3, -5)),
+    'pull':     ([(0, 0), (0, -1), (0, -2), (0, -3)], (1, -4)),
+    'up':       ([(0, 0), (1, 1), (1, 2), (1, 3)], (1, 4)),
+    'up2':      ([(0, 0), (1, 1), (1, 2), (2, 3)], (2, 4)),
+    'shoulder': ([(0, 0), (0, 1), (0, 2)], (0, 3)),
+    'none':     ([], None),
 }
 
 
 def arm_cells(build, pose, side, short=0):
-    """Cells of one arm: [(x, y, code)], and the hand cells [(x, y)]."""
+    """Cells of one arm: [(x, y, code)], and the hand cells [(x, y, code)]."""
     b = BUILD[build]
     path, hand = POSES[pose]
-    if short and pose in ('down', 'fwd', 'back'):        # shorter arms (women: hands at the waist; child)
-        path = _down(6 - short, {'down': 0, 'fwd': 1, 'back': -1}[pose])
-        hand = [(x, y + short, o) for x, y, o in hand]
-    elif short and b['thick'] == 1:
-        path = [(x, y) for x, y in path][:max(1, len(path) - short)]
+    if short and pose in ('down', 'fwd', 'back'):        # shorter hanging arms (women: hands at the waist; child)
+        sx = {'down': 0, 'fwd': 1, 'back': -1}[pose]
+        n = 5 - short
+        path = [(0, -k) for k in range(max(0, n - 1))] + [(sx, -(n - 1))] if n > 1 else [(sx, 0)]
+        hand = (sx, -n)
     x0 = X0 + b[side]
     y0 = b['top']
-    out = -1 if side == 'near' else 1
-    th = b['thick']
     cells = []
     pts = [(x0 + dx, y0 + dy) for dx, dy in path]
     for i, (x, y) in enumerate(pts):
         level = (i > 0 and pts[i - 1][1] == y) or (i + 1 < len(pts) and pts[i + 1][1] == y)
         if side == 'near':
-            cells.append((x, y, 'K' if level else 'o'))     # a level forearm: lit on top, shaded under
-            if th > 1:
-                cells.append((x, y + 1, 'O') if level else (x + out, y, 'O'))
+            cells.append((x, y, 'K' if level else 'O'))
+            if level:
+                cells.append((x, y + 1, 'O'))
         else:
-            cells.append((x, y, 'o'))
-            if th > 1:
-                cells.append((x, y + 1, 'o') if level else (x + out, y, 'K'))
-    hs = []
-    for dx, dy, o in hand:
-        if o and th < 2:
-            continue
-        hs.append((x0 + dx + (out if o else 0), y0 + dy))
-    if b['thick'] == 1 and hand:      # the child's small hand: one cell
-        hs = hs[:1]
-    hc = 'S' if side == 'near' else 's'
-    return cells, [(x, y, hc) for x, y in hs]
+            cells.append((x, y, 'K' if level else 'o'))
+            if level:
+                cells.append((x, y + 1, 'o'))
+    hs = [] if hand is None else [(x0 + hand[0], y0 + hand[1], 'S' if side == 'near' else 's')]
+    return cells, hs
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# Held things: small pixel maps placed by the hand's lowest-left cell (hx, hy): (rows, dx, dy of the top row, front)
+# Held things: small pixel maps placed by the hand cell (hx, hy): (rows, dx, dy of the top row)
 # ---------------------------------------------------------------------------------------------------------------
 HELD = {
-    'carpetbag': ([".z.z.",
-                   "XXGXx",
-                   "XyXyx",
-                   "XXyXx",
-                   "xxxxx"], -1, -1),
-    'basket':    ([".z.z.",
-                   "z...z",
-                   "65656",
-                   "XxXxX",
-                   "xXyXx",
-                   ".xxx."], -2, 2),
-    'hammer':    ([".Z..",
-                   ".Z..",
-                   ".Z..",
-                   "MMnn"], -1, -1),
-    'ticket':    (["YY",
-                   "YY",
-                   "YY"], 2, 2),
-    'punch':     (["MMM",
-                   "...",
-                   "nn."], 2, 2),
-    'punch_closed': (["MMM",
-                      "nn."], 2, 1),
+    'carpetbag': ([".zz.",
+                   "XXGx",
+                   "XyXx",
+                   "xxxx"], 0, 0),
+    'basket':    ([".ZZ.",
+                   "Z..Z",
+                   "XXXx",
+                   "XyXx",
+                   ".xx."], -1, 1),
+    'hammer':    (["Z..",
+                   "Z..",
+                   "Mnn"], 0, -1),
+    'ticket':    (["Y",
+                   "Y"], 1, 1),
+    'punch':     (["MM",
+                   "..",
+                   ".n"], 0, 1),
+    'punch_closed': (["MM",
+                      ".n"], 0, 1),
     'lantern':   ([".z.",
-                   "zzz",
                    "zFz",
-                   "zFz",
-                   "zzz"], 0, -1),
+                   "zzz"], -1, -1),
 }
 TRUNK = [            # a small steamer trunk on the near shoulder, the hand steadying it
-    ".1111..",
-    "122222.",
-    "G2222G2",
-    "3333344",
-    "3G33G44",
-    "3333444",
+    ".111.",
+    "12222",
+    "G222G",
+    "33344",
 ]
 CRATE = [
-    ".11112..",
-    "12222223",
-    "3888344.",
-    "33334444",
-    "33334444",
-    ".333444.",
+    ".1112.",
+    "122223",
+    "388844",
+    "333444",
+    ".3344.",
 ]
 SACK = [
-    "..67....",
-    ".55567..",
-    "5588667.",
-    "5555667.",
-    ".55667..",
+    ".67...",
+    "55567.",
+    "588667",
+    "555667",
+    ".6677.",
 ]
 
 
@@ -934,8 +817,6 @@ def place(g, rows, x0, ytop, over=True):
             q = (x0 + c, ytop - r)
             if over or q not in g:
                 g[q] = ch
-
-
 # ---------------------------------------------------------------------------------------------------------------
 # One frame
 # ---------------------------------------------------------------------------------------------------------------
@@ -980,9 +861,7 @@ def frame(who, back, legs='stand', arms=('down', 'down'), lift=0, head_dy=0, lea
         hs = hands[side]
         if not hs:
             return
-        hx = min(x for x, y, c in hs); hyy = min(y for x, y, c in hs)
-        if kind in ('ticket', 'punch', 'punch_closed'):
-            hyy = max(y for x, y, c in hs)
+        hx, hyy, _ = hs[0]
         rows, dx, dy = HELD[kind]
         front = not (back and side == 'far' and kind in ('ticket', 'punch', 'punch_closed'))
         place(g, rows, hx + dx, hyy + dy, over=front)
@@ -1089,7 +968,7 @@ def anims_for(who):
         kw.setdefault('arms', ('down', 'down'))
         if lug == 'trunk':
             kw['arms'] = ('shoulder', kw['arms'][1])
-            kw['load'] = (TRUNK, -8, 20, True)
+            kw['load'] = (TRUNK, -7, 15, True)
         elif lug == 'basket':
             kw['arms'] = (kw['arms'][0], 'carry')
             kw['hold'] = ('basket', 'far')
@@ -1132,11 +1011,11 @@ def agent_anims():
 
 
 # Where the game draws a carried item (offset in px from the feet anchor to the item's anchor) and the cart grip.
-# The carry pose holds the hands at y 8 to 9 in front; a carried picture (about 10 x 8 px) is drawn with its
-# bottom at y 6 in front (se, sw), and behind (ne, nw: drawn before the body) at y 11 and 6 px to the side of the
-# facing, so it shows past the shoulder.
-CARRY_HANDS = {'se': (0, -6), 'ne': (6, -11), 'sw': (0, -6), 'nw': (-6, -11)}
-PUSH_GRIP = {'se': (6, -6), 'ne': (6, -6), 'sw': (-6, -6), 'nw': (-6, -6)}
+# The carry pose holds the hands at y 7 in front; a carried picture (about 10 x 8 px) is drawn with its bottom at
+# y 3 in front (se, sw), and behind (ne, nw: drawn before the body) at y 8 and 5 px to the side of the facing, so it
+# shows past the shoulder.
+CARRY_HANDS = {'se': (0, -3), 'ne': (5, -8), 'sw': (0, -3), 'nw': (-5, -8)}
+PUSH_GRIP = {'se': (5, -6), 'ne': (5, -6), 'sw': (-5, -6), 'nw': (-5, -6)}
 CART_BEHIND = 2.25    # how far (u) behind the cart's centre the pusher stands (the committed handcart's 'pusher')
 
 TAGS = {'store': ('green', 0), 'smithy': ('glass', 1), 'saloon': ('red', 0)}

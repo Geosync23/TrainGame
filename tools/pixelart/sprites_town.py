@@ -177,21 +177,7 @@ def register(reg):
     reg.add('prop/shelf', 'town_props', one(TW.shelf, **NOSHADOW), dict(anchor='centre of the shelf; its back to -z'))
     for k, rows in enumerate(TW.TUFTS):
         reg.add(f'prop/tuft/{k + 1}', 'town_props', [TW.pixmap(rows)], dict(anchor='bottom middle', note='grass tuft or flowers'))
-    # ---------------- goods, tags, cart ----------------
-    for kind in ('crate', 'sack', 'barrel', 'keg', 'bale', 'mailSack', 'longBundle'):
-        x, z, y = TW.GOODS_TOP[kind]
-        reg.add(f'goods/{kind}', 'town_goods', one(lambda k=kind: TW.goods(k), shadow=MOVE_SH),
-                dict(anchor='centre of the bottom face', tag_at=[round(2 * (x - z)), round(x + z - 1.5 * y)],
-                     tag_note='pixel offset from the anchor where a tag/<shop> mark is centred (top front edge)'))
-    for kind in ('crate', 'sack', 'barrel'):
-        for tag in (None, 'store', 'smithy', 'saloon'):
-            nm = f'goods/{kind}/carried' + (f'/{tag}' if tag else '')
-            reg.add(nm, 'town_goods', one(lambda k=kind: TW.carried(k), after=lambda k=kind, t=tag: TW.carried_mark(k, t), **NOSHADOW),
-                    dict(anchor='centre of the bottom face: put it at the hands (the item sits above that point)',
-                         note='smaller version to carry at chest height, no ground shadow'
-                              + (f'; {tag} mark on the front' if tag else '')))
-    for kind in TW.TAG_PIX:
-        reg.add(f'tag/{kind}', 'town_goods', [TW.tag_sprite(kind)], dict(anchor='centre'))
+    # ---------------- the D25 handcart (goods and tags moved to sprites_goods.py, A2, for D27) ----------------
     for d, f in CART_DIRS.items():
         F = TW.Frame(f)
         push = F.w(0.0, -9.0)

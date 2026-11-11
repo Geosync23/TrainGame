@@ -28,7 +28,9 @@ OWNERS = {
     'sprites_track': ('sw/', 'track/', 'track.', 'prop.switch_stand.'),
     'sprites_font': ('font/',),
     'sprites_people': ('ppl/', 'person.'),
-    'sprites_town': ('bld/', 'goods/', 'tag/', 'cart/', 'deck/', 'walk/', 'plat/', 'prop/', 'ground/', 'street/',
+    'sprites_goods': ('goods/', 'tag/'),           # D27 (A2): the 16 goods, their handling states, shop tags
+    'sprites_carts': ('cart27/', 'truck/'),        # D27 (A2): the platform cart and the hand truck
+    'sprites_town': ('bld/', 'cart/', 'deck/', 'walk/', 'plat/', 'prop/', 'ground/', 'street/',
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
 }
 

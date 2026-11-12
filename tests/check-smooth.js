@@ -1,0 +1,128 @@
+// Check: punching and freight handling play smoothly (D29, the designer: handling "needs to be much smoother and more
+// clear", punching "very hitchy when in the train"). In Chromium at phone size (portrait and landscape), at 1x in real
+// time (tests/smooth-play.js): a coach punch sequence (the d27coach scenario: step in, walk the aisle, punch every
+// seated ticket of the fullest coach one after another, step off) and a freight sequence (d27freight: F's frJobHint
+// played as the next button tapped at once: the door, the cart, lifting goods out of the car, onto the cart, to the
+// storage rows), recording every drawn frame:
+// - the agent's drawn point (the sprite actually drawn) never jumps: each frame's step at most STEP_PX native px plus
+//   STEP_PER_MS a millisecond of the frame's time (the climb up a coach's end steps is the fastest move, about 1.3 px a
+//   frame at 60 fps; before D29 the agent in a coach jumped 0.4u, up to 10 native px, once a tick);
+// - he never stands still on screen while the sim walks him for more than STILL_MS (before D29: 117 ms, a whole tick);
+// - the camera (locked on him) never jumps either (the same bound) and he stays within a native pixel or so of the
+//   view's middle from frame to frame;
+// - the good in his hands and the cart he pushes stay with him (their offset from him changes by at most 2 native px a
+//   frame while he holds or pushes them), and a good being lifted or set down moves at most 4 px a frame (before D29 it
+//   stood still a tick, then jumped);
+// - sim only, the same sequences tick by tick on a copy (smooth-play's simGaps): no tick inside a job in which nothing
+//   advances (he neither moves nor works on a timed step), i.e. the steps of one job are chained; the punch and the
+//   handling steps take the times in PB and FR (read from the data, not written here).
+// Screenshots: test-output/d29-smooth-{coach-punch,coach-next,freight-lift,freight-carry}-{portrait,landscape}.png (as
+// played) and d29-smooth-*-close-*.png (paused, zoomed in, the buttons over the world hidden).
+
+const SP = require('./smooth-play');
+const { openGame } = require('./browser');
+const STEP_PX = 1.6, STEP_PER_MS = 0.1, STILL_MS = 90, REL_PX = 2.01;
+
+module.exports = async function checkSmooth() {
+  const problems = [], notes = [];
+  for (const orient of ['portrait', 'landscape']) {
+    for (const kind of ['coach', 'freight']) {
+      const P = m => problems.push(`${orient}, ${kind}: ${m}`);
+      const shotAt = kind === 'coach'
+        ? [[`d29-smooth-coach-punch-${orient}`, () => { const s = window.__railhead.state, J = s.pb && s.pb.job; return !!(J && J.k === 'punch' && J.on && J.acc > 0); }],
+          [`d29-smooth-coach-next-${orient}`, () => { const s = window.__railhead.state; return !!(s.player.in && !s.pb.job && s.pb.tot.punched > 0); }]]
+        : [[`d29-smooth-freight-lift-${orient}`, () => { const L = window.__railhead.pix.lists, f = L && L.frPose; return !!(f && f.phase === 'pick' && f.prog > 0.3 && f.verb === 'carry'); }],
+          [`d29-smooth-freight-carry-${orient}`, () => { const s = window.__railhead.state, J = s.fr.job, st = J && J.steps[J.i]; return !!(st && st.s === 'walk' && J.steps.slice(J.i).some(q => q.a === 'put') && window.__railhead.pix.PIX.target); }]];
+      let r;
+      try { r = await SP.play(kind, orient, { shotAt }); } catch (e) { P('did not play: ' + (e && e.message)); continue; }
+      const m = SP.summarise(r.rec), rec = r.rec;
+      // the frame-by-frame bound, scaled by each frame's time
+      let worst = 0, worstAt = null, camWorst = 0;
+      for (let i = 1; i < rec.length; i++) {
+        const a = rec[i - 1], b = rec[i], lim = STEP_PX + STEP_PER_MS * b.dt;
+        if (a.ax !== null && b.ax !== null) { const d = Math.hypot(b.ax - a.ax, b.ay - a.ay); if (d < 12 && d - lim > worst) { worst = d - lim; worstAt = `${b.key} at tick ${b.tick}`; } }
+        const c = Math.hypot(b.cx - a.cx, b.cy - a.cy); if (c < 12) camWorst = Math.max(camWorst, c - lim);
+      }
+      notes.push(`${orient}, ${kind}: ${JSON.stringify(m)}`);
+      if (worst > 0) P(`the agent's drawn point jumped ${(worst + STEP_PX).toFixed(2)} native px in a frame (${worstAt})`);
+      if (camWorst > 0) P(`the camera jumped ${(camWorst + STEP_PX).toFixed(2)} native px in a frame`);
+      if (m.worstStillMs > STILL_MS) P(`the agent stood still on screen for ${m.worstStillMs} ms while the sim walked him`);
+      if (m.screenWobbleMax > 1.5) P(`the agent wandered ${m.screenWobbleMax} native px off the view's middle in a frame`);
+      if (m.goodVsAgentOver2 > 0) P(`the good in his hands jumped against him ${m.goodVsAgentOver2} times (up to ${m.goodVsAgentMax} px)`);
+      if (m.liftStepsOver4 > 0) P(`a good being lifted or set down jumped ${m.liftStepsOver4} times (up to ${m.liftStepMax} px in a frame)`);
+      if (m.cartVsAgentOver2 > 0 && kind === 'freight') P(`the cart jumped against him ${m.cartVsAgentOver2} times (up to ${m.cartVsAgentMax} px)`);
+      if (kind === 'coach' && !(m.punched >= 2)) P(`only ${m.punched} tickets punched`);
+      if (kind === 'freight' && !(m.walkFrames > 300)) P(`only ${m.walkFrames} walking frames`);
+      if (r.errors.length) P('console errors: ' + r.errors.slice(0, 3).join(' | '));
+    }
+  }
+  // Close-ups (paused, zoomed in, the buttons over the world hidden): the punch with its cue and the traveller's
+  // ticket, the flash and the next traveller outlined, a good lifted into the hands, a good carried to its marked cell.
+  for (const orient of ['portrait', 'landscape']) {
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&debug=1&world=proto&d27=board,handling,town' });
+    try {
+      await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => {});
+      await page.addStyleTag({ content: '.pdAct { display: none !important; }' });
+      const until = (kind, pred, n) => page.evaluate(([kind, src, n]) => {
+        const R = window.__railhead, f = (0, eval)('(' + src + ')');
+        if (kind) { window.rh.scenario(kind); R.pix.warm(true); }
+        for (let i = 0; i < n; i++) {
+          const s = R.state;
+          if (f(R, s)) return true;
+          if (s.fr && !s.fr.job && !s.player.in && kind !== 'd27coach') { const h = R.fr.frJobHint(s); if (h && h.cmd) R.send(h.cmd); }
+          R.step(1);
+        }
+        return false;
+      }, [kind, pred.toString(), n || 400]);
+      const shot = async (name, ok) => {
+        if (!ok) { problems.push(`${orient}: close-up ${name}: the moment never came`); return; }
+        await page.evaluate(() => { window.__railhead.camera.zoom = 3; });
+        await page.waitForTimeout(250);
+        await page.screenshot({ path: require('./browser').screenshotPath(`d29-smooth-${name}-close-${orient}`) });
+      };
+      let ok = await until('d27coach', (R, s) => { if (!s.pb.job && !s.player.in && !s._sent) { s._sent = 1; R.send({ t: 'pbPunch', stock: s.pax.list.find(p => p.s === 'sitting' && !p.punched && !p.through && p.to !== 'hub').stock }); } const J = s.pb.job; return !!(J && J.k === 'punch' && J.on && J.acc > 0); });
+      await shot('coach-punch', ok);
+      ok = await until(null, (R, s) => s.pb.tot.punched > 0, 50);
+      await shot('coach-next', ok);
+      ok = await until('d27freight', (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; return !!(st && st.a === 'pick' && J.t0 >= 0 && s.time - J.t0 > 0); }, 600);
+      await shot('freight-lift', ok);
+      ok = await until(null, (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; const tg = R.fr.frTarget(s); return !!(st && (st.s === 'walk' || st.s === 'go') && tg && tg.a === 'put' && Math.hypot(tg.x - s.player.x, tg.z - s.player.z) < 5); }, 600);
+      await shot('freight-carry', ok);
+      if (errors.length) problems.push(`${orient}: close-ups: console errors: ` + errors.slice(0, 3).join(' | '));
+    } finally { await browser.close(); }
+  }
+  // Sim only: no idle ticks inside a job; the step times from the data.
+  {
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&debug=1&world=proto&d27=board,handling,town' });
+    try {
+      for (const kind of ['coach', 'freight']) {
+        await page.evaluate(k => window.rh.scenario(k === 'coach' ? 'd27coach' : 'd27freight'), kind);
+        const g = await page.evaluate(([src, k]) => (0, eval)('(' + src + ')')(k, k === 'coach' ? 400 : 300), [SP.simGaps.toString(), kind]);
+        notes.push(`sim ${kind}: ${g.idle} idle ticks in ${g.ticks}; ${kind === 'coach' ? 'ticks a punch ' + JSON.stringify(g.jobs) : 'steps ' + JSON.stringify(g.steps)}`);
+        if (g.idle) problems.push(`sim ${kind}: ${g.idle} ticks inside a job with nothing advancing (${g.idleAt.slice(0, 5).join(', ')})`);
+      }
+      const t = await page.evaluate(() => {
+        const R = window.__railhead, PB = R.pb.PB, FR = R.fr.FR, s = JSON.parse(JSON.stringify(R.state)), out = { bad: [] };
+        // a punch at the row: from the tick it starts to pbPunched, PB.PUNCH_S (whole ticks)
+        window.rh.scenario('d27coach');
+        const st = R.state, stock = st.pax.list.find(p => p.s === 'sitting' && !p.punched && !p.through && p.to !== 'hub').stock;
+        R.send({ t: 'pbPunch', stock });
+        let on = null, done = null;
+        for (let i = 0; i < 300 && done === null; i++) { R.step(1); const J = st.pb.job; if (on === null && J && J.k === 'punch' && J.on) on = st.time - (J.acc || 0); if (st.pb.tot.punched) done = st.time; }
+        out.punch = done !== null && on !== null ? done - on : null;
+        if (out.punch !== Math.ceil(PB.PUNCH_S / 8) * 8) out.bad.push(`a punch took ${out.punch} game s (PB.PUNCH_S ${PB.PUNCH_S})`);
+        if (!(PB.PUNCH_S <= 16)) out.bad.push(`PB.PUNCH_S is ${PB.PUNCH_S} (D29: about 15)`);
+        if (!(FR.TIME_K <= 0.4 + 1e-9)) out.bad.push(`FR.TIME_K is ${FR.TIME_K} (D29: 0.4)`);
+        const all = [FR.DOOR_S, FR.GRAB_S, FR.PARK_S, FR.HAND_S, ...Object.values(FR.PICK_S)];
+        if (all.some(v => !(v >= 8) || v % 8)) out.bad.push(`a handling time is not a whole number of ticks of at least one: ${all.join(', ')}`);
+        out.times = { punch: PB.PUNCH_S, door: FR.DOOR_S, pick: FR.PICK_S, grab: FR.GRAB_S, hand: FR.HAND_S };
+        return out;
+      });
+      notes.push('times: ' + JSON.stringify(t.times));
+      for (const b of t.bad) problems.push(b);
+      if (errors.length) problems.push('console errors: ' + errors.slice(0, 3).join(' | '));
+    } finally { await browser.close(); }
+  }
+  console.log('check-smooth:\n  ' + notes.join('\n  '));
+  return problems;
+};

@@ -3,10 +3,12 @@
 // handling on (?d27=handling); a switchman sets the switches (they are T's):
 // - every one of the 16 kinds of goods taken from a storage cell, set on the platform cart and back, each step by its
 //   verb (carry, shoulder, roll, drag, truck, heave) and timed as FR.PICK_S says (to the tick); the hand truck fetched
-//   for a truck good; the agent's pose (frPose) and the good's drawn place (frDrawList) follow the step's progress;
+//   for a truck good; the agent's pose (frPose) and the good's drawn place (frDrawList) follow the step's progress
+//   (D29: a one-tick step, FR.MIN_S, has no middle in the sim, only in the drawing between ticks: it is sampled at its
+//   start; and a step can start in the command's own tick, which is watched too);
 // - stacking: crates four high in one storage cell, the fifth in the next; a sack refused on a crate stack, a crate on a
 //   barrel, a barrel on a crate (the cart), a good under another; lifting off the fourth layer takes stackHigh's extra;
-// - the boxcar door: shut at first (a take refused), 40 s to slide open, frDoorOpen rising to 1; walking into the car
+// - the boxcar door: shut at first (a take refused), FR.DOOR_S to slide open, frDoorOpen rising to 1; walking into the car
 //   (frInCar, the player's y at the floor), out again; a walk given inside a car goes out through the door first;
 //   Monday's f1 brings the plough on a flatcar at the back; no good in the doorway's aisle;
 // - a whole day of the freight trains (f1, f2, f3) worked by a player who follows frJobHint: each unloaded, loaded and
@@ -34,7 +36,7 @@ module.exports = async function checkHandling() {
         };
         const tick = cmds => { switchman(); const e = R.simTick(S, cmds || []); for (const x of e) { x.time = S.time; evs.push(x); } return e; };
         const idle = () => !(S.fr && S.fr.job) && P.mode === 'idle' && !P.act && !P.use;
-        const send = (cmd, each) => { const from = evs.length; tick([cmd]); for (let n = 0; n < 4000 && !idle(); n++) { tick(); if (each) each(); } return evs.slice(from); };
+        const send = (cmd, each) => { const from = evs.length; tick([cmd]); if (each) each(); for (let n = 0; n < 4000 && !idle(); n++) { tick(); if (each) each(); } return evs.slice(from); };
         return { tick, send, evs, idle };
       }
       const refusals = e => e.filter(x => /Refused$/.test(x.t) || x.t === 'blocked');
@@ -57,7 +59,7 @@ module.exports = async function checkHandling() {
             let mid = null, a0 = null;
             const e = pl.send(cmd, () => {
               const J = S.fr.job, st = J && J.steps[J.i];
-              if (st && st.s === 'act' && (st.a === 'pick' || st.a === 'put') && st.id === id && J.t0 >= 0 && !mid && S.time - J.t0 >= st.dur / 2) {
+              if (st && st.s === 'act' && (st.a === 'pick' || st.a === 'put') && st.id === id && J.t0 >= 0 && !mid && (S.time - J.t0 >= st.dur / 2 || st.dur <= 8)) {   // (D29: a one-tick step is between ticks only in the drawing: sampled at its start)
                 const pose = X.frPose(S), q = X.frDrawList(S).find(o => o.id === id);
                 mid = { key: pose && pose.key, phase: pose && pose.phase, prog: pose && pose.prog, place: q && q.place, verb: st.verb, dur: st.dur };
               }
@@ -67,7 +69,7 @@ module.exports = async function checkHandling() {
             if (!start || !end) { B(`${kind}: ${cmd.t} did not ${endT === 'frTaken' ? 'take' : 'put'} it (${start ? 'started' : 'never started'})`); return null; }
             const took = end.time - start.time;   // whole ticks of 8 game seconds
             if (took !== Math.ceil(start.dur / 8) * 8) B(`${kind}: ${cmd.t} took ${took} s, its step is ${start.dur} s`);
-            if (!mid || mid.place !== 'moving' || !(mid.prog > 0.3 && mid.prog < 0.8)) B(`${kind}: half way through ${cmd.t} the good was drawn ${mid && mid.place} at ${mid && mid.prog}`);
+            if (!mid || mid.place !== 'moving' || !(mid.dur <= 8 ? mid.prog >= 0 && mid.prog < 0.8 : mid.prog > 0.3 && mid.prog < 0.8)) B(`${kind}: half way through ${cmd.t} the good was drawn ${mid && mid.place} at ${mid && mid.prog}`);
             const wNow = S.items.where[id];
             if (!wNow || wNow.kind !== where) B(`${kind}: after ${cmd.t} it is at ${wNow && wNow.kind}, expected ${where}`);
             timing.push(`${kind} ${cmd.t} ${took}s ${mid && mid.key}`);

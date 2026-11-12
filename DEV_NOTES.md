@@ -961,8 +961,110 @@ the depot's apron, was hidden by the canopy roof from the default view; the desi
   clear of track 1, the footbridges, the crossing and the cart path, use spots on the ground; screenshots
   `d29-levers-{portrait,landscape}.png`), check-d27world, check-protoworld (the east legs end at the one frame,
   promised from the straight line), check-lessons, check-d27-day, check-proto-stall, check-pixrender, check-save.
+## D29 (smoother, faster and clearer handling and punching)
+
+### Handling and punching (builder, 2026-11-12)
+
+The designer's review (D29 rows 1 and 2): freight handling "faster" and "much smoother and more clear"; punching
+"faster" and "smoother too, it's very hitchy when in the train". The one lever frame (row 3) is another helper's.
+
+**Measured first** (`tests/smooth-play.js`: plays a sequence in real time at 1x in Chromium at 390 x 844 and 844 x 390,
+with and without 4x CPU throttling, and records every drawn frame: the agent's drawn sprite, the camera's exact
+top-left, the good in his hands, the cart, frame times, the sim's state; `node tests/smooth-play.js coach|freight
+portrait|landscape [throttle]`, and `... gaps` for the sim-only idle ticks). On D27's tip (84ca95b):
+- **In a coach the agent and the camera moved once a tick.** On a train the agent is drawn at P's `pbPlayerPose`, the
+  sim's point, which changes once a tick (8 game seconds, 8 frames at 1x), and the camera (locked on him) centred on that
+  same point: so the whole view jumped 0.4u (up to 10.7 native px, 16 CSS px) every 8th frame and stood still on the 7
+  between (403 of 482 walking frames still, 117 ms stands, 54 jumps over 2 px in one punch sequence; the same in
+  landscape and with 4x throttling). Outside the train the player was always drawn between ticks (`prevPlayer`), which is
+  why it was "hitchy when in the train" only. The travellers walking the aisle did the same (P's list, also per tick).
+- **Idle ticks inside a job.** The walk to a row and its punch: a tick to arrive, a tick with nothing (the punch "starts"
+  at acc 0), then the punch: 7 standing ticks in a five-ticket sequence (of 91). Freight: the action after a walk started
+  a tick after he arrived (the walk's end is only seen by the next tick's step): 9 standing ticks in 300 (one before
+  every lift and every set-down after a walk), while the walk after an action moved in the action's own last tick.
+- **Handling progress in steps.** The good being lifted or set down was placed by the sim's progress (0, 0.5, 1 for a
+  16 s step), so it jumped 5 to 11 native px against him (17 jumps in 300 ticks), and the lift frames jumped likewise;
+  the frame after the last never showed (the walk had begun). The cart and the good in the hands were at the sim's point
+  while he was drawn between ticks (up to 4 px of jitter against him while pushing).
+- Not causes: animation cycles (the walk cycle runs on game time, `pixCycle`, and does not restart; the stalls made it
+  flip walk/idle), the cut-away coach's redraw and sort (0.7 to 0.9 ms a frame unthrottled, 3.2 to 4.2 ms at 4x, as the
+  rest of the scene), pbPunch resent (a repeat carries on the punch in hand), the aisle's walk speed (the same as
+  outside, 3u a game minute; only the end steps are quicker, 2.6u in 16 s), the camera on entering or leaving a car
+  (D28 left it locked on him, `PIX.CAM.CAR` false; the only jump was 7 px of height as he stepped off, fixed below).
+
+**Built:**
+- **Drawing between ticks** ("pixel renderer", block "D29: smooth drawing"): `doTick` keeps the lists of the tick
+  before (`pixSnapPrev`, only for the frame's last tick), `pixLerpLists` blends them with this tick's by the frame's
+  alpha, as the player's own point always was: P's travellers and pose (the agent on a train, from where he stood a tick
+  ago, so stepping in and off is continuous too), W's townsfolk, F's goods by id, the cart and the hand truck, the
+  handling pose's progress and the punch's (in the tick an action ends, its last part is drawn on to the end). A jump of
+  more than `PIX.LERP_MAX` (3u) is not blended. The camera follows the blended point (`pixPlayerPoint` reads the frame's
+  lists), so in a coach it glides as outside. A good lifted or set down goes between its two ends (F's `frDrawList` now
+  gives `from` and `to` for a 'moving' good) along a small arc, eased, into the agent's hands (`PIX.handsAt`, the carry
+  frame's hands) and with the in-hands sprite on the half nearer them, so it meets the good he then holds
+  (`pixGoodsItem`; inside the car he is in it is drawn with the car's insides). Drawing only: the sim and its state are
+  untouched (`PIX.SMOOTH = false` draws the ticks as before).
+- **No idle ticks in a job** (sim; `PB.CHAIN`, `FR.CHAIN`, false gives D27's back): the punch starts in the tick he
+  reaches the row (at once, counting that tick, when he is already there); a handling job's walk that arrived goes on
+  to its next step in the same tick (`frAfterWalk`, called after the ordinary walk in `rideActorTick`), and the walk after
+  an action waits for the tick the action used (`frPlayerTick`'s `spent`), so each step has its own time.
+- **Faster:** `PB.PUNCH_S` 16 (was 30: two ticks; `PB_D27` keeps 30); `FR.TIME_K` 0.4 (was 0.6), each step at least
+  `FR.MIN_S` one tick (with the blend a one-tick step plays over about 8 frames at 1x), lifts no longer held to two
+  (`FR.PICK_MIN` 8, was 16): door 16 s (24), carry 16 (16), shoulder 16 (24), roll, drag and truck 8 (16), heave 24
+  (40), handing in 8 (16), the handle 8 (8). `frUseD27()` puts D27's handling back (`FR_D27`). The carry, the most
+  common, stays two ticks (F's 32 s times 0.4 rounds to 16); the chained steps are what makes it quicker to play.
+- **Clearer:** a progress cue over the agent while a timed step runs (a 13 x 4 px bar, ink outline, ochre filling,
+  paper when full: handling actions and the punch); the target of the job marked while he walks there (F's new
+  `frTarget(S)`: the cell, cart cell, car spot, shop door or car door, a diamond the good's footprint in size, blinking
+  ochre and red with an ink shadow); the Next job line names the step in hand (F's `frStepLabel(S)` through
+  `frJobHint`'s busy text: "Going for the crate", "Lifting the crate", "Carrying the crate to its storage row", "Setting
+  the barrel on the cart", "Opening the door", "Pushing the cart into place"); punching: the next traveller to punch is
+  outlined (ochre; paper while his punch runs: `pixOutline`), he holds his ticket out from the moment the punch is his
+  (P's sitTicket, as before), a flash on the ticket when it is punched (a small star of light, 0.4 s) and the punched
+  mark as before. `PIX.CUE = false` turns the cue, the target and the outline off. (Seen in the screenshots: U's buttons
+  over the world and its helper arrow sit over the agent and the next traveller in a coach, so there they cover the cue
+  and the outline at times; the close-ups hide the buttons. For U and the lead: the buttons could sit a row higher.)
+- **A fix on the way:** while handling, the agent was turned by F's pose's `f`, which is its frame number, not its
+  facing (`pixDirOf(0)` is sw, of 1 or 2 se), so during an action he faced sw or se whatever the good's side and turned
+  between them mid-step; he now faces `frPose.dir` (the sim's facing, towards the good).
+- **`?d29=0`** puts D27's back for comparison (the times, the chaining, the drawing between ticks and the cues; the
+  facing fix stays).
+
+**After** (same sequences; the coach one punches 4 tickets now, it was 5: with the quicker punch the player steps off
+before the fifth traveller has sat down):
+- Coach (step in, walk the aisle, punch, step off), portrait 1x: the agent's largest step in a frame 10.05 > 2.24 native
+  px (the 2.24 is a whole-pixel rounding on the end steps, the quickest move), steps over 2 px 54 > 1, the longest stand
+  on screen while walking 117 > 83 ms, the camera's largest step 10.67 > 1.37 px (98th percentile 3.73 > 1.33); landscape
+  the same (10.51 > 1.52); with 4x throttling 10.05 > 3.16 and 2.24, the camera 10.67 > 2.69 and 1.52 (frames of 33 to
+  67 ms carry two frames' walk). The sequence took 91 ticks for 5 tickets, now 51 for 4 (a punch at the row 16 game s,
+  was 30 plus two standing ticks; per ticket in ticks, the first including the walk in and the climb: 19, 26, 6, 6, 26
+  before; 16, 23, 2, 2 now).
+- Freight (300 ticks of F's hints from the d27freight scenario): the agent was already smooth (1.41 px, 0 jumps, both
+  before and after); the cart he pushes against him 4.12 > 1.41 px (2 at 4x); a good being lifted or set down stood a
+  tick and then jumped 7 to 11 px (13 such jumps over 3 px), now it moves every frame, at most 3.61 px (4.12 at 4x) with
+  0 jumps over 4; standing ticks inside a job 9 > 0, punching 7 > 0.
+- Frame time (the pixel frame, `PIX.stats.ms`): the coach a little dearer, 0.74 > 1.1 to 1.6 ms on average unthrottled
+  and 3.2 to 3.4 > 4.2 to 5.1 ms at 4x (98th percentile 7.4 to 7.6 > 10 to 12 ms): the travellers and the agent now move
+  every frame, so the see-through pass redraws more often; freight unchanged (1.0 to 1.2 ms, 3.7 to 4.7 ms at 4x).
+  check-pixperf's budgets (8 ms average, 14 ms at the 98th percentile, 4x) hold: station 4.4 ms portrait, 6.8 at scale 1.
+- check-d27-day (the bot's two days, every D27 switch on): worst lateness in 9 minutes both before and after, out 21 >
+  15 minutes; the bot ends the days at 22:57 and 23:02 (23:15 and 23:26 before); everything punched, unloaded, loaded,
+  delivered and picked up as before; the two runs' hashes the same (54fb7170).
+
+**Checks:** `tests/check-smooth.js` (new): both sequences in portrait and landscape at 1x, every frame: the agent's
+drawn point never steps more than 1.6 native px plus 0.1 px a millisecond of the frame (the climb up a coach's end steps
+is the fastest move), never stands still on screen more than 90 ms while the sim walks him, the camera the same bound,
+the good in his hands and the cart he pushes within 2 px of him frame to frame; sim only, no tick inside a job with
+nothing advancing; a punch takes `PB.PUNCH_S` (read from the data), every handling time a whole number of ticks of at
+least one; close-ups `test-output/d29-smooth-{coach-punch,coach-next,freight-lift,freight-carry}-close-{portrait,
+landscape}.png` and as played `d29-smooth-*-{portrait,landscape}.png`. With `?d29=0` the same recording gives D27's 10
+px steps, which its bound fails. `check-handling.js`: a one-tick step is sampled at its start (its middle exists only in the drawing), and the
+first tick of a command is watched too (a step can now start in it).
 
 ## Next
+
+Update (2026-11-12, D29 handling and punching): smoother, faster and clearer freight handling and punching are built on
+their own branch (see "D29"); `tests/check-smooth.js` is new. The one lever frame (D29 (3)) is another helper's.
 
 Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays
 two days and `check-d27-day.js` reports them (see "D27", "The integration"). The day works end to end except that the

@@ -8014,6 +8014,7 @@ function rideActorTick(S, ev, poseCache) {
   }
   const use = P.use && P.use.k === 'board' ? P.use : null, evFrom = ev.length;
   ttActorTick(S, ev, poseCache);
+  if (protoWorld(S.track)) frAfterWalk(S, ev, poseCache);   // D29: a handling job's walk that arrived goes straight on to its next step
   if (!use || P.use !== null || P.mode !== 'idle') return;
   // The walk to the door has ended: board if the car still stands there and the door is in reach.
   const f = rideCarOf(S, use.stock);
@@ -8853,7 +8854,7 @@ const PB = {
   PER_TRAIN: [4, 10],// travellers boarding per passenger train (provisional)
   THROUGH: [2, 6],   // through riders already aboard each coach (provisional)
   OFF: [1, 3],       // riders for the Hub in each coach (provisional)
-  PUNCH_S: 30,       // punching one ticket (game seconds, provisional)
+  PUNCH_S: 16,       // punching one ticket (game seconds; D29 "faster": about half of D27's 30, two whole ticks; PB_D27 keeps 30)
   CLIMB_S: 16,       // up or down a coach's end steps
   SIT_S: 16,         // sitting down
   STAND_S: 16,       // standing up (from a seat or a bench)
@@ -8864,7 +8865,13 @@ const PB = {
   NEAR: 0.6,         // the player starts climbing within this of the boarding spot (u)
   BENCH_P: 0.5,      // the share of travellers who sit on a bench while one is free
   RIDE_FREE: false,  // the alternative rule (plan 3.1): unpunched travellers ride free and the train may go
+  // D29 ("smoother ... very hitchy when in the train"): the walk to a row and its punch are chained: the punch starts in
+  // the tick he reaches the row (or at once when he is already there), with no standing tick between. false restores
+  // D27's (a tick to arrive, a tick to start the punch, then the punch).
+  CHAIN: true,
 };
+// D27's values, kept (D29 changed them): Object.assign(PB, PB_D27) puts them back.
+const PB_D27 = { PUNCH_S: 30, CHAIN: false };
 const pbOn = T => protoWorld(T) && worldParked(T, 'doorline');   // board on, and not ?doorline=1 (check-punch's D25 line)
 function pbSt(S) {
   if (!S.pb || typeof S.pb !== 'object') S.pb = {};
@@ -9183,7 +9190,8 @@ function pbEject(S, g, ev) {
 function pbPlayerTick(S, ev, poseCache) {
   const P = S.player, I = P.in;
   if (!I || !pbOn(S.track)) return false;
-  const B = pbSt(S), g = pbGeo(S, I.stock, poseCache), TK = CFG.TICK_GAME_S;
+  const B = pbSt(S), TK = CFG.TICK_GAME_S;
+  let g = pbGeo(S, I.stock, poseCache);
   if (!g) { pbEject(S, null, ev); return false; }
   const tr = g.tr, idx = stock => tr.consist.findIndex(c => c.id === stock), step = playerWalkSpeed(S.track, false) * DT_MIN;
   I.mv = 0;
@@ -9239,8 +9247,10 @@ function pbPlayerTick(S, ev, poseCache) {
     }
     I.s = pbR(I.s);
     if (!I.ts && I.out) { I.clm = -1; I.t = 0; I.end = I.s >= 0 ? 1 : -1; }
-    pbPlacePlayer(S, cur);
-    return true;
+    // D29: at the row of the punch in hand, the punch starts in this same tick (PB.CHAIN).
+    const Jc = B.job, at = !I.ts && !I.out && PB.CHAIN && Jc && Jc.k === 'punch' && I.stock === Jc.stock && Math.abs(I.s - pbSeatLocal(Jc.seat).rx) <= 1e-6;
+    if (!at) { pbPlacePlayer(S, cur); return true; }
+    g = cur;
   }
   if (I.out) { I.clm = -1; I.t = 0; I.end = I.s >= 0 ? 1 : -1; pbPlacePlayer(S, g); return true; }
   // The punch in hand: at the row, facing across the aisle; the traveller holds the ticket out, then it is punched.
@@ -9251,9 +9261,10 @@ function pbPlayerTick(S, ev, poseCache) {
     else if (I.stock !== J.stock || Math.abs(I.s - pbSeatLocal(J.seat).rx) > 1e-6) { I.ts = { stock: J.stock, s: pbSeatLocal(J.seat).rx }; J.on = 0; }
     else {
       I.f = pbSeatLocal(J.seat).side === 'N' ? 'ne' : 'sw';
-      if (!J.on) { J.on = 1; J.acc = 0; }
+      // D29 (PB.CHAIN): the tick it starts counts when he did not walk in it (he was at the row already).
+      if (!J.on && !PB.CHAIN) { J.on = 1; J.acc = 0; }
       else {
-        J.acc += TK;
+        if (!J.on) { J.on = 1; J.acc = I.mv ? 0 : TK; } else J.acc += TK;
         if (J.acc >= PB.PUNCH_S) {
           p.punched = true; B.job = null; B.tot.punched++; pdCount(S, 'punched');
           ev.push({ t: 'pbPunched', run: g.run.id, tr: tr.id, stock: J.stock, id: p.id });
@@ -9550,7 +9561,7 @@ function pbDebugScenario(S) {
 function pbTestPunchAll(S) { if (S.pax) for (const p of S.pax.list) if (p.s === 'sitting') p.punched = true; }
 // The test hooks (__railhead.pb).
 const PB_TEST = { PB, PB_SEATS, pbOn, pbSt, pbTick, pbOnArrive, pbOnDepart, pbReady, pbWhyNotReady, pbCmd, pbPlayerTick, pbDrawList, pbPlayerPose, pbCutaway, pbCoachView, pbCarStatus, pbRunStatus,
-  pbCheckSaveShape, pbDebugScenario, pbSeatLocal, pbPickSeat, pbGeo, pbEnds, pbPlan, pbTestPunchAll };
+  pbCheckSaveShape, pbDebugScenario, pbSeatLocal, pbPickSeat, pbGeo, pbEnds, pbPlan, pbTestPunchAll, PB_D27 };
 
 // ==== Section: prototype goods (D25) ====
 // Owner: builder F (plans/proto-tech.md section 4). Freight trains stand at track 3 beside platform 2: goods for the
@@ -9950,7 +9961,15 @@ const FR = {
   // D27 integration (the lead's provisional decision, 2026-11-11): the handling times about 40% shorter (TIME_K 0.6 of
   // F's, each rounded to whole 8 s ticks; TIME_K 1 restores F's times: FR_TIMES_F), and the shop's keeper (or a hand,
   // if he is away) carries the goods between the cart and the door (KEEPER; false restores the player doing it).
-  TIME_K: 0.6,
+  // D29 (the designer: "faster"): about a third faster again, TIME_K 0.4 (0.6 in D27: FR_D27), each step still at least
+  // MIN_S (one tick: the drawing plays it over about 8 frames at 1x; D27 kept a lift to two ticks, PICK_MIN 16).
+  TIME_K: 0.4,
+  MIN_S: 8,
+  PICK_MIN: 8,
+  // D29 ("much smoother"): the steps of one job follow each other with no standing tick between (CHAIN): the action
+  // after a walk starts in the tick he arrives, and the walk after an action waits for the tick the action used.
+  // false restores D27's (a tick standing at the end of each walk; the walk out sharing the action's last tick).
+  CHAIN: true,
   KEEPER: true,
   KEEPER_U: 4.0,     // the keeper's walk with a good (u a game minute; D27 integration: he hurries, 4.0, was 3.0)
   CART_MID: true,    // the cart stops in the middle of the street, between the shops facing each other
@@ -9965,12 +9984,19 @@ const FR = {
 };
 // F's handling times (game seconds), scaled by FR.TIME_K into FR (frTimes).
 const FR_TIMES_F = { DOOR_S: 40, PICK_S: { carry: 32, shoulder: 40, roll: 24, drag: 16, truck: 24, heave: 64 }, HIGH_S: 8, GRAB_S: 16, PARK_S: 16, HAND_S: 24 };
-function frTimes(k) {
-  const sc = (v, min) => Math.max(min || 8, Math.round(v * k / 8) * 8);
+function frTimes(k, pickMin, min) {
+  const sc = (v, m) => Math.max(m || min || 8, Math.round(v * k / 8) * 8);
   for (const key of ['DOOR_S', 'HIGH_S', 'GRAB_S', 'PARK_S', 'HAND_S']) FR[key] = sc(FR_TIMES_F[key]);
-  FR.PICK_S = {}; for (const [v, t] of Object.entries(FR_TIMES_F.PICK_S)) FR.PICK_S[v] = sc(t, 16);   // (a lift at least two ticks, so it is seen)
+  FR.PICK_S = {}; for (const [v, t] of Object.entries(FR_TIMES_F.PICK_S)) FR.PICK_S[v] = sc(t, pickMin);   // (D27: a lift at least two ticks, so it was seen)
 }
-frTimes(FR.TIME_K);
+frTimes(FR.TIME_K, FR.PICK_MIN, FR.MIN_S);
+// D27's handling (D29 changed it), kept: frUseD27() puts back its times and its steps' timing.
+const FR_D27 = { TIME_K: 0.6, PICK_MIN: 16, MIN_S: 8, CHAIN: false };
+function frUseD27(on) { Object.assign(FR, on === false ? { TIME_K: 0.4, PICK_MIN: 8, MIN_S: 8, CHAIN: true } : FR_D27); frTimes(FR.TIME_K, FR.PICK_MIN, FR.MIN_S); }
+// D29: ?d29=0 puts D27's handling and punching back (the times, the chaining, and in the renderer the drawing between
+// ticks and the cues: PIX.SMOOTH, PIX.CUE), so the two can be compared side by side.
+const D29_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('d29') === '0';
+if (D29_OFF) { Object.assign(PB, PB_D27); frUseD27(); }
 const FR_FP = { 1: [1, 1], 2: [2, 1], 4: [4, 1], 8: [4, 2] };
 const FR_GOOD0 = { size: [0.85, 0.65, 0.55], cells: 1, layers: 2, verb: 'carry', stack: 4, commodities: [] };   // an older kind (D25's crates, sacks, barrels)
 const FR_DIRS = { se: [1, 0], ne: [0, -1], nw: [-1, 0], sw: [0, 1] };
@@ -10550,7 +10576,9 @@ function frStart(S, job, ev) {
 
 // ---- The player at a handling step (from playerModeTick) ----
 // True when it handled the player's tick (he is in a car, or at a timed action), false when the ordinary walk moves him.
-function frPlayerTick(S, ev, poseCache) {
+// D29 (FR.CHAIN): spent, this tick's time is used already (by the walk that just arrived, or by an action that just
+// ended): the next step starts now but does not move him in this tick (an action's time starts counting now).
+function frPlayerTick(S, ev, poseCache, spent) {
   if (!frOn(S)) return false;
   const F = frSt(S), P = S.player;
   if (!F.job && F.inCar === null) return false;
@@ -10558,15 +10586,27 @@ function frPlayerTick(S, ev, poseCache) {
     if (P.mode === 'idle' && !P.use && !P.act) return true;   // standing in a car
     frExitThen(S, ev);   // a walk or another command from inside a car: out through the door first, then that
   }
+  let used = !!spent && FR.CHAIN;
   for (let n = 0; n < 12 && F.job; n++) {
     const J = F.job, st = J.steps[J.i];
     if (!st) { frJobEnd(S, ev); continue; }
-    const r = frStep(S, J, st, ev);
-    if (r === 'next') { J.i++; J.t0 = -1; J.go = 0; continue; }
+    const r = frStep(S, J, st, ev, used);
+    if (r === 'next') { if (FR.CHAIN && st.s === 'act') used = true; J.i++; J.t0 = -1; J.go = 0; continue; }
     if (r === 'cancel') continue;
+    if (r === 'walk' && used) return true;   // D29: the walk starts next tick (this one's time went to the action)
     return r === 'hold';
   }
   return F.inCar !== null;
+}
+// D29 (FR.CHAIN): after the ordinary walk (rideActorTick): a job's walk step that arrived in this tick goes on to its
+// next step at once (an action starts counting from now), so he never stands a tick between a walk and its action.
+function frAfterWalk(S, ev, poseCache) {
+  if (!FR.CHAIN || !frOn(S)) return;
+  const F = frSt(S), J = F.job, P = S.player, st = J && J.steps[J.i];
+  if (!st || st.s !== 'walk' || J.t0 < 0 || P.mode === 'to' || P.mode === 'dir' || P.use || P.act) return;
+  if (Math.hypot(P.x - J.tx, P.z - J.tz) > FR.ARRIVE) return;   // (not there: the next tick's step says why)
+  J.i++; J.t0 = -1; J.go = 0;
+  frPlayerTick(S, ev, poseCache, true);
 }
 // Out of the car, then on with what the player was told (a walk, a carry, a lever).
 function frExitThen(S, ev) {
@@ -10595,7 +10635,7 @@ function frJobEnd(S, ev) {
 }
 // One step: 'walk' (the ordinary walk moves him this tick), 'hold' (handled), 'next' (done: on to the next step now),
 // 'cancel' (the job was stopped).
-function frStep(S, J, st, ev) {
+function frStep(S, J, st, ev, still) {
   const P = S.player, F = S.fr;
   const interrupted = () => P.use || P.act || P.mode === 'dir' || P.mode === 'to';
   if (st.s === 'walk') {
@@ -10611,7 +10651,7 @@ function frStep(S, J, st, ev) {
       if (st.into !== undefined) { const g = frCarGeo(S, st.into), no = frCarWhy(S, st.into); if (!g || no) return frCancel(S, ev, no || 'The car has gone'); F.inCar = st.into; }
     } else if (interrupted()) return frCancel(S, ev, null);
     P.mode = 'idle';
-    let left = playerWalkSpeed(S.track, P.tool !== null && P.tool !== undefined) * DT_MIN;
+    let left = still ? 0 : playerWalkSpeed(S.track, P.tool !== null && P.tool !== undefined) * DT_MIN;
     while (left > 1e-9 && J.go < st.pts.length) {
       const [x, z] = st.pts[J.go], d = Math.hypot(x - P.x, z - P.z);
       if (d > 1e-9) P.f = Math.atan2(x - P.x, z - P.z);
@@ -10944,7 +10984,8 @@ function frDrawList(S) {
         rot: verb === 'roll' ? (kind === 'wheel' ? 'up' : 'side') : 'x', frame: verb === 'roll' ? Math.floor((Math.abs(P.x) + Math.abs(P.z)) / 0.3) % 4 : 0 });
       if (moving && moving.id === id && moving.a !== 'pick') {   // set down (or handed in): from the hands to the place
         const sp = moving.a === 'hand' ? { good: { x: moving.fx, z: moving.fz }, y: frBaseY(S) + 1.0 } : frSpotOf(S, moving.to, kind);
-        if (sp) Object.assign(o, { place: 'moving', x: h.x + (sp.good.x - h.x) * prog, y: h.y + (sp.y - h.y) * prog, z: h.z + (sp.good.z - h.z) * prog, prog, a: moving.a });
+        if (sp) Object.assign(o, { place: 'moving', x: h.x + (sp.good.x - h.x) * prog, y: h.y + (sp.y - h.y) * prog, z: h.z + (sp.good.z - h.z) * prog, prog, a: moving.a,
+          from: [h.x, h.y, h.z], to: [sp.good.x, sp.y, sp.good.z], dest: { x: sp.good.x, y: sp.y, z: sp.good.z, rot: moving.to && moving.to.kind === 'CART' ? (frToolPose(S, moving.to.tool).dir === 'se' || frToolPose(S, moving.to.tool).dir === 'nw' ? 'x' : 'z') : 'x' } });   // D29: the two ends, for R
       }
     } else if (w.kind === 'TRUCK') { const p = frToolPose(S, w.tool); Object.assign(o, { place: 'truck', x: p.x, y: p.y, z: p.z, dir: p.dir, slot: w.slot }); }
     else {
@@ -10958,12 +10999,70 @@ function frDrawList(S) {
       if (kp && kp.carry) Object.assign(o, { place: 'moving', x: kp.x + Math.sin(kp.f) * 0.35, y: walkDeckY(S.track, kp.x, kp.z) + 1.0, z: kp.z + Math.cos(kp.f) * 0.35, prog: kp.prog, a: 'keeper' });   // D27 integration: in the keeper's arms
       if (moving && moving.id === id && moving.a === 'pick') {   // lifted: from its place to the hands
         const h = frHeldAt(S, id, moving.verb);
-        Object.assign(o, { place: 'moving', x: o.x + (h.x - o.x) * prog, y: o.y + (h.y - o.y) * prog, z: o.z + (h.z - o.z) * prog, prog, a: 'pick', verb: moving.verb, dir });
+        Object.assign(o, { place: 'moving', x: o.x + (h.x - o.x) * prog, y: o.y + (h.y - o.y) * prog, z: o.z + (h.z - o.z) * prog, prog, a: 'pick', verb: moving.verb, dir,
+          from: [o.x, o.y, o.z], to: [h.x, h.y, h.z] });   // D29: the two ends, for R
       }
     }
     out.push(o);
   }
   return out;
+}
+// D29 (the designer: "more clear"): where the job in hand takes or sets down its good, for R to mark while he walks
+// there: { a ('pick' | 'put' | 'hand' | 'door'), x, y, z (the good's place on the cell, the cart cell, the car spot, the
+// door), w, d (its footprint, u), id } or null. With no job, the cell his next Put would use (frJobHint's frPut).
+function frTarget(S) {
+  if (!frOn(S)) return null;
+  const F = frRead(S), J = F.job;
+  const mark = (a, w, id, kind) => {
+    const sp = frSpotOf(S, w, kind);
+    if (!sp) return null;
+    const [fx, fz] = frFp(kind, w.kind === 'CART' ? 'cart' : w.kind === 'CAR' ? 'car' : 'cell'), cs = w.kind === 'CELL' ? 1.4 : 0.8;
+    const along = w.kind === 'CART' ? (d => d === 'se' || d === 'nw')(frToolPose(S, w.tool).dir) : true;
+    return { a, x: sp.good.x, y: sp.y, z: sp.good.z, w: (along ? fx : fz) * cs, d: (along ? fz : fx) * cs, id };
+  };
+  if (J) for (let i = J.i; i < J.steps.length; i++) {
+    const st = J.steps[i];
+    if (st.s !== 'act') continue;
+    if (st.a === 'put') return mark('put', st.to, st.id, itemType(S, st.id));
+    if (st.a === 'pick') { const w = S.items.where[st.id]; return w ? mark('pick', w, st.id, itemType(S, st.id)) : null; }
+    if (st.a === 'hand') return { a: 'hand', x: st.fx, y: walkDeckY(S.track, st.fx, st.fz), z: st.fz, w: 1, d: 1, id: st.id };
+    if (st.a === 'door') { const g = frCarGeo(S, st.stock); return g ? { a: 'door', x: g.out.x, y: walkDeckY(S.track, g.out.x, g.out.z), z: g.out.z, w: 1.6, d: 0.8, id: null } : null; }
+    if (st.a === 'keeper' || st.a === 'keeperLoad') return null;
+  }
+  if (J) return null;
+  const held = frHeld(S), h = held.length ? frJobHint(S) : null, c = h && h.cmd;
+  if (c && c.t === 'frPut' && c.to && c.to.kind !== 'GROUND') {
+    const id = held[held.length - 1], kind = itemType(S, id), d = frPutDest(S, id, c.to);
+    if (d && typeof d === 'object') return mark('put', d, id, kind);
+  }
+  return null;
+}
+// D29: a short label of the step in hand for the Next job line ("Lifting the crate", "Setting the sack on the cart").
+const FR_KIND_NAME = { bariron: 'bar iron', wheelNew: 'wheel', wheelMended: 'wheel', hides: 'hides', kegempty: 'empty keg' };
+function frStepLabel(S) {
+  const F = frRead(S), J = F.job, st = J && J.steps[J.i];
+  if (!st) return null;
+  const nm = id => { const k = itemType(S, id) || 'good'; return 'the ' + (FR_KIND_NAME[k] || k.replace(/([A-Z])/g, ' $1').toLowerCase()); };
+  const where = to => !to ? '' : to.kind === 'CART' ? ' on the cart' : to.kind === 'CELL' ? ' in its storage row' : to.kind === 'CAR' ? ' in the car' : to.kind === 'GROUND' ? ' down' : '';
+  const next = J.steps.slice(J.i).find(q => q.s === 'act');
+  if (st.s === 'walk' || st.s === 'go') {
+    if (!next) return st.s === 'go' && st.out ? 'Stepping out of the car' : null;
+    if (next.a === 'pick') return `Going for ${nm(next.id)}`;
+    if (next.a === 'put') return `Carrying ${nm(next.id)}${where(next.to) ? ' to' + where(next.to).replace(/^ (on|in) /, ' ') : ''}`;
+    if (next.a === 'door') return 'To the car door';
+    if (next.a === 'grab') return 'To the cart';
+    if (next.a === 'park') return 'Pushing the cart into place';
+    if (next.a === 'hand') return `Taking ${nm(next.id)} to the door`;
+    return null;
+  }
+  if (st.a === 'door') return st.open ? 'Opening the door' : 'Closing the door';
+  if (st.a === 'pick') return ({ carry: 'Lifting', shoulder: 'Shouldering', roll: 'Tipping', drag: 'Taking hold of', truck: 'Wheeling up', heave: 'Heaving up' }[st.verb] || 'Lifting') + ' ' + nm(st.id);
+  if (st.a === 'put') return `Setting ${nm(st.id)}${where(st.to)}`;
+  if (st.a === 'grab') return 'Taking the handle';
+  if (st.a === 'park') return 'Leaving the cart';
+  if (st.a === 'hand') return `Handing in ${nm(st.id)}`;
+  if (st.a === 'keeper' || st.a === 'keeperLoad') return 'The keeper carries it';
+  return null;
 }
 // The agent's handling pose (A1's animations), or null when he is not handling anything.
 function frPose(S) {
@@ -11070,6 +11169,7 @@ function frDayFree(S, loaded) {
 function frJobHint(S) {
   if (!frOn(S)) return null;
   const F = frRead(S), P = S.player, cart = frCartId(S), I = S.items;
+  if (F.job && FR.CHAIN) { const lb = frStepLabel(S); if (lb) return { busy: true, k: F.job.k, text: lb }; }   // D29: the step in hand, in a few words
   if (F.job) return { busy: true, k: F.job.k, text: { door: 'Sliding the door', take: 'Taking the good', put: 'Setting it down', grab: 'Taking the handle', park: 'Leaving it',
     deliver: 'Handing in the goods', pickup: 'Loading the pickups', exit: 'Stepping out' }[F.job.k] || 'Working' };
   const hint = (cmd, text, at) => ({ cmd, text, x: at ? at.x : P.x, z: at ? at.z : P.z });
@@ -11295,7 +11395,7 @@ function frDebugScenario(S, name) {
 }
 // The test hooks (__railhead.fr).
 const FR_TEST = { FR, FR_FP, FR_DIRS, FR_SHOP_ORDER, frSt, frTick, frCmd, frPlayerTick, frNewDay, frConsist, frLoad, frReady, frOnDepart, frDrawList, frPose, frCartPose, frTruckPose,
-  frDoorOpen, frDoorFrac, frInCar, frCarStatus, frStorage, frToDeliver, frPickups, frJobHint, frAuditDay, frStowPlace, frStoreSpot, frCheckSaveShape, frDebugScenario,
+  frDoorOpen, frDoorFrac, frInCar, frCarStatus, frStorage, frTarget, frStepLabel, frUseD27, FR_D27, frToDeliver, frPickups, frJobHint, frAuditDay, frStowPlace, frStoreSpot, frCheckSaveShape, frDebugScenario,
   frFp, frGridOf, frCR, frOcc, frSpotWhy, frFirstSpot, frCarGeo, frCarSpot, frToolPose, frSpotOf, frHeld, frHeldVerb, frVerbFor, frRunIn, frRunOutN, frAboard,
   frOutWaiting, frNeed, frStanding, frCartGoods, frCartFree, frPickupList, frCartDoorSpot, frShopCartSpot, frLaneSpot, frOnTop, frEject };
 
@@ -17325,7 +17425,7 @@ function rhWarp(n) {
 function debugRunTicks(n) {
   DBG.carry = Math.min(DBG.carry + n, 640);
   const t0 = performance.now();
-  while (DBG.carry >= 1) { doTick(); DBG.carry -= 1; if (performance.now() - t0 > 8) break; }
+  while (DBG.carry >= 1) { doTick(DBG.carry < 2); DBG.carry -= 1; if (performance.now() - t0 > 8) break; }
 }
 
 function debugInit() {
@@ -17337,7 +17437,7 @@ function debugInit() {
     send: cmd => send(cmd),
     get state() { return S; },
     hash: () => stateHash(S),
-    step: n => { for (let i = 0; i < (n || 1); i++) doTick(); return S.tick; },
+    step: n => { for (let i = 0; i < (n || 1); i++) doTick(i === (n || 1) - 1); return S.tick; },
     // Game seconds since 05:00 on day 1 (rounded to whole ticks of 8 s). Sets the clock only.
     setTime: sec => { S.time = Math.max(0, Math.round(Number(sec) / CFG.TICK_GAME_S)) * CFG.TICK_GAME_S; updateHud(); return S.time; },
     warp: rhWarp,
@@ -17390,13 +17490,15 @@ function resetViewsFromState() {
   prevPlayer = { x: S.player.x, z: S.player.z };
   cam.fx = S.player.x; cam.fz = S.player.z;
 }
-function doTick() {
+function doTick(snap) {
+  if (snap !== false && typeof pixSnapPrev === 'function') pixSnapPrev();   // D29: the drawn lists before this tick, to blend from (only the frame's last tick needs it)
   prevPoses = curPoses; prevPlayer = { x: S.player.x, z: S.player.z };
   const ev = simTick(S, pending);
   const changed = pending.some(c => /^train|^throwSwitch$|^tg/.test(c.t)) || ev.some(e => e.t === 'switchThrown' || e.t === 'routeSet' || e.t === 'trackBuilt' || /^item(Created|Moved|Consumed)$|^bayTagSet$|^tool(Taken|Left)$|^job(Staked|Delivered|Done|Cancelled)$|^overland|^(orderPlaced|contract|credit)|^(un)?coupled$|^tt(Assigned|Departed|Arrived|Done)$|^waterTaken$|^tenderFuelled$|^telegram$|^tgAnswered$/.test(e.t));
   pending = [];
   curPoses = snapshotPoses();
   for (const e of ev) handleEvent(e);
+  if (typeof PIX !== 'undefined') for (const e of ev) if (e.t === 'pbPunched') PIX.flash.push({ id: e.id, t0: performance.now() });   // D29: the punch's flash (drawing only)
   cardsTick(ev);                           // D22 (1): the first-time cards (page side only; may pause the game)
   warnTick();                              // D22 (2): the warnings ahead of arrivals (page side only)
   if (ev.some(e => /^item(Created|Moved|Consumed)$|^bayTagSet$/.test(e.t))) cargoView.dirty = true; // redraw the item props (and wrong-bay marks)
@@ -21529,6 +21631,66 @@ function pixLists() {
   return { pb: arr(pixCall('pbDrawList', S)), pbPose: pixCall('pbPlayerPose', S), cut: arr(pixCall('pbCutaway', S)).map(String), fr: arr(pixCall('frDrawList', S)),
     frPose: pixCall('frPose', S), cart: pixCall('frCartPose', S), truck: pixCall('frTruckPose', S), tf: pixTfList(arr(pixCall('tfDrawList', S))) };
 }
+// ---- D29: smooth drawing between the sim's ticks ----
+// The designer (D29): handling "needs to be much smoother", punching "very hitchy when in the train". Measured: the
+// lists above are the sim's places, which change once a tick (8 game seconds, 8 frames at 1x): the agent on a train (P's
+// pbPlayerPose) and the camera locked on him moved in steps of 0.4u (3 to 10 native px) with 7 frames standing still
+// between, the goods being lifted or set down and the travellers in the aisle likewise, and the handling poses' progress
+// jumped a third or a half at a time. Now the lists of the tick before (PIX.prevL, taken by doTick just before each tick)
+// and this tick's are blended by the frame's alpha, as the player's own point always was (prevPlayer): positions by id
+// (a jump of more than PIX.LERP_MAX u is not blended), the agent's pose on a train from his point before (the boarding
+// spot when he has just stepped in), the cart and the hand truck, the handling pose's and the punch's progress (in the
+// tick an action ends, its last part is drawn on to the end), and a good being lifted or set down between its two
+// ends. Drawing only: the sim and its state are untouched. PIX.SMOOTH = false draws the ticks as before.
+PIX.SMOOTH = !D29_OFF; PIX.LERP_MAX = 3; PIX.prevL = null;
+function pixSnapPrev() {
+  if (!PIX.SMOOTH || !pixOn()) { PIX.prevL = null; return; }
+  const P = S.player;
+  PIX.prevL = { S, tick: S.tick, L: pixLists(), x: P.x, z: P.z, py: typeof P.y === 'number' ? P.y : null };
+}
+const PIX_ACTS = { pick: 1, put: 1, door: 1, grab: 1, park: 1, hand: 1 };
+function pixPoseLerp(p, c, a) {
+  const act = q => !!(q && PIX_ACTS[q.phase]), same = p && c && p.verb === c.verb && p.phase === c.phase && p.id === c.id && p.stock === c.stock && p.tool === c.tool;
+  if (same && act(c)) return { ...c, prog: lerp(+p.prog || 0, +c.prog || 0, a) };
+  if (act(p) && !same) return { ...p, prog: lerp(+p.prog || 0, 1, a), fin: true };   // the action's last tick, drawn on to its end
+  if (act(c) && !same && !(+c.prog > 0)) return p || null;   // an action starting at the end of this tick: the walk to it first
+  return c;
+}
+function pixLerpLists(L, alpha) {
+  const V = PIX.prevL;
+  if (!PIX.SMOOTH || !V || V.S !== S || V.tick !== S.tick - 1) return L;
+  const a = Math.max(0, Math.min(1, alpha)), A = V.L;
+  const near = (p, c) => p && c && Number.isFinite(p.x) && Number.isFinite(c.x) && Number.isFinite(p.z) && Number.isFinite(c.z) && Math.hypot(c.x - p.x, c.z - p.z) <= PIX.LERP_MAX;
+  const lp = (p, c) => {
+    if (!near(p, c)) return c;
+    const o = { ...c, x: lerp(p.x, c.x, a), z: lerp(p.z, c.z, a) };
+    if (Number.isFinite(p.y) && Number.isFinite(c.y)) o.y = lerp(p.y, c.y, a);
+    return o;
+  };
+  const byId = (pl, cl) => { const m = new Map(); for (const q of pl || []) m.set(q.id, q); return cl.map(q => lp(m.get(q.id), q)); };
+  const out = { ...L, pb: byId(A.pb, L.pb), tf: byId(A.tf, L.tf), smooth: true };
+  for (const k of ['cart', 'truck']) if (L[k] && A[k]) { out[k] = lp(A[k], L[k]); out[k].tilt = lerp(+A[k].tilt || 0, +L[k].tilt || 0, a); }
+  // The agent on a train: from where he was a tick ago (on the platform when he has just stepped in).
+  if (L.pbPose) {
+    const p0 = A.pbPose || { x: V.x, z: V.z, y: V.py !== null ? V.py : pixSimY(V.x, V.z) }, c = out.pbPose = lp(p0, L.pbPose), pp = A.pbPose;
+    if (pp && pp.act === 'punch' && c.act === 'punch' && pp.seat === c.seat) c.t = lerp(+pp.t || 0, +c.t || 0, a);
+    else if (pp && pp.act === 'punch' && !(c.act === 'punch' && pp.seat === c.seat)) Object.assign(c, { act: 'punch', f: pp.f, seat: pp.seat, t: lerp(+pp.t || 0, 1, a), fin: true });
+    if (c.act === 'punch') { c.frame = Math.min(2, Math.floor(Math.min(0.999, c.t) * 3)); c.key = `ppl/agent/punch/${c.f}/${c.frame}`; }
+  } else if (A.pbPose && !S.player.ride) {   // just stepped off: the last of the climb down, to where he stands now
+    const P = S.player, y = typeof P.y === 'number' ? P.y : pixSimY(P.x, P.z);
+    out.pbPose = { ...lp(A.pbPose, { ...A.pbPose, x: P.x, y, z: P.z }), stock: null, off: true };
+  }
+  // The handling pose, and the goods: a good lifted or set down goes on between its two ends.
+  out.frPose = pixPoseLerp(A.frPose, L.frPose, a);
+  const fin = !!(out.frPose && out.frPose.fin), pm = new Map(); for (const q of A.fr || []) pm.set(q.id, q);
+  out.fr = L.fr.map(q => {
+    const p = pm.get(q.id);
+    if (p && p.place === 'moving' && q.place === 'moving' && p.a === q.a) return { ...lp(p, q), prog: lerp(+p.prog || 0, +q.prog || 0, a) };
+    if (p && p.place === 'moving' && q.place !== 'moving' && fin && p.a !== 'keeper') return { ...p, prog: lerp(+p.prog || 0, 1, a), fin: true };
+    return lp(p, q);
+  });
+  return out;
+}
 // D27 integration: W's townsfolk plus the keeper (or a hand) carrying goods between the cart and his door (F's
 // frKeeperDraw), his own entry in W's list left out meanwhile.
 function pixTfList(list) {
@@ -21600,6 +21762,41 @@ function pixGoodsRest(g, q, sx, sy) {
     if (tk && !q.lying) pixBlit(g, tk, sx + at[0], sy + at[1]);
   }
 }
+// D29: a one-pixel outline round a sprite (its silhouette in col, a pixel out each way), drawn just before it.
+function pixOutline(g, key, x, y, z, col) {
+  const f = pixF(key);
+  if (!f) return;
+  const [si, fx, fy, w, h, ax, ay] = f, p = pixProject(x, y, z), l = Math.round(p.x) - PIX.vx - ax, t = Math.round(p.y) - PIX.vy - ay, T = pixTinted(si, col);
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(T, fx, fy, w, h, l + dx, t + dy, w, h);
+}
+// D29: a good being lifted into the hands or set down from them (frDrawList place 'moving' with its two ends, from and
+// to), as a sorted item: it goes from its place to the agent's hands (PIX.handsAt, the carry frame's hands) along a
+// small arc, eased, and is drawn with the in-hands sprite on the half of the way nearer the hands, so it meets the good
+// he then holds; set down, the other way. Other goods (and a 'moving' one without its ends) rest at their point.
+function pixGoodsItem(q, id) {
+  const r = Math.max(0.3, ((typeof GOODS27 !== 'undefined' && GOODS27[q.kind] && GOODS27[q.kind].size[q.alongZ ? 1 : 0]) || 0.7) / 2), rz = Math.max(0.3, ((typeof GOODS27 !== 'undefined' && GOODS27[q.kind] && GOODS27[q.kind].size[q.alongZ ? 0 : 1]) || 0.6) / 2);
+  const H = PIX.handsAt, mv = q.place === 'moving' && Array.isArray(q.from) && Array.isArray(q.to) && PIX.SMOOTH;
+  const it = pixItem(q.x - r, q.x + r, q.z - rz, q.z + rz, q.y, q.y + pixGoodsH(q.kind), g => {
+    if (!mv) { const p = pixProject(q.x, q.y, q.z); pixGoodsRest(g, q, Math.round(p.x) - PIX.vx, Math.round(p.y) - PIX.vy); return; }
+    const k0 = Math.max(0, Math.min(1, +q.prog || 0)), k = k0 * k0 * (3 - 2 * k0), lifted = !q.verb || q.verb === 'carry' || q.verb === 'shoulder';
+    const pf = pixProject(q.from[0], q.from[1], q.from[2]), pt = pixProject(q.to[0], q.to[1], q.to[2]);
+    let a = [pf.x, pf.y], b = [pt.x, pt.y];
+    if (H && lifted && q.a === 'pick') b = [H[0], H[1]];
+    if (H && lifted && (q.a === 'put' || q.a === 'hand')) a = [H[0], H[1]];
+    const G = PIX.agentAt, ground = q.verb === 'roll' || q.verb === 'drag' || q.verb === 'heave';
+    if (G && ground) {   // rolled, dragged or heaved: to (or from) where pixHeldDraw puts it, on the ground ahead of his feet
+      const d = G[3], fx = { se: 1, nw: -1, ne: 0, sw: 0 }[d], fz = { sw: 1, ne: -1, se: 0, nw: 0 }[d], ah = ((pixX(`goods/${q.kind}/held/${d}`) || {}).ahead) || (q.verb === 'roll' ? 0.55 : 0.35);
+      const gp = pixProject(G[0] + fx * ah, G[1], G[2] + fz * ah);
+      if (q.a === 'pick') b = [Math.round(gp.x), Math.round(gp.y)]; else a = [Math.round(gp.x), Math.round(gp.y)];
+    }
+    const sx = Math.round(a[0] + (b[0] - a[0]) * k) - PIX.vx, sy = Math.round(a[1] + (b[1] - a[1]) * k - (lifted ? 3 : 1) * Math.sin(Math.PI * k)) - PIX.vy;
+    const nearHands = lifted && H && (q.a === 'pick' ? k > 0.5 : k < 0.5), hk = nearHands && pixKey(`goods/${q.kind}/held/${H[2]}`, `goods/${q.kind}/carried`);
+    if (hk) { pixBlit(g, hk, sx, sy, { k: 'item', id: q.id }); return; }
+    pixGoodsRest(g, q.a === 'pick' ? q : { ...q, alongZ: q.dest ? q.dest.rot === 'z' : q.alongZ }, sx, sy);
+  }, id);
+  if (mv && H) { if (H[2] === 'ne' || H[2] === 'nw') it.before = true; else it.after = ['player']; }
+  return it;
+}
 // ---- D27 (R): people (travellers, the agent, townsfolk) ----
 // A traveller's or townsperson's animation from P's and W's act names.
 function pixActAnim(act, q, ph) {
@@ -21622,6 +21819,8 @@ PIX.SEATED = { sit: 1, sitTicket: 1, benchSit: 1 };
 function pixPersonItem(id, who, x, y, z, dir, anim, fr, pick, mark) {
   const key = pixPersonKey(who, anim, dir, fr), seated = !!PIX.SEATED[anim], C = PIX.COL, h = seated ? 2.0 : PIX.PERSON_H;
   const it = pixItem(x - 0.25, x + 0.25, z - 0.25, z + 0.25, y, y + h, g => {
+    const N = PIX.nextPax;
+    if (key && N && id === 'pb' + N.id) pixOutline(g, key, x, y, z, N.on ? PIX.COL.paper : '#efb45c');   // D29: the next ticket to punch
     if (key && pixSprite(g, key, x, y, z, pick)) {
       const m = mark && (pixX(key) || {}).mark;
       if (m) { const p = pixProject(x, y, z); pixBlit(g, `ppl/mark/punched/${dir}`, Math.round(p.x) - PIX.vx + m[0], Math.round(p.y) - PIX.vy + m[1]); }
@@ -21719,6 +21918,7 @@ function pixCutInner(P, L, goods, agent) {
     inner.push(it);
   }
   for (const q of goods) {
+    if (q.place === 'moving') { const it = pixGoodsItem(q, base + '/g' + q.id); if (it.before && agent) agent.after = (agent.after || []).concat([it.id]); inner.push(it); continue; }   // D29
     const it = pixItem(q.x - 0.4, q.x + 0.4, q.z - 0.3, q.z + 0.3, q.y, q.y + pixGoodsH(q.kind), g => { const p = pixProject(q.x, q.y, q.z); pixGoodsRest(g, q, Math.round(p.x) - PIX.vx, Math.round(p.y) - PIX.vy); }, base + '/g' + q.id);
     inner.push(it);
   }
@@ -22021,14 +22221,15 @@ function pixScenery() {
   return (PIX_SCENERY = out);
 }
 // The things that stand up, this frame (and the flat decals, drawn with the ground: pixScene(alpha).decals).
-function pixScene(alpha) {
+function pixScene(alpha, Lgiven) {
   const C = PIX.COL, out = [], decals = [], dy = pixDeckY(), Pl = S.player;
   out.decals = decals;
   const px = lerp(prevPlayer.x, Pl.x, alpha), pz = lerp(prevPlayer.z, Pl.z, alpha);
   const sod = rrSod(S.time), night = sod > 19.5 * 3600 || sod < 6.25 * 3600;
   // D27 (R): the other builders' lists, read once (PIX.L), the cars by stock id, every good normalised, the cars cut away.
-  const L = PIX.L = pixLists(), cars = pixCarPoses(), goods = pixGoodsList(L, cars), baked = PIXA.ready;
-  PIX.night = night; PIX.cutIds = []; PIX.cutSids = new Set();
+  // (D29: blended between ticks, pixLerpLists; pixFrame passes the frame's.)
+  const L = PIX.L = Lgiven || pixLerpLists(pixLists(), alpha), cars = pixCarPoses(), goods = pixGoodsList(L, cars), baked = PIXA.ready;
+  PIX.night = night; PIX.cutIds = []; PIX.cutSids = new Set(); PIX.inCarGoods = null;
   const inCar = pixInCar(L, cars);
   PIX.inCar = inCar;
   // Buildings from the layout. D27 (foundation, until R's D27 drawing): A3's sprites at each entry's anchor (f.ax, f.az:
@@ -22135,6 +22336,20 @@ function pixScene(alpha) {
   for (const it of PIX.staticItems) if (it.decal) decals.push(it.decal); else out.push(it);
   // The agent (made first: inside a cut-away car he is drawn with its insides).
   const agent = pixAgentItem(alpha, L, goods, px, pz, inCar);
+  // D29 ("more clear"): where the handling job takes or sets down its good (F's frTarget), marked while he walks there
+  // (not during the action itself); in a coach, the traveller the next punch is for (the punch in hand's, else the
+  // nearest unpunched one, as the Punch button): pixOverlays draws both.
+  PIX.target = null; PIX.nextPax = null;
+  if (PIX.CUE) {
+    const fp = L.frPose, tg = !(fp && PIX_ACTS[fp.phase] && !fp.fin) ? pixCall('frTarget', S) : null;
+    if (tg && Number.isFinite(tg.x)) PIX.target = tg;
+    const I = Pl.in, J = S.pb && S.pb.job;
+    if (I && I.stock !== undefined) {
+      const mine = L.pb.filter(q => String(q.stock) === String(I.stock) && (q.act === 'sit' || q.act === 'sitTicket') && !q.punched && !q.through && !q.hub);
+      const pick = J && J.k === 'punch' ? mine.find(q => q.id === J.id) : mine.slice().sort((a, b) => Math.hypot(a.x - px, a.z - pz) - Math.hypot(b.x - px, b.z - pz) || a.id - b.id)[0];
+      if (pick) PIX.nextPax = { id: pick.id, x: pick.x, y: pick.y, z: pick.z, on: !!(J && J.k === 'punch' && J.id === pick.id) };
+    }
+  }
   // Trains: each vehicle its own item, by heading; the engine's rods turn as it rolls; smoke from the stack. D27 (R): a
   // coach or boxcar cut away (pixCutItem) when the player is in it or at its door, P lists it, or a boxcar's door is
   // open; coaches lit at night.
@@ -22159,7 +22374,12 @@ function pixScene(alpha) {
         const mine = inCar && inCar.car === car;
         let cut = mine || L.cut.includes(sid);
         if (!cut && k === 'boxcar') cut = (+pixCall('frDoorOpen', S, car.id) || 0) > 0 || Math.hypot(px - x, pz - (z - 2.4)) < 1.6;
-        if (cut) { out.push(pixCutItem({ ...cars[sid], x, z, yaw, hd }, L, goods.filter(q => q.place === 'car' && q.stock === sid), mine ? agent : null, hx, hz, k === 'coach' ? 4.9 : h)); return; }
+        if (cut) {
+          // D29: a good being lifted or set down in the car he is in is drawn with its insides (in their order with him).
+          const inner = goods.filter(q => (q.place === 'car' && q.stock === sid) || (mine && q.place === 'moving' && Math.abs(q.x - x) < hx && Math.abs(q.z - z) < hz && q.y > 1));
+          for (const q of inner) if (q.place === 'moving') (PIX.inCarGoods || (PIX.inCarGoods = new Set())).add(q.id);
+          out.push(pixCutItem({ ...cars[sid], x, z, yaw, hd }, L, inner, mine ? agent : null, hx, hz, k === 'coach' ? 4.9 : h)); return;
+        }
       }
       const it = pixItem(x - hx, x + hx, z - hz, z + hz, 0, h, g => {
         if (key && pixBlit(g, key, Math.round(pixProject(x, 0, z).x) - PIX.vx, Math.round(pixProject(x, 0, z).y) - PIX.vy, pick)) return;
@@ -22275,8 +22495,9 @@ function pixScene(alpha) {
     if (q.place === 'cart' || q.place === 'truck' || q.place === 'hand' || q.place === 'held' || !Number.isFinite(q.x)) continue;
     if (q.place === 'car' && !flats.has(q.stock)) continue;
     seen.add(String(q.id));
-    const r = Math.max(0.3, ((typeof GOODS27 !== 'undefined' && GOODS27[q.kind] && GOODS27[q.kind].size[q.alongZ ? 1 : 0]) || 0.7) / 2), rz = Math.max(0.3, ((typeof GOODS27 !== 'undefined' && GOODS27[q.kind] && GOODS27[q.kind].size[q.alongZ ? 0 : 1]) || 0.6) / 2);
-    const id = 'item' + q.id, it = pixItem(q.x - r, q.x + r, q.z - rz, q.z + rz, q.y, q.y + pixGoodsH(q.kind), g => { const p = pixProject(q.x, q.y, q.z); pixGoodsRest(g, q, Math.round(p.x) - PIX.vx, Math.round(p.y) - PIX.vy); }, id);
+    if (PIX.inCarGoods && PIX.inCarGoods.has(q.id)) continue;   // D29: lifted or set down inside the cut-away car: drawn with its insides
+    const id = 'item' + q.id, it = pixGoodsItem(q, id);
+    if (it.before && agent) agent.after = (agent.after || []).concat([id]);
     if (q.place === 'shop' && q.x > 0) PIX.lineIds.add(id);
     out.push(it);
   }
@@ -22335,7 +22556,7 @@ function pixAgentItem(alpha, L, goods, px, pz, inCar) {
   const moving = Math.hypot(Pl.x - prevPlayer.x, Pl.z - prevPlayer.z) > 1e-4;
   const held = carryHeld(S), carrier = carryCarrier(S), hand = carrier === 'HAND', act = Pl.act && Pl.act.k;
   const walkFr = pixCycle(PIX.STEP_FR_U * playerWalkSpeed(S.track, !hand), 4), punch = typeof ppPlayerAct === 'function' ? ppPlayerAct(S) : null;
-  let anim = 'idle', fr = pixCycle(0.6, 2), dirP = pixDirOf(pb && pb.f !== undefined ? pb.f : L.frPose && L.frPose.f !== undefined ? L.frPose.f : Pl.f);
+  let anim = 'idle', fr = pixCycle(0.6, 2), dirP = pixDirOf(pb && pb.f !== undefined ? pb.f : L.frPose && L.frPose.dir ? L.frPose.dir : Pl.f);   // (D29: frPose's facing is its dir; its f is the frame, which turned him sw or se at each step)
   const pdir = dirP;
   const fp = pixAgentFr(L.frPose, moving, walkFr) || pixAgentFr(pb, moving, walkFr);
   if (fp) { anim = fp[0]; fr = fp[1]; }
@@ -22350,6 +22571,15 @@ function pixAgentItem(alpha, L, goods, px, pz, inCar) {
   // D27 goods in his hands (F's place 'hand'), by the step's verb.
   const inHand = goods.filter(q => q.place === 'hand' || q.place === 'held'), verb = (L.frPose && L.frPose.verb) || (inHand.length ? (GOODS27[inHand[0].kind] || {}).verb || 'carry' : null);
   const hk = pixHeldDraw(inHand, verb, dirP, key, ax, wy.y, az);
+  // D29: where his hands hold a good (native px, for a good lifted into them or set down from them) and the progress cue
+  // over his head while a timed step runs (a handling action, a punch): PIX.cue, drawn with the overlays.
+  {
+    const pp = pixProject(ax, wy.y, az), hd0 = (pixX(`ppl/agent/carry/${dirP}/0`) || {}).hands || PIX_HANDS[dirP], fk = key && pixF(key);
+    PIX.handsAt = [Math.round(pp.x) + hd0[0], Math.round(pp.y) + hd0[1], dirP];
+    PIX.agentAt = [ax, wy.y, az, dirP];
+    const fp = L.frPose, pbp = L.pbPose, prog = fp && PIX_ACTS[fp.phase] ? +fp.prog || 0 : pbp && pbp.act === 'punch' ? +pbp.t || 0 : pbp && pbp.act === 'climb' ? null : null;
+    PIX.cue = prog === null || !PIX.CUE ? null : { x: Math.round(pp.x), y: Math.round(pp.y) - (fk ? fk[6] : 20) - 3, prog: Math.max(0, Math.min(1, prog)) };
+  }
   const it = pixItem(ax - 0.25, ax + 0.25, az - 0.25, az + 0.25, wy.y, wy.y + PIX.PERSON_H, g => {
     const p = pixProject(ax, wy.y, az), bx = Math.round(p.x) - PIX.vx, by = Math.round(p.y) - PIX.vy, hd = (pixX('ppl/agent/carry/' + pdir + '/0') || {}).hands || PIX_HANDS[pdir];   // the art's hands offset when the atlas carries it
     const d25 = () => carried !== null && pixGoodsDraw(g, S, carried, bx + hd[0], by + hd[1], true, ax, wy.y + 0.8, az);
@@ -22431,8 +22661,47 @@ function pixBoardOnSched(g, sb) {
   pixText(g, r.text.slice(0, 5), l + B.top_left[0] + 1, t + B.top_left[1] + 2, r.late ? '#e07a58' : '#f0cf98', slope, w);
 }
 // ---- Over everything: the engines' name plates, the tap marker, the helper arrow and its dots ----
+// D29 ("more clear"): the overlays of the work in hand, in the pixel style (outlined in ink, the arrow's ochre): the
+// target cell (a diamond the size of the good's footprint, its outline blinking ochre and red), the progress cue over
+// the agent (a small bar filling while a timed step runs) and the punch's flash (a star of light on his ticket, about
+// 0.4 s). (The next traveller to punch is outlined in ochre where he sits, paper while his punch runs: pixOutline.)
+PIX.CUE = !D29_OFF; PIX.flash = [];
+function pixWorkOverlays(g) {
+  const C = PIX.COL, vx = PIX.vx, vy = PIX.vy, blink = Math.floor(animT * 4) % 2;
+  const T = PIX.target;
+  if (T) {
+    const hw = Math.max(0.35, (T.w || 0.8) / 2), hd = Math.max(0.35, (T.d || 0.8) / 2), y = T.y || 0;
+    const pts = [[T.x - hw, T.z - hd], [T.x + hw, T.z - hd], [T.x + hw, T.z + hd], [T.x - hw, T.z + hd]].map(([x, z]) => { const p = pixProject(x, y, z); return [Math.round(p.x) - vx, Math.round(p.y) - vy]; });
+    const line = (a, b, col) => {   // a one-pixel line between two buffer points
+      g.fillStyle = col;
+      const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), 1);
+      for (let i = 0; i <= n; i++) g.fillRect(Math.round(a[0] + (b[0] - a[0]) * i / n), Math.round(a[1] + (b[1] - a[1]) * i / n), 1, 1);
+    };
+    for (let i = 0; i < 4; i++) { const a = pts[i], b = pts[(i + 1) % 4]; line([a[0], a[1] + 1], [b[0], b[1] + 1], C.ink); line(a, b, blink ? C.red[0] : '#efb45c'); }
+    if (blink) for (let i = 0; i < 4; i++) { const a = pts[i], b = pts[(i + 1) % 4]; line([a[0], a[1] - 1], [b[0], b[1] - 1], '#efb45c'); }   // (a second line inside: the cell reads at a glance against the storage's chalk grid)
+    PIX.stats.fills++;
+  }
+  const Q = PIX.cue;
+  if (Q) {
+    const w = 13, x = Q.x - vx - 6, y = Q.y - vy - 4, f = Math.round((w - 2) * Q.prog);
+    g.fillStyle = C.ink; g.fillRect(x, y, w, 4);
+    g.fillStyle = C.navy[2]; g.fillRect(x + 1, y + 1, w - 2, 2);
+    if (f > 0) { g.fillStyle = Q.prog >= 0.999 ? C.paper : '#efb45c'; g.fillRect(x + 1, y + 1, f, 2); }
+  }
+  const now = performance.now();
+  PIX.flash = PIX.flash.filter(q => now - q.t0 < 420);
+  if (PIX.CUE) for (const q of PIX.flash) {
+    const at = (PIX.L && PIX.L.pb || []).find(o => o.id === q.id);
+    if (!at) continue;
+    const p = pixProject(at.x, at.y, at.z), x = Math.round(p.x) - vx, y = Math.round(p.y) - vy - 14, k = (now - q.t0) / 420, r = 1 + Math.round(4 * k);
+    g.fillStyle = k < 0.5 ? '#ffffff' : C.paper;
+    g.fillRect(x - r, y, 2 * r + 1, 1); g.fillRect(x, y - r, 1, 2 * r + 1);
+    if (k < 0.7) { g.fillRect(x - 1, y - 1, 3, 3); const d = Math.max(1, r - 2); g.fillRect(x - d, y - d, 1, 1); g.fillRect(x + d, y - d, 1, 1); g.fillRect(x - d, y + d, 1, 1); g.fillRect(x + d, y + d, 1, 1); }
+  }
+}
 function pixOverlays(g) {
   const C = PIX.COL;
+  pixWorkOverlays(g);
   for (const L of PIX.locos) {
     const tr = L.tr;
     if (!tr.name || tr.owner === 'interchange' || tr.owner === 'cut') continue;
@@ -22548,9 +22817,10 @@ function pixSeeThrough() {
 }
 // The player's drawn point (ground-layer pixels, not rounded) at (px, pz): his feet at his drawn height, as the
 // sprite is placed (pixWalkerY, read without moving on its memory of his height).
-function pixPlayerPoint(px, pz) {
+function pixPlayerPoint(px, pz, L) {
   // D27 integration: on a train the agent is drawn at P's pose (pixAgentItem), so the view centres there.
-  const pb = pixCall('pbPlayerPose', S);
+  // (D29: the frame's blended pose when given, so the view glides with him in the aisle.)
+  const pb = L ? L.pbPose : pixCall('pbPlayerPose', S);
   if (pb && Number.isFinite(pb.x) && Number.isFinite(pb.y) && Number.isFinite(pb.z)) return pixProject(pb.x, pb.y, pb.z);
   const P = S.player, had = Object.prototype.hasOwnProperty.call(PIX.wy, 'player'), keep = PIX.wy.player;
   const y = pixWalkerY('player', px, pz, typeof P.y === 'number' ? P.y : pixSimY(px, pz)).y;
@@ -22643,7 +22913,10 @@ function pixFrame(alpha, dt) {
   // At the map's edges the view stops at the ground layer's edge, so there he is off the middle.
   const P = S.player, px = lerp(prevPlayer.x, P.x, alpha), pz = lerp(prevPlayer.z, P.z, alpha);
   if (PIX.camS !== S) { PIX.camS = S; PIX.smoke = []; PIX.wy = {}; cam.ox = 0; cam.oz = 0; PIX.cam = null; PIX.inCar = null; }   // a new game or a load: on him
-  const q = pixPlayerPoint(px, pz), moving = Math.hypot(P.x - prevPlayer.x, P.z - prevPlayer.z) > 1e-4;
+  // D29: the other builders' lists, blended between the tick before and this one (pixLerpLists), read before the camera
+  // so it follows the agent where he is drawn (on a train: P's pose, now between ticks too).
+  const Lf = pixLerpLists(pixLists(), alpha);
+  const q = pixPlayerPoint(px, pz, Lf), moving = Math.hypot(P.x - prevPlayer.x, P.z - prevPlayer.z) > 1e-4;
   if (moving && (cam.ox || cam.oz)) {
     const b = Math.exp(-dt / PIX.BACK_S);
     cam.ox *= b; cam.oz *= b;
@@ -22711,7 +22984,7 @@ function pixFrame(alpha, dt) {
   guideDraw();
   PIX.locos = []; PIX.lineIds = new Set();
   const t1 = performance.now();
-  const all = pixScene(alpha), vis = it => { const r = pixScreenRect(it); return r.r >= PIX.vx - 8 && r.l <= PIX.vx + nw + 8 && r.b >= PIX.vy - 8 && r.t <= PIX.vy + nh + 8; };
+  const all = pixScene(alpha, Lf), vis = it => { const r = pixScreenRect(it); return r.r >= PIX.vx - 8 && r.l <= PIX.vx + nw + 8 && r.b >= PIX.vy - 8 && r.t <= PIX.vy + nh + 8; };
   const t2 = performance.now(), shown = all.filter(vis);   // D27 (R): culled before sorting
   const list = pixSort(shown);
   const t3 = performance.now();
@@ -22876,7 +23149,7 @@ function frame(now) {
     acc += dt * speed * CFG.TICKS_PER_REAL_S;
     let n = Math.floor(acc); acc -= n;
     if (DBG.on && speed > 4) debugRunTicks(n); // debug time warp (8x to 32x), time-boxed
-    else { n = Math.min(n, 40); for (let i = 0; i < n && speed > 0; i++) doTick(); }   // a first-time card pauses at once (D22)
+    else { n = Math.min(n, 40); for (let i = 0; i < n && speed > 0; i++) doTick(i === n - 1); }   // a first-time card pauses at once (D22)
   }
   render(speed > 0 ? acc : 1, dt);
   updateHud();
@@ -22919,7 +23192,7 @@ window.__railhead = {
   hash: st => stateHash(st || S),
   send, setSpeed, saveGame,
   CFG, // checks on a busy test machine may lengthen HOLD_MS (see check-handbuild.js)
-  step(n) { for (let i = 0; i < n; i++) doTick(); },
+  step(n) { for (let i = 0; i < n; i++) doTick(i === n - 1); },
   // A new game in the page's world: ?world=yard (the M0 test yard, for the checks written for it) or the real start.
   newState: (seed, world) => newState(seed, world || PAGE_WORLD), simRun, simTick, stateHash, trackValidate, trackNew, trackNode, trackStraight, trackArc, trackSwitch, trackNearest, trackWalk, edgeAt, findRoute, trainPoses, trainLength,
   switchLockReason, occupiedSwitches, migrate,

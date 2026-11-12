@@ -1,6 +1,7 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
-## Latest (2026-11-12): D27 working day and D28 morning fixes built
+## Latest (2026-11-12): D27 working day and D28 morning fixes, D29 review fixes and D30 smooth trains built
+- D29 (faster, smoother handling and punching; all switches in one lever frame beside track 1 off platform 1's west end, old layout `?levers=two`) and D30 (trains drawn as one block stepping along the rails, no judder; off with `?d30=0`, measuring tool tests/train-play.js) are merged. DEV_NOTES "D29" and "D30" have the details. Open D30 note: when the player rides a moving train his car can step a pixel against the camera; left as is because the camera is the designer's decision.
 - D27 (bigger trains with interiors, punching on board, step-by-step freight onto a cart, raised cargo platform, evening trip to town with keeper hand-ins and pickups, 19 townsfolk, six lessons, night lights) and D28 (smooth camera, platform planking, station set back, Start over) are merged, tested (full npm test passed) and published at https://claude.ai/artifact/215immEY4Skh13fN9fN2db.
 - Review page with every overnight provisional choice: https://claude.ai/artifact/EJsq45PwyyTbaFcyTFYD89 (answers/d27-review). Full list: plans/d27-choices.md. Tech plan: plans/d27-tech.md. DEV_NOTES "D27" covers each builder's part.
 - Known: the evening takes about 4 game hours (day ends ~23:15); check-pixperf's scale-1 landscape case is borderline under load; the morning trains board covers Settings (backlog).

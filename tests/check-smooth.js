@@ -19,12 +19,65 @@
 // Screenshots: test-output/d29-smooth-{coach-punch,coach-next,freight-lift,freight-carry}-{portrait,landscape}.png (as
 // played) and d29-smooth-*-close-*.png (paused, zoomed in, the buttons over the world hidden).
 
+//
+// D30 (the designer: "Train animation is very juddery"), the trains (tests/train-play.js: p1 comes in through the W1
+// crossover, brakes, stops on track 1, stands, starts off and leaves through E1), in real time, every drawn frame:
+// - no car jumps: its drawn step in a frame is at most its exact (blended, unrounded) step plus one step along the
+//   rails ((2, 1), 2.24 px), and the train is drawn between ticks (blended) whenever the sim moves it;
+// - no car stands still on screen while its exact point has moved more than 2.5 px and it is drawn more than a step
+//   (2.3 px) behind it (a missed step), and no car steps backwards against its motion;
+// - even steps: each drawn step of a car is within 1.8 px (0.8 of a step; at 2x, where a frame's motion is about a
+//   step, 2.3 px, one step) of the exact motion since its last step (steps of
+//   (2, 1) follow the exact motion; a stall then a catch-up, or two steps for one, would break it);
+// - on a straight the cars keep their spacing: the drawn gap between neighbours does not change from frame to frame
+//   (before D30 it changed by a pixel in about 6 frames of 10), and on track 1 every car heading e or w sits on its rails'
+//   2:1 pixel line (its offset across them the same as its exact point's);
+// - no heading flicker: a car's frame never goes A > B > A within 30 frames;
+// - the smoke puffs drift, never jump (at most 2 px a frame);
+// - with ?d30=0 the old drawing comes back (the gaps change again), so the bound is known to bite.
+// Cases: platform 1x portrait (the player standing on the platform), walk 1x landscape (walking beside it), curveW 1x
+// portrait and curveE 2x landscape (by the crossovers' curves). SMOOTH_ONLY=train runs only these.
+
 const SP = require('./smooth-play');
+const TP = require('./train-play');
 const { openGame } = require('./browser');
 const STEP_PX = 1.6, STEP_PER_MS = 0.1, STILL_MS = 90, REL_PX = 2.01;
 
+async function checkTrains(problems, notes) {
+  const cases = [['platform', 'portrait', 1], ['walk', 'landscape', 1], ['curveW', 'portrait', 1], ['curveE', 'landscape', 2]];
+  for (const [setup, orient, speed] of cases) {
+    const P = m => problems.push(`train ${setup} ${orient} ${speed}x: ${m}`);
+    let r;
+    try { r = await TP.playTrain(setup, orient, { speed, shot: `d30-train-${setup}-${orient}`, maxS: setup === 'curveE' ? 25 : undefined }); } catch (e) { P('did not play: ' + (e && e.message)); continue; }
+    const m = TP.summariseTrain(r.rec);
+    notes.push(`train ${setup} ${orient} ${speed}x: ${JSON.stringify(m)}`);
+    if (!(m.moveFrames > 200)) P(`the train moved in only ${m.moveFrames} frames`);
+    const unblended = r.rec.filter(q => q.blend === false && Math.abs(q.v) > 1e-3).length;
+    if (unblended) P(`${unblended} frames drew the running train at its tick position (not blended)`);
+    if (m.jumps) P(`a car jumped ${m.jumps} times (a frame's drawn step more than its exact step + ${TP.JUMP_PX} px; largest step ${m.carStepMax} px)`);
+    if (m.backSteps) P(`a car stepped backwards against its motion ${m.backSteps} times`);
+    if (m.stepEvenMax > (speed > 1 ? 2.3 : 1.8)) P(`a car's steps were uneven: a drawn step against the exact motion since its last step differed by ${m.stepEvenMax} px (a step along the rails is 2.24 px)`);
+    if (m.stillOver) P(`a car stood still on screen while the sim moved it more than ${TP.STILL_PX} px (${m.stillOver} frames, up to ${m.worstStillMs} ms)`);
+    if (m.straightPairs < (setup === 'curveW' ? 30 : 100)) P(`only ${m.straightPairs} frames of neighbouring cars on a straight`);
+    if (m.straightGapChanges > Math.max(2, m.straightPairs * 0.01)) P(`on a straight the gap between neighbouring cars changed ${m.straightGapChanges} times in ${m.straightPairs} (up to ${m.straightGapMax} px)`);
+    if (m.straightGapMax > 1.01 * Math.SQRT2 * 2) P(`on a straight the gap between neighbouring cars changed by ${m.straightGapMax} px in a frame`);
+    if (m.railPhaseMax > 0.01 && setup !== 'curveW') P(`a car on track 1 sat ${m.railPhaseMax} px off its rails' pixel line (${m.railPhases})`);
+    if (m.headingFlickers) P(`a car's heading frame flickered ${m.headingFlickers} times`);
+    if (m.puffStepsOver2) P(`a smoke puff jumped ${m.puffStepsOver2} times (up to ${m.puffStepMax} px)`);
+    if (r.errors.length) P('console errors: ' + r.errors.slice(0, 3).join(' | '));
+  }
+  // The off switch: ?d30=0 draws the trains as before (each car rounded on its own): the gaps change again.
+  try {
+    const r = await TP.playTrain('platform', 'portrait', { speed: 2, query: '&d30=0' }), m = TP.summariseTrain(r.rec);
+    notes.push(`train platform portrait 2x ?d30=0: ${JSON.stringify(m)}`);
+    if (!(m.straightGapChanges > m.straightPairs * 0.2)) problems.push(`?d30=0 did not bring the old drawing back (gaps changed ${m.straightGapChanges} times in ${m.straightPairs})`);
+  } catch (e) { problems.push('train ?d30=0: did not play: ' + (e && e.message)); }
+}
+
 module.exports = async function checkSmooth() {
   const problems = [], notes = [];
+  await checkTrains(problems, notes);
+  if (process.env.SMOOTH_ONLY === 'train') { console.log('check-smooth:\n  ' + notes.join('\n  ')); return problems; }
   for (const orient of ['portrait', 'landscape']) {
     for (const kind of ['coach', 'freight']) {
       const P = m => problems.push(`${orient}, ${kind}: ${m}`);

@@ -1061,7 +1061,108 @@ landscape}.png` and as played `d29-smooth-*-{portrait,landscape}.png`. With `?d2
 px steps, which its bound fails. `check-handling.js`: a one-tick step is sampled at its start (its middle exists only in the drawing), and the
 first tick of a command is watched too (a step can now start in it).
 
+## D30 (trains drawn smoothly)
+
+### Trains (builder, 2026-11-12)
+
+The designer: "Train animation is very juddery, let's smooth it out."
+
+**Measured first** (`tests/train-play.js`, new: plays p1 in real time in Chromium at 390 x 844 or 844 x 390 and records
+every drawn frame: each car's drawn sprite anchor and heading frame, the exact point the renderer blends it to
+(projected, not rounded), the camera's exact top-left, the smoke puffs drawn, frame times, tick, alpha, the train's v and
+whether the train is drawn between ticks; `node tests/train-play.js platform|walk|curveW|curveE portrait|landscape
+[speed] [throttle]`, `DUMP=file.json` keeps the frames, `QUERY='&d30=0'` the old drawing). Setups: platform (the player
+stands on platform 1: the train comes in through the W1 crossover, brakes, stops, stands, starts and leaves through E1),
+walk (the player walks along platform 1 beside it), curveW and curveE (standing by each crossover's curves). Before is
+D29's tip (`?d30=0` draws exactly as it did). Native px:
+- **Not drawn at tick positions.** The trains were already blended between ticks (`prevPoses`, `curPoses`): every
+  frame in which the sim moved the train was blended (0 frames at a tick position), steps at most 1.41 px at 1x,
+  0 stalls, 0 jumps. Not a cause.
+- **Each car rounded on its own, x and y apart: the main cause.** At a train's speeds (0.6 to 1.0 px a frame at 1x)
+  a car stepped (1,0), (0,1), (1,1), (0,0) in turn, so its 2:1 stair went in and out of step with the rails' own: it
+  sat -0.5, 0 or +0.5 px across its rails' line, bobbing a pixel up and down; and the cars rounded on different frames,
+  so the gap between neighbours on a straight changed by a pixel in 1051 of 1734 frame pairs (platform, portrait 1x),
+  1480 of 2299 (walk, landscape), 540 of 866 at 2x, 268 of 431 at 4x, 573 of 746 on E1's curve: the cars shuffled
+  against each other.
+- **Heading frames flipping on curves:** 3 flips A > B > A within 30 frames on E1's curve at 2x and at 4x (0 at 1x).
+- Not causes: the camera (the sub-pixel camera shifts the rails and the train together; its largest step 3.35 px is
+  the walk's look-ahead, the same before and after), the smoke (puffs drift at most 1.41 px a frame, 0 jumps; a small
+  change kept, below), the acceleration (the speed changes per tick by at most 0.16 px a frame: braking from 0.95 to 0
+  in 9 ticks, starting in 7), frame times (16.7 ms steady unthrottled; with 4x CPU throttling the 98th percentile 33 ms
+  with or without D30).
+- The helper before this one (WIP 83c20e8) had placed every car at an anchor car's rounding plus its own rounded
+  offset, with hysteresis: the gaps held (6 changes), but on the curves cars stepped backwards against their motion
+  (47 to 78 times in a run through E1), stood up to 100 ms and stepped unevenly (a 2.24 px step after 0.7 px of motion,
+  up to 3.3 px off). Replaced.
+
+**Built** ("pixel renderer", block "D30: trains drawn smoothly", `pixTrainDrawPoses`; drawing only, the sim and its
+state untouched):
+- **The whole train at one moment.** Each frame the train is drawn at one moment between the ticks, chosen so that
+  its anchor (the vehicle heading e or w that lies straightest; else the one moving most across the screen) stands
+  exactly on a whole step of the rails' 2:1 line ((2, 1) a step; else on a whole pixel). The moment moves only when
+  the anchor reaches its next step, so all the train's vehicles step in the same frame; each vehicle at that moment is
+  put on whole pixels on its own (heading e or w and lying straight, within `PIX.RAIL_DEG` 0.5 degrees: on its rails'
+  2:1 line, `pixRailSnap`; else the nearest pixel). On a straight the vehicles' exact offsets are the same at every
+  step, so the drawn gaps never change and every car stays on its rails' pixel line. The moment may lie a little past a
+  tick's ends (at most half a tick, so a step near a tick's end is not lost), but never before the tick's start as a
+  train starts off nor past its end as it comes to a stand. A new anchor's grid goes through where it was drawn last
+  frame, so a change of anchor (a car entering a curve) never jumps.
+- **On a curve each car on its own.** A car turned more than `PIX.TURN_DEG` (0.1 degree) from the anchor is drawn at
+  the frame's own alpha and rounded on its own (a car on a curve cannot keep a whole-pixel gap anyway); between 0.05
+  and 0.1 degree a mix. It never steps back against its motion (as it goes from the nearest pixel onto the rails' line):
+  it waits where it was while that is within `PIX.BACK_PX` (2.5 px) of its exact point.
+- **No heading flicker:** a car's heading frame is held until its yaw is `PIX.HDG_HOLD` (3) degrees past the half-way
+  to the next frame.
+- **Everything with the car on its pixel:** the car's world point is moved to its drawn pixel, so a cut-away car's
+  insides and the name plate land with it; goods in or on a car (`pixCarGood`) and travellers in a cut-away coach are
+  moved by the same shift (`PIX.carShift`), so they stay in their seats.
+- **Smoke:** a puff is put where the stack was when it was let out (by the engine's drawn speed), not where it is now,
+  and no burst of puffs as a standing engine starts off.
+- **Off switch:** `PIX.SMOOTH_TRAINS = false` or `?d30=0` draws the trains as before.
+- The cost: a few lerps and projections per car a frame; the pixel frame unchanged within noise (platform 1x 1.26 >
+  1.02 ms average unthrottled; 4x throttled 4.2 > 4.4 ms platform, 4.3 > 4.0 ms walking beside it). check-pixperf's
+  station 4.4 ms (portrait) and 6.3 to 6.5 ms at scale 1, within its 8 ms.
+
+**After** (same setups; before > after):
+- platform portrait 1x: gap changes on a straight 1051/1734 > 0/1732; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 1.41 > 2.24, evenness 0.82 > 0.71; frame 1.26 > 1.04 ms (98% 2.4 > 2.3); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- walk landscape 1x: gap changes on a straight 1480/2299 > 0/2300; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 1.41 > 2.24, evenness 0.82 > 1.55; frame 1 > 0.9 ms (98% 1.9 > 1.7); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- walk portrait 1x: gap changes on a straight 1081/1769 > 0/1765; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 1.41 > 2.24, evenness 0.82 > 0.71; frame 1.06 > 0.91 ms (98% 1.9 > 2); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- platform landscape 1x: gap changes on a straight 1397/2193 > 0/2189; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 2.24 > 2.24, evenness 0.82 > 1.55; frame 1.11 > 0.91 ms (98% 2.4 > 1.8); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- curveW portrait 1x: gap changes on a straight 51/68 > 0/67; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 1.41 > 10.77, evenness 0.7 > 0.79; frame 0.83 > 0.72 ms (98% 1.3 > 1.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- curveE landscape 1x: gap changes on a straight 573/746 > 0/748; off the rails line 0 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 2.24 > 2.83, evenness 1.03 > 1.59; frame 0.61 > 0.64 ms (98% 1 > 1.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- curveE portrait 1x: gap changes on a straight 629/814 > 0/813; off the rails line 0 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 2.24 > 2.83, evenness 1.03 > 1.59; frame 0.72 > 0.66 ms (98% 1.5 > 1.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- platform portrait 2x: gap changes on a straight 540/866 > 0/865; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 2.24 > 2.24, evenness 1.05 > 1.59; frame 1.01 > 1.15 ms (98% 2 > 2.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- platform portrait 4x: gap changes on a straight 268/431 > 0/432; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 4.47 > 4.47, evenness 0.9 > 2.1; frame 1.05 > 1.3 ms (98% 1.8 > 3); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- curveE landscape 2x: gap changes on a straight 286/373 > 0/373; off the rails line 0 > 0 px; heading flicker 3 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 4.47 > 4.47, evenness 1.06 > 1.8; frame 0.59 > 0.68 ms (98% 0.9 > 1.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- curveE landscape 4x: gap changes on a straight 144/186 > 0/187; off the rails line 0 > 0 px; heading flicker 3 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 8.06 > 8.94, evenness 1.1 > 2.24; frame 0.55 > 0.7 ms (98% 0.8 > 1.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- platform portrait 1x, CPU 4x slower: gap changes on a straight 977/1638 > 0/1732; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 4.47 > 2.24, evenness 0.82 > 0.71; frame 4.22 > 2.94 ms (98% 8.9 > 6.4); frame time 98% 33.3 > 16.8 ms; smoke step 1.41 > 1.41
+- walk landscape 1x, CPU 4x slower: gap changes on a straight 1452/2237 > 0/2293; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 3.16 > 2.24, evenness 1.06 > 1.55; frame 4.27 > 2.95 ms (98% 9.5 > 6.4); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+- curveW portrait 1x, CPU 4x slower: gap changes on a straight 51/68 > 0/67; off the rails line 0.5 > 0 px; heading flicker 0 > 0; steps back 0 > 0; stalls 0 > 0; jumps 0 > 0; largest step 2 > 2.24, evenness 0.7 > 0.79; frame 2.78 > 2.17 ms (98% 5.2 > 4.1); frame time 98% 16.8 > 16.8 ms; smoke step 1.41 > 1.41
+
+("Evenness": the largest difference between a car's drawn step and its exact motion since its last step; a rail step is
+2.24 px. curveW 1x's 10.77 px step is one 233 ms frame of the test machine, the exact point moved as far. The pixel
+frame's cost is within run-to-run noise; at 4x CPU throttling the D30 runs happened to be faster.)
+
+A judgement call: a car on a straight now moves in whole steps of the rails, (2, 1), every 2 to 3 frames at 1x, where it
+moved a pixel nearly every frame before; drawn at most 2.2 px from its exact point (0.7 before). That is the only way
+to keep its 2:1 edge in step with the rails' and the cars' spacing fixed; the steps are as even as the speed allows (each
+within 0.8 of a step of the exact motion since the last, at 1x). Not changed, for the lead: when the player rides a
+moving train the camera follows his blended point, so the car he is in steps against it by up to a step (as each car
+did by a pixel before); following the car's drawn point instead would make the world step. A camera decision.
+
+**Checks:** `tests/check-smooth.js` has a train part (`checkTrains`; `SMOOTH_ONLY=train` runs only it): platform 1x
+portrait, walk 1x landscape, curveW 1x portrait, curveE 2x landscape, every frame: the train blended whenever the sim
+moves it; no car's drawn step more than its exact step plus one rail step (2.3 px); no car standing still while drawn
+more than a step behind its exact point; no step backwards against its motion; even steps (each within 1.8 px of the
+exact motion since the car's last step, 2.3 at 2x); on a straight the gap between neighbours never changes (at most 1
+in 100 frames) and every car heading e or w on track 1 on its rails' pixel line; no heading flicker (A > B > A within 30
+frames); smoke puffs at most 2 px a frame; and with `?d30=0` the gaps change again (the bound bites). Screenshots
+`test-output/d30-train-{platform,walk,curveW,curveE}-{portrait,landscape}.png`.
+
 ## Next
+
+Update (2026-11-12, D30 trains drawn smoothly): trains glide (see "D30"); check-smooth has a train part and
+`tests/train-play.js` is new.
 
 Update (2026-11-12, D29 handling and punching): smoother, faster and clearer freight handling and punching are built on
 their own branch (see "D29"); `tests/check-smooth.js` is new. The one lever frame (D29 (3)) is another helper's.

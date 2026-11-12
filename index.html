@@ -21909,10 +21909,11 @@ function pixCutInner(P, L, goods, agent) {
   for (const q of L.pb) {
     if (q.stock === undefined || String(q.stock) !== sid) continue;
     const dir = pixDirOf(q.f), [anim, fr] = pixActAnim(q.act, q, (+q.id || 0) * 0.37), y = Number.isFinite(q.y) ? q.y : floor;
-    const it = pixPersonItem('pb' + q.id, q.who || PIX_WHO[Math.abs(+q.id | 0) % PIX_WHO.length], q.x, y, q.z, dir, anim, fr, { k: 'pp', id: q.id, who: q.who, stock: q.stock, seat: q.seat, tr: P.tr.id }, !!q.punched);
+    const sh = PIX.SMOOTH_TRAINS && PIX.carShift[sid], qx = q.x + (sh ? sh[0] : 0), qz = q.z + (sh ? sh[1] : 0);   // D30: moved with the car onto its drawn pixel
+    const it = pixPersonItem('pb' + q.id, q.who || PIX_WHO[Math.abs(+q.id | 0) % PIX_WHO.length], qx, y, qz, dir, anim, fr, { k: 'pp', id: q.id, who: q.who, stock: q.stock, seat: q.seat, tr: P.tr.id }, !!q.punched);
     if (PIX.SEATED[anim] || anim === 'sitDown' || anim === 'standUp') {
       let best = null, bd = 0.9;
-      for (const B of benches) { const dx = Math.abs(B.b.x + x - q.x), dz = Math.abs(B.b.z + z - q.z); if (dz < 0.8 && dx < bd) { bd = dx; best = B; } }
+      for (const B of benches) { const dx = Math.abs(B.b.x + x - qx), dz = Math.abs(B.b.z + z - qz); if (dz < 0.8 && dx < bd) { bd = dx; best = B; } }
       if (best) { if (dir === 'se' || dir === 'sw') it.after = [best.it.id]; else (best.it.after = best.it.after || []).push(it.id); }
     }
     inner.push(it);
@@ -22036,6 +22037,110 @@ function pixHeading(yaw) {
   for (const h of PIX_HDG) { const a = Math.abs(((d - h[1]) % 360 + 540) % 360 - 180); if (a < bd) { bd = a; best = h; } }
   return best[0];
 }
+// ---- D30: trains drawn smoothly ----
+// The designer (D30): "Train animation is very juddery". Measured (tests/train-play.js, see DEV_NOTES "D30"): the cars
+// were already blended between ticks (prevPoses, curPoses), but each car was rounded to whole native pixels on its own,
+// x and y apart, so (a) at a train's speeds (0.6 to 1.4 px a frame at 1x) it stepped (1,0), (0,1), (1,1) in turn: its
+// 2:1 stair went in and out of step with the rails' own (half a pixel up and down, every other frame), and (b) the
+// cars' offsets from each other changed by a pixel in 6 frames of 10 (they shuffled against each other); and on the
+// crossovers' curves a car's heading frame could flip back and forth.
+// Now (PIX.SMOOTH_TRAINS) the whole train is drawn at one moment between the ticks, chosen so that its lead straight
+// vehicle (the anchor: heading e or w, the straightest; else the one moving most across the screen) stands exactly on
+// a whole step of the rails' 2:1 pixel line, (2, 1) a step (else on a whole pixel across). That moment only moves
+// when the anchor reaches its next step, so every vehicle of the train steps in the same frame; each vehicle at that
+// moment is put on whole pixels on its own (heading e or w on its rails' 2:1 line, `pixRailSnap`; else the nearest
+// pixel). On a straight the vehicles' exact offsets are the same each step, so their drawn spacing never changes and
+// they stay in step with the rails; on a curve each still moves forward only (its exact point at that moment only
+// moves on). A vehicle's heading frame is held until its yaw is PIX.HDG_HOLD degrees past the half-way to the next
+// (no flicker on a curve). The vehicle's world point is moved to its drawn pixel, so everything drawn with it (a
+// cut-away car's insides, the name plate, goods on a flatcar via PIX.carShift) lands on the same pixels; the camera's
+// sub-pixel shift moves the rails and the train together. Drawing only: the sim is untouched. PIX.SMOOTH_TRAINS =
+// false (or ?d30=0) draws them as before.
+const D30_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('d30') === '0';
+PIX.SMOOTH_TRAINS = !D30_OFF; PIX.HDG_HOLD = 3; PIX.TURN_DEG = 0.1; PIX.RAIL_DEG = 0.5; PIX.BACK_PX = 2.5; PIX.carLast = new Map(); PIX.hdgHeld = new Map(); PIX.carShift = {}; PIX.trSnap = {};
+const PIX_HDG_DEG = Object.fromEntries(PIX_HDG);
+// A screen point (native px) on whole pixels: heading e or w, on the 2:1 line through it in steps of (2, 1) (the line
+// keeps its own whole-pixel phase c); otherwise the nearest pixel.
+function pixRailSnap(px, py, hd) {
+  if (hd !== 'e' && hd !== 'w') return [Math.round(px), Math.round(py)];
+  const k = Math.round(px / 2);
+  return [2 * k, Math.round(py - px / 2) + k];
+}
+// The heading frame for a yaw, held while the yaw stays within PIX.HDG_HOLD degrees past the half-way to the next.
+function pixHeadingHeld(sid, yaw) {
+  const near = pixHeading(yaw);
+  if (sid === null || sid === undefined) return near;
+  const h = PIX.hdgHeld.get(sid), d = yaw * 180 / Math.PI;
+  if (h && h !== near) {
+    const a = Math.abs(((d - PIX_HDG_DEG[h]) % 360 + 540) % 360 - 180);
+    if (a <= 7.5 + PIX.HDG_HOLD) return h;
+  }
+  PIX.hdgHeld.set(sid, near);
+  return near;
+}
+// Each vehicle of a train as drawn this frame: { x, z (moved onto its drawn pixel), yaw, hd, vx, vz (u a game minute,
+// for the smoke), smooth }.
+function pixTrainDrawPoses(tr, ti, poses, alpha) {
+  const prev = prevPoses && prevPoses[ti] && prevPoses[ti].length === poses.length ? prevPoses[ti] : null;
+  const smooth = !!PIX.SMOOTH_TRAINS, k = speed > 0 && prev ? 1 / DT_MIN : 0;
+  const at = (vi, f) => { const pa = prev ? prev[vi] : poses[vi], b = poses[vi]; return { x: lerp(pa.x, b.x, f), z: lerp(pa.z, b.z, f), yaw: lerpAngle(pa.yaw, b.yaw, f) }; };
+  if (!smooth) {
+    delete PIX.trSnap[tr.id];
+    return poses.map((b, vi) => { const q = at(vi, alpha), car = tr.consist[vi]; if (car && car.id !== undefined) delete PIX.carShift[String(car.id)]; return { ...q, hd: pixHeading(q.yaw), smooth: false }; });
+  }
+  // the anchor: the vehicle heading e or w that lies straightest, kept until another lies straighter by PIX.TURN_DEG / 2
+  // (so on a straight it is always one lying straight); with none, the one moving most across the screen this tick
+  let f = alpha, fs = null;
+  if (prev) {
+    const bent = vi => Math.abs(Math.sin(poses[vi].yaw)), rail = vi => { const h = pixHeading(poses[vi].yaw); return h === 'e' || h === 'w'; };
+    const dxOf = vi => 8 * ((poses[vi].x - prev[vi].x) - (poses[vi].z - prev[vi].z));
+    let M = PIX.trSnap[tr.id], ai = -1;
+    if (M && !(M.S === S && M.n === poses.length)) M = null;
+    for (let i = 0; i < poses.length; i++) if (rail(i) && (ai < 0 || bent(i) < bent(ai) - 1e-9)) ai = i;
+    if (ai >= 0 && M && rail(M.ai) && bent(M.ai) <= bent(ai) + Math.sin(PIX.TURN_DEG / 2 * Math.PI / 180)) ai = M.ai;
+    const G = ai >= 0 ? 2 : 1;
+    if (ai < 0) { ai = 0; for (let i = 1; i < poses.length; i++) if (Math.abs(dxOf(i)) > Math.abs(dxOf(ai)) + 1e-9) ai = i; }
+    // the grid's phase: kept while the anchor is the same; a new anchor's grid goes through where it was drawn from
+    // last frame (its exact x at last frame's moment), so the moment does not jump
+    let ph = 0;
+    if (M && M.ai === ai && M.G === G) ph = M.ph;
+    else if (M && M.xs && M.xs[ai] !== undefined) ph = ((M.xs[ai] % G) + G) % G;
+    // the moment: the anchor's exact screen x on a whole step (G px), between this tick's ends, or a little past
+    // either end by this tick's motion (at most half a tick, so a step near a tick's end is not lost): before its start
+    // only if the train moved in the tick before (not as it starts off), after its end only while it still runs (not
+    // as it comes to a stand)
+    const x0 = pixProject(prev[ai].x, 0, prev[ai].z).x, x1 = pixProject(poses[ai].x, 0, poses[ai].z).x;
+    const movedBefore = M && M.tick === S.tick - 1 ? M.moved : M && M.tick === S.tick ? M.movedBefore : false;
+    if (Math.abs(x1 - x0) > 1e-6) {
+      const X = lerp(x0, x1, alpha), Xq = G * Math.round((X - ph) / G) + ph;
+      f = Math.max(movedBefore ? -0.5 : 0, Math.min(Math.abs(tr.v || 0) > 1e-3 ? 1.5 : 1, (Xq - x0) / (x1 - x0)));
+    }
+    M = PIX.trSnap[tr.id] = { S, n: poses.length, ai, G, ph, xs: null, tick: S.tick, moved: Math.abs(x1 - x0) > 1e-6, movedBefore };
+    // each vehicle's own moment: the train's for a vehicle lying as the anchor does (on a straight, all of them); one
+    // turned PIX.TURN_DEG or more from it (on a curve) at the frame's own alpha, so it moves on as its exact point does
+    // (rounded on its own; a car on a curve cannot keep a whole-pixel spacing anyway); in between, a mix
+    const ya = poses[ai].yaw;
+    fs = poses.map((b, vi) => { const d = Math.abs(Math.sin(b.yaw - ya)) * 180 / Math.PI, w = Math.max(0, Math.min(1, 1 - (d - PIX.TURN_DEG / 2) / (PIX.TURN_DEG / 2))); return alpha + w * (f - alpha); });
+    M.xs = poses.map((b, vi) => pixProject(lerp(prev[vi].x, b.x, f), 0, lerp(prev[vi].z, b.z, f)).x);
+  }
+  return poses.map((b, vi) => {
+    const pa = prev ? prev[vi] : b, car = tr.consist[vi], sid = car && car.id !== undefined ? String(car.id) : null;
+    const q = at(vi, fs ? fs[vi] : f), hd = pixHeadingHeld(sid, q.yaw), p = pixProject(q.x, 0, q.z);
+    // on the rails' 2:1 line only while it lies along them (within PIX.RAIL_DEG): on a curve the rails are not a 2:1
+    // line, and a car kept on one would step across it now and then against its motion; there the nearest pixel
+    let s = pixRailSnap(p.x, p.y, Math.abs(Math.sin(q.yaw)) < Math.sin(PIX.RAIL_DEG * Math.PI / 180) ? hd : '');
+    // never a step back against its motion (as it goes from the nearest pixel onto the rails' line, say): it waits
+    // where it was while that stays within PIX.BACK_PX of its exact point
+    const was = sid && PIX.carLast.get(sid);
+    if (was && was.S === S && was.hd === hd && (s[0] - was.s[0]) * (p.x - was.p.x) + (s[1] - was.s[1]) * (p.y - was.p.y) < 0 && Math.hypot(was.s[0] - p.x, was.s[1] - p.y) <= PIX.BACK_PX) s = was.s;
+    if (sid) PIX.carLast.set(sid, { S, hd, s, p });
+    const dpx = s[0] - p.x, dpy = s[1] - p.y, dx = (dpx / 8 + dpy / 4) / 2, dz = (dpy / 4 - dpx / 8) / 2;
+    if (sid) PIX.carShift[sid] = [q.x + dx - lerp(pa.x, b.x, alpha), q.z + dz - lerp(pa.z, b.z, alpha)];
+    return { x: q.x + dx, z: q.z + dz, yaw: q.yaw, hd, vx: (b.x - pa.x) * k, vz: (b.z - pa.z) * k, smooth: true };
+  });
+}
+// D30: a good in (or on) a car, moved with the car onto its drawn pixel.
+function pixCarGood(q) { const d = q.place === 'car' && q.stock !== undefined && PIX.SMOOTH_TRAINS ? PIX.carShift[q.stock] : null; return d ? { ...q, x: q.x + d[0], z: q.z + d[1] } : q; }
 // Travellers' looks for the placeholder data (until P's ppDrawList names them).
 const PIX_WHO = ['man_top', 'woman_bonnet', 'man_bag', 'woman_shawl', 'child', 'man_bowler', 'worker', 'porter', 'man_top.b', 'woman_bonnet.b', 'man_bowler.b', 'woman_shawl.b'];
 // A person's frame: ppl/<who>/<anim>/<dir>/<f>, else frame 0, else standing; null if the art has none.
@@ -22358,10 +22463,11 @@ function pixScene(alpha, Lgiven) {
     if (!poses || !poses.length) return;
     const run = S.rr && typeof rrRunOf === 'function' ? rrRunOf(S, tr.id) : null, freight = run ? run.kind !== 'pax' : tr.consist.some(c => c.k === 'boxcar' || c.k === 'flatcar');
     const standing = !(Math.abs(tr.v || 0) > 1e-3);
+    const drawPoses = pixTrainDrawPoses(tr, ti, poses, alpha);   // D30: blended, the heading held, on whole pixels along the rails
     poses.forEach((b, vi) => {
       const pa = prevPoses && prevPoses[ti] && prevPoses[ti].length === poses.length ? prevPoses[ti][vi] : b;
-      const x = lerp(pa.x, b.x, alpha), z = lerp(pa.z, b.z, alpha), yaw = lerpAngle(pa.yaw, b.yaw, alpha), k = b.k, car = tr.consist[vi];
-      const hd = pixHeading(yaw), cy = Math.cos(yaw), sy = -Math.sin(yaw), pick = { k: 'tr', id: tr.id, stock: car && car.id };
+      const dp = drawPoses[vi], x = dp.x, z = dp.z, yaw = dp.yaw, k = b.k, car = tr.consist[vi];
+      const hd = dp.hd, cy = Math.cos(yaw), sy = -Math.sin(yaw), pick = { k: 'tr', id: tr.id, stock: car && car.id };
       let key;
       if (k === 'loco') { const fr = Math.floor((x * cy + z * sy) / 1.1) & 1; key = pixKey(freight && `veh/loco_freight/${hd}/${fr}`, `veh/loco/${hd}/${fr}`); }
       else if (k === 'boxcar') key = pixKey(`veh/boxcar/${hd}`);   // (D27: the door used is the north one, hidden by the body: an open door shows cut away)
@@ -22376,7 +22482,7 @@ function pixScene(alpha, Lgiven) {
         if (!cut && k === 'boxcar') cut = (+pixCall('frDoorOpen', S, car.id) || 0) > 0 || Math.hypot(px - x, pz - (z - 2.4)) < 1.6;
         if (cut) {
           // D29: a good being lifted or set down in the car he is in is drawn with its insides (in their order with him).
-          const inner = goods.filter(q => (q.place === 'car' && q.stock === sid) || (mine && q.place === 'moving' && Math.abs(q.x - x) < hx && Math.abs(q.z - z) < hz && q.y > 1));
+          const inner = goods.filter(q => (q.place === 'car' && q.stock === sid) || (mine && q.place === 'moving' && Math.abs(q.x - x) < hx && Math.abs(q.z - z) < hz && q.y > 1)).map(pixCarGood);
           for (const q of inner) if (q.place === 'moving') (PIX.inCarGoods || (PIX.inCarGoods = new Set())).add(q.id);
           out.push(pixCutItem({ ...cars[sid], x, z, yaw, hd }, L, inner, mine ? agent : null, hx, hz, k === 'coach' ? 4.9 : h)); return;
         }
@@ -22395,7 +22501,11 @@ function pixScene(alpha, Lgiven) {
         // the wind and grows (fx/smoke, 4 frames).
         const st = car && car.stack, stx = st ? st[0] : PIX.STACK, sx = x + cy * stx, sz = z + sy * stx, every = standing ? 0.9 : 0.22;   // D27: the stack's place from the stock (A2's extra.stack)
         let acc = (PIX.puffAt[tr.id] || 0) + PIX.dtg;
-        while (acc >= every && PIX.smoke.length < 60) { acc -= every; PIX.smoke.push({ x: sx, z: sz, age: acc, y0: st ? st[1] : 3.7 }); }
+        // D30: a puff is put where the stack was when it was let out (age game minutes ago: the engine's speed as
+        // drawn, dp.vx, dp.vz u a game minute), not where the stack is now, so the puffs do not bunch up and jump
+        // with the frame's length; and no burst of puffs as a standing engine starts off.
+        if (dp.smooth) acc = Math.min(acc, every + PIX.dtg);
+        while (acc >= every && PIX.smoke.length < 60) { acc -= every; PIX.smoke.push({ x: sx - (dp.vx || 0) * acc, z: sz - (dp.vz || 0) * acc, age: acc, y0: st ? st[1] : 3.7 }); }
         PIX.puffAt[tr.id] = Math.min(acc, every);
       }
     });
@@ -22496,7 +22606,7 @@ function pixScene(alpha, Lgiven) {
     if (q.place === 'car' && !flats.has(q.stock)) continue;
     seen.add(String(q.id));
     if (PIX.inCarGoods && PIX.inCarGoods.has(q.id)) continue;   // D29: lifted or set down inside the cut-away car: drawn with its insides
-    const id = 'item' + q.id, it = pixGoodsItem(q, id);
+    const id = 'item' + q.id, it = pixGoodsItem(pixCarGood(q), id);
     if (it.before && agent) agent.after = (agent.after || []).concat([id]);
     if (q.place === 'shop' && q.x > 0) PIX.lineIds.add(id);
     out.push(it);

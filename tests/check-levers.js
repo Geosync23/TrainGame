@@ -1,13 +1,16 @@
-// Check: the lever frames and the day's timing (D27, builder T; plans/d27-tech.md 2.2 and 8.3).
-// - The frames: PROTO_LEVERS puts W1 and W3 in the west frame and E1 and E3 in the east frame, just off platform 1's
-//   ends, the levers PITCH apart; each switch's stand is its lever's post and use spot, and a switch is thrown only
-//   there (switchSpots gives no spot at the points). From the middle of platform 1 the player throws each of the four
-//   switches over and back with useSwitch alone (the page's Throw button and a tap on a lever send it): every throw
-//   happens with the agent at that switch's lever. rrSwitchNeeds names each row's lever and frame.
+// Check: the lever frames and the day's timing (D27, builder T; plans/d27-tech.md 2.2 and 8.3; D29: one frame).
+// - The frames (PROTO.LEVERS, read from the data): D29 puts all four levers in one frame (C: W1 W3 E1 E3, west to
+//   east) at platform 1's back edge within about 6u of x 0, its stage against the deck's back edge, the agent's spots on
+//   platform 1, clear of the depot's door, the benches and the footbridges (?levers=two: D27's west and east frames, the
+//   same checks but the one frame's place). Every switch's lever is in exactly one frame, the levers PITCH apart; each
+//   switch's stand is its lever's post and use spot, and a switch is thrown only there (switchSpots gives no spot at
+//   the points). From the middle of platform 1 the player throws each of the four switches over and back with
+//   useSwitch alone (the page's Throw button and a tap on a lever send it): every throw happens with the agent at that
+//   switch's lever. rrSwitchNeeds names each row's lever and frame.
 // - A train waits at a switch set against it: p1 comes in from the west with W1 lying straight (it needs the turn-off):
 //   it stops short of W1, waits there (shown late on the board, never cancelled) and comes in once the agent has
-//   thrown W1 at the west frame; leaving east with E1 set against it, it waits at E1 until the agent throws it at the
-//   east frame, then leaves.
+//   thrown W1 at its frame; leaving east with E1 set against it, it waits at E1 until the agent throws it at its
+//   frame, then leaves.
 // - The cars where they stand (protoCarEnds for P, protoCarDoors for F): the same places before a train comes in and
 //   while it stands; every passenger run's coach ends on platform 1, none beside a footbridge's flight (a coach end
 //   under a footbridge's deck is flagged bridge: that coach boards at its other end; every coach has an end to board
@@ -16,7 +19,7 @@
 //   in line, goods by hand, the evening's deliveries; ?d27=0) through touch-level commands; every run in and out each
 //   day, every switch change the agent's throw at that switch's lever in its frame, and the worst lateness (arrival
 //   or departure, any run) at most 15 minutes: the schedule (PROTO_SCHEDULE, re-timed by T) fits the D27 walks.
-// - Screenshots, portrait and landscape: the agent throwing at the west lever frame while a train is on its way.
+// - Screenshots, portrait and landscape (d29-levers-*): the agent throwing W1 at its frame while a train is on its way.
 
 const { openGame, screenshotPath } = require('./browser');
 const { PROTO_BOT_SRC } = require('./proto-bot');
@@ -32,14 +35,44 @@ module.exports = async function checkLevers() {
       // ---- The frames, throwing at them, the needs' lever names ----
       const A = await page.evaluate(() => {
         const R = window.__railhead, Pr = R.proto, D = R.d27, out = { bad: [], throws: [] }, B = m => out.bad.push(m);
-        const L = D.PROTO_LEVERS, F = Pr.PROTO.LEVERS, SW = Pr.PROTO_SW;
-        const want = { W1: 'W', W3: 'W', E1: 'E', E3: 'E' };
-        for (const [name, f] of Object.entries(want)) {
-          const lv = L[name];
-          if (!lv || lv.frame !== f) { B(`lever ${name}: frame ${lv && lv.frame}, expected ${f}`); continue; }
-          if (Math.hypot(lv.x - F[f].x, lv.z - F[f].z) > F.PITCH) B(`lever ${name} is ${Math.hypot(lv.x - F[f].x, lv.z - F[f].z).toFixed(2)}u from its frame`);
+        const L = D.PROTO_LEVERS, F = Pr.PROTO.LEVERS, SW = Pr.PROTO_SW, PR = Pr.PROTO, T0 = R.newState(1866, 'proto').track;
+        // D29: the frames in use (PROTO.LEVERS: one frame C by default, ?levers=two D27's W and E); every switch's lever in
+        // exactly one of them, at its frame's z, the levers PITCH apart west to east in the frame's order.
+        out.layout = PR.LEVER_FRAMES;
+        const seen = {};
+        for (const f of F.FRAMES) {
+          const q = F[f], n = q.levers.length;
+          q.levers.forEach((name, i) => {
+            const lv = L[name];
+            seen[name] = (seen[name] || 0) + 1;
+            if (!lv || lv.frame !== f) { B(`lever ${name}: frame ${lv && lv.frame}, expected ${f}`); return; }
+            if (Math.abs(lv.x - (q.x + (i - (n - 1) / 2) * F.PITCH)) > 1e-6 || lv.z !== q.z) B(`lever ${name} is not in its place in frame ${f} (${lv.x}, ${lv.z})`);
+            if (Math.abs(lv.uz - lv.z - F.USE_DZ) > 1e-6 || lv.ux !== lv.x) B(`lever ${name}: its use spot (${lv.ux}, ${lv.uz})`);
+          });
         }
-        for (const f of ['W', 'E']) { const [a, b] = F[f].levers.map(n => L[n]); if (Math.abs(Math.abs(a.x - b.x) - F.PITCH) > 1e-6) B(`frame ${f}: levers ${Math.abs(a.x - b.x)}u apart`); }
+        for (const name of Object.keys(SW)) if (seen[name] !== 1) B(`lever ${name} is in ${seen[name] || 0} frames`);
+        out.frames = F.FRAMES.map(f => `${f} (${F[f].x}, ${F[f].z}): ${F[f].levers.join(' ')}`).join('; ');
+        if (PR.LEVER_FRAMES === 'one') {
+          // The one frame (D29: "consolidated but still near the track, not on the main platform"): at ground level just
+          // off one end of platform 1 (its stage against the end of the planks, not on them), beside track 1 and clear
+          // of a train on it, the footbridges' flights, the cart crossing and the cart path; the agent's spots on the
+          // ground, reached from platform 1 without crossing a track (check-d27world walks there).
+          const q = F[F.FRAMES[0]], half = F.STAGE[0] / 2, x0 = q.x - half, x1 = q.x + half, z0 = q.z - F.STAGE[1] / 2, z1 = q.z + F.STAGE[1] / 2, Dk = PR.P1_DECK;
+          if (F.FRAMES.length !== 1) B(`one frame expected, ${F.FRAMES.length}`);
+          if (q.y !== 0) B(`the frame stands at ${q.y}, not on the ground`);
+          if (!(x1 <= Dk.x0 + 1e-6 && Dk.x0 - x1 < 1) && !(x0 >= Dk.x1 - 1e-6 && x0 - Dk.x1 < 1)) B(`the frame's stage (x ${x0} to ${x1}) is not just off an end of platform 1's planks (${Dk.x0} to ${Dk.x1})`);
+          if (z0 < Dk.z0 || z1 > Dk.z1) B(`the frame's stage (z ${z0} to ${z1}) is not beside platform 1 (z ${Dk.z0} to ${Dk.z1})`);
+          const clear = -6 - Math.max(...Object.values(D.PROTO_STOCK.cars).map(c => c.wid || 0), D.PROTO_STOCK.loco.wid || 0) / 2;
+          if (!(z1 < clear)) B(`the frame's stage reaches z ${z1}, within a train's width of track 1 (${clear.toFixed(2)})`);
+          for (const lv of Object.values(L)) if (D.walkDeckY(T0, lv.ux, lv.uz) !== 0) B(`lever ${lv.name}'s use spot (${lv.ux}, ${lv.uz}) is not on the ground`);
+          for (const fb of Pr.PROTO_BRIDGES) for (const p of fb.parts) if (p.x1 > x0 && p.x0 < x1 && p.z1 > z0 && p.z0 < z1) B(`the frame overlaps footbridge ${fb.id}`);
+          const X = PR.XING_CART, cp = PR.CART_PATH, pw = PR.PATH_W / 2;
+          if (X.x + X.w / 2 > x0 && X.x - X.w / 2 < x1) B('the frame is in the cart crossing\'s way');
+          for (let i = 1; i < cp.length; i++) for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1], [q.x, q.z]]) {
+            const [ax, az] = cp[i - 1], [bx, bz] = cp[i], vx = bx - ax, vz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz)));
+            if (Math.hypot(ax + vx * t - x, az + vz * t - z) < pw) B(`the frame's stage is on the cart path at (${x}, ${z})`);
+          }
+        }
         let S = R.newState(1866, 'proto');
         R.simTick(S, [{ t: 'pdStart' }]);
         const T = S.track;
@@ -70,6 +103,7 @@ module.exports = async function checkLevers() {
         return out;
       });
       problems.push(...A.bad);
+      console.log(`  frames (${A.layout}): ${A.frames}`);
       console.log(`  throws from platform 1 (each over and back): ${A.throws.join('; ')}`);
       console.log(`  needs: ${A.needs}`);
 
@@ -96,8 +130,8 @@ module.exports = async function checkLevers() {
           out.log.push(`${hm()} still waiting, the board shows ${row.state} ${Math.round(row.late / 60)} min late`);
           if (!(row.late >= 15 * 60)) B(`the board does not show p1 late while it waits: ${JSON.stringify({ state: row.state, late: row.late })}`);
           const nW1 = R.rr.rrSwitchNeeds(S).find(n => n.run === p1.id && n.sw === SW.W1);
-          if (!nW1 || nW1.lever !== 'W1' || nW1.frame !== 'W' || nW1.set) B(`p1's need of W1: ${JSON.stringify(nW1)}`);
-          // The agent throws W1 at the west frame.
+          if (!nW1 || nW1.lever !== 'W1' || nW1.frame !== L.W1.frame || nW1.set) B(`p1's need of W1: ${JSON.stringify(nW1)}`);
+          // The agent throws W1 at its frame.
           let th = null;
           for (let i = 0; i < 400 && !th; i++) th = R.simTick(S, i === 0 ? [{ t: 'useSwitch', sw: SW.W1 }] : []).find(e => e.t === 'switchThrown');
           const d = th ? Math.hypot(P.x - L.W1.ux, P.z - L.W1.uz) : null;
@@ -184,7 +218,7 @@ module.exports = async function checkLevers() {
       await page.evaluate(src => { window.__lvsrc = src; }, PROTO_BOT_SRC);
       const D = await page.evaluate(days => {
         const R = window.__railhead, L = R.d27.PROTO_LEVERS, SW = R.proto.PROTO_SW, name = Object.fromEntries(Object.entries(SW).map(([k, v]) => [v, k]));
-        const S = R.newState(1866, 'proto'), bot = (0, eval)('(' + window.__lvsrc + ')')(R, null), out = { bad: [], runs: {}, throws: 0, byFrame: { W: 0, E: 0 }, other: 0 };
+        const S = R.newState(1866, 'proto'), bot = (0, eval)('(' + window.__lvsrc + ')')(R, null), out = { bad: [], runs: {}, throws: 0, byFrame: Object.fromEntries(R.proto.PROTO.LEVERS.FRAMES.map(f => [f, 0])), other: 0 };
         bot.mem.days = days;
         let shot = null;
         for (let i = 0; i < days * 86400 / 8 + 200; i++) {
@@ -209,7 +243,7 @@ module.exports = async function checkLevers() {
             }
           }
           if (before !== S.track.switches.map(w => w.state).join('') && !thrown) out.other++;
-          // The moment for the screenshots: day 1, the agent throwing at the west frame while a train is on its way.
+          // The moment for the screenshots: day 1, the agent throwing W1 at its frame while a train is on its way.
           if (!shot && S.pd.day === 0 && thrown && Math.hypot(S.player.x - L.W1.ux, S.player.z - L.W1.uz) < 3 && S.rr.runs.some(r => r.ph === 'in' || r.ph === 'out')) shot = JSON.stringify({ state: S });
         }
         out.end = S.pd.ph + ' day ' + (S.pd.day + 1);
@@ -229,11 +263,11 @@ module.exports = async function checkLevers() {
         for (const r of rs) for (const k of ['a', 'd']) if (r[k] !== null && r[k] > worst.late) worst = { late: r[k], at: `day ${d + 1} ${r.svc} ${k === 'a' ? 'in' : 'out'}` };
         console.log(`  day ${d + 1} (minutes late in/out): ${rs.map(r => `${r.svc} ${m(r.a)}/${m(r.d)}`).join(', ')}`);
       }
-      console.log(`  ${D.throws} throws (west frame ${D.byFrame.W}, east frame ${D.byFrame.E}); worst lateness ${m(worst.late)} min (${worst.at}); ended ${D.end}`);
+      console.log(`  ${D.throws} throws (by frame ${JSON.stringify(D.byFrame)}); worst lateness ${m(worst.late)} min (${worst.at}); ended ${D.end}`);
       if (D.other) P(`a switch changed ${D.other} times without the agent's throw`);
-      if (!(D.byFrame.W > 0 && D.byFrame.E > 0)) P(`throws at the frames: ${JSON.stringify(D.byFrame)}`);
+      if (!Object.values(D.byFrame).every(n => n > 0)) P(`throws at the frames: ${JSON.stringify(D.byFrame)}`);
       if (worst.late > LATE_LIMIT_MIN * 60) P(`the worst lateness was ${m(worst.late)} minutes (${worst.at}), over ${LATE_LIMIT_MIN}`);
-      if (!shot) P('no moment with the agent throwing at the west frame while a train is on its way');
+      if (!shot) P('no moment with the agent throwing W1 at its frame while a train is on its way');
       if (errors.length) P('portrait: console errors: ' + errors.slice(0, 3).join(' | '));
     } finally { await browser.close(); }
   }
@@ -249,11 +283,11 @@ module.exports = async function checkLevers() {
         const P = R.state.player; R.pix.pixLookAt(P.x + 4, P.z + 4);
         await new Promise(r => setTimeout(r, 600));
       }, shot);
-      await page.screenshot({ path: screenshotPath(`levers-west-frame-${orient}`) });
+      await page.screenshot({ path: screenshotPath(`d29-levers-${orient}`) });
       if (errors.length) P(`${orient}: console errors: ${errors.slice(0, 3).join(' | ')}`);
     } finally { await browser.close(); }
   }
-  console.log('  screenshots: test-output/levers-west-frame-{portrait,landscape}.png');
+  console.log('  screenshots: test-output/d29-levers-{portrait,landscape}.png');
   return problems;
 };
 if (require.main === module) module.exports().then(p => { console.log(p.length ? 'FAIL\n - ' + p.join('\n - ') : 'PASS'); require('./browser').stopServer(); process.exit(p.length ? 1 : 0); });

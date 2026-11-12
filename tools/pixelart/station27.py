@@ -576,6 +576,46 @@ def leverframe_letters(side='W'):
     TW.text_on('l', -w / 2.0, -2.35, LF['h'] + 8.0, s, 'wood', 4)
 
 
+# D29 (the designer: "make all switches in the same place even if not realistic", "still near the track"): one frame
+# for all four levers, off platform 1's west end beside track 1. The same pieces as leverframe, longer: a plank stage 6 x 2u, the iron bed
+# with four quadrant racks 1.2u apart (W1 W3 E1 E3, west to east), one number board across them and the lamp.
+LF4 = dict(a=12.0, b=4.0, h=LF['h'])
+LEVER_X4 = (-1.8 * U, -0.6 * U, 0.6 * U, 1.8 * U)
+
+
+def leverframe4():
+    """The one lever frame (D29): a plank stage 6 x 2u, a cast-iron bed with quadrant racks for four levers 1.2u apart,
+    a number board across them (W1 W3 E1 E3) and the lamp on its post. The levers are bld/lever/N|R, drawn at
+    extra.levers. Anchor: the stage's centre at ground level."""
+    o = new_oid(True)
+    A, B, h = LF4['a'], LF4['b'], LF4['h']
+    box(-A, -B, 0, A, B, h, 'wood', tex=lambda f, X, Y, Z, i: (None, np.where(np.mod(X, 1.6) < 0.45, 2, 1) if f == 't'
+                                                                  else np.where(np.mod(X if f == 'l' else Y, 1.6) < 0.4, 3, 2)),
+        oid=o)
+    box(-9.2, -0.8, h, 9.2, 0.8, h + 1.4, 'iron', shades=(1, 2, 3), oid=o)
+    for x in LEVER_X4:
+        box(x - 0.5, -1.8, h + 1.4, x + 0.5, 1.8, h + 2.6, 'iron', shades=(1, 2, 3), oid=o)
+    # the number board on two posts behind the levers
+    box(-11.0, -3.4, h, -10.4, -2.8, h + 8.4, 'wood', shades=(1, 2, 3), oid=o)
+    box(10.4, -3.4, h, 11.0, -2.8, h + 8.4, 'wood', shades=(1, 2, 3), oid=o)
+    box(-11.6, -2.8, h + 5.6, 11.6, -2.4, h + 8.4, 'cream', shades=(0, 0, 1), oid=o)
+    # the signalman's lamp on a post at the stage's corner
+    box(A - 1.4, B - 1.4, h, A - 0.6, B - 0.6, h + 13.0, 'iron', shades=(1, 2, 3), oid=o)
+    box(A - 1.8, B - 1.8, h + 13.0, A - 0.2, B - 0.2, h + 15.0, 'fire', shades=(0, 1, 1), oid=o)
+    box(A - 2.0, B - 2.0, h + 15.0, A, B, h + 15.6, 'iron', shades=(1, 2, 3), oid=o)
+    # rodding leaving the frame at both ends (the game draws the runs on to the points)
+    for x in (-A - 1.0, A + 1.0):
+        box(min(x, x + (2.0 if x > 0 else -2.0)), -0.3, 0.8, max(x, x + (2.0 if x > 0 else -2.0)), 0.3, 1.3, 'iron',
+            shades=(1, 2, 3), oid=o, cast=False)
+    return o
+
+
+def leverframe4_letters():
+    s = 'W1 W3 E1 E3'
+    w = text_width(s) / 2.0
+    TW.text_on('l', -w / 2.0, -2.35, LF4['h'] + 8.0, s, 'wood', 4)
+
+
 def lever(state='N'):
     """One lever, 1.6u tall from its pivot in the frame: a red shaft with a white handle; 'N' standing back (towards
     -z), 'R' pulled over towards +z (the operator's side). Anchor: the pivot's foot at ground level (draw it at the

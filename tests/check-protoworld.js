@@ -162,11 +162,25 @@ module.exports = async function checkProtoWorld() {
             'platform 1 middle to switch W3 (the west lever frame)': [[0, p1z], use(SW.W3)],
             'platform 1 middle to switch E3 (the east lever frame)': [[0, p1z], use(SW.E3)],
           };
+          // D29: with the one lever frame (off platform 1's west end) the two east legs end at that frame: each is
+          // promised at most a quarter longer than the straight line plus 2u, the over-the-crossing one by its own way
+          // round (the platform 2 east end, the crossing, then along platform 1: the D27 promise of 42u plus the walk
+          // from platform 1's east end).
+          const promise = { ...PROMISE };
+          if (P.LEVER_FRAMES !== 'two') {
+            const st = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+            for (const k of ['platform 1 east end to the east lever frame (E1)', 'platform 2 east end to the east lever frame (E3, over the cart crossing)']) {
+              const [a, b] = legs[k], k2 = k.replace('the east lever frame', 'the lever frame at the west end');
+              delete legs[k]; legs[k2] = [a, b];
+              promise[k2] = /over the cart/.test(k) ? +(PROMISE['platform 1 east end to platform 2 east end (the cart crossing and the east ramp)'] + 1.25 * st([P1.x1 - 0.6, p1z], b) + 2).toFixed(1) : +(1.25 * st(a, b) + 2).toFixed(1);
+            }
+            for (const k of ['platform 1 middle to switch E3 (the east lever frame)']) { legs[k.replace(' (the east lever frame)', ' (the lever frame)')] = legs[k]; delete legs[k]; promise[k.replace(' (the east lever frame)', ' (the lever frame)')] = PROMISE[k]; }
+          }
           for (const [k, [a, b]] of Object.entries(legs)) {
             const w = walk(a, b, /footbridge/.test(k));
             out.dist[k] = +w.d.toFixed(2);
             if (w.miss > 0.3) B(`${k}: the walk ended ${w.miss.toFixed(2)}u short`);
-            if (!(w.d <= PROMISE[k])) B(`${k}: ${w.d.toFixed(2)}u walked, promised at most ${PROMISE[k]}u`);
+            if (!(w.d <= promise[k])) B(`${k}: ${w.d.toFixed(2)}u walked, promised at most ${promise[k]}u`);
           }
           // The footbridges.
           for (const b of Pr.PROTO_BRIDGES) {

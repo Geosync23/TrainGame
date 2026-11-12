@@ -25,6 +25,8 @@
 // - no car jumps: its drawn step in a frame is at most its exact (blended, unrounded) step plus one step along the
 //   rails ((2, 1), 2.24 px), and the train is drawn between ticks (blended) whenever the sim moves it;
 // - no car stands still on screen while its exact point has moved more than 2.5 px (a step and a bit);
+// - even steps: each drawn step of a car is within 1.6 px of the exact motion since its last step (rounded steps of
+//   (2, 1) follow the exact motion; a stall then a catch-up, or two steps for one, would break it);
 // - on a straight the cars keep their spacing: the drawn gap between neighbours does not change from frame to frame
 //   (before D30 it changed by a pixel nearly every frame), and on track 1 every car heading e or w sits on its rails'
 //   2:1 pixel line (its offset across them the same as its exact point's);
@@ -51,6 +53,7 @@ async function checkTrains(problems, notes) {
     const unblended = r.rec.filter(q => q.blend === false && Math.abs(q.v) > 1e-3).length;
     if (unblended) P(`${unblended} frames drew the running train at its tick position (not blended)`);
     if (m.jumps) P(`a car jumped ${m.jumps} times (a frame's drawn step more than its exact step + ${TP.JUMP_PX} px; largest step ${m.carStepMax} px)`);
+    if (m.stepEvenMax > 1.6) P(`a car's steps were uneven: a drawn step against the exact motion since its last step differed by ${m.stepEvenMax} px (a step along the rails is 2.24 px)`);
     if (m.stillOver) P(`a car stood still on screen while the sim moved it more than ${TP.STILL_PX} px (${m.stillOver} frames, up to ${m.worstStillMs} ms)`);
     if (m.straightPairs < 100) P(`only ${m.straightPairs} frames of neighbouring cars on a straight`);
     if (m.straightGapChanges > Math.max(2, m.straightPairs * 0.01)) P(`on a straight the gap between neighbouring cars changed ${m.straightGapChanges} times in ${m.straightPairs} (up to ${m.straightGapMax} px)`);

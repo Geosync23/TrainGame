@@ -123,6 +123,9 @@ function summariseTrain(rec) {
   let straightPairs = 0, straightGapChanges = 0, straightGapMax = 0, jumps = 0, worstStillMs = 0, stillOver = 0, headingChanges = 0, flickers = 0, hdgJumpMax = 0, spacingChanges = 0, spacingMax = 0, railPhase = 0, railPhaseFrames = 0, moveFrames = 0;
   const nCars = Math.max(0, ...rec.map(r => r.cars.length));
   const still = Array(nCars).fill(0), stillAcc = Array(nCars).fill(0), hist = Array.from({ length: nCars }, () => []);
+  // even steps: at each drawn step of a car, the exact motion since its last drawn step against that step (0 for a
+  // car whose steps follow its exact motion evenly; a stall-then-catch-up or a jump shows as a large figure)
+  const evenAcc = Array(nCars).fill(0); let evenMax = 0, evenN = 0;
   for (let i = 1; i < rec.length; i++) {
     const a = rec[i - 1], b = rec[i];
     let moving = false;
@@ -141,6 +144,8 @@ function summariseTrain(rec) {
       if (d < 1e-6 && e > 1e-4) { still[c] += b.dt; stillAcc[c] += e; if (stillAcc[c] > STILL_PX) { stillOver++; worstStillMs = Math.max(worstStillMs, still[c]); } }
       else { still[c] = 0; stillAcc[c] = 0; }
       if (sameHd && d > e + JUMP_PX) jumps++;
+      if (!sameHd) evenAcc[c] = 0;
+      else { evenAcc[c] += e; if (d > 1e-6) { evenMax = Math.max(evenMax, Math.abs(evenAcc[c] - d)); evenN++; evenAcc[c] = 0; } }
       hist[c].push([i, hdg(cb[2])]);
     }
     if (moving) moveFrames++;
@@ -163,7 +168,7 @@ function summariseTrain(rec) {
     // drawn anchor's offset from that line against the exact one (0 when the car steps along the rails' 2:1 line)
     for (let c = 0; c < nCars; c++) {
       const cb = b.cars[c], eb = b.exact[c];
-      if (!cb || !eb || !/^veh\/[a-z_]+\/[ew]($|\/)/.test(cb[2]) || Math.abs(eb[4] + 6) > 0.01) continue;
+      if (!cb || !eb || !/^veh\/[a-z_]+\/[ew]($|\/)/.test(cb[2]) || Math.abs(eb[4] + 6) > 1e-4) continue;
       const ph = (cb[1] - cb[0] / 2) - (eb[1] - eb[0] / 2);
       railPhase = Math.max(railPhase, Math.abs(ph)); railPhaseFrames++;
       if (!out._ph) out._ph = new Set(); out._ph.add(ph.toFixed(2));
@@ -178,6 +183,7 @@ function summariseTrain(rec) {
   out.carStepMax = +Math.max(0, ...steps).toFixed(2); out.carStepP98 = +pct(steps, 0.98).toFixed(2);
   out.carStepVsExactMax = +Math.max(0, ...stepErr).toFixed(2);
   out.drawnVsExactMax = +Math.max(0, ...err).toFixed(2);
+  out.stepEvenMax = +evenMax.toFixed(2); out.drawnSteps = evenN;
   out.jumps = jumps; out.stillOver = stillOver; out.worstStillMs = Math.round(worstStillMs);
   out.headingChanges = headingChanges; out.headingFlickers = flickers; out.headingJumpMax = +hdgJumpMax.toFixed(2);
   out.straightPairs = straightPairs; out.straightGapChanges = straightGapChanges; out.straightGapMax = +straightGapMax.toFixed(2);

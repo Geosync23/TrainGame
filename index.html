@@ -22037,21 +22037,26 @@ function pixHeading(yaw) {
   return best[0];
 }
 // ---- D30: trains drawn smoothly ----
-// The designer (D30): "Train animation is very juddery". Measured (tests/train-play.js): the cars were already
-// blended between ticks (prevPoses, curPoses), but each car was rounded to whole native pixels on its own, x and y
-// apart, so (a) at a train's speeds (0.6 to 1.4 px a frame at 1x) it stepped (1,0), (0,1), (1,1) in turn: its bottom
-// edge's 2:1 stair went in and out of step with the rails' own every pixel (half a pixel up and down, every other
-// frame), and (b) the cars' offsets from each other changed by a pixel nearly every frame (they shuffled against each
-// other). Now (PIX.SMOOTH_TRAINS) each train is placed as one: its lead vehicle on the rails' 2:1 pixel line (a car
-// heading e or w moves in steps of (2, 1), the rails' own, so it stays in step with them; other headings round to the
-// nearest pixel), and every other vehicle at the lead's rounding plus its own offset from the lead rounded the same
-// way, so on a straight the spacing never changes. Each vehicle's heading frame is held until its yaw is
-// PIX.HDG_HOLD degrees past the half-way to the next frame (no flicker on a curve). The vehicle's world point is moved
-// to its drawn pixel, so everything drawn with it (a cut-away car's insides, the name plate, goods on a flatcar via
-// PIX.carShift) lands on the same pixels. Drawing only: the sim is untouched. PIX.SMOOTH_TRAINS = false (or ?d30=0)
-// draws them as before.
+// The designer (D30): "Train animation is very juddery". Measured (tests/train-play.js, see DEV_NOTES "D30"): the cars
+// were already blended between ticks (prevPoses, curPoses), but each car was rounded to whole native pixels on its own,
+// x and y apart, so (a) at a train's speeds (0.6 to 1.4 px a frame at 1x) it stepped (1,0), (0,1), (1,1) in turn: its
+// 2:1 stair went in and out of step with the rails' own (half a pixel up and down, every other frame), and (b) the
+// cars' offsets from each other changed by a pixel in 6 frames of 10 (they shuffled against each other); and on the
+// crossovers' curves a car's heading frame could flip back and forth.
+// Now (PIX.SMOOTH_TRAINS) the whole train is drawn at one moment between the ticks, chosen so that its lead straight
+// vehicle (the anchor: heading e or w, the straightest; else the one moving most across the screen) stands exactly on
+// a whole step of the rails' 2:1 pixel line, (2, 1) a step (else on a whole pixel across). That moment only moves
+// when the anchor reaches its next step, so every vehicle of the train steps in the same frame; each vehicle at that
+// moment is put on whole pixels on its own (heading e or w on its rails' 2:1 line, `pixRailSnap`; else the nearest
+// pixel). On a straight the vehicles' exact offsets are the same each step, so their drawn spacing never changes and
+// they stay in step with the rails; on a curve each still moves forward only (its exact point at that moment only
+// moves on). A vehicle's heading frame is held until its yaw is PIX.HDG_HOLD degrees past the half-way to the next
+// (no flicker on a curve). The vehicle's world point is moved to its drawn pixel, so everything drawn with it (a
+// cut-away car's insides, the name plate, goods on a flatcar via PIX.carShift) lands on the same pixels; the camera's
+// sub-pixel shift moves the rails and the train together. Drawing only: the sim is untouched. PIX.SMOOTH_TRAINS =
+// false (or ?d30=0) draws them as before.
 const D30_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('d30') === '0';
-PIX.SMOOTH_TRAINS = !D30_OFF; PIX.HDG_HOLD = 3; PIX.REL_HOLD = 0.75; PIX.ANCHOR_HOLD = 0.55; PIX.hdgHeld = new Map(); PIX.carShift = {}; PIX.trSnap = {};
+PIX.SMOOTH_TRAINS = !D30_OFF; PIX.HDG_HOLD = 3; PIX.TURN_DEG = 0.1; PIX.hdgHeld = new Map(); PIX.carShift = {}; PIX.trSnap = {};
 const PIX_HDG_DEG = Object.fromEntries(PIX_HDG);
 // A screen point (native px) on whole pixels: heading e or w, on the 2:1 line through it in steps of (2, 1) (the line
 // keeps its own whole-pixel phase c); otherwise the nearest pixel.
@@ -22077,85 +22082,53 @@ function pixHeadingHeld(sid, yaw) {
 function pixTrainDrawPoses(tr, ti, poses, alpha) {
   const prev = prevPoses && prevPoses[ti] && prevPoses[ti].length === poses.length ? prevPoses[ti] : null;
   const smooth = !!PIX.SMOOTH_TRAINS, k = speed > 0 && prev ? 1 / DT_MIN : 0;
-  const out = poses.map((b, vi) => {
-    const pa = prev ? prev[vi] : b, car = tr.consist[vi], sid = car && car.id !== undefined ? String(car.id) : null;
-    const x = lerp(pa.x, b.x, alpha), z = lerp(pa.z, b.z, alpha), yaw = lerpAngle(pa.yaw, b.yaw, alpha);
-    if (!smooth) { if (sid) delete PIX.carShift[sid]; return { x, z, yaw, hd: pixHeading(yaw), smooth: false }; }
-    const hd = pixHeadingHeld(sid, yaw);
-    return { x, z, yaw, hd, sid, p: pixProject(x, 0, z), rail: hd === 'e' || hd === 'w', vx: (b.x - pa.x) * k, vz: (b.z - pa.z) * k, smooth: true };
-  });
-  if (!smooth) { delete PIX.trSnap[tr.id]; return out; }
-  // The train's memory (PIX.trSnap, by train): its anchor (the first vehicle heading e or w, else the first), the
-  // anchor's drawn pixel last frame, and each other vehicle's whole-pixel offset from it. An offset is kept while the
-  // exact offset stays within PIX.REL_HOLD of it along the rails (on a straight it never changes; on a curve it changes
-  // as the cars swing, a step at a time; across the rails it follows at once, so a car never sits off its rails' pixel
-  // line); and a change waits a frame when the anchor steps the same way that frame, so no vehicle moves two steps in
-  // one frame.
-  // the anchor: the vehicle heading e or w that lies straightest (on a straight, exactly along the rails), kept
-  // until another lies straighter by a degree (else the first vehicle)
-  let M = PIX.trSnap[tr.id], ai = -1;
-  const bent = q => Math.abs(Math.sin(q.yaw));
-  for (let i = 0; i < out.length; i++) if (out[i].rail && (ai < 0 || bent(out[i]) < bent(out[ai]) - 1e-9)) ai = i;
-  if (ai < 0) ai = 0;
-  else if (M && M.n === out.length && out[M.ai] && out[M.ai].rail && bent(out[M.ai]) <= bent(out[ai]) + Math.sin(Math.PI / 180)) ai = M.ai;
-  const A = out[ai], h = PIX.REL_HOLD;
-  const jump = M && M.S === S && M.n === out.length && M.p ? Math.hypot(A.p.x - M.p.x, A.p.y - M.p.y) > 30 : true;
-  const last = !jump && M.last ? M.last : [];   // each vehicle's drawn pixel and exact point last frame
-  if (jump || M.ai !== ai) M = PIX.trSnap[tr.id] = { n: out.length, S, ai, s: null, p: null, rel: [], last };
-  // A fresh choice (a vehicle's first frame, a change of heading frame or of anchor): of the whole pixels round its
-  // exact point, the one nearest where it was drawn last frame moved on by its exact motion, so it does not jump.
-  const near = (q, vi, cands) => {
-    const L = last[vi];
-    const T = L ? [L.s[0] + q.p.x - L.p.x, L.s[1] + q.p.y - L.p.y] : [q.p.x, q.p.y];
-    let best = cands[0], bd = Infinity;
-    for (const c of cands) { const d = Math.hypot(c[0] - T[0], c[1] - T[1]) + 0.01 * Math.hypot(c[0] - q.p.x, c[1] - q.p.y); if (d < bd) { bd = d; best = c; } }
-    return best;
-  };
-  const railPt = (X, q) => [X, X / 2 + Math.round(q.p.y - q.p.x / 2)];
-  const box = (x, y) => { const fx = Math.floor(x), fy = Math.floor(y); return [[fx, fy], [fx + 1, fy], [fx, fy + 1], [fx + 1, fy + 1]]; };
-  // the anchor: on its rails' pixel line (e or w) or the nearest pixel, held while within PIX.REL_HOLD of it
-  let s0;
-  {
-    const L = last[ai], held = !!(L && L.hd === A.hd && M.s);
-    if (A.rail) {
-      const kf = Math.floor(A.p.x / 2), k0 = held ? M.s[0] / 2 : null;
-      if (held) s0 = railPt(2 * (Math.abs(A.p.x / 2 - k0) <= PIX.ANCHOR_HOLD ? k0 : Math.round(A.p.x / 2)), A);
-      else s0 = near(A, ai, [railPt(2 * kf, A), railPt(2 * kf + 2, A)]);
-    } else if (held) s0 = [Math.abs(A.p.x - M.s[0]) <= PIX.ANCHOR_HOLD ? M.s[0] : Math.round(A.p.x), Math.abs(A.p.y - M.s[1]) <= PIX.ANCHOR_HOLD ? M.s[1] : Math.round(A.p.y)];
-    else s0 = near(A, ai, box(A.p.x, A.p.y));
+  const at = (vi, f) => { const pa = prev ? prev[vi] : poses[vi], b = poses[vi]; return { x: lerp(pa.x, b.x, f), z: lerp(pa.z, b.z, f), yaw: lerpAngle(pa.yaw, b.yaw, f) }; };
+  if (!smooth) {
+    delete PIX.trSnap[tr.id];
+    return poses.map((b, vi) => { const q = at(vi, alpha), car = tr.consist[vi]; if (car && car.id !== undefined) delete PIX.carShift[String(car.id)]; return { ...q, hd: pixHeading(q.yaw), smooth: false }; });
   }
-  const ps = M.s, step = ps ? [s0[0] - ps[0], s0[1] - ps[1]] : [0, 0];
-  M.s = s0; M.p = A.p;
-  const now = [];
-  for (let vi = 0; vi < out.length; vi++) {
-    const q = out[vi];
-    let s = s0;
-    if (vi !== ai) {
-      // the offset from the anchor: heading e or w like it, along the rails in steps of (2, 1) with each car on its
-      // own rails' pixel line across them (its own whole-pixel phase); otherwise a whole-pixel offset. Held while near.
-      const dx = q.p.x - A.p.x, dy = q.p.y - A.p.y, r0 = M.rel[vi], both = q.rail && A.rail;
-      let cand;
-      if (r0 && r0.hd === q.hd && r0.both === both) {
-        cand = both ? (Math.abs(dx / 2 - r0[0] / 2) <= h ? r0 : [2 * Math.round(dx / 2), 0])
-          : [Math.abs(dx - r0[0]) <= h + 0.5 ? r0[0] : Math.round(dx), Math.abs(dy - r0[1]) <= h + 0.5 ? r0[1] : Math.round(dy)];
-        if ((cand[0] !== r0[0] || cand[1] !== r0[1]) && (cand[0] - r0[0]) * step[0] + (cand[1] - r0[1]) * step[1] > 0) cand = r0;   // the anchor stepped that way this frame: it waits a frame
-      } else if (both) {
-        const j = 2 * Math.floor(dx / 2), c = near(q, vi, [railPt(s0[0] + j, q), railPt(s0[0] + j + 2, q)]);
-        cand = [c[0] - s0[0], 0];
-      } else {
-        const c = near(q, vi, box(dx, dy).map(r => [s0[0] + r[0], s0[1] + r[1]]));
-        cand = [c[0] - s0[0], c[1] - s0[1]];
-      }
-      M.rel[vi] = cand === r0 ? r0 : Object.assign(cand.slice(), { hd: q.hd, both });
-      s = both ? railPt(s0[0] + cand[0], q) : [s0[0] + cand[0], s0[1] + cand[1]];
+  // the anchor: the vehicle heading e or w that lies straightest, kept until another lies straighter by PIX.TURN_DEG / 2
+  // (so on a straight it is always one lying straight); with none, the one moving most across the screen this tick
+  let f = alpha, fs = null;
+  if (prev) {
+    const bent = vi => Math.abs(Math.sin(poses[vi].yaw)), rail = vi => { const h = pixHeading(poses[vi].yaw); return h === 'e' || h === 'w'; };
+    const dxOf = vi => 8 * ((poses[vi].x - prev[vi].x) - (poses[vi].z - prev[vi].z));
+    let M = PIX.trSnap[tr.id], ai = -1;
+    if (M && !(M.S === S && M.n === poses.length)) M = null;
+    for (let i = 0; i < poses.length; i++) if (rail(i) && (ai < 0 || bent(i) < bent(ai) - 1e-9)) ai = i;
+    if (ai >= 0 && M && rail(M.ai) && bent(M.ai) <= bent(ai) + Math.sin(PIX.TURN_DEG / 2 * Math.PI / 180)) ai = M.ai;
+    const G = ai >= 0 ? 2 : 1;
+    if (ai < 0) { ai = 0; for (let i = 1; i < poses.length; i++) if (Math.abs(dxOf(i)) > Math.abs(dxOf(ai)) + 1e-9) ai = i; }
+    // the grid's phase: kept while the anchor is the same; a new anchor's grid goes through where it was drawn from
+    // last frame (its exact x at last frame's moment), so the moment does not jump
+    let ph = 0;
+    if (M && M.ai === ai && M.G === G) ph = M.ph;
+    else if (M && M.xs && M.xs[ai] !== undefined) ph = ((M.xs[ai] % G) + G) % G;
+    // the moment: the anchor's exact screen x on a whole step (G px), between this tick's ends, or a little past
+    // either end by this tick's motion (at most half a tick, so a step near a tick's end is not lost): before its start
+    // only if the train moved in the tick before (not as it starts off), after its end only while it still runs (not
+    // as it comes to a stand)
+    const x0 = pixProject(prev[ai].x, 0, prev[ai].z).x, x1 = pixProject(poses[ai].x, 0, poses[ai].z).x;
+    const movedBefore = M && M.tick === S.tick - 1 ? M.moved : M && M.tick === S.tick ? M.movedBefore : false;
+    if (Math.abs(x1 - x0) > 1e-6) {
+      const X = lerp(x0, x1, alpha), Xq = G * Math.round((X - ph) / G) + ph;
+      f = Math.max(movedBefore ? -0.5 : 0, Math.min(Math.abs(tr.v || 0) > 1e-3 ? 1.5 : 1, (Xq - x0) / (x1 - x0)));
     }
-    now[vi] = { s, p: q.p, hd: q.hd };
-    const dpx = s[0] - q.p.x, dpy = s[1] - q.p.y, dx = (dpx / 8 + dpy / 4) / 2, dz = (dpy / 4 - dpx / 8) / 2;
-    if (q.sid) PIX.carShift[q.sid] = [dx, dz];
-    q.x += dx; q.z += dz;
+    M = PIX.trSnap[tr.id] = { S, n: poses.length, ai, G, ph, xs: null, tick: S.tick, moved: Math.abs(x1 - x0) > 1e-6, movedBefore };
+    // each vehicle's own moment: the train's for a vehicle lying as the anchor does (on a straight, all of them); one
+    // turned PIX.TURN_DEG or more from it (on a curve) at the frame's own alpha, so it moves on as its exact point does
+    // (rounded on its own; a car on a curve cannot keep a whole-pixel spacing anyway); in between, a mix
+    const ya = poses[ai].yaw;
+    fs = poses.map((b, vi) => { const d = Math.abs(Math.sin(b.yaw - ya)) * 180 / Math.PI, w = Math.max(0, Math.min(1, 1 - (d - PIX.TURN_DEG / 2) / (PIX.TURN_DEG / 2))); return alpha + w * (f - alpha); });
+    M.xs = poses.map((b, vi) => pixProject(lerp(prev[vi].x, b.x, f), 0, lerp(prev[vi].z, b.z, f)).x);
   }
-  M.last = now;
-  return out;
+  return poses.map((b, vi) => {
+    const pa = prev ? prev[vi] : b, car = tr.consist[vi], sid = car && car.id !== undefined ? String(car.id) : null;
+    const q = at(vi, fs ? fs[vi] : f), hd = pixHeadingHeld(sid, q.yaw), p = pixProject(q.x, 0, q.z), s = pixRailSnap(p.x, p.y, hd);
+    const dpx = s[0] - p.x, dpy = s[1] - p.y, dx = (dpx / 8 + dpy / 4) / 2, dz = (dpy / 4 - dpx / 8) / 2;
+    if (sid) PIX.carShift[sid] = [q.x + dx - lerp(pa.x, b.x, alpha), q.z + dz - lerp(pa.z, b.z, alpha)];
+    return { x: q.x + dx, z: q.z + dz, yaw: q.yaw, hd, vx: (b.x - pa.x) * k, vz: (b.z - pa.z) * k, smooth: true };
+  });
 }
 // D30: a good in (or on) a car, moved with the car onto its drawn pixel.
 function pixCarGood(q) { const d = q.place === 'car' && q.stock !== undefined && PIX.SMOOTH_TRAINS ? PIX.carShift[q.stock] : null; return d ? { ...q, x: q.x + d[0], z: q.z + d[1] } : q; }

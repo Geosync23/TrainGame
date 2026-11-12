@@ -16,8 +16,8 @@
 
 const { openGame } = require('./browser');
 // a frame's drawn step may exceed its exact step by one step along the rails (2.24 px) at most; a car may stand still
-// on screen until its exact point has moved STILL_PX
-const JUMP_PX = 2.3, STILL_PX = 2.5;
+// on screen until its exact point has moved STILL_PX while it is drawn more than LAG_PX behind it
+const JUMP_PX = 2.3, STILL_PX = 2.5, LAG_PX = 2.3;
 
 // In the page: plays the setup and records each frame.
 function trainRecorder(setup, maxS) {
@@ -120,7 +120,7 @@ function summariseTrain(rec) {
   out.blendedFrames = rec.filter(r => r.blend).length; out.movingFrames = 0;
   // per car, frame to frame: the drawn step, the exact (blended, unrounded) step, still runs while the exact point moves
   const steps = [], err = [], stepErr = [];
-  let straightPairs = 0, straightGapChanges = 0, straightGapMax = 0, jumps = 0, worstStillMs = 0, stillOver = 0, headingChanges = 0, flickers = 0, hdgJumpMax = 0, spacingChanges = 0, spacingMax = 0, railPhase = 0, railPhaseFrames = 0, moveFrames = 0;
+  let backSteps = 0, straightPairs = 0, straightGapChanges = 0, straightGapMax = 0, jumps = 0, worstStillMs = 0, stillOver = 0, headingChanges = 0, flickers = 0, hdgJumpMax = 0, spacingChanges = 0, spacingMax = 0, railPhase = 0, railPhaseFrames = 0, moveFrames = 0;
   const nCars = Math.max(0, ...rec.map(r => r.cars.length));
   const still = Array(nCars).fill(0), stillAcc = Array(nCars).fill(0), hist = Array.from({ length: nCars }, () => []);
   // even steps: at each drawn step of a car, the exact motion since its last drawn step against that step (0 for a
@@ -141,9 +141,14 @@ function summariseTrain(rec) {
       err.push(Math.hypot(cb[0] - eb[0], cb[1] - eb[1]));
       // still on screen (no drawn change) while the exact point moved more than STILL_PX since it last changed (a
       // step along the rails is (2, 1), 2.24 px)
-      if (d < 1e-6 && e > 1e-4) { still[c] += b.dt; stillAcc[c] += e; if (stillAcc[c] > STILL_PX) { stillOver++; worstStillMs = Math.max(worstStillMs, still[c]); } }
+      // (and only while it is drawn behind its exact point along its motion by more than LAG_PX: a car drawn a little
+      // ahead that waits for its exact point is not stalled)
+      const lag = e > 1e-4 ? ((eb[0] - cb[0]) * (eb[0] - ea[0]) + (eb[1] - cb[1]) * (eb[1] - ea[1])) / e : 0;
+      if (d < 1e-6 && e > 1e-4) { still[c] += b.dt; stillAcc[c] += e; if (stillAcc[c] > STILL_PX && lag > LAG_PX) { stillOver++; worstStillMs = Math.max(worstStillMs, still[c]); } }
       else { still[c] = 0; stillAcc[c] = 0; }
       if (sameHd && d > e + JUMP_PX) jumps++;
+      // a step backwards: the drawn step against the car's exact motion
+      if (sameHd && e > 1e-4 && ((cb[0] - ca[0]) * (eb[0] - ea[0]) + (cb[1] - ca[1]) * (eb[1] - ea[1])) / e < -0.01) backSteps++;
       if (!sameHd) evenAcc[c] = 0;
       else { evenAcc[c] += e; if (d > 1e-6) { evenMax = Math.max(evenMax, Math.abs(evenAcc[c] - d)); evenN++; evenAcc[c] = 0; } }
       hist[c].push([i, hdg(cb[2])]);
@@ -184,7 +189,7 @@ function summariseTrain(rec) {
   out.carStepVsExactMax = +Math.max(0, ...stepErr).toFixed(2);
   out.drawnVsExactMax = +Math.max(0, ...err).toFixed(2);
   out.stepEvenMax = +evenMax.toFixed(2); out.drawnSteps = evenN;
-  out.jumps = jumps; out.stillOver = stillOver; out.worstStillMs = Math.round(worstStillMs);
+  out.jumps = jumps; out.backSteps = backSteps; out.stillOver = stillOver; out.worstStillMs = Math.round(worstStillMs);
   out.headingChanges = headingChanges; out.headingFlickers = flickers; out.headingJumpMax = +hdgJumpMax.toFixed(2);
   out.straightPairs = straightPairs; out.straightGapChanges = straightGapChanges; out.straightGapMax = +straightGapMax.toFixed(2);
   out.spacingChanges = spacingChanges; out.spacingVsExactMax = +spacingMax.toFixed(2);
@@ -219,7 +224,7 @@ if (require.main === module) {
   const { stopServer } = require('./browser');
   (async () => {
     const setup = process.argv[2] || 'platform', orient = process.argv[3] || 'portrait', speed = +(process.argv[4] || 1), throttle = +(process.argv[5] || 1);
-    const r = await playTrain(setup, orient, { speed, throttle, query: process.env.QUERY || '' });
+    const r = await playTrain(setup, orient, { speed, throttle, query: process.env.QUERY || '', setup: process.env.SETUP || undefined, maxS: process.env.MAXS ? +process.env.MAXS : undefined });
     console.log(JSON.stringify({ setup, orient, speed, throttle, ...summariseTrain(r.rec), errors: r.errors.slice(0, 3) }));
     if (process.env.DUMP) require('fs').writeFileSync(process.env.DUMP, JSON.stringify(r.rec));
     stopServer();

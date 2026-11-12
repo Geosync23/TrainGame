@@ -3,14 +3,16 @@
 // - The layout's numbers (sections 1.3, 1.4, 2.2): tracks 1 and 3 at z -6 and 18.6, the four switches at x -72.9,
 //   -62.5, 62.5, 72.9, legs of radius 20u, platform 1 60 x 9u (deck 0.375u), the raised cargo platform 52 x 14u at 1.6u
 //   (car-floor height), its ramps, the freight house, the storage cells (2 x 40), the footbridges at x -14 and 14 (top
-//   7.6, underside 7.2), the lever frames at (-33, -11) and (33, -11) with each switch's stand at its lever, the cart
+//   7.6, underside 7.2), the lever frame (D29: one, C, just off platform 1's west end at (-34.5, -11); ?levers=two: D27's at
+//   (-33, -11) and (33, -11)) with each switch's stand at its lever, the cart
 //   crossing at x 37, the main street with six lots a side, the stock's sizes (PROTO_STOCK) and the schedule (9 runs).
 // - Clearances: a standing train between the platforms (a car's half width under the deck edge's 2.3u), the bridges
 //   over the tallest stack (the engine's 6.4u), the crossing clear of every standing train, the ramps clear of track
 //   3's legs, no two buildings overlapping, nothing near the track but the decks; every train fits its straight and its
 //   platform; the footbridge flights fall between the coach ends of every standing passenger train.
-// - Walking (the player on the walk grid, in the sim): from the middle of platform 1 to each lever frame at most 36u;
-//   the schedule board to the east frame at most 24u; platform 1 to the cargo platform by a footbridge at most 40u;
+// - Walking (the player on the walk grid, in the sim): from the middle of platform 1 to levers W1 and E1, the schedule
+//   board to lever E3 (D29, one frame: at most 1.25 times the straight line plus 2u; D27's two frames: 36u and 24u);
+//   platform 1 to the cargo platform by a footbridge at most 40u;
 //   the storage to the main street by the cart path, pushing the platform cart, at most 120u; every shop door, pickup,
 //   lever, storage cell, the parks and a boxcar's door spot at track 3 reachable; the cargo platform's faces are walls
 //   (no step down onto track 2 or 3), its height 1.6u on it and sloping on the ramps (walkDeckY).
@@ -50,7 +52,9 @@ module.exports = async function checkD27World() {
       const FB = P.FB;
       if (!eq(FB.X, [-14, 14]) || FB.TOP !== 7.6 || FB.UNDER !== 7.2 || FB.OUT !== 24.5) B('the footbridges\' numbers');
       for (const [k, L] of Object.entries(D.PROTO_LEVERS)) { const W = T.switches[Pr.PROTO_SW[k]]; if (W.stand.x !== L.x || W.stand.z !== L.z || W.stand.ux !== L.ux || W.stand.uz !== L.uz) B(`switch ${k}'s stand is not its lever`); }
-      if (!eq([P.LEVERS.W.x, P.LEVERS.W.z, P.LEVERS.E.x, P.LEVERS.E.z], [-33, -11, 33, -11])) B('the lever frames');
+      // D29: one lever frame (C) on the ground just off platform 1's west end, beside track 1 (?levers=two: D27's two, at (-33, -11) and (33, -11)).
+      const LV = P.LEVERS;
+      if (P.LEVER_FRAMES === 'two' ? !eq([LV.W.x, LV.W.z, LV.E.x, LV.E.z], [-33, -11, 33, -11]) : !(eq(LV.FRAMES, ['C']) && near(LV.C.x + LV.STAGE[0] / 2, P.P1_DECK.x0, 1e-9) && LV.C.z === -11 && LV.C.y === 0 && eq(LV.C.levers, ['W1', 'W3', 'E1', 'E3']))) B(`the lever frames: ${JSON.stringify(LV)}`);
       if (T.crossings.length !== 2 || T.crossings.some(c => !near(c.x, 37, 0.01))) B(`the cart crossing's pads: ${JSON.stringify(T.crossings)}`);
       const St = D.PROTO_STOCK;
       if (St.loco.len !== 18 || St.cars.coach.len !== 13 || St.cars.boxcar.len !== 10 || St.cars.flatcar.len !== 10 || St.cars.coach.wid !== 4.2 || St.loco.h !== 6.4) B('the stock\'s sizes');
@@ -110,10 +114,13 @@ module.exports = async function checkD27World() {
         return { d, miss: Math.hypot(s.player.x - b[0], s.player.z - b[1]), ms };
       };
       const mid = [0, (P.P1.z0 + P.P1.z1) / 2], use = k => [D.PROTO_LEVERS[k].ux, D.PROTO_LEVERS[k].uz], board = [P.PLAYER.x, P.PLAYER.z];
+      // The walks to the levers: with D27's two frames at most LIMITS' figures; with the one frame (D29) at most a quarter
+      // longer than the straight line plus 2u (no detour round anything on the way).
+      const lim = (a, b, two) => (P.LEVER_FRAMES === 'two' ? two : +(1.25 * Math.hypot(b[0] - a[0], b[1] - a[1]) + 2).toFixed(1));
       const legs = [
-        ['platform 1 middle to the west lever frame', mid, use('W1'), LIMITS.leverFrame],
-        ['platform 1 middle to the east lever frame', mid, use('E1'), LIMITS.leverFrame],
-        ['the schedule board to the east lever frame', board, use('E3'), LIMITS.boardToEast],
+        ['platform 1 middle to lever W1', mid, use('W1'), lim(mid, use('W1'), LIMITS.leverFrame)],
+        ['platform 1 middle to lever E1', mid, use('E1'), lim(mid, use('E1'), LIMITS.leverFrame)],
+        ['the schedule board to lever E3', board, use('E3'), lim(board, use('E3'), LIMITS.boardToEast)],
         ['platform 1 to the cargo platform by the east footbridge', [FB.OUT + 1, -11.5], [FB.OUT + 1, 6.5], LIMITS.footbridge],
         ['platform 1 to the cargo platform by the west footbridge', [-FB.OUT - 1, -11.5], [-FB.OUT - 1, 6.5], LIMITS.footbridge],
       ];
@@ -122,6 +129,7 @@ module.exports = async function checkD27World() {
         out.dist[k] = +w.d.toFixed(1);
         if (w.miss > 0.3) B(`${k}: the walk ended ${w.miss.toFixed(2)}u short`);
         if (!(w.d <= lim)) B(`${k}: ${w.d.toFixed(1)}u walked, at most ${lim}u`);
+        out.lim = out.lim || {}; out.lim[k] = lim;
       }
       // The storage to the street, pushing the platform cart (by the east ramp, the crossing and the cart path).
       const cart = S.tools.findIndex(t => t.k === 'cart27');
@@ -150,7 +158,7 @@ module.exports = async function checkD27World() {
       return out;
     }, LIMITS);
     for (const m of r.bad) P(m);
-    console.log(`  walking (u): ${JSON.stringify(r.dist)}; slowest tick pushing the cart ${r.cartMs} ms`);
+    console.log(`  walking (u): ${JSON.stringify(r.dist)}; limits ${JSON.stringify(r.lim)}; slowest tick pushing the cart ${r.cartMs} ms`);
     // ---- The v18 save migrates to the next morning on the D27 layout ----
     const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'save-v18.json'), 'utf8'));
     const m = await page.evaluate(json => {

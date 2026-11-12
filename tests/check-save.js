@@ -46,7 +46,9 @@ module.exports = async function checkSave() {
         try { const h = R.importSave(fx.save); const t0 = R.state.tick; R.step(100); return { h, raw, cur, t0, tick: R.state.tick }; }
         catch (e) { return { err: String(e), raw, cur }; }
       }, fx);
-      const want = r.cur === fx.schemaVersion ? fx.hash : fx.loads && fx.loads['v' + r.cur];
+      // D29: a sample of the current version may record the hash it loads with when a load-time step changes it on
+      // purpose (protoLeversRealign: the switches' stands moved to the one lever frame), under loads like an older one.
+      const want = r.cur === fx.schemaVersion ? (fx.loads && fx.loads['v' + r.cur]) || fx.hash : fx.loads && fx.loads['v' + r.cur];
       if (r.raw !== fx.hash) problems.push(`${f} is damaged: its own state no longer gives its recorded hash`);
       if (r.err) problems.push(`${f} did not load: ${r.err}`);
       else if (!want) problems.push(`${f} has no recorded hash for schema version ${r.cur}: run node tests/make-fixture.js`);

@@ -920,6 +920,48 @@ renderer, "HUD and panels" (Settings) and "start".
   check-townsfolk, check-protoworld pass; check-d27-day fails as before on the evening (the integrator's work) with the
   same figures and the same end hash (c4cf39d5) as on 549993e.
 
+### D29: one lever frame (2026-11-12)
+
+The designer: "make all switches in the same place even if not realistic", then "consolidated but still near the
+track, not on the main platform". All four levers are in **one frame, C**, at ground level just off platform 1's
+**west end** beside track 1, where D27's west frame stood: the stage 6 x 2u from x -37.5 to -31.5 (against the end of
+platform 1's planks, `P1_DECK`, a step down), z -12 to -10; the levers W1 W3 E1 E3 (west to east) at z -11, x -36.3 to
+-32.7, 1.2u apart; the agent pulls from behind them (z -12.4), reached from the platform without crossing a track.
+Why the west end: the east end's strip between the planks (x 31.5) and the cart path to the crossing (from x 35.25) is
+under 4u, too short for the 6u stage. (A first try at the lead's provisional spot, platform 1's back edge near x 0 on
+the depot's apron, was hidden by the canopy roof from the default view; the designer then moved it to the track.)
+- **Data** ("starting world layout"): `PROTO.LEVERS_ONE` (frame C) and `PROTO.LEVERS_TWO` (D27's W and E, kept);
+  `PROTO.LEVER_FRAMES` ('one'; `?levers=two` on the page brings D27's two frames back) picks `PROTO.LEVERS`, which
+  now has `FRAMES` (the frames' ids), each frame's `y` and `EXT` (the iron frame's walk-grid block). `PROTO_LEVERS`
+  numbers the levers 1 to 4 in a frame and gives each its `y`; `frame` is 'C' in rrSwitchNeeds' rows. The stands,
+  `switchSpots`, the Throw button, the Next job line and the arrow follow the levers unchanged. TOWN27's tufts of grass
+  stay at D27's frame spots (the town's random stream unchanged).
+- **Saves:** `protoLeversRealign` (end of `migrate`, no schema step) puts a prototype save's switch stands at the
+  levers in use. check-save's fixtures: save-v18 loads.v19 and save-v19's new `loads.v19` record the load hashes with
+  the one frame (876f032b, 2d9b6b6d); with `?levers=two` they load with the old ones (a7a86889, f89372ef), so the
+  stands are the only change. check-save reads a current-version sample's `loads` entry first when there is one.
+- **Art:** `bld/leverframe/C` (station27.py `leverframe4`, registered in town27_reg.py): the D27 frame's pieces, longer
+  (stage 6 x 2u, four quadrant racks, one number board W1 W3 E1 E3, the lamp); `extra.levers`, `extra.use`. Atlas
+  rebuilt and embedded (612 KB); `proto-layout.json` re-exported.
+- **Drawing** (pixel renderer): a frame stands at its `y`; levers at their lever's `y`. The rodding (`pixFlatList`):
+  W1's and W3's runs straight out west on the track side of the frame (W1's nearer the track, as it turns first);
+  E1's and E3's north beside the end of the planks (`bld/rodding_z`, a crank), then east along platform 1's back edge
+  just behind the deck (over the depot's apron at deck height), about 95u, to cranks at their points (E1's nearer the
+  platform; E3's turn north is west of E1's, so no runs cross). The east runs cross the cart path at x 37 (as D27's did).
+- **Lessons:** the switches lesson says "The levers are in the frame at the west end of the platform" (the one frame's
+  end, `pdLesFrameEnd`), its picture is `bld/leverframe/C`.
+- **Walks** (check-d27world, the walk grid): platform 1's middle to W1 35.9u (D27: 33.2 to the west frame), to E1
+  33.5u (D27: 32.0 to the east frame), the schedule board to E3 46.4u (D27: 19.5); no walk between frames any more
+  (D27: 66u, 22 minutes). Limits for the one frame: 1.25 x the straight line + 2u (D27's figures with `?levers=two`).
+- **Lateness:** check-levers' D25 bot (`?d27=0`, T's day) worst 4 minutes over two days (D27: 13). check-d27-day's
+  D27 bot: arrivals worst 22 minutes (f3 on day 2; D27: 9), departures up to 34 (p4 out on day 2; D27: 21); f2 +8/+20,
+  p3 +15 out, p4 +22/+34 out: the east switches are now a 46u walk from the board. Nothing re-timed (the freight and
+  punching speed-ups being built in parallel move these figures too).
+- **Checks** (each alone): check-levers (the frames from the data: one frame, its place off an end of platform 1,
+  clear of track 1, the footbridges, the crossing and the cart path, use spots on the ground; screenshots
+  `d29-levers-{portrait,landscape}.png`), check-d27world, check-protoworld (the east legs end at the one frame,
+  promised from the straight line), check-lessons, check-d27-day, check-proto-stall, check-pixrender, check-save.
+
 ## Next
 
 Update (2026-11-11, D27 integration): the six builders and the night art are merged, every D27 switch is on, the bot plays

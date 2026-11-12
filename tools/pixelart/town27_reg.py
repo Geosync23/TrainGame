@@ -301,6 +301,15 @@ def register_station(reg):
                      levers_note='where to draw bld/lever/N|R, u from the frame\'s anchor: lever 1 (W1/E1) then lever 2 '
                                  '(W3/E3); the number board reads ' + side + '1 ' + side + '3',
                      use=[0.0, 1.6], use_note='where the agent stands to pull (south of the frame), u from the anchor'))
+    # D29: the one lever frame (all four levers at platform 1's back edge near the middle).
+    reg.add('bld/leverframe/C', 'town27_station',
+            one(S.leverframe4, after=S.leverframe4_letters, **MID),
+            dict(anchor='the stage\'s centre at ground level (D29: just off platform 1\'s west end beside track 1, (-34.5, -11))',
+                 footprint=[6, 2], box=[-3.0, -1.0, 3.0, 1.0, 2.4], box_note=BOXNOTE,
+                 levers=[[round(x / U, 2), 0.0] for x in S.LEVER_X4],
+                 levers_note='where to draw bld/lever/N|R, u from the frame\'s anchor: W1, W3, E1, E3 (west to east); '
+                             'the number board reads W1 W3 E1 E3',
+                 use=[0.0, -1.4], use_note='where the agent stands to pull (behind the frame, -z, as the game has it), u from the anchor'))
     for st in ('N', 'R'):
         reg.add(f'bld/lever/{st}', 'town27_station', one(lambda st=st: S.lever(st), **MID),
                 dict(anchor='the lever\'s pivot foot at ground level (draw at the frame\'s anchor + extra.levers[i])',

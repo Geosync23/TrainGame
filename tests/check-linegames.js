@@ -8,6 +8,8 @@
 // - Step out mid-carry (a tie in the air): the panel goes, nothing is sent for the round, he stands with empty hands.
 // - Replay: the ticks and commands of the whole session played again from its start give the same hash.
 // - No console errors. Screenshots linegames-<stage>-<orient>.png, each mid-round.
+// D33 (one world): this check plays the PARKED separate-line build (the page's ?d33=0), whose screen switch,
+// fades and look point it was written for. The same play in the one world is check-d33's.
 const { openGame, screenshotPath } = require('./browser');
 
 const WORD = q => (q >= 75 ? 'good' : q >= 45 ? 'fair' : 'poor');
@@ -17,7 +19,7 @@ module.exports = async function checkLineGames() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
     const P = m => problems.push(`${orient}: ${m}`);
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0' });
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const cdp = await page.context().newCDPSession(page);
@@ -144,7 +146,8 @@ module.exports = async function checkLineGames() {
       const levels = orient === 'portrait' ? ['good', 'fair', 'poor'] : ['good'];
       for (let k = 0; k < 6; k++) {
         // walk up to the gang (a command: walking by touch is check-lineplay's), then a real tap on Join
-        await page.evaluate(k => { const R = window.__railhead, S = R.state, sp = (0, eval)('lgSpot')(S, k, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 400 && S.lp.tx !== undefined; i++) R.step(1); }, k);
+        // (the gang works on while he walks up, so the walk is aimed again until he is within its stretch)
+        await page.evaluate(k => { const R = window.__railhead, S = R.state, g = (0, eval); for (let n = 0; n < 4 && g('lgNearStage')(S) !== k; n++) { const sp = g('lgSpot')(S, k, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 400 && S.lp.tx !== undefined; i++) R.step(1); } }, k);
         await frames(3); await skipLesson(); await frames(2);
         const jb = await page.evaluate(() => { const b = document.getElementById('lgJoin'); const r = b.getBoundingClientRect(); return { hidden: b.hidden, t: b.textContent, k: +b.dataset.k, w: r.width, h: r.height, l: r.left, r: r.right, top: r.top, b: r.bottom }; });
         if (jb.hidden || jb.k !== k) { P(`beside gang ${k} the Join button is ${jb.hidden ? 'not shown' : 'for gang ' + jb.k}`); continue; }

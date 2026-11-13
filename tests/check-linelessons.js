@@ -10,6 +10,8 @@
 // The page (portrait and landscape): the first card is up on the line with Show me (a real tap lets the clock run),
 // the game panel waits while the first card of a stage's lesson holds the game, the card is inside the screen;
 // Settings has the Lessons row on the line too. No console errors. Screenshots linelessons-*.png.
+// D33 (one world): this check plays the PARKED separate-line build (the page's ?d33=0), whose screen switch,
+// fades and look point it was written for. The same play in the one world is check-d33's.
 const { openGame, screenshotPath } = require('./browser');
 
 const LN = ['lnRide', 'lnClear', 'lnDig', 'lnRock', 'lnTies', 'lnRails', 'lnSpike', 'lnLeave', 'lnHome'];
@@ -18,7 +20,7 @@ module.exports = async function checkLineLessons() {
   const problems = [];
   // ---- The sim ----
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d33=0' });
     const P = m => problems.push('sim: ' + m);
     try {
       const r = await page.evaluate((LN) => {
@@ -42,7 +44,7 @@ module.exports = async function checkLineLessons() {
         const st = id => (S.pd.les || {})[id];
         if (st('lnRide') !== 0 || !(S.pd.lesWait || []).includes('lnRide')) B('riding out: lnRide did not open waiting for Show me: ' + les());
         tick([{ t: 'pdLesson', id: 'lnRide', act: 'show' }]);
-        const walkTo = (k) => { const sp = g('lgSpot')(S, k, 1); tick([{ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }]); for (let i = 0; i < 500 && S.lp.tx !== undefined; i++) tick(); };
+        const walkTo = (k) => { for (let n = 0; n < 4 && g('lgNearStage')(S) !== k; n++) { const sp = g('lgSpot')(S, k, 1); tick([{ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }]); for (let i = 0; i < 500 && S.lp.tx !== undefined; i++) tick(); } };   // (aimed again: the gang works on while he walks up)
         walkTo(1);
         if (st('lnRide') !== 1) B('walking up to a gang did not take lnRide to its second step: ' + les());
         // each stage: join, three actions, step out
@@ -103,7 +105,7 @@ module.exports = async function checkLineLessons() {
   // ---- The page ----
   for (const orient of ['portrait', 'landscape']) {
     const P = m => problems.push(`${orient}: ${m}`);
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0' });
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const frames = n => page.evaluate(n => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
@@ -126,7 +128,7 @@ module.exports = async function checkLineLessons() {
       await page.tap('#pdLesShow'); await page.evaluate(() => window.__railhead.step(1)); await frames(3);
       if ((await page.evaluate(() => window.__railhead.state.pd.lesWait || [])).includes('lnRide')) P('Show me did not let the lesson run');
       // join the spikers: their lesson's first card holds the game; the panel waits
-      await page.evaluate(() => { const R = window.__railhead, S = R.state, sp = (0, eval)('lgSpot')(S, 5, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 500 && S.lp.tx !== undefined; i++) R.step(1); });
+      await page.evaluate(() => { const R = window.__railhead, S = R.state, g = (0, eval); for (let n = 0; n < 4 && g('lgNearStage')(S) !== 5; n++) { const sp = g('lgSpot')(S, 5, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 500 && S.lp.tx !== undefined; i++) R.step(1); } });
       await frames(4);
       const jb = await page.evaluate(() => !document.getElementById('lgJoin').hidden);
       if (!jb) { P('no Join button beside the spikers'); continue; }

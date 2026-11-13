@@ -1,7 +1,7 @@
 // Check: the camp and the head count (plans/d32-tech.md sections 4 and 11.5, Crew's).
 // - Tents by crew size (a tent to every four men: 5 men 2, 10 men 3, 15 men 4, 20 men 5, 25 men 7, 30 men 8), inside
 //   the camp's rectangle and clear of each other; a cot each, no two men in one; the cook tent, table, fire, barrel.
-// - The camp's day with 30 men: up after 05:05, at breakfast at 05:20, every man aboard by 06:20 (none misses the
+// - The camp's day with 30 men: up after 05:05 (D33: 05:25), at breakfast at 05:20 (D33: 05:50), every man aboard by 06:20 (none misses the
 //   train); back in the camp in the evening, at supper at 20:00, by the fire at 20:40, every man in his cot by 21:45.
 // - Lit at night: the tents while men are up, the fire burning (it glows in the dark); dark and asleep at 22:30.
 // - The head count at 22:00: every rail man home on an ordinary day; a man kept out on the line when the train goes
@@ -37,7 +37,8 @@ module.exports = async function checkCamp() {
       }
       { const S = mk(0); for (let i = 0; i < 40; i++) step(S); if (L.cw.cpItems(S).length) B('a camp stands with no crew'); }
       // ---- the camp's day, 30 men, the second day ----
-      const S = mk(30), at = {}, marks = { 5.33: 'breakfast', 6.34: 'gone', 20: 'supper', 20.67: 'fire', 21.75: 'abed', 22.5: 'night' };
+      const d33 = window.__railhead.lnView.d33.on;
+      const S = mk(30), at = {}, marks = d33 ? { 5.78: 'breakfast', 6.34: 'gone', 20: 'supper', 20.67: 'fire', 21.75: 'abed', 22.5: 'night' } : { 5.33: 'breakfast', 6.34: 'gone', 20: 'supper', 20.67: 'fire', 21.75: 'abed', 22.5: 'night' };
       let hc = null;
       for (let i = 0; i < 2 * 10800 - 10; i++) {
         const ev = step(S), d = Math.floor(S.time / 86400), sod = (S.time + 18000) % 86400;
@@ -68,7 +69,7 @@ module.exports = async function checkCamp() {
     const WANT = { 5: 2, 10: 3, 15: 4, 20: 5, 25: 7, 30: 8 };
     for (const [n, t] of Object.entries(WANT)) if (r.tents[n] !== t) P(`a crew of ${n} has ${r.tents[n]} tents, not ${t}`);
     const D = r.day, sum = (o, re) => Object.entries(o || {}).filter(([k]) => re.test(k)).reduce((a, [, v]) => a + v, 0);
-    if (!D.breakfast || sum(D.breakfast.c, /^camp/) < 28 || !D.breakfast.dl.includes('eat')) P('at 05:20 the men are not at breakfast: ' + JSON.stringify(D.breakfast && D.breakfast.c));
+    if (!D.breakfast || sum(D.breakfast.c, /^camp/) < 28 || !D.breakfast.dl.includes('eat')) P('at breakfast time the men are not at breakfast: ' + JSON.stringify(D.breakfast && D.breakfast.c));
     if (!D.gone || sum(D.gone.c, /^ride$/) !== 30) P('at 06:20 not every man is aboard: ' + JSON.stringify(D.gone && D.gone.c));
     if (!D.supper || sum(D.supper.c, /^camp\/eat|^toCamp|^camp\/toSeat/) < 28 || !D.supper.fire) P('at 20:00 the men are not at supper by a burning fire: ' + JSON.stringify(D.supper && D.supper.c));
     if (!D.fire || sum(D.fire.c, /^camp/) !== 30 || D.fire.lit < 6 || !D.fire.dl.includes('sit') || !D.fire.ids) P('at 20:40 the men are not by the fire with the tents lit: ' + JSON.stringify(D.fire && [D.fire.c, D.fire.lit]));

@@ -16,13 +16,15 @@
 // - Ride out now (the dev panel) and Back now (the bar), at once; the dev panel's "Look at the line" is kept.
 // - The bar's buttons are thumb-sized and inside the screen; no console errors. Screenshots lineplay-*.png.
 // - The same commands twice in the sim give the same hash.
+// D33 (one world): this check plays the PARKED separate-line build (the page's ?d33=0), whose screen switch,
+// fades and look point it was written for. The same play in the one world is check-d33's.
 const { openGame, waitReady, screenshotPath } = require('./browser');
 
 module.exports = async function checkLinePlay() {
   const problems = [];
   // ---- The sim alone: the same ride twice gives the same hash ----
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d33=0' });
     try {
       const h = await page.evaluate(() => {
         const R = window.__railhead, run = () => {
@@ -39,7 +41,7 @@ module.exports = async function checkLinePlay() {
   }
   for (const orient of ['portrait', 'landscape']) {
     const P = m => problems.push(`${orient}: ${m}`);
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0' });
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const frames = n => page.evaluate(n => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);

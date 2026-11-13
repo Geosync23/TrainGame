@@ -20,3 +20,8 @@ Small bugs and ideas found outside the current task. Each entry: date, what, whe
 - (2026-11-13, D32 foundation) In landscape the first lesson's card lies over the place of the Dev button (and the top right corner's buttons) until it is answered.
 - (2026-11-13, D32 foundation) The work train at the station is not on the walk grid: the player can walk through it on track 2. It is a scripted run (DEV_NOTES "D32"); stamping it needs a line in the walk grid's train stamp.
 - (2026-11-13, D32 foundation) tools/pixelart: the first build after a merge printed nothing through a filter and embed.py then wrote the stale atlas.js; embed.py could refuse an atlas.js older than the sprite modules.
+
+- D32 (found by Crew, 2026-11-13): the work train's own dump (rails, ties, rock, kegs beside its cars at z 6) is drawn on water when the train stands on the creek trestle, and its crew car's steps are then over the creek too (Crew boards the men from the deck beside the car). Foundation's `lnTrain` could keep the train off the bridge or move the dump.
+- D32 (Crew): the day's summary takes the head count at the moment the summary opens (`hcCount` in the prototype day), not the 22:00 count kept in `S.ln.hc`; if the day is ended before the crew is back it reports them out.
+- D32 (Crew): the rail men pass through the work train's cars and the player; they do not yet step round either.
+- D32 (Crew): the sheriff (Tom Dade) is outdoors at 22:00 in an unplayed day, so the head count reports him out every night; the Town builder may want him home by then.

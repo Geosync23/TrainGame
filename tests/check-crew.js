@@ -57,7 +57,7 @@ module.exports = async function checkCrew() {
           out.dl = { n: dl.length, keys: Object.keys(dl[0] || {}).join(','), ids: dl.every(q => Number.isInteger(q.id) && q.who && typeof q.name === 'string' && Number.isFinite(q.x) && Number.isFinite(q.z)) };
           out.props = CW_TEST.cwProps(S, 'line').map(q => q.key);
         }
-        if (sod === 12.5 * 3600) { const G = CW_TEST.cwGeo(S); out.meal = { n: men.filter(m => m.st === 'meal' && m.a === 'eat').length, far: men.filter(m => m.pl === 2 && Math.hypot(m.x - G.camp, m.z - 9.2) > 8).length }; }
+        if (sod === 12.5 * 3600) { const G = CW_TEST.cwGeo(S); out.meal = { n: men.filter(m => m.st === 'meal' && m.a === 'eat').length, far: men.filter(m => m.pl === 2 && Math.hypot(m.x - G.camp, m.z - 9.2) > 10).length }; }
         if (sod === 15 * 3600) out.work = men.filter(m => m.st === 'work').length;
       }
       out.seq = seen.map(q => q.join('>'));

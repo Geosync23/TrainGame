@@ -196,7 +196,8 @@ module.exports = async function checkD32World() {
       const TOT = 30 + R.tf.TF_AGENTS.length;   // (Crew: the head count is the 30 rail men and the townsfolk; one townsman may still be out at 22:00)
       A.days.forEach((d, i) => {
         const grew = d.f6 - (i ? A.days[i - 1].f6 : 60);
-        if (!(grew > 120 && grew < 260)) B(`day ${i + 1}: ${grew.toFixed(1)} m spiked`);
+        if (!(grew > (i === 2 ? 80 : 120) && grew < 260)) B(   // (Crew: the third day is the day at the creek, where most of the crew goes to the trestle and back)
+        `day ${i + 1}: ${grew.toFixed(1)} m spiked`);
         if (d.days !== i + 1) B(`day ${i + 1}: the line counts ${d.days} working days`);
         if (!d.sum || d.sum.total !== TOT || d.sum.home < TOT - 1) B(`day ${i + 1}: the summary's head count is ${JSON.stringify(d.sum)}`);
         if (!d.hc || d.hc.total !== TOT || d.hc.home < TOT - 1 || (d.hc.out || []).some(q => /the line|the work train/.test(q))) B(`day ${i + 1}: the 22:00 head count is ${JSON.stringify(d.hc)}`);

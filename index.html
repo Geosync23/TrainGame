@@ -6623,7 +6623,7 @@ const CW = {
   UP_S: 5 * 3600 + 300, EAT_S: 5 * 3600 + 27 * 60, SUPPER_S: 20 * 3600 + 900, BED_S: 21 * 3600,
 };
 // The dinner spot's seats on the line (offsets from its fire): twelve by three, less the places at the fire itself.
-CW.SEATS = (() => { const o = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 12; c++) { const dx = c - 5.5 + 0.5, dz = r - 1; if (Math.hypot(dx, dz) > 1.2) o.push([dx, dz]); } return o.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1])); })();
+CW.SEATS = (() => { const o = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 12; c++) { const dx = (c - 5.5) * 1.5, dz = (r - 1) * 1.2; if (Math.hypot(dx, dz) > 1.3) o.push([dx, dz]); } return o.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1])); })();
 function cwNames(seed) {
   if (cwNames.s === seed) return cwNames.v;
   const a = CW.NAMES.slice(), r = rngFor(seed, 'cw', 'names');
@@ -6678,7 +6678,7 @@ function cwNewDay(S, day) {
 function cwGeo(S) {
   const f = S.ln.f, M = LINE.M, C0 = CW.CREEK[0], C1 = CW.CREEK[1];
   const at = (fm, back, hop, w0, w1) => { let x = Math.floor((fm - back) / hop) * hop * M; if (x + w1 > C0 - 4 && x - w0 < C1 + 4) x = C0 - 4 - w1; return cwR3(x); };
-  return { heap: at(f[2], 3, 6, 3.5, 3.5), ties: at(f[3], 1.5, 4, 9.5, 9), rails: at(f[4], 6, 8, 17, 7.5), camp: at(f[3], 2, 8, 22.5, 9) };
+  return { heap: at(f[2], 3, 6, 3.5, 3.5), ties: at(f[3], 1.5, 4, 9.5, 9), rails: at(f[4], 6, 8, 17, 7.5), camp: at(f[3], 2, 8, 26.5, 12) };
 }
 // At the creek the corridor narrows to the trestle's deck: z is held inside a funnel there.
 function cwFz(x, z) {
@@ -6786,7 +6786,7 @@ const cwGo = (m, x, z, rt) => { m.tx = cwR3(x); m.tz = cwR3(z); if (rt && rt.len
 function cwFree(S, m, x, z, G) {
   if (G) {
     if (z > 4.4 && z < 7.8 && Math.abs(x - G.heap) < 4.2) return false;
-    if (z > 7.6 && x > G.camp - 23.5 && x < G.camp + 9.5) return false;
+    if (z > 7 && x > G.camp - 27 && x < G.camp + 12) return false;
     if (z < -3.7 && ((x > G.ties - 13 && x < G.ties + 12) || (x > G.rails - 28 && x < G.rails + 8))) return false;
   }
   for (const o of S.cw.men) { if (o === m || o.pl !== m.pl) continue; if (Math.hypot(o.x - x, o.z - z) < 0.95 || Math.hypot(o.tx - x, o.tz - z) < 0.95) return false; }
@@ -6922,7 +6922,7 @@ function cwRest(S, m, G, by) {
   }
   if (!spot) spot = { x: m.x, z: m.z };
   m.rx = spot.x; m.rz = spot.z;
-  const bx = G.camp + 7.5, bz = 8.6;
+  const bx = G.camp + 10, bz = 8.6;
   if (rngNext(r) < 0.34 && Math.abs(bx - m.x) < 26 && !by) {
     for (let i = 0; i < 6; i++) { const a = Math.PI * (i + (m.id % 6)) / 3, x = cwR3(bx + 1.25 * Math.sin(a)), z = cwR3(bz + 1.25 * Math.cos(a)); if (cwOk(S, x, z) && cwFree(S, m, x, z, null)) { m.a = 'toDrink'; cwGo(m, x, z); return; } }
   }
@@ -6984,7 +6984,7 @@ function cwTick(S, ev) {
         case 'tool': {
           if (m.a === 'go') {
             const early = C.t0 >= 0 && S.time - C.t0 < 1500 && m.tool === null && TR.cars.length > 4;
-            const p = early ? cwSafe(S, TR.cars[4].x0 + 3 + (14 - m.id % 15), 3.4 + (m.id >= 15 ? 0.9 : 0), Math.PI) : cwSafe(S, G.camp - 22 + (m.id % 15), 8.3 + (m.id >= 15 ? 1.1 : 0), Math.PI);
+            const p = early ? cwSafe(S, TR.cars[4].x0 + 3 + (14 - m.id % 15), 3.4 + (m.id >= 15 ? 0.9 : 0), Math.PI) : cwSafe(S, G.camp - 25.5 + (m.id % 15), 8.3 + (m.id >= 15 ? 1.1 : 0), Math.PI);
             cwGo(m, p.x, p.z);
             if (cwStep(S, m, v, true)) { m.a = 'swap'; m.t = S.time; m.f = p.f; }
           } else if (S.time - m.t >= CW.SWAP_S) { m.tool = m.want; m.st = 'walk'; m.a = 'go'; }
@@ -6997,7 +6997,7 @@ function cwTick(S, ev) {
           break;
         }
         case 'rest':
-          if (m.a === 'toDrink') { if (cwStep(S, m, v, true)) { m.a = 'drink'; m.t = S.time; m.f = cwR3(Math.atan2(G.camp + 7.5 - m.x, 8.6 - m.z)); } }
+          if (m.a === 'toDrink') { if (cwStep(S, m, v, true)) { m.a = 'drink'; m.t = S.time; m.f = cwR3(Math.atan2(G.camp + 10 - m.x, 8.6 - m.z)); } }
           else if (m.a === 'drink') { if (S.time - m.t >= 60) { m.a = 'toRest'; cwGo(m, m.rx, m.rz); } }
           else if (m.a === 'toRest') { if (cwStep(S, m, v, true)) { m.a = 'sit'; m.t = S.time; m.f = m.z < 0 ? 0 : Math.PI; for (const o of men) if (o !== m && o.pl === 2 && o.st === 'rest' && o.a === 'sit' && Math.hypot(o.x - m.x, o.z - m.z) < 1.6) { m.f = cwR3(Math.atan2(o.x - m.x, o.z - m.z)); o.f = cwR3(Math.atan2(m.x - o.x, m.z - o.z)); break; } } }
           else if (S.time - m.t >= CW.REST_S) { m.sta = 100; if (m.stage >= 0) cwGoWork(m); else m.st = 'idle'; }
@@ -7164,7 +7164,7 @@ function cwProps(S, place) {
   const fire = sod >= 11.25 * 3600 && sod < 13.25 * 3600 ? 'camp/fire/' + (S.tick % 3) : 'camp/fire_out';
   return [{ id: 'heap', key: 'line/rock_heap/' + lvl('rock'), x: G.heap, z: 6.3, h: 1, half: 1.2 }, { id: 'ties', key: 'line/tie_pile/' + lvl('ties'), x: G.ties, z: -6.6, h: 1, half: 1.1 },
     { id: 'rails', key: 'line/rail_stack/' + lvl('rails'), x: G.rails, z: -7.6, h: 0.6, half: 0.7 }, { id: 'fire', key: fire, x: G.camp, z: 9.2, h: 0.5, half: 0.4 }, { id: 'kettle', key: 'camp/kettle', x: G.camp + 0.15, z: 9.3, h: 1.2, half: 0.3 },
-    { id: 'barrel', key: 'camp/barrel', x: G.camp + 7.5, z: 8.6, h: 1, half: 0.4 }, { id: 'rack', key: 'camp/toolrack', x: G.camp - 15, z: 7, h: 1.4, half: 0.5 }];
+    { id: 'barrel', key: 'camp/barrel', x: G.camp + 10, z: 8.6, h: 1, half: 0.4 }, { id: 'rack', key: 'camp/toolrack', x: G.camp - 18.5, z: 7, h: 1.4, half: 0.5 }];
 }
 // (the renderer's hook: called with a man's sorted item to add what he holds and what lies beside him)
 function cwPixDress(it, q, x, z, dir, anim, fr) {

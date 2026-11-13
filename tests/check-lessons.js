@@ -33,7 +33,7 @@ module.exports = async function checkLessons() {
         const step = (S, id) => (S.pd.les || {})[id];
         const tickEv = (S, evs) => { const ev = evs.slice(); L.pdLessonTick(S, ev); return ev.slice(evs.length); };
         const give = (S, tag, where) => { const I = S.items, id = I.next++; I.waybill[id] = tag === 'OUT' ? { commodity: 'hardware', consignee: { kind: 'OUTSIDE', id: 'out' }, destTownId: 'OUTSIDE' } : { commodity: 'hardware', consignee: { kind: 'BUSINESS', id: tag }, destTownId: 0 }; I.where[id] = where; I.alive[id] = true; return id; };
-        if (L.PD_LESSON_IDS.join() !== 'switches,board,unload,load,delivery,pickup' || L.PD_LESSONS.length !== 6) B('the six lessons: ' + L.PD_LESSONS.map(q => q.id));
+        if (L.PD_LESSON_IDS.join() !== 'switches,board,unload,load,delivery,pickup' || L.PD_LESSONS.filter(q => !/^ln/.test(q.id)).length !== 6) B('the six lessons: ' + L.PD_LESSONS.map(q => q.id));
         for (const q of L.PD_LESSONS) {
           if (q.steps.length < 2 || q.steps.length > 4) B(`${q.id}: ${q.steps.length} steps (2 to 4)`);
           for (const s of q.steps) if (typeof s.text !== 'function' || typeof s.short !== 'function' || typeof s.target !== 'function' || !(s.done || s.at)) B(`${q.id}: a step without text, short, target and done`);

@@ -1,8 +1,8 @@
 # Sprite module: D32 wild country, the far side (Artist 2; plans/d32-journey.md). Keys:
 #   tile/wild/<region>/1..4              the region's ground (1u cells, as every tile/)
 #   tile/wild/blend/<a>-<b>/1..4          a's ground giving way to the next region's: 20, 40, 60, 80% of b
-#   wild/far/<region>/r1/1..4            rank 1, the tall border at the corridor's north edge (12u modules)
-#   wild/far/<region>/r2/1..3, r3/1..3   ranks 2 and 3 behind it, paler (12u modules)
+#   wild/far/<region>/r1/1..4            rank 1, the tall border at the corridor's north edge (16u modules)
+#   wild/far/<region>/r2/1..3, r3/1..3   ranks 2 and 3 behind it, paler (16u modules)
 #   wild/far/<region>/r<k>/to_<next>/1..2  the two modules that carry rank k into the next region
 # How the modules join and stack: plans/pixel/d32/far/README.md. Drawing: wild_kit.py, wild_regions.py,
 # wild_ground.py, colours pal_wild.py. Rendering every module takes a while, so finished frames are kept in a cache

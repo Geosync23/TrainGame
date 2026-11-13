@@ -41,6 +41,8 @@ OWNERS = {
                      'nat/aspen', 'nat/snag', 'nat/bones', 'nat/burrow', 'nat/bush',
                      'veh/crewcar', 'veh/gondola', 'veh/flat_rails', 'veh/flat_ties'),   # D32: the line and the country
     'sprites_camp': ('camp/',),                   # D32: the crew's camp
+    # D32 wild country, Artist 2: the far-side borders and their ranks, and the regions' ground (plans/pixel/d32/far)
+    'sprites_wild_far': ('wild/far/', 'tile/wild/'),
 }
 
 

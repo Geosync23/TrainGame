@@ -7270,7 +7270,9 @@ const CW_TEST = { CW, cwGeo, cwAssign, cwSlot, cwOpen0, cwProps, cwName, cwCot, 
 // Owner: Play (plans/d32-tech.md 1.6 and section 7: riding out and back, walking among the men, joining in, the
 // lessons). Prefixes lp, LP, lg, LG; store S.lp. Stage 1: riding out and back, the player on the line in person,
 // walking by touch (the page side, lpTap, lpHud and the Look card, is the block "Line (D32)" in "HUD and panels").
-// Joining in (lpJoin, lpLeave, lgDone) is stage 2: those commands do nothing yet.
+// Stage 2: joining in (lpJoin, lpLeave, lgDone; S.lp.j while he works with a gang) and the line's lessons (the block
+// "Lessons for the line (D32)" below, added to PD_LESSONS). The games themselves are played on the page (block
+// "Joining in (D32)" in "HUD and panels"); only each finished action's result comes here, as lgDone { stage, q }.
 //
 // S.lp (absent: the player is at the station as always) = { ph, dir?, x, z, f, mv?, tx?, tz?, home?, pts? }
 //   ph 'muster'   at the station, walking to the muster (the station's own walk, P.mode 'to') and waiting for the train
@@ -7474,6 +7476,7 @@ function lpTick(S, ev) {
         if (ph !== 'stand') { delete Q.home; delete Q.tx; delete Q.tz; ev.push({ t: 'lpRefused', why: 'The work train has gone without you. "Back now" takes you to the station.' }); }
         else { Q.tx = Tn.steps.x; Q.tz = Tn.steps.z + 0.2; }
       }
+      if (Q.j) lgTick(S, Q, ev);
       lpWalkTick(S, Q, B, ev);
       if (Q.home && Q.tx === undefined) {
         delete Q.home;
@@ -7520,6 +7523,7 @@ function lpCmd(S, c, ev) {
   }
   if (!Q) return;
   if (c.t === 'lpBack') {
+    if (Q.j) lgLeave(S, ev, 'home');
     if (c.how === 'train') {
       if (Q.ph !== 'line') return;
       if (L.tr.ph !== 'stand' || rrSod(S.time) >= LINE.T.AWAY) return no('The work train is not standing at the railhead.');
@@ -7532,6 +7536,7 @@ function lpCmd(S, c, ev) {
   }
   if (c.t === 'lpWalk') {
     if (Q.ph !== 'line' || !Number.isFinite(c.x) || !Number.isFinite(c.z)) return;
+    if (Q.j) lgLeave(S, ev, 'walked');   // walking away ends his work with the gang at once
     let tx = c.x / 100, tz = c.z / 100;
     const B = lpTrainBox(S);
     if (lpInBox(B, tx, tz)) [tx, tz] = lpOutOfBox(S, B, tx, tz);
@@ -7541,13 +7546,124 @@ function lpCmd(S, c, ev) {
     Q.tx = tx; Q.tz = tz;
     return;
   }
-  // lpJoin, lpLeave, lgDone: the join-in games (stage 2)
+  if (c.t === 'lpJoin' || c.t === 'lpLeave' || c.t === 'lgDone') lgCmd(S, c, ev);
+}
+// ---- Joining in (plan 7.1; the games are on the page, block "Joining in (D32)") ----
+// S.lp.j (absent: he is not working with a gang) = { k (the stage), side (-1 or 1: which side of the track he works),
+//   t (the tick he joined), last (the tick of his last accepted action, or of joining), n (actions done), q (the last
+//   action's q), qs (the last three q), wu (work done, wu), lift (the tick his lift on the men near him runs to) }
+// One accepted lgDone is one finished action (a clump down, a barrow of earth, a load spread, a tie down, a rail
+// down, a spike home). Its worth is the time since his last action (at most LG.CAP_MIN) at a man's pace times
+// LG.worth(q): a little better than a navvy at good timing, worse at poor; actions closer together than LG.MIN_T
+// ticks are refused, so a flood of commands cannot build the line. He does not tire.
+const LG = {
+  REACH: 5,                       // u: how far into the brush ahead of the cleared front the clearers' stretch runs
+  SPAN: 12,                       // u: how far behind its front a gang's stretch runs (its men stand up to about 8 m back)
+  MIN_T: 8,                       // ticks (64 game seconds): the least time between two accepted actions
+  CAP_MIN: 4,                     // game minutes: the most time one action is worth (idle time beyond it is not work)
+  W0: 0.5, W1: 0.75,              // worth in men: W0 + W1 x q / 100 (q 100: 1.25 men; q 50: 0.875; q 0: 0.5)
+  LIFT_Q: 60, LIFT: 0.15, LIFT_T: 23,   // the lift: while his last three q average 60 or more, the gang's men within
+                                  // 12 m work at 1 + 0.15 x q / 100, until 23 ticks (about 3 game minutes) after his last action
+  GOOD: 75, FAIR: 45,             // q 75 and over is good, 45 to 74 fair, under 45 poor
+  BACK: 3,                        // u: how far from his place he may be and still work (else he walks back to it)
+  GANG: ['clearers', 'diggers', 'rock gang', 'tie men', 'rail gang', 'spikers'],
+  WHO: 'navvy_a',                 // while he works with a gang he is drawn in work clothes, with the navvies' frames
+};
+LG.worth = q => LG.W0 + LG.W1 * Math.max(0, Math.min(100, q)) / 100;
+LG.rate = () => (typeof CW !== 'undefined' && CW.K) || 1;   // a man's wu a working minute (Crew's pace, skill 1.0)
+LG.word = q => q >= LG.GOOD ? 'good' : q >= LG.FAIR ? 'fair' : 'poor';
+// His place in a gang (line units): the clearers' in the brush just ahead of the cleared front, the others just
+// behind their front, either side of the track (beside the rail for the spikers); he faces the work.
+function lgSpot(S, k, side) {
+  const fx = S.ln.f[k] * LINE.M, x = k === 0 ? fx + 0.8 : fx - 0.9, z = side * (k === 0 ? 2.8 : k === 5 ? 1.3 : k >= 3 ? 2.0 : 1.6);
+  return { x, z, f: k === 5 ? (side > 0 ? Math.PI : 0) : Math.PI / 2 };
+}
+// The gang he is among (0 to 5), or -1: by the stretch each gang works (a gang stands behind its front, the
+// clearers in the brush ahead of theirs): the first front at or ahead of him, if he is within LG.SPAN of it.
+function lgNearStage(S) {
+  const Q = S && S.lp;
+  if (!Q || Q.ph !== 'line' || !S.ln || Math.abs(Q.z) > LINE.ROW + 2) return -1;
+  const F = S.ln.f, M = LINE.M;
+  if (Q.x > F[0] * M + 1) return Q.x < F[0] * M + LG.REACH + 3 ? 0 : -1;
+  for (let k = 5; k >= 0; k--) if (F[k] * M + 1 >= Q.x) return F[k] * M - Q.x <= LG.SPAN ? k : -1;
+  return -1;
+}
+// Can he join stage k now? '' if so, else the reason (shown as a toast).
+function lgWhyNot(S, k) {
+  const Q = S.lp, L = S.ln;
+  if (!Q || Q.ph !== 'line' || !L) return 'You can join a gang only out on the line.';
+  if (!(k >= 0 && k < 6)) return 'Walk up to a gang to join it.';
+  if (Q.home) return 'You are on your way to the crew car.';
+  if (!lnHours(S).work) return 'The men are not at work just now.';
+  if (lgNearStage(S) !== k) return 'Walk up to the gang to join it.';
+  return '';
+}
+function lgLeave(S, ev, why) {
+  const Q = S.lp;
+  if (!Q || !Q.j) return;
+  const j = Q.j;
+  delete Q.j;
+  ev.push({ t: 'lgLeft', stage: j.k, why: why || 'out', n: j.n });
+}
+// While he works with a gang (lpTick, before his walk): the hours, keeping up with the front.
+function lgTick(S, Q, ev) {
+  const j = Q.j;
+  if (!lnHours(S).work || Q.home) { lgLeave(S, ev, lnHours(S).meal ? 'meal' : 'hours'); return; }
+  if (Q.tx !== undefined) return;
+  const sp = lgSpot(S, j.k, j.side);
+  if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > 1.2) {           // the front has moved on: he shuffles up with it
+    const [tx, tz] = lnWalkable(S.seed, sp.x, sp.z, S.ln.f[1]) ? [sp.x, sp.z] : lpClampWalk(S, Q.x, Q.z, sp.x, sp.z);
+    if (Math.hypot(tx - Q.x, tz - Q.z) > 0.05) { Q.tx = tx; Q.tz = tz; }
+  } else Q.f = sp.f;
+}
+// The commands: lpJoin { stage }, lpLeave {}, lgDone { stage, q (whole number 0 to 100) }.
+function lgCmd(S, c, ev) {
+  const Q = S.lp, no = why => ev.push({ t: 'lpRefused', why });
+  if (!Q) return;
+  if (c.t === 'lpLeave') { lgLeave(S, ev, 'out'); return; }
+  if (c.t === 'lpJoin') {
+    const k = Number.isInteger(c.stage) ? c.stage : lgNearStage(S), why = lgWhyNot(S, k);
+    if (why) return no(why);
+    if (Q.j && Q.j.k === k) return;
+    if (Q.j) lgLeave(S, ev, 'switch');
+    const side = Q.z < 0 ? -1 : 1;
+    Q.j = { k, side, t: S.tick, last: S.tick, n: 0, q: -1, qs: [], wu: 0 };
+    const sp = lgSpot(S, k, side), [tx, tz] = lnWalkable(S.seed, sp.x, sp.z, S.ln.f[1]) ? [sp.x, sp.z] : lpClampWalk(S, Q.x, Q.z, sp.x, sp.z);
+    if (Math.hypot(tx - Q.x, tz - Q.z) > 0.05) { Q.tx = tx; Q.tz = tz; } else { delete Q.tx; delete Q.tz; }
+    delete Q.home;
+    ev.push({ t: 'lgJoined', stage: k });
+    return;
+  }
+  // lgDone: one finished action
+  const j = Q.j, q = c.q;
+  if (!j || c.stage !== j.k || !Number.isInteger(q) || q < 0 || q > 100) return;
+  if (S.tick - j.last < LG.MIN_T || !lnHours(S).work) return;   // (too soon after the last: tapping fast gains nothing)
+  const sp = lgSpot(S, j.k, j.side);
+  if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > LG.BACK) return;      // (not at his place)
+  const min = Math.min(LG.CAP_MIN, (S.tick - j.last) * DT_MIN), wu = LG.worth(q) * LG.rate() * min;
+  const o = lnWork.ev; lnWork.ev = ev;
+  const back = lnWork(S, j.k, wu);
+  lnWork.ev = o;
+  j.last = S.tick; j.n++; j.q = q; j.qs = j.qs.concat([q]).slice(-3); j.wu = Math.round((j.wu + wu - back) * 1000) / 1000;
+  const avg = j.qs.reduce((a, b) => a + b, 0) / j.qs.length;
+  if (avg >= LG.LIFT_Q) { j.lift = S.tick + LG.LIFT_T; cwBoost(S, j.k, Q.x, 1 + LG.LIFT * avg / 100, j.lift); } else delete j.lift;
+  ev.push({ t: 'lgDid', stage: j.k, q, n: j.n, wu: Math.round((wu - back) * 1000) / 1000, stuck: back >= wu - 1e-9 ? 1 : 0, lift: j.lift ? 1 : 0 });
 }
 // For the renderer and pixFocus: { x, y, z, f, act, riding? } in line units, or null when he is not on the line. sod
-// (optional): the second of the day the frame is drawn at, so the view rides with the train as it is drawn.
+// (optional): the second of the day the frame is drawn at, so the view rides with the train as it is drawn. While he
+// works with a gang: who (the work clothes), anim and frame (the navvies' frames; the page's game picks them through
+// lgPoseAnim when it is up, else by the tick), held (what is in his hands, drawn as Crew's), lg { k, q, lift }.
 function lpPose(S, sod) {
   const Q = S && S.lp;
   if (!Q) return null;
+  if (Q.ph === 'line' && Q.j) {
+    const j = Q.j, tool = LG_TOOL(S, j.k), p = { x: Q.x, y: 0, z: Q.z, f: Q.f, act: Q.mv ? 'walk' : 'work', who: LG.WHO, held: null, lg: { k: j.k, q: j.q, lift: !!j.lift && j.lift > S.tick } };
+    const A = typeof lgPoseAnim === 'function' && !Q.mv ? lgPoseAnim(S, j.k) : null;
+    if (A) Object.assign(p, A);
+    else if (Q.mv) { if (tool === 'barrow') { p.anim = 'barrow'; p.held = { key: 'tool/barrow/<dir>', at: 'grip' }; } else if (tool) { p.anim = 'shoulder'; p.held = { key: 'tool/' + tool + '/held/<dir>', at: 'tool' }; } else p.anim = 'walk'; p.frame = (S.tick | 0) & 3; }
+    else { const W = tool === 'axe' ? ['axe', 4] : LG_ANIM[j.k]; p.anim = W[0]; p.frame = ((S.tick | 0) >> 1) % W[1]; }
+    return p;
+  }
   if (Q.ph === 'line') return { x: Q.x, y: 0, z: Q.z, f: Q.f, act: Q.mv ? 'walk' : 'idle' };
   if (Q.ph === 'ride' || Q.ph === 'aboardL') {
     if (sod !== undefined && lpFade(S, sod) < 1) { const c = lpCarPoint(S, sod); if (c) return { x: c.x, y: 0, z: c.z, f: 0, act: 'idle', riding: true }; }
@@ -7555,6 +7671,67 @@ function lpPose(S, sod) {
   }
   return null;
 }
+// ---- Lessons for the line (D32; plan 7.2): added to U's PD_LESSONS (the same cards, Show me and Skip, replayed from
+// Settings, kept in S.pd.les). Each shows the first time its moment comes; their places are on the line, so no arrow. ----
+const lgLesStep = (text, short, done, at) => ({ text: () => text, short: () => short, target: () => null, done, at });
+const lgIs = (e, t, k) => e.t === t && (k === undefined || e.stage === k);
+const lgDid3 = k => (S, e) => (lgIs(e, 'lgDid', k) && e.n >= 3) || lgIs(e, 'lgLeft', k);
+const LG_HOW = [
+  ['lnClear', 'Clearing the way', ['ppl/navvy_a/hook/se/1', 'nat/brush/2'],
+    'Clearing: swipe along the chalk line across the brush, quick and straight. Three clean cuts fell a clump. In the woods you chop a trunk: swipe from the left and from the right in turn.',
+    'Swipe along the chalk line'],
+  ['lnDig', 'Digging the bed', ['ppl/navvy_a/pick/se/2', 'line/earth_heap/1'],
+    'Digging: a ring closes on the mark. Tap as it meets it to swing the pick in time with the men. Four swings, then flick up to throw the earth into the barrow.',
+    'Tap as the ring meets the mark'],
+  ['lnRock', 'Laying rock', ['ppl/navvy_a/tip/se/1', 'line/rock_heap/2'],
+    'Laying rock: tap to tip the barrow as its nose is over the chalk cross, then drag side to side to rake the stones level until the bar is even.',
+    'Tip on the cross, then rake level'],
+  ['lnTies', 'Laying ties', ['ppl/navvy_a/tieFront/se/0', 'line/tie_loose/x'],
+    'Ties: you and your partner carry each one. Press and hold as his "Hup!" ring fills, keep your end level with his as you walk it up, and let go on "Down!" with your end on its chalk mark.',
+    'Hold on "Hup!", let go on "Down!"'],
+  ['lnRails', 'Laying rails', ['ppl/navvy_a/railCarry/se/0', 'line/rail_loose'],
+    'Rails: four men lift each rail with tongs on the foreman\'s count. Press and hold on "Lift!", drag to keep the rail on the gauge line as you walk it up, and let go on "Down!".',
+    'Hold on "Lift!", let go on "Down!"'],
+  ['lnSpike', 'Spiking', ['ppl/navvy_a/maul/se/2', 'line/spikes'],
+    'Spiking: you and your partner strike in turn. Tap on your beat, as the ring closes on the spike: three blows drive it home. A blow off the beat bends the spike.',
+    'Tap on your beat'],
+];
+const LG_LESSONS = [
+  { id: 'lnRide', title: 'Out on the line', pic: ['ppl/navvy_b/pick/se/1', 'ppl/navvy_a/idle/se/0'], need: null,
+    trigger: (S, e) => e.t === 'lpOnLine',
+    steps: [
+      lgLesStep('This is the railhead. Six gangs work up the line, one behind the other: the clearers cut the brush, the diggers dig the bed, the rock gang spreads the stones, then come the ties, the rails and the spikes. Tap the ground to walk up to a gang.',
+        'Walk up to a gang', (S, e) => e.t === 'lpArrived' || e.t === 'lgJoined'),
+      lgLesStep('Beside a gang a Join button comes up: work with them, or just watch. The men work on without you either way.',
+        'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
+    ] },
+  ...LG_HOW.map(([id, title, pic, how, short], k) => ({ id, title, pic, need: null,
+    trigger: (S, e) => lgIs(e, 'lgJoined', k),
+    steps: [
+      lgLesStep(how, short, (S, e) => lgIs(e, 'lgDid', k) || lgIs(e, 'lgLeft', k)),
+      lgLesStep('Each go is marked good, fair or poor. Work well and the men near you work faster too: a glow at their feet. Step out whenever you like.',
+        'Keep at it, or Step out', lgDid3(k)),
+    ] })),
+  { id: 'lnLeave', title: 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null,
+    trigger: (S, e) => e.t === 'lgLeft' && (e.why === 'out' || e.why === 'walked'),
+    steps: [
+      lgLesStep('You stepped out: your tool is back on the rack and the gang works on without you. Nothing is left half done.',
+        'Walk on, or join a gang again', (S, e) => e.t === 'lpArrived' || e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
+      lgLesStep('Walk up to any gang to join it again, or watch the work as long as you like.',
+        'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
+    ] },
+  { id: 'lnHome', title: 'Coming home', pic: ['veh/crewcar/e', 'ppl/navvy_c/walk/se/0'], need: null,
+    tick: S => !!S.lp && S.lp.ph === 'line' && !!S.ln && S.ln.tr.ph === 'stand' && rrSod(S.time) >= LINE.T.WORK1,
+    steps: [
+      lgLesStep('Six o\'clock: the men pack up and walk to the crew car. Tap "Ride home" in the bar to go with them (the train leaves at 18:20), or "Back now" to be at the station at once.',
+        'Ride home with the men', (S, e) => e.t === 'lpToTrain' || e.t === 'lpAboard' || e.t === 'lpHome'),
+      lgLesStep('The work train takes you home: you step off at the station and walk back from the muster.',
+        'Ride home', (S, e) => e.t === 'lpHome'),
+    ] },
+];
+// His tool at each stage (the clearers': a brush hook, an axe in the woods), and his frames there by default.
+const LG_TOOL = (S, k) => k === 0 ? (lnKindAt(S.ln.f[0]) === 'woods' ? 'axe' : 'hook') : [null, 'pick', 'barrow', null, 'tongs', 'maul'][k];
+const LG_ANIM = [['hook', 3], ['pick', 4], ['rake', 3], ['tieDrop', 2], ['railDrop', 2], ['maul', 4]];
 function lpCheckSaveShape(st) {
   if (st.lp === undefined) return;
   const Q = st.lp, num = v => typeof v === 'number' && Number.isFinite(v), bad = () => { throw new Error('damaged save: on the line'); };
@@ -7563,6 +7740,9 @@ function lpCheckSaveShape(st) {
   if (/^(ride|line|aboardL)$/.test(Q.ph) && (!num(Q.x) || !num(Q.z))) bad();
   if (Q.tx !== undefined && (!num(Q.tx) || !num(Q.tz))) bad();
   if (Q.pts !== undefined && (!Array.isArray(Q.pts) || Q.pts.some(p => !Array.isArray(p) || !num(p[0]) || !num(p[1])))) bad();
+  const j = Q.j;
+  if (j !== undefined && (!j || Q.ph !== 'line' || !Number.isInteger(j.k) || j.k < 0 || j.k > 5 || (j.side !== 1 && j.side !== -1) || !Number.isInteger(j.t) || !Number.isInteger(j.last)
+    || !Number.isInteger(j.n) || !num(j.q) || !num(j.wu) || !Array.isArray(j.qs) || j.qs.some(v => !Number.isInteger(v)) || (j.lift !== undefined && !Number.isInteger(j.lift)))) bad();
 }
 
 // ==== Section: economy ====
@@ -13460,7 +13640,7 @@ function pdCheckSaveShape(st) {
   if (!D || typeof D !== 'object' || typeof D.on !== 'boolean' || !Number.isInteger(D.day) || typeof D.ph !== 'string' || !D.stats || typeof D.stats !== 'object') bad();
   if (D.on && worldId(st.track) !== 'proto') bad('switched on outside the prototype');
   if (D.les !== undefined && (!D.les || typeof D.les !== 'object' || Object.values(D.les).some(v => !Number.isInteger(v)))) bad('lessons');   // D27 (U): optional
-  if (D.lesWait !== undefined && (!Array.isArray(D.lesWait) || D.lesWait.some(v => !PD_LESSON_IDS.includes(v)))) bad('lessons waiting');   // D27 (U): optional
+  if (D.lesWait !== undefined && (!Array.isArray(D.lesWait) || D.lesWait.some(v => !PD_LESSONS.some(L => L.id === v)))) bad('lessons waiting');   // D27 (U): optional
 }
 
 // ---- Lessons (D27; owner: builder U, plans/d27-tech.md section 6) ----
@@ -13705,6 +13885,7 @@ const PD_LESSONS = [
         done: (S, e) => e.t === 'frStored' && pdLesIsOut(S, e.id) },
     ] },
 ];
+PD_LESSONS.push(...LG_LESSONS);   // D32 (Play): the line's lessons (section "on the line (D32)")
 const pdLesson = id => PD_LESSONS.find(L => L.id === id) || null;
 // A lesson may run: lessons on, and the D27 part it teaches on.
 const pdLesCan = (S, L) => pdLesOn(S) && (!L.need || d27On(S.track, L.need));

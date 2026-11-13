@@ -6602,7 +6602,7 @@ const LN_TEST = { LINE, PROTO_SCHEDULE_WORK, lnKindAt, lnKindCell, lnRegionAt, l
 // a front moves); carrying trips, shuffling up as the front moves and waiting for a load are all part of 'work', so
 // the pace depends only on the minutes worked. Nothing random but rngFor(seed, 'cw', ...).
 const CW = {
-  K: 1.54,                                     // wu a minute of a man of skill 1.0 at work (the pace's one knob; check-crew holds the windows)
+  K: 1.5,                                      // wu a minute of a man of skill 1.0 at work (the pace's one knob; check-crew holds the windows)
   WALK: 2.4, CARRY: 1.8,                       // u a game minute, free and under a load (plan 3.1)
   TIRE: 1.6, TIRE_K: [1, 1.2, 1, 1, 1, 1.2], REST_AT: 20, REST_S: 420, SWAP_S: 60,
   R2: 0.55 * 0.55,                             // a walker keeps this far (u, squared) from a man ahead of him
@@ -6748,7 +6748,10 @@ function cwStep(S, m, v, line) {
   const rt = m.rt, way = rt && rt.length;
   let ax = m.tx, az = m.tz, real = true;
   if (way) { ax = rt[0][0]; az = rt[0][1]; real = false; }
-  else if (line && Math.abs(ax - m.x) > 5) { az = 3.6 + (m.id & 3) * 0.3; ax = m.x + (ax > m.x ? 2.5 : -2.5); real = false; }
+  else if (line && Math.abs(ax - m.x) > 5) {
+    ax = m.x + (ax > m.x ? 2.5 : -2.5); real = false;
+    az = ax > CW.CREEK[0] - 5 && ax < CW.CREEK[1] + 5 ? (m.id % 3 - 1) * 1.5 : 3.6 + (m.id & 3) * 0.3;   // (three files over the trestle)
+  }
   const dx = ax - m.x, dz = az - m.z, d = Math.hypot(dx, dz);
   if (d < (way ? 0.9 : 0.02)) {
     if (way) { rt.shift(); if (!rt.length) delete m.rt; return cwStep(S, m, v, line); }
@@ -6827,7 +6830,8 @@ function cwAssign(S) {
     let k = -1, d = -1;
     for (let j = 0; j < 6; j++) if (open[j] / (cnt[j] + 1) > (cnt[j] ? 40 : 0.001) && (k < 0 || open[j] / (cnt[j] + 1) > open[k] / (cnt[k] + 1))) k = j;
     if (k < 0) break;
-    for (let j = 5; j >= 0; j--) if (j !== k && cnt[j] > 0 && open[j] / cnt[j] < Math.min(15, open[k] / (cnt[k] + 1) / 2) && (d < 0 || open[j] / cnt[j] < open[d] / cnt[d])) d = j;
+    const sc = open[k] / (cnt[k] + 1), thr = sc >= 60 ? Math.max(15, sc / 4) : Math.min(15, sc / 2);   // (a stage far behind also takes men from gangs with work of their own)
+    for (let j = 5; j >= 0; j--) if (j !== k && cnt[j] > 0 && open[j] / cnt[j] < thr && (d < 0 || open[j] / cnt[j] < open[d] / cnt[d])) d = j;
     if (d < 0) break;
     cnt[d]--; cnt[k]++;
   }
@@ -6953,7 +6957,7 @@ function cwTick(S, ev) {
   }
   const wu = [0, 0, 0, 0, 0, 0], bo = C.bo;
   let lx = -1e9;                                             // the furthest man already leaving through the narrow place at the creek
-  if (nLine && sod >= T.WORK1 - 5400) for (const m of men) if (m.pl === 2 && m.st === 'toTrain' && m.x > lx && m.x > CW.CREEK[0] - 4 && m.x < CW.CREEK[1] + 4) lx = m.x;
+  if (nLine && sod >= T.WORK1 - 10800) for (const m of men) if (m.pl === 2 && m.st === 'toTrain' && m.x > lx && m.x > CW.CREEK[0] - 4 && m.x < CW.CREEK[1] + 4) lx = m.x;
   for (let i = 0; i < men.length; i++) {
     const m = men[i];
     if (m.pl === 2) {
@@ -6966,9 +6970,9 @@ function cwTick(S, ev) {
         if (cwStep(S, m, v, true) || Math.hypot(m.x - m.tx, m.z - m.tz) < 0.9) { m.st = 'ride'; m.pl = 0; m.tool = null; m.mv = 0; m.stage = -1; delete m.rt; }
         continue;
       }
-      if (H.pack || sod >= T.WORK1 - 5400) {                 // packing up: each man leaves in time to be aboard by 18:17
+      if (H.pack || sod >= T.WORK1 - 10800) {                 // packing up: each man leaves in time to be aboard by 18:17
         // (on the trestle the men nearer the train leave with those coming up behind them: there is no room to pass)
-        if (sod >= T.AWAY - 300 - (Math.abs(m.x - steps.x) + Math.abs(m.z - 3.5) + 2) / CW.WALK * 60 || (lx > m.x && m.x > CW.CREEK[0] - 4)) { m.st = 'toTrain'; m.a = ''; delete m.rt; m.w = 0; continue; }
+        if (sod >= T.AWAY - (m.x > CW.CREEK[0] && steps.x < CW.CREEK[1] ? 780 : 300) - (Math.abs(m.x - steps.x) + Math.abs(m.z - 3.5) + 2) / CW.WALK * 60 || (lx > m.x && m.x > CW.CREEK[0] - 4)) { m.st = 'toTrain'; m.a = ''; delete m.rt; m.w = 0; continue; }
       }
       if (H.meal && sod < T.MEAL1 - 900 && m.st !== 'meal') { const q = CW.SEATS[m.id % CW.SEATS.length], p = cwSafe(S, G.camp + q[0], 9.2 + q[1], 0); m.st = 'meal'; m.a = 'go'; m.sx = p.x; m.sz = p.z; cwGo(m, p.x, p.z); }
       switch (m.st) {

@@ -115,7 +115,10 @@ module.exports = async function checkCrew() {
       const R = window.__railhead; R.pdui.closeBoard(); R.send({ t: 'pdStart' }); R.send({ t: 'dvSet', k: 'crew', v: 30 }); R.step(2);
       const S = R.state, T = 2 * 86400 + 5.5 * 3600;
       while (S.time < T) { S.time += 8; S.tick++; const ev = []; R.ln.wtTick(S, ev); R.ln.cw.cwTick(S, ev); }
-      R.ln.lnSetView(S, 'line'); R.pix.warm(true); R.lnView.lookAt((S.ln.f[1] + S.ln.f[4]) / 2, 0);
+      // D33: one world, so the work site is looked at in the station's own frame (the line's x plus D33.LX)
+      R.pix.warm(true);
+      if (R.lnView.d33.on) { R.camera.zoom = 0.75; R.pix.pixLookAt((S.ln.f[1] + S.ln.f[4]) / 2 * R.ln.LINE.M + R.lnView.d33.LX, 0); }   // (one step out, so the whole little team is in the picture)
+      else { R.ln.lnSetView(S, 'line'); R.lnView.lookAt((S.ln.f[1] + S.ln.f[4]) / 2, 0); }
       return S.ln.f;
     });
     await frames(6);

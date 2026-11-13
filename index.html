@@ -7758,8 +7758,10 @@ function cwRest(S, m, G, by) {
   const C = S.cw, r = rngFor(S.seed, 'cw', C.day, m.id, m.rn | 0), side = (by || m).z < 0 || ((by || m).z === 0 && m.id & 1) ? -1 : 1, x0 = (by || m).x;
   m.rn = (m.rn | 0) + 1; m.st = 'rest'; m.a = 'toRest'; m.t = S.time; delete m.rt;
   let spot = null;
-  for (let i = 0; i < 40 && !spot; i++) {
-    const kx = (i >> 1) % 10, x = x0 + (kx & 1 ? -1 : 1) * Math.ceil(kx / 2) * 1.1, z = side * (5.6 + (i % 3)) * (i >= 20 ? -1 : 1), p = cwSafe(S, x, z, 0);
+  // (D33: the work site is shorter, so the verge is more crowded: the ring of places tried is wider, and a man who
+  // still finds none sits a little further out rather than on another man's spot)
+  for (let i = 0; i < 80 && !spot; i++) {
+    const kx = (i >> 1) % 20, x = x0 + (kx & 1 ? -1 : 1) * Math.ceil(kx / 2) * 1.1, z = side * (5.6 + (i % 3) + (i >= 40 ? 1.5 : 0)) * ((i >> 1) % 40 >= 20 ? -1 : 1), p = cwSafe(S, x, z, 0);
     if (Math.abs(p.z) > 5 && cwFree(S, m, p.x, p.z, G)) spot = p;
   }
   if (!spot) spot = { x: m.x, z: m.z };

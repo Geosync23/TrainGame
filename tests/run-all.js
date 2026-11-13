@@ -87,6 +87,7 @@ const checks = {
   'every building entered (D32, Town)': d32Later('./check-rooms'),
   'the town\'s economy (D32, Town)': d32Later('./check-towneconomy'),
   'three line days end to end (D32, the lead)': d32Later('./check-d32-day'),
+  'play-test fixes by real taps: one tap per good, the small cart, the pace, the soft patch (D31)': require('./check-d31'),
 };
 function d32Later(file) {
   if (require('fs').existsSync(require('path').join(__dirname, file + '.js'))) return require(file);

@@ -82,6 +82,7 @@ Current checks:
 - `check-proto-stall.js` (D25 fix, 2026-11-11): the three causes of the designer's stall (the page frozen with goods in hand, two trains in on top of each other, the Next job line while a track is taken); see "Prototype (D25)".
 - D27 (see "D27 (the working day made visual)"): `check-d27world.js` (the foundation), `check-levers.js` (T), `check-onboard.js` (P), `check-handling.js` and `check-delivery.js` (F), `check-townsfolk.js` (W), `check-lessons.js` (U), `check-interiors.js` and `check-pixperf.js` (R), `check-atlas.js` and `check-d27-day.js` (the integrator: two days by the bot with every D27 part on; screenshots `d27-*.png`). The D25 checks open with `?d27=0` (or `&doorline=1`) where they test the D25 flows.
 - D32 (see "D32 (line building)"): `check-d32world.js`, `check-worktrain.js`, `check-linerender.js` (Foundation); the other owners' checks have their lines in `run-all.js` and are skipped with a note until their files land.
+- D31 (see "D31 (play-test fixes)"): `check-d31.js` (the first freight unloaded by real taps, one tap per good and the queue, the small cart, the pace, the soft see-through patch, `?d31=0`); `tests/d31-lib.js` brings a default game to the first freight for it.
 - `check-protoworld.js` (D25 foundation): the prototype's layout, walking distances, reachability (platform 2 only over the walkway), the first trains in and out with the switches set by hand, the parked systems off over a day, the day's phases, the older worlds in 3D, and the pixel renderer (whole scale and zoom steps, screen to world and back, picking a coach, frame time). Screenshots `protoworld-{start,out,trains}-{portrait,landscape}.png`.
 - `check-freight.js` (D24, CG): the freight trains' goods; see "Station rework (D24)". Screenshots `freight-dock-*.png`.
 - `check-rrtrains.js` (D24, TR): the railroad's trains over a day with a scripted player; `check-tickets.js` (D24, PX): tickets on board; `check-hubui.js` (D24, UI): the screen guidance (with fakes of PX's and CG's reads, and a part on the real pieces); `check-hub-day.js` (D24, integrator): three game days in the hub played by `tests/hub-bot.js`. See "Station rework (D24)".
@@ -1193,8 +1194,135 @@ Plan: `plans/d32-tech.md` (the lead's decisions at its end override its body) an
 **Provisional choices (Foundation).** The region lengths above; the corridor's widths; the muster at x -46 to -40, z -16 to -10 (between the water tower and the lever frame; the plan's place is where D29 put the lever frame) and the plank walk at x -39.3; the camp at the plan's rectangle (checked clear); the work train as a scripted run and its evening wait; the stand-in crew's even shares (its fronts spread 30 to 40 m apart, wider than the plan's 6 to 9 m: the foreman is Crew's); the first day's double supplies; the loads on the cars (full going out, a little while standing, none going home).
 
 **Checks.** `check-d32world.js`, `check-worktrain.js`, `check-linerender.js` (screenshots `test-output/d32-*.png`); run-all.js has their lines and one per other owner's check, skipped with a note until its file lands. Changed for the clock: check-smooth (one diagonal pixel step allowed in the 'walk' train case at 1x: at 5 ticks a second the exact motion in that frame is smaller, so the same step counts), check-d27-day (31 game hours audited, was 35: the bot's days end sooner), check-atlas (the packed block, budget 1,000 KB).
+## D31 (play-test fixes)
+
+The designer's play-test of 2026-11-13, on a phone by touch (design-doc D31): five fixes, one builder. Switches:
+**`?d31=0`** (or `D31.TAP`, `D31.PACE`, `D31.SOFT` in the page; `__railhead.d31`) parks the taps, the pace and the soft
+patch together and gives D29's play back; the big cart is parked in the art tool (below).
+
+### 1. The bug: "the first freight that comes in, I can't lift the goods out"
+
+**Reproduced** by real taps (Chromium, 390 x 844, a fresh default game with the lessons on, the bot playing the morning
+up to f1 at 08:25): Show me, a tap on the boxcar (its door opens), and then **no Lift button, ever**. **Cause:** the
+Lift button was offered only for a good within 2.5u of the player (`PDUI.REACH`), and the player cannot walk into a car
+by hand (the walk grid stops at the door; only a handling job walks him in). Since the day's goods were halved, f1's
+three goods stand at the car's two ends (the cars are filled from the far walls: 4.5u and 5.4u from the door spot), so
+none was ever in reach; a tap on the open car only said "3 to unload onto the cart". With D27's fuller cars a good
+happened to stand near the door, which is why it did not show before. Not causes: the lesson card, the layout, the
+door (it opened), an empty car.
+
+**Fixed** by item 2: goods no longer need to be in reach, he walks in himself. `tests/check-d31.js` plays it by taps
+(the Lift button at the open door, a tap on a good, the queue) in portrait and landscape.
+
+### 2. One tap per good
+
+- **The sim** (section "freight handling (D27)", block "D31: one tap per good"): a new command **`{ t: 'frAuto', item }`**.
+  The job (`S.fr.job.k === 'auto'`, `q`: the goods tapped, in order; `src`: where the one in hand came from) is planned
+  a part at a time by `frAutoSteps` as each part ends (`frJobEnd`, like the keeper's deliver loop): the good in the
+  hands to its place, else the boxcar's door (`frDoorSteps`, the old frDoor's steps), else the lift (`frTakeSteps`), so
+  every step is the existing animated one and `FR.CHAIN` keeps them without a standing tick. A frAuto while that job
+  runs joins `q` (event `frQueued`); a walk by hand (or any other command) stops the job and its queue, as any job.
+  A tap on a stack takes its top good; tapped again while that one waits, the next one down (`frStackUp`).
+- **Where a good goes** (`frAutoTo`; the old commands are unchanged, the bot still plays by `frJobHint`): out of a
+  car: onto the cart when it stands within `FR.AUTO_CART` (8u) of that car's door and takes it (not hand-truck goods),
+  else to its shop's storage row. Goods for the railroad: into the standing freight train that still needs goods (its
+  door opened first), or onto the cart when the cart stands by them and not by the car; with no such train they stay
+  (a refusal says so) and, off the cart, go to the OUT rows. Out of storage, goods for the town go on the cart
+  (wherever it is). Off the cart: to storage; but at its shop's door the tap is `frDeliver`, at a shop's pickup spot
+  `frPickup` (the keeper carries, as before); in town otherwise a refusal ("Wheel the cart to its shop's door first"),
+  so nothing is carried by hand from town to the station.
+- **The page** ("HUD and panels", `pdGoodsTap`, `pdTapOn`): a tap on a good's own pixels, or within 16 CSS px of them
+  (`PDUI.TAP_PX`; beside a good only when it can be moved now), sends frAuto; a tap on the cart or the hand truck takes
+  its handle (he walks to it); a tap on an open boxcar takes the next good out of it. Buttons: **Lift** now shows for
+  the nearest movable good within 7u (not 2.5u) when it is work in hand, and reads "... next" while he works (it
+  queues); **Set down** (with where: on the cart, in its storage row, in the car) replaces the three Put buttons;
+  Open door, Close door, Take cart, Leave cart, Deliver, Pick up are as they were. **What can be tapped is marked**
+  (`frTapList`, worked out once a tick; `pixWorkOverlays`): a small ochre arrow bobs over every movable good within 16u
+  of the player; a good waiting in the queue carries a paper square. No button is placed over a marked good (the Lift
+  and Take cart buttons used to cover the goods they were about; `pdActsHud`). The D25 `carryTap` (which answered a
+  tap near the cart with "Platform cart left at its spot") is not used while the taps are on.
+- **Lessons** (`PD_LESSONS`): the unloading, loading, delivery and pickup sentences say what to tap (the D27 sentences
+  are kept for `D31.TAP` false). The steps' events are unchanged, so a player who taps goods straight to storage
+  passes the cart steps by the later step's event.
+- `D31.TAP` false (or `?d31=0`): the Lift / Put buttons in reach as D29 (check-lessons checks them that way), no taps
+  on goods, no marks. The frAuto command itself stays in the sim.
+
+### 3. The small cart
+
+- **Art** (`tools/pixelart/goods27.py`, `sprites_carts.py`; rebuilt and embedded, atlas 609 KB of 700): the bed 3.4 x
+  1.6u (was 4.2 x 3.2u), 4 x 2 cells (was 5 x 4): the picture 49 x 32 px (was about twice that each way). The dray's
+  numbers are parked as `CART_D27` in goods27.py (put them in the two lines under it, rebuild, embed, and set `CARGO27`
+  back from `CARGO27_D27` and `FR.PUSH_D` 2.9, `FR.CART_EDGE_Z` 14.7); it is not a URL switch, since both carts'
+  pictures would have to be in the atlas.
+- **Sim:** `CARGO27` (cells 8, rows 2, cols 4, 4 layers), `FR.PUSH_D` 2.5 and `FR.CART_EDGE_Z` 15.1 (F's numbers from
+  before the dray), the renderer's sort box from the cells. Parking spots, the keeper's and the player's stands are
+  worked out from the rows and columns, so they followed.
+- **A full day on it** (`FR.CART_MIX`, false gives the storage's rule back): on the cart a good sits on whatever goods
+  are under all of it (a crate on the lumber, the bars across the crates), up to 4 high; goods that take nothing on
+  top (a barrel, the mail, a stove, furniture: `GOODS27.layers` 1) still take nothing. `frOnTop`, `frStackUp`, the
+  never-bury rule (`frCartFree`) and `itemAudit` read what is under or over any part of a good on the cart
+  (`frOver`); a good's height on the cart is the tallest pile under it (`frCartUp`, given to the renderer as `up`).
+  The evening hint loads the goods delivered last first, so the others can go on top. Measured with the bot: Monday's 8
+  and Tuesday's 9 goods for the town leave the platform in one trip each (the small cart with the storage's stacking
+  rule took 4 goods a trip, 7 or 8 with mixed stacking before the load order and the barrel rule).
+- **Old saves:** a save from before (its goods on the dray's cells) has them put into storage on its first tick
+  (`S.fr.c31` marks a game with the small cart's places; set by `frTick`, so a load's hash is unchanged and no fixture
+  was re-recorded).
+
+### 4. Walking 40% faster
+
+`WORLDS.proto.pace` times `D31.PACE` (1.4): 4.2u a game minute walking, 2.94 with the cart (3.0 and 2.1 before); inside
+a car too. **A bug this uncovered and fixed:** a tick's move is now 0.56u, longer than a walk cell (0.5u), and the
+level check (`walkStepMove`, the foot of a ramp or a flight) knew only a step to a neighbouring cell: the bot stood
+"blocked" at the east ramp for the rest of day 1. `playerModeTick` now checks a longer move piece by piece (`stepOk`),
+and a tap-to-walk move along the corners of its path, not the straight line (only when the step is longer than a
+cell: other worlds and `?d31=0` are bit for bit as before). check-d27-day after (with the small cart): worst lateness
+in 5 minutes, out 4 (9 and 15 before); the bot ends both days at 22:06 (22:57 and 23:02 before); everything punched,
+unloaded, loaded, delivered and picked up; the two runs' hashes equal (the check prints them). Its "hours audited"
+floor went from 34 to 32, since the days end sooner. check-smooth holds (the camera follows the drawn point as before).
+
+### 5. The soft see-through patch
+
+The part of a roof or a car over a person was a rectangle of checker (the person's box and 2 px). Now (`D31.SOFT`,
+`pixSoftMask`, in `pixBlit`'s see-through branch): the covering sprite is rubbed out through a round mask, an ellipse
+7 px wider than the person each way (`PIX.SEE_SOFT`), 82% clear in the middle (`PIX.SEE_A`) and fading to nothing at
+its edge. Same cost shape as before (one cached canvas per sprite and patch position, `PIXA.part`; the mask cached by
+size), and the checker is no longer built for it; check-pixperf's budgets hold. The box a tap passes through to the
+person behind (`see`, the person's box and 2 px) is unchanged. The cut-away coach, the whole-sprite dither
+(`opt.dither`) and the night lights are untouched. A soft pixel is a real half-clear pixel, the one place the pixel
+view blends (the designer asked for a blend).
+
+### Judgement calls (for the lead and the designer)
+
+1. The cart is 4 x 2 cells, 3.4 x 1.6u (2.4 m by the scale): F's first cart. Half of each side would be 3 x 2 cells,
+   but lumber and bar iron are 4 cells long and would overhang; 3.4u is "a little longer than a man" (2.5u).
+2. The load on the cart is stacked mixed, 4 high, so a day fits in one trip; a barrel can stand on crates. The piles
+   are drawn at their true heights, but it is a tall load on a small cart. The stacking prefers going up before using
+   free floor (F's rule, kept), which can look odd (a barrel on the bars while a floor cell is free).
+3. A good out of a car goes on the cart only when the cart stands within 8u of that door; else straight to storage by
+   hand. On day 1 the cart happens to stand 4.5u from f1's third car, so the first goods go on the cart.
+4. A tap beside a marked good (within 16 CSS px) takes the good, so walking right next to marked goods needs a tap a
+   little further off. A tap on the ground still stops the queue.
+5. The marks are small (7 px arrows). They show within 16u only, to keep the storage from filling with arrows.
+6. The big cart cannot be switched back from the URL (art); the other three parts can (`?d31=0`).
+7. The pace applies to pushing the cart too (the same 1.4).
+
+**Checks:** `tests/check-d31.js` (new, in `npm test`): by real taps in portrait and landscape: the lesson card, Show me,
+the last steps to f1's car by taps (the long walk over is one walk command), a tap on the boxcar opens it, the Lift
+button and the marks at the open door, one tap on a good (the job starts, he steps in), two more taps queue, all three
+reach the cart (or storage when the cart is not by), a tap on a good on the cart takes it to storage, a tap on the
+ground stops the job, Set down, a tap on the cart's handle takes it; by commands: several frAuto in one tick queue,
+the door is opened by the job, cart then storage; the cart's cells and picture size; the soft patch has partly clear
+pixels; the pace is 1.4 times `?d31=0`'s and that switch parks the taps and the soft patch. Screenshots
+`test-output/d31-{door,lift,queue,cart,soft}-{portrait,landscape}.png`. `D31_ONLY=portrait|landscape` and
+`D31_DEBUG=1` (prints what each tap hit; skips the command part) for working on it. `check-lessons.js` turns `D31.TAP`
+off for its Lift and Put buttons (the parked step-by-step ones); `check-handling.js` expects a barrel on a crate on the
+cart to be taken (it was refused).
 
 ## Next
+
+Update (2026-11-13, D31 play-test fixes): one tap per good, the small cart, the faster walk and the soft see-through
+patch are built on their own branch (see "D31"); `tests/check-d31.js` is new. Not pushed; the lead runs `npm test`.
 
 Update (2026-11-12, D30 trains drawn smoothly): trains glide (see "D30"); check-smooth has a train part and
 `tests/train-play.js` is new.

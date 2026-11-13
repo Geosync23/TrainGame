@@ -52,7 +52,7 @@ def piece(R, band, v, frames=WATER_FRAMES, things=True):
     z0, z1 = getattr(R, 'zrange', {}).get(band, (z0, z1))
     nanim = getattr(R, 'anim_frames', 0)
     fld = R.field(band, v, L)
-    keep = WR.edge_keep if band == 'edge' else (WR.far_keep if band == 'far' else None)
+    keep = (lambda x, z: WR.edge_keep(x, z - z0)) if band == 'edge' else (WR.far_keep if band == 'far' else None)
     items = _things(R, band, v, fld, L, z0, z1) if things else []
     hmax, hmin = _extent(fld, L, z0, z1)
     xs, zs = np.meshgrid(np.linspace(0, L, 33), np.linspace(z0, z1, 97))

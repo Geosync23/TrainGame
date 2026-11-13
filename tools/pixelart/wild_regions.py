@@ -191,8 +191,10 @@ def m_water(x, z, y, info, ramp='river', flow=-1.0, rough=None, calm=1.0):
     rr = np.where(edge, R('cream'), rr); ii = np.where(edge, 1, ii)
     fall = info['face']
     sn = cellnoise(x + z, (y + f * 0.33) * 1.5, 0.125, 60)
-    rr = np.where(fall, np.where(sn < 0.6, R('cream'), R(ramp)), rr)
-    ii = np.where(fall, np.where(sn < 0.3, 0, 1), ii)
+    streak = cellnoise(x + z, 0.0, 0.125, 62) < 0.5                     # columns of falling water, lighter and darker
+    wcol = sn < np.where(streak, 0.62, 0.32)
+    rr = np.where(fall, np.where(wcol, R('cream'), R(ramp)), rr)
+    ii = np.where(fall, np.where(wcol, np.where(sn < 0.18, 0, 1), np.where(streak, 1, 2)), ii)
     info['shade'] = np.where(fall | white, 0, 1)
     return rr, np.clip(ii, 0, 4)
 
@@ -997,16 +999,21 @@ class Blend:
     def wg(self, x, z):
         """The weight for the heights: in steps (falls), or the smooth weight with an uneven front."""
         if self.steps:
-            return sum(smooth((np.asarray(x) - xk) / 0.35) for xk in self.steps) / len(self.steps)
+            return sum(smooth((np.asarray(x) - self.ledge(k, xk, z)) / 0.3) for k, xk in enumerate(self.steps)) / len(self.steps)
         w = self.w(x)
         return np.clip(w + 1.6 * w * (1 - w) * (vnoise(x, z, 2.0, 141) - 0.5), 0, 1)
+
+    def ledge(self, k, xk, z):
+        """Where fall k's lip crosses the stream: a broken, curving line, not a weir."""
+        z = np.asarray(z, float)
+        return xk + 0.9 * np.sin(z * 0.33 + k * 1.7) + 0.7 * (vnoise(z * 0.0 + k * 3.0, z, 1.0, 142 + k) - 0.5)
 
     def rough(self, x, z):
         if not self.steps:
             return np.zeros(np.shape(x))
         out = np.zeros(np.shape(x))
-        for xk in self.steps:        # the plunge pools below each fall
-            d = np.asarray(x) - xk
+        for k, xk in enumerate(self.steps):        # the plunge pools below each fall
+            d = np.asarray(x) - self.ledge(k, xk, z)
             out = np.maximum(out, np.clip(1 - d / 1.6, 0, 1) * (d > 0) * 0.9)
         return out
 

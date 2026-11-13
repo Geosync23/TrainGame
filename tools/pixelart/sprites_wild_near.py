@@ -62,14 +62,8 @@ def register_near(reg):
 
 
 def register(reg):
+    import wild_marks
+    import wild_life
     register_near(reg)
-    try:
-        import wild_marks
-        wild_marks.register(reg, _only())
-    except ImportError:
-        pass
-    try:
-        import wild_life
-        wild_life.register(reg, _only())
-    except ImportError:
-        pass
+    wild_marks.register(reg, _only())
+    wild_life.register(reg, _only())

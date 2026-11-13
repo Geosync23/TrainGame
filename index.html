@@ -23282,7 +23282,7 @@ const LG_GAMES = [
   {
     start(r, t) { r.tH = t + 1300; r.M = 200 + lgRnd('m') * 60; r.v = 0.075; r.px = 330; r.my = 330; r.dev = 0; r.dn = 0; r.st = 'hup'; },
     frame(r, t, dt) {
-      if (r.st === 'hup' && t > r.tH + 600) { r.liftS = 0; r.st = 'carry'; r.tC = t; lgWord('Hup!', 300, 50, LGC.INK); }
+      if (r.st === 'hup' && t > r.tH + 600) { r.liftS = 0; r.st = 'carry'; r.tC = t; lgWord('Hup!', 250, 40, LGC.INK); }
       if (r.st === 'carry') {
         r.px = Math.max(r.M, 330 - (t - r.tC) * r.v);
         if (r.held) { r.dev += Math.abs(r.my - r.px) * dt; r.dn += dt; }
@@ -23291,7 +23291,7 @@ const LG_GAMES = [
       }
     },
     down(r, p, t) {
-      if (r.st === 'hup') { r.liftS = lgTimeS(Math.abs(t - r.tH)); r.st = 'carry'; r.tC = Math.max(t, r.tH); r.held = true; r.my = lgCl(p.x, 20, 345); lgWord('Hup!', 300, 50, LGC.INK); lgFx('dust', 330, 176, 4, 'rgba(120,100,80,0.5)', { v: 30, g: -10, size: 4 }); }
+      if (r.st === 'hup') { r.liftS = lgTimeS(Math.abs(t - r.tH)); r.st = 'carry'; r.tC = Math.max(t, r.tH); r.held = true; r.my = lgCl(p.x, 20, 345); lgWord('Hup!', 250, 40, LGC.INK); lgFx('dust', 330, 176, 4, 'rgba(120,100,80,0.5)', { v: 30, g: -10, size: 4 }); }
       else if (r.st === 'carry') { r.held = true; r.my = lgCl(p.x, 20, 345); }
     },
     move(r, p) { if (r.st === 'carry' && r.held) r.my = lgCl(p.x, 20, 345); },
@@ -23464,6 +23464,9 @@ function lgFrame() {
   const P = lgUi.panel;
   if (!j || !line || lgUi.left) { if (!P.hidden) P.hidden = true; lgUi.r = null; lgUi.k = -1; return; }
   if (P.hidden !== hold) P.hidden = hold;
+  // landscape: the panel stands at the right under the line's bar (its Ride home and Back now stay in reach)
+  const bar = lpUi.bar, top = innerWidth > innerHeight && innerHeight <= 500 && bar && !bar.hidden ? Math.round(bar.getBoundingClientRect().bottom + 6) + 'px' : '';
+  if (P.style.top !== top) P.style.top = top;
   if (lgUi.k !== j.k) { lgUi.k = j.k; lgUi.r = null; lgUi.res = []; lgUi.fx = []; lgUi.seen = j.n; }
   lgUi.frozen = hold || (lgUi.clock === null && speed === 0);
   if (!lgUi.frozen && lgUi.clock === null) lgUi.gt += dt;

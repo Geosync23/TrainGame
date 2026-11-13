@@ -117,11 +117,9 @@ module.exports = async function checkLineRender() {
       let worst = 0;
       for (let k = 0; k < 6; k++) {
         await page.evaluate(() => { const R = window.__railhead, S = R.state; for (let i = 0; i < 40; i++) { S.time += 8; S.tick++; const ev = []; R.ln.wtTick(S, ev); R.ln.cw.cwTick(S, ev); } });
-        const b = await page.evaluate(() => window.__railhead.lnView.stats.rebuilt);
-        await frames(1);
-        const a = await page.evaluate(() => window.__railhead.lnView.stats);
-        worst = Math.max(worst, a.rebuilt - b);
-        await frames(12);
+        // (counted frame by frame inside the page: with Crew's gangs close together several chunks go stale at once,
+        // and frames pass between two calls from the check)
+        worst = Math.max(worst, await page.evaluate(() => new Promise(res => { const V = window.__railhead.lnView; let last = V.stats.rebuilt, w = 0, k = 0; const f = () => { const n = V.stats.rebuilt; w = Math.max(w, n - last); last = n; if (++k >= 13) res(w); else requestAnimationFrame(f); }; requestAnimationFrame(f); })));
       }
       const c1 = await page.evaluate(() => ({ ...window.__railhead.lnView.stats, f: window.__railhead.state.ln.f.slice() }));
       if (!(c1.rebuilt > c0.rebuilt)) P(`no chunk was redrawn as the fronts moved ${(c1.f[2] - head.f[2]).toFixed(1)} m`);

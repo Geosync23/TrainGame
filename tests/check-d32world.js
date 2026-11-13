@@ -193,16 +193,17 @@ module.exports = async function checkD32World() {
       out.days = A.days; out.log = A.log.slice(0, 14);
       if (A.hash !== A2.hash) B('three line days are not the same twice');
       if (A.minSup < 0) B('a supply went below zero');
+      const TOT = 30 + R.tf.TF_AGENTS.length;   // (Crew: the head count is the 30 rail men and the townsfolk; one townsman may still be out at 22:00)
       A.days.forEach((d, i) => {
         const grew = d.f6 - (i ? A.days[i - 1].f6 : 60);
         if (!(grew > 120 && grew < 260)) B(`day ${i + 1}: ${grew.toFixed(1)} m spiked`);
         if (d.days !== i + 1) B(`day ${i + 1}: the line counts ${d.days} working days`);
-        if (!d.sum || d.sum.total !== 30 || d.sum.home !== 30) B(`day ${i + 1}: the summary's head count is ${JSON.stringify(d.sum)}`);
-        if (!d.hc || d.hc.home !== 30) B(`day ${i + 1}: the 22:00 head count is ${JSON.stringify(d.hc)}`);
+        if (!d.sum || d.sum.total !== TOT || d.sum.home < TOT - 1) B(`day ${i + 1}: the summary's head count is ${JSON.stringify(d.sum)}`);
+        if (!d.hc || d.hc.total !== TOT || d.hc.home < TOT - 1 || (d.hc.out || []).some(q => /the line|the work train/.test(q))) B(`day ${i + 1}: the 22:00 head count is ${JSON.stringify(d.hc)}`);
       });
       const first = A.log.filter(l => l.startsWith('0 ')).map(l => l.slice(2));
-      const wantLog = ['06:20 wtPhase sOut', '06:25 wtPhase out', '06:45 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone 30/30'];
-      if (first.join('|') !== wantLog.join('|')) B('the work train\'s first day: ' + first.join(' | '));
+      const wantLog = ['06:20 wtPhase sOut', '06:25 wtPhase out', '06:45 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone'];
+      if (first.map(l => l.replace(/^(22:00 hcDone) \d+\/\d+$/, '$1')).join('|') !== wantLog.join('|')) B('the work train\'s first day: ' + first.join(' | '));
       if (A.G.ln.log.length !== 2 || A.G.ln.log.some(q => !(q.m > 120))) B('the line\'s log: ' + JSON.stringify(A.G.ln.log));
       // lnWork and lnOpenWork at the edges
       {

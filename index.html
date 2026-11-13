@@ -6768,9 +6768,10 @@ function cwStep(S, m, v, line) {
     let got = false;
     const T = CW.TURN[m.id & 1];
     for (let i = 0; i < 4 && !got; i++) { const c = T[i][0], s = T[i][1], x2 = mx + (ux * c - uz * s) * st; let z2 = mz + (uz * c + ux * s) * st; if (line) z2 = cwFz(x2, z2); if (ok(x2, z2, false)) { nx = x2; nz = z2; got = true; } }
-    if (!got) { m.w++; m.mv = 0; return false; }
-  } else if (st === d) { nx = ax; nz = line ? cwFz(ax, az) : az; }
-  m.w = 0; m.f = cwR3(Math.atan2(nx - mx, nz - mz)); m.x = cwR3(nx); m.z = cwR3(nz); m.mv = 1;
+    m.w++;                                                   // (a step aside is not yet a way through: the count runs until the straight way is free)
+    if (!got) { m.mv = 0; return false; }
+  } else { if (!(m.w > 6)) m.w = 0; else if (ok(nx, nz, false)) m.w = 0; if (st === d) { nx = ax; nz = line ? cwFz(ax, az) : az; } }
+  m.f = cwR3(Math.atan2(nx - mx, nz - mz)); m.x = cwR3(nx); m.z = cwR3(nz); m.mv = 1;
   if (st === d && Math.hypot(ax - m.x, az - m.z) < 0.02) {
     if (way) { rt.shift(); if (!rt.length) delete m.rt; return false; }
     if (real) { m.mv = 0; return true; }
@@ -6960,7 +6961,7 @@ function cwTick(S, ev) {
       if (m.st === 'left' && !(ph === 'stand' && sod < T.AWAY)) continue;
       if (ph !== 'stand') { m.st = 'left'; m.a = ''; m.mv = 0; delete m.rt; continue; }   // the train has gone without him
       if (m.st === 'toTrain') {
-        cwGo(m, steps.x + 0.2, steps.z + 0.9);
+        cwGo(m, steps.x + 0.2, cwFz(steps.x + 0.2, steps.z + 0.9));   // (beside the steps; on the trestle, on the deck by the car)
         if (m.tool && m.x < TR.cars[3].x1) m.tool = null;   // his tool handed up into the supply boxcar
         if (cwStep(S, m, v, true) || Math.hypot(m.x - m.tx, m.z - m.tz) < 0.9) { m.st = 'ride'; m.pl = 0; m.tool = null; m.mv = 0; m.stage = -1; delete m.rt; }
         continue;
@@ -7023,7 +7024,7 @@ function cwTick(S, ev) {
       if (ph === 'stand' && steps && S.time >= C.bq && m.off !== day && sod < T.WORK1) {   // off at the railhead, one after another
         m.off = day;
         C.bq = S.time + 16;
-        Object.assign(m, { pl: 2, st: 'idle', a: '', x: cwR3(steps.x), z: cwR3(steps.z + 0.5), f: 0, w: 0, t: S.time, tool: null, sta: cwR3(72 + 28 * rngNext(rngFor(S.seed, 'cw', day, m.id, 'am'))) });
+        Object.assign(m, { pl: 2, st: 'idle', a: '', x: cwR3(steps.x), z: cwR3(cwFz(steps.x, steps.z + 0.5)), f: 0, w: 0, t: S.time, tool: null, sta: cwR3(72 + 28 * rngNext(rngFor(S.seed, 'cw', day, m.id, 'am'))) });
         m.tx = m.x; m.tz = m.z;
         if (m.stage >= 0) cwGoWork(m);
       } else if (ph === 'eStand' && S.time >= C.bq) {        // off at the station in the evening

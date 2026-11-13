@@ -27133,9 +27133,10 @@ function pixWorldIn(fn) {
   P.lnIn = false; P.OX -= dx; P.OY -= dy;
   try { return fn(); } finally { P.OX += dx; P.OY += dy; P.lnIn = true; }
 }
-// Is the line's point (x, z) on the station's own ground? (East of the map's edge, and north and south of the map, the
-// wild country is drawn; west of the map the station's plain grass stays, as before.)
-const pixLnInStn = (x, z) => x + D33.LX < D33.EDGE && z >= PROTO.BOUNDS.z0 && z < PROTO.BOUNDS.z1;
+// Is the line's point (x, z) on the station's own ground (the station's map)? Everywhere else the line's country is
+// drawn: east of the map's edge the line's own corridor, and round the rest of the map its open ground, so no edge of
+// the world is ever seen (the designer's rule) wherever the view goes.
+const pixLnInStn = (x, z) => x + D33.LX < D33.EDGE && x + D33.LX >= PROTO.BOUNDS.x0 && z >= PROTO.BOUNDS.z0 && z < PROTO.BOUNDS.z1;
 // The main line's branch at the junction (D33.JX): from track 2 a curve north (the yard's own radius, 30 degrees) and
 // a straight on into the wood. A little track of its own, for the ground's painter (pixTrackAt) and for drawing the
 // railroad's trains along it (pixBranchPose); the sim's trains stay on the straight.
@@ -27192,7 +27193,7 @@ function pixLnChunkSpan(ci, cj, N) {
   const w0 = Math.min(...cs.map(q => q.x)), w1 = Math.max(...cs.map(q => q.x)), v0 = Math.min(...cs.map(q => q.z)), v1 = Math.max(...cs.map(q => q.z));
   // (D33: stn: the chunk reaches the station's own ground, or the 8u east of it where the two grounds mix, so it is drawn see-through there)
   return { l, t, w0, w1, v0, v1, bed: v0 < LINE.ROW + 2 && v1 > -LINE.ROW - 2 && w1 > 0 && w0 < LINE.LEN + 2,
-    stn: D33.on && w0 + D33.LX < D33.EDGE + 8 && v1 > PROTO.BOUNDS.z0 - 1 && v0 < PROTO.BOUNDS.z1 + 1 };
+    stn: D33.on && w0 + D33.LX < D33.EDGE + 8 && w1 + D33.LX > PROTO.BOUNDS.x0 - 1 && v1 > PROTO.BOUNDS.z0 - 1 && v0 < PROTO.BOUNDS.z1 + 1 };
 }
 function pixLnChunkKey(sp, F) {
   if (!sp.bed) return '';
@@ -27214,11 +27215,12 @@ function pixLnChunkBuild(ci, cj, F) {
   cv.solid = true; cv.stn = sp.stn; PIX.lnPuts = 0;
   const GB = d33 && sp.w0 + LX < 150 && sp.w1 + LX > D33.JX && sp.v0 < 3 && sp.v1 > -40 ? pixBranch().G : null;   // the main line's branch crosses this chunk
   const jN = Math.floor(-LINE.BORDER.N - 14);   // north of this the far wall and the rank behind it cover everything (the wall's foot is ragged, and deep in places)
+  const wall = i => !d33 || i + LX >= EDGE;    // (D33: west of the map's east edge there is no wall: the open ground is drawn as far north as the view goes)
   const put = (key, wx, wz, wy) => { const f = pixF(key); if (!f) return false; const p = pixProject(wx, wy || 0, wz); g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], Math.round(p.x) - l - f[5], Math.round(p.y) - t - f[6], f[3], f[4]); return true; };
   const i0 = Math.floor(sp.w0) - 1, i1 = Math.ceil(sp.w1) + 1, j0 = Math.floor(sp.v0) - 1, j1 = Math.ceil(sp.v1) + 1;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
-    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || j < jN) continue;
+    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || (j < jN && wall(i))) continue;
     // D33: the station's own ground is left clear, and over the 8u east of the map's edge the two grounds mix cell by cell
     if (sp.stn && (pixLnInStn(i, j) || (i + LX < EDGE + 8 && j >= PROTO.BOUNDS.z0 && j < PROTO.BOUNDS.z1 && lnHash(seed, i, j, 3) > (i + LX - EDGE + 1) / 9))) continue;   // (the station's own ground, under this chunk already)
     let key = lnTile(seed, i, j), road = false;
@@ -27405,7 +27407,10 @@ function pixLnScatterBake(g, l, t, N, F, south) {
   const ex = [[l - 90, t - 4], [l + N + 90, t - 4], [l - 90, t + N + 96], [l + N + 90, t + N + 96]].map(([a, b]) => pixUnproject(a, b, 0));
   const a0 = Math.floor(Math.min(...ex.map(q => q.x)) / 8), a1 = Math.floor(Math.max(...ex.map(q => q.x)) / 8);
   let b0 = Math.floor(Math.min(...ex.map(q => q.z)) / 8), b1 = Math.floor(Math.max(...ex.map(q => q.z)) / 8);
-  if (south) b0 = Math.max(b0, Math.floor(Sz / 8)); else { b0 = Math.max(b0, Math.floor(-LINE.BORDER.N / 8)); b1 = Math.min(b1, Math.floor(Sz / 8)); }
+  // (D33: west of the map's east edge there are no border belts, so the small things are scattered over the open
+  // country as far as the view goes, north and south)
+  const open33 = D33.on && Math.max(...ex.map(q => q.x)) + D33.LX < D33.EDGE;
+  if (south) b0 = open33 ? b0 : Math.max(b0, Math.floor(Sz / 8)); else if (!open33) { b0 = Math.max(b0, Math.floor(-LINE.BORDER.N / 8)); b1 = Math.min(b1, Math.floor(Sz / 8)); }
   const bake = [];
   for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) for (const q of pixLnScatter(a, b)) {
     if (!pixLnBaked(q) || (q.z > Sz) !== south || (q.row && q.x / M < F[0])) continue;   // (the clearers take the small things on the right of way too)

@@ -38,7 +38,7 @@ module.exports = async function checkLineRender() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
     const P = m => problems.push(`${orient}: ${m}`);
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0' });   // D33: the line's own view is the parked build's (?d33=0); the join in the one world is checked below
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const frames = n => page.evaluate(n => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
@@ -270,6 +270,38 @@ module.exports = async function checkLineRender() {
       await frames(2);
       const edge = await page.evaluate(() => window.__railhead.lnView.focus());
       if (edge.x < -20 - 1e-6 || Math.abs(edge.z) > 44 + 1e-6) P(`the look point left the corridor: ${JSON.stringify(edge)}`);
+      if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
+    } finally { await browser.close(); }
+  }
+  // ---- D33 (one world): the join. The station's ground and the line's country meet with no seam and no edge of the
+  // world anywhere round the station, at the furthest zoom, in both orientations: the world's background is painted
+  // in a marker colour and must never show. The line's track leaves the yard past the junction, and the main line to
+  // the east is drawn curving away into the wood.
+  for (const orient of ['portrait', 'landscape']) {
+    const P = m => problems.push(`${orient} (the join): ${m}`);
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto' });
+    try {
+      await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
+      const frames = n => page.evaluate(n => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+      const D = await page.evaluate(() => { const g = (0, eval), d = g('D33'); return { on: d.on, LX: d.LX, EDGE: d.EDGE, JX: d.JX, GATE: d.GATE, M: g('LINE').M }; });
+      if (!D.on) { P('?d33 is off by default'); continue; }
+      await page.evaluate(() => { const R = window.__railhead, g = (0, eval); R.pdui.closeBoard(); R.send({ t: 'pdStart' }); R.step(400); const b = document.getElementById('pdLesson'); if (b && !b.hidden) document.getElementById('pdLesSkip').click(); g('PIX').warm = true; g('cam').zoom = 0.4; R.lnView.bg('#ff00ff'); });
+      const look = async (x, z) => { await page.evaluate(([x, z]) => (0, eval)('pixLookAt')(x, z), [x, z]); await frames(6); await page.evaluate(([x, z]) => (0, eval)('pixLookAt')(x, z), [x, z]); await frames(8); };
+      let worst = 0, n = 0;
+      for (const [x, z] of [[D.EDGE, 0], [D.EDGE, -40], [D.EDGE, 40], [D.EDGE + 40, 0], [D.EDGE + 120, -10], [D.EDGE - 40, 0], [60, 60], [0, 60], [-60, 60], [60, -150], [0, -150], [-60, -150], [-95, 0], [-95, -60], [D.EDGE + 60, 70], [D.EDGE + 60, -70], [D.EDGE, 100], [160, 100], [160, -100]]) {
+        await look(x, z);
+        const bg = await page.evaluate(() => { const X = window.__railhead.pix.PIX, d = X.bctx.getImageData(0, 0, X.nw, X.nh).data; let k = 0; for (let i = 0; i < d.length; i += 4) if (d[i] === 255 && d[i + 1] === 0 && d[i + 2] === 255) k++; return { k, scale: X.scale, missing: X.lnStats.missing + X.chunkStats.missing }; });
+        n++; worst = Math.max(worst, bg.k);
+        if (bg.scale !== 1) P(`the furthest zoom is scale ${bg.scale}`);
+        if (bg.k > 12 || bg.missing) P(`at (${x}, ${z}) at the furthest zoom: ${bg.k} pixels of the world's background in view (${bg.missing} chunks missing)`);
+      }
+      console.log(`  ${orient} (the join): no edge of the world at ${n} places round the station at the furthest zoom (the worst view has ${worst} px of pinholes in the art)`);
+      await page.evaluate(() => window.__railhead.lnView.bg(null));
+      await look(D.EDGE + 10, 0);
+      await page.screenshot({ path: screenshotPath(`d33-join-${orient}`) });
+      // the junction: the line's track carries on east past the yard limit, the main line curves away north
+      const jn = await page.evaluate(([JX]) => { const g = (0, eval), b = g('pixBranch')(), q = g('pixBranchPose'); return { z0: q(JX).z, z1: q(JX + 40).z, z2: q(JX + 120).z, len: b.arc.len }; }, [D.JX]);
+      if (!(Math.abs(jn.z0) < 0.01 && jn.z1 < -6 && jn.z2 < -30)) P('the main line does not leave the junction for the wood: ' + JSON.stringify(jn));
       if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
     } finally { await browser.close(); }
   }

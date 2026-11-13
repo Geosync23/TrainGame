@@ -25613,7 +25613,7 @@ function pixLnChunkBuild(ci, cj, F) {
   const g = cv.getContext('2d', { alpha: false }), sheet = si => PIXA.imgs[si];
   g.imageSmoothingEnabled = false;
   g.fillStyle = PIX.lnBg || PIX.COL.grass[0]; g.fillRect(0, 0, N, N);   // (never seen; PIX.lnBg: a check's marker colour)
-  const jN = Math.floor(-LINE.BORDER.N - 3);   // north of this the far wall's modules cover everything
+  const jN = Math.floor(-LINE.BORDER.N - 14);   // north of this the far wall and the rank behind it cover everything (the wall's foot is ragged, and deep in places)
   const put = (key, wx, wz, wy) => { const f = pixF(key); if (!f) return false; const p = pixProject(wx, wy || 0, wz); g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], Math.round(p.x) - l - f[5], Math.round(p.y) - t - f[6], f[3], f[4]); return true; };
   const i0 = Math.floor(sp.w0) - 1, i1 = Math.ceil(sp.w1) + 1, j0 = Math.floor(sp.v0) - 1, j1 = Math.ceil(sp.v1) + 1;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -25670,9 +25670,10 @@ function pixLnChunkBuild(ci, cj, F) {
 }
 // A sprite into a chunk's canvas at a point of the line: false when it lies wholly outside.
 function pixLnPut(g, l, t, N, key, wx, wy, wz) {
-  const f = pixF(key); if (!f) return false;
+  const f = pixF(key); if (!f) { if (PIX.lnTrack) PIX.lnTrack.add('MISSING ' + key); return false; }
   const p = pixProject(wx, wy, wz), dx = Math.round(p.x) - l - f[5], dy = Math.round(p.y) - t - f[6];
   if (dx >= N || dy >= N || dx + f[3] <= 0 || dy + f[4] <= 0) return false;
+  if (PIX.lnTrack) PIX.lnTrack.add(key);   // (a check's list of what was baked)
   g.drawImage(PIXA.imgs[f[0]], f[1], f[2], f[3], f[4], dx, dy, f[3], f[4]);
   return true;
 }
@@ -25841,7 +25842,7 @@ function pixLnLifeOf(c) {
 // the mill's wheel, the waterfall, the far cabin's smoke, the beasts, the hawk's shadow crossing. T: real seconds.
 function pixLnLive(g, bx0, bx1) {
   const T = PIX.lnT, B = LINE.BORDER, fr = (n, per, ph) => Math.floor(T / per + (ph || 0) * n) % n;
-  const put = (key, x, y, z) => pixSprite(g, key, x, y, z, null);
+  const live = PIX.lnLiveKeys = [], put = (key, x, y, z) => { if (pixSprite(g, key, x, y, z, null)) live.push(key); };
   for (const [xs, name] of Object.entries(LINE.WILD.EDGE_MARKS)) if (name === 'mill' && +xs > bx0 - 30 && +xs < bx1 + 30) put('wild/mark/mill/anim/' + fr(4, 0.22), +xs, 0, B.S);
   for (const q of LINE.MARKS) {
     if (q.x < bx0 - 30 || q.x > bx1 + 30) continue;
@@ -26296,7 +26297,10 @@ window.__railhead = {
   // D27: each builder's hooks, filled in its own section (PB_TEST, FR_TEST, TF_TEST, LES_TEST), and the foundation's.
   pb: PB_TEST, fr: FR_TEST, tf: TF_TEST, les: LES_TEST,
   ln: LN_TEST, dv: { get ui() { return dvUi; }, on: dvOn, setPref: dvSetPref, rows: dvRows, addRow: dvAddRow, open: dvOpen, close: dvClose, statusText: dvStatusText },   // D32
-  lnView: { baked: pixLnBaked, bg: c => { PIX.lnBg = c || null; PIX.lnChunks.clear(); }, on: lnViewOn, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
+  lnView: { track: on => { PIX.lnTrack = on ? new Set() : null; PIX.lnChunks.clear(); }, tracked: () => [...(PIX.lnTrack || [])], live: () => (PIX.lnLiveKeys || []).slice(), lifeOf: c => pixLnLifeOf(c), time: () => PIX.lnT,
+    // how far (native px) a sprite anchored at z reaches up the screen past the near border's line (the men's side of it)
+    over: (key, z) => { const f = pixF(key); if (!f) return null; const c = document.createElement('canvas'); c.width = f[3]; c.height = f[4]; const g = c.getContext('2d'); g.drawImage(PIXA.imgs[f[0]], f[1], f[2], f[3], f[4], 0, 0, f[3], f[4]); const d = g.getImageData(0, 0, f[3], f[4]).data; let m = -1e9; for (let y = 0; y < f[4]; y++) for (let x = 0; x < f[3]; x++) if (d[(y * f[3] + x) * 4 + 3]) { const o = -8 * (z - LINE.BORDER.S) + (x - f[5]) / 2 - (y - f[6]); if (o > m) m = o; } return m; },
+    baked: pixLnBaked, bg: c => { PIX.lnBg = c || null; PIX.lnChunks.clear(); }, on: lnViewOn, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
   d27: { PROTO, PROTO_STOCK, PROTO_LEVELS, PROTO_DOCK, PROTO_DOCK_LEVEL, PROTO_DECKS, PROTO_LEVERS, TOWN27, SHOPS27, STORE27_OUT, GOODS27, SHOP_GOODS27, CARGO27, TOOL_KINDS,
     d27On, walkDeckY, walkLevelAt, walkBridgeAt, walkStep, storeCellAt, storeCellOf, itemAudit, cargo27Where, cargo27Key, protoCreekAt, protoDebugEvening, rngFor, playerModeTick,
     flags: () => ({ ...WORLDS.proto.d27 }), protoStow, migrate18to19: proto18to19 },

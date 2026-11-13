@@ -6580,42 +6580,668 @@ const LN_TEST = { LINE, PROTO_SCHEDULE_WORK, lnKindAt, lnKindCell, lnRegionAt, l
 
 // ==== Section: the crew (D32) ====
 // Owner: Crew (plans/d32-tech.md sections 3 and 4: the men, the foreman's shares, tiring, the meal, tools, the walk to
-// and from the train, the camp, the head count). Prefixes cw, CW, cp, hc; store S.cw.
-// UNTIL CREW LANDS these are Foundation's stand-ins: no men are simulated or drawn; cwTick spends LINE.STUB_WU (0.8)
-// wu a man a working minute, shared among the stages in proportion to the work open to each (plan 3.3 steps 1 and 2,
-// without whole men), so the line grows at the plan's rate (about 480 wu a man a day). Crew replaces every function
-// in this section; the signatures are plan 11.4's.
-function cwNewDay(S, day) {}
-function cwTick(S, ev) {
-  if (!S.ln || !S.ln.run) return;
-  if (rrSod(S.time) === LINE.T.COUNT) hcTick(S, ev);         // the head count at 22:00
-  if (!lnOn(S) || !lnHours(S).work) return;
-  const L = S.ln, open = [0, 1, 2, 3, 4, 5].map(k => lnOpenWork(S, k)), tot = open.reduce((a, b) => a + b, 0);
-  if (!(tot > 0)) return;
-  const wu = L.crew * LINE.STUB_WU * CFG.TICK_GAME_S / 60;
-  for (let k = 0; k < 6; k++) if (open[k] > 0) lnWork(S, k, wu * open[k] / tot);
+// and from the train, the camp, the head count). Prefixes cw, CW, cp, hc; store S.cw. Pure simulation but for the
+// two drawing helpers at the end (cwPixDress, and the lists cwDrawList, cwProps, cpItems the renderer asks for).
+//
+// S.cw = { day, men[], fa, idle[6], u[6], g[6], bq, t0, bo[] }
+//   men   one object a rail worker (below), index = id       fa   when the foreman last shared the men out
+//   idle  seconds each manned stage has made no progress     u    the share of each gang's work its front could take last tick
+//   g     each gang's members (ids joined), to see a change  bq   when the next man may step off or on the train
+//   t0    when the train reached the railhead today          bo   Play's boosts [{ stage, x, k, until }]
+// A man: { id, who (0..2: navvy_a, _b, _c), skill (0.9 to 1.1), st, pl (0 hidden: in bed or aboard; 1 at the station;
+//   2 on the line), stage, slot, x, z, f, tx, tz, sta (stamina 0 to 100), t (when his state or step began), tool, want
+//   (the tool his job needs), a (the step within his state), w (ticks he has waited for room), mv (walked this tick),
+//   r (role in his gang: 's' at a slot, 'b' barrow, 'c' one of a carrying unit, 'x' a lone setter), q (index within
+//   his role), ld / k / mem / s / n (carrying units: leader's id, place in the unit, the leader's members, the distance
+//   carried, loads so far), rt (way points still to pass) }.
+// States (st): 'bed' > 'camp' (breakfast) > 'toTrain' (the muster, the plank walk) > 'ride' > on the line 'tool' (the
+// supply boxcar, or the tool row at the dinner spot on a change of stage) > 'walk' > 'work' <> 'rest', 'meal' at noon,
+// 'toTrain' at packing up > 'ride' > 'toCamp' > 'camp' (supper, the fire) > 'bed'. 'left': still on the line when the
+// train went (the head count reports him by name).
+// The work: a man in 'work' in working hours gives skill x CW.K wu a minute to his stage through lnWork (the only way
+// a front moves); carrying trips, shuffling up as the front moves and waiting for a load are all part of 'work', so
+// the pace depends only on the minutes worked. Nothing random but rngFor(seed, 'cw', ...).
+const CW = {
+  K: 1.58,                                     // wu a minute of a man of skill 1.0 at work (the pace's one knob; check-crew holds the windows)
+  WALK: 2.4, CARRY: 1.8,                       // u a game minute, free and under a load (plan 3.1)
+  TIRE: 1.6, TIRE_K: [1, 1.2, 1, 1, 1, 1.2], REST_AT: 20, REST_S: 420, SWAP_S: 60,
+  R2: 0.55 * 0.55,                             // a walker keeps this far (u, squared) from a man ahead of him
+  TURN: [[[0.57, 0.82], [0.57, -0.82], [-0.17, 0.98], [-0.17, -0.98]], [[0.57, -0.82], [0.57, 0.82], [-0.17, -0.98], [-0.17, 0.98]]],   // the ways round a man in the way (cos, sin)
+  BACKLOG_M: 6,                                // a gang with this many metres open ahead of it gets its plain share; more with more, less with less
+  REDO_S: 1800,                                // the foreman looks at the shares again this often
+  LEAD_M: 12, LEAD_SMALL_M: 24,                                  // the clearers keep at most this far ahead of the diggers (so the gangs read as one site)
+  TOOLS: [['hook', 'axe'], ['pick', 'shovel'], ['barrow', 'rake'], [null], ['tongs'], ['maul']],   // each stage's tools (tie men carry with their hands)
+  ANIM: { hook: ['hook', 3], axe: ['axe', 4], pick: ['pick', 4], shovel: ['shovel', 4], rake: ['rake', 3], maul: ['maul', 4] },
+  CREEK: [544 * LINE.M - 9.9, 544 * LINE.M + 9.9],   // the creek's stretch (u): crossed on the trestle's deck only
+  BRIDGE_M: [536, 552],
+  NAMES: ['Paddy Doyle', 'Mick Brennan', 'Seamus Kerr', 'Liam Foley', 'Con Sheehan', 'Dan Cassidy', 'Tim Hogan', 'Owen Rourke', 'Pat Malone', 'Jem Quinn', 'Hans Becker', 'Otto Krause',
+    'Fritz Lang', 'Emil Weber', 'Karl Brandt', 'Lars Nyberg', 'Sven Holm', 'Nils Dahl', 'Ole Berg', 'Jack Tanner', 'Bill Hawkes', 'Sam Carver', 'Ned Pruitt', 'Abe Finch', 'Zeke Mullins', 'Cal Whitlow',
+    'Josiah Reed', 'Eli Stokes', 'Moses Tate', 'Isaac Boone', 'Wash Greer', 'Ben Lyle', 'Tomas Vega', 'Pedro Luna', 'Jean Lebeau', 'Luc Fortin'],
+  // The camp at the station (station units, inside PROTO.CAMP): the yard with the fire and the table to the south, the
+  // tents in two rows north of it (the row by the yard first), the cook tent at the west end.
+  FIRE: [-62, -35.5], TABLE: [-72, -36], BARREL: [-67.5, -39.4], RACK: [-56, -39.6], WASH: [-80, -32.4], COOK: [-80.5, -45.5],
+  UP_S: 5 * 3600 + 300, EAT_S: 5 * 3600 + 27 * 60, SUPPER_S: 20 * 3600 + 900, BED_S: 21 * 3600,
+};
+// The dinner spot's seats on the line (offsets from its fire): twelve by three, less the places at the fire itself.
+CW.SEATS = (() => { const o = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 12; c++) { const dx = c - 5.5 + 0.5, dz = r - 1; if (Math.hypot(dx, dz) > 1.2) o.push([dx, dz]); } return o.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1])); })();
+function cwNames(seed) {
+  if (cwNames.s === seed) return cwNames.v;
+  const a = CW.NAMES.slice(), r = rngFor(seed, 'cw', 'names');
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rngNext(r) * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
+  cwNames.s = seed; cwNames.v = a;
+  return a;
 }
-function cwDrawList(S, place) { return []; }                 // [{ id, who, x, y, z, f, act, frame?, tool?, held? }] for 'station' or 'line'
-function cpItems(S) { return []; }                           // the camp: [{ id, key, x, y, z, box, fade? }]
-function cwGang(S, stage) { return []; }                     // [{ id, x, z, slot }]
-function cwBoost(S, stage, x, k, until) {}
-// The line only, on a bare state (the pace check): { days, done, f, log } when the last spike is in, or at maxDays.
+const cwName = (S, i) => cwNames(S.seed)[i % CW.NAMES.length];
+const cwR3 = v => Math.round(v * 1000) / 1000;
+// ---- The camp's places (plan section 4) ----
+const cwTent = t => ({ x: -52.5 - 7 * (t & 3), z: t < 4 ? -45 : -53.5 });
+function cwCot(i) { const T = cwTent(i >> 2), c = i & 3; return { x: T.x + (c & 1 ? 1.15 : -1.15), z: T.z + (c & 2 ? 1.2 : -1.5) }; }
+// A man's seat in the yard: the ring by the fire, the two benches at the table, the outer ring.
+function cwSeat(i) {
+  const F = CW.FIRE, ring = (k, n, r) => { const a = 2 * Math.PI * (k + 0.5) / n; return { x: cwR3(F[0] + r * Math.sin(a)), z: cwR3(F[1] + r * Math.cos(a)), f: a + Math.PI, y: 0 }; };
+  if (i < 10) return ring(i, 10, 2.4);
+  if (i < 18) { const b = i - 10; return { x: CW.TABLE[0] - 1.5 + (b & 3), z: CW.TABLE[1] + (b < 4 ? -1.05 : 1.05), f: b < 4 ? 0 : Math.PI, y: 0.5 }; }
+  return ring(i - 18, 14, 3.9);
+}
+// The way from the yard to a man's cot (the tents of the back row are reached by the alley beside the front row's).
+function cwBedRoute(i) {
+  const t = i >> 2, T = cwTent(t), c = cwCot(i), out = [];
+  if (t >= 4) { const ax = (t & 3) === 0 ? T.x + 3.5 : T.x - 3.5; out.push([ax, -41], [ax, -49.7]); }
+  out.push([T.x, T.z + 3.6], [c.x, c.z]);
+  return out;
+}
+const cwMuster = i => ({ x: PROTO.MUSTER.x1 - 0.5 - (i % 6), z: PROTO.MUSTER.z1 - 0.6 - Math.floor(i / 6) * 1.1 });
+// ---- A new day (05:00, from lnNewDay) ----
+function cwNewMan(S, i) {
+  const r = rngFor(S.seed, 'cw', i), who = Math.floor(rngNext(r) * 3), skill = cwR3(0.9 + 0.2 * rngNext(r)), c = cwCot(i);
+  return { id: i, who, skill, st: 'bed', pl: 0, stage: -1, slot: 0, x: c.x, z: c.z, f: 0, tx: c.x, tz: c.z, sta: 100, t: S.time, tool: null, want: null, a: '', w: 0, mv: 0 };
+}
+function cwNewDay(S, day) {
+  const L = S.ln, n = L ? L.crew | 0 : 0;
+  if (!S.cw) { if (!n) return; S.cw = { day: -1, men: [], fa: 0, idle: [0, 0, 0, 0, 0, 0], u: [1, 1, 1, 1, 1, 1], g: ['', '', '', '', '', ''], bq: 0, t0: -1, bo: [] }; }
+  const C = S.cw, sod = rrSod(S.time);
+  C.day = day; C.t0 = -1; C.bq = 0; C.bo = []; C.g = ['', '', '', '', '', ''];
+  if (C.men.length > n) C.men.length = n;
+  while (C.men.length < n) C.men.push(cwNewMan(S, C.men.length));
+  C.mean = cwR3(C.men.reduce((a, m) => a + m.skill, 0) / Math.max(1, n));   // (the crew's pace is that of n men of skill 1.0, whoever they are)
+  for (const m of C.men) {
+    m.sta = 100;
+    if (m.pl === 2) continue;                                // left on the line last night: he joins in when the train comes
+    // (a crew taken on after the morning has begun: at the muster, or aboard when the train already stands)
+    if (L.run && sod >= LINE.T.ARR - 600 && sod < LINE.T.DEP) { const p = cwMuster(m.id); Object.assign(m, sod >= LINE.T.ARR ? { st: 'ride', pl: 0 } : { st: 'toTrain', pl: 1, a: 'wait', x: p.x, z: p.z, tx: p.x, tz: p.z, f: 0 }); }
+  }
+}
+// ---- Places on the line ----
+// The piles the gangs work from, brought up as the fronts move (each hops forward a few metres at a time): the rock
+// heap on the near side by the rock front, the tie pile and the rail stack on the far side, and the dinner spot (the
+// fire and kettle, the water barrel, the tool row) on the near side behind the ties' front. None stands at the creek.
+function cwGeo(S) {
+  const f = S.ln.f, M = LINE.M, C0 = CW.CREEK[0], C1 = CW.CREEK[1];
+  const at = (fm, back, hop, w0, w1) => { let x = Math.floor((fm - back) / hop) * hop * M; if (x + w1 > C0 - 4 && x - w0 < C1 + 4) x = C0 - 4 - w1; return cwR3(x); };
+  return { heap: at(f[2], 3, 6, 3.5, 3.5), ties: at(f[3], 1.5, 4, 9.5, 9), rails: at(f[4], 6, 8, 17, 7.5), camp: at(f[3], 2, 8, 22.5, 9) };
+}
+// At the creek the corridor narrows to the trestle's deck: z is held inside a funnel there.
+function cwFz(x, z) {
+  const C = CW.CREEK, d = x < C[0] ? C[0] - x : x > C[1] ? x - C[1] : 0;
+  if (d > 4) return z;
+  const lim = 2.1 + d * 0.9;
+  return z > lim ? lim : z < -lim ? -lim : z;
+}
+// Can a man stand at (x, z)? lnWalkable, asked only where it could say no (near a border, the creek or an end).
+function cwOk(S, x, z) {
+  if (x >= 0 && x <= LINE.LEN + 100 && z > -8 && z < 8 && (x < CW.CREEK[0] - 1.6 || x > CW.CREEK[1] + 1.6)) return true;
+  return lnWalkable(S.seed, x, z, S.ln.f[1]);
+}
+// A standing place made safe: inside the funnel, and moved back west until a man can stand there.
+function cwSafe(S, x, z, f) {
+  z = cwFz(x, z);
+  for (let k = 0; k < 40 && !cwOk(S, x, z); k++) { x -= 1; z = cwFz(x, z); }
+  return { x: cwR3(x), z: cwR3(z), f };
+}
+// Where a man stands to work (the men at slots and the lone setters; the carriers have load spots).
+function cwSlot(S, m) {
+  const f = S.ln.f, M = LINE.M, k = m.stage, j = m.r === 's' ? m.q : m.slot, E = Math.PI / 2;
+  let x, z, face = E;
+  if (m.r === 'x') { x = f[k] * M - 0.6; z = 0; }
+  else if (k === 0) {       // the clearers: in the brush ahead of the cleared front, four abreast
+    const r = j >> 2;
+    x = f[0] * M + 0.6 + 1.7 * r; z = [-3.4, 1.1, -1.1, 3.4][j & 3] + (r & 1 ? 0.35 : 0);
+    if (x > CW.CREEK[0] - 0.6 && f[1] < CW.BRIDGE_M[1]) x = Math.min(f[0] * M, CW.CREEK[0]) - 0.6 - 1.7 * r;   // (the far bank is cleared from this side until the trestle stands)
+  } else if (k === 1) { x = f[1] * M - 0.5 - 1.6 * Math.floor(j / 3); z = [-2.5, 0, 2.5][j % 3]; face = j % 3 === 1 ? E : j % 3 ? Math.PI : 0; }
+  else if (k === 2) { x = f[2] * M - 0.7 - 1.5 * (j >> 1); z = j & 1 ? 1.25 : -1.25; }
+  else {                    // the spikers: along the rails laid but not yet spiked, one each side
+    const r = j >> 1, lim = f[4] * M - 0.6, cap = Math.max(0, Math.floor((lim - f[5] * M - 0.5) / 1.5) + 1);
+    x = r < cap ? f[5] * M + 0.5 + 1.5 * r : f[5] * M - 1 - 1.5 * (r - cap); z = j & 1 ? 1.5 : -1.5; face = j & 1 ? Math.PI : 0;
+  }
+  return cwSafe(S, x, z, face);
+}
+// Where a carrier takes up his load: the barrow men along the heap, the tie pairs in a queue at the pile, the rail
+// gangs either side of the top rail of the stack.
+function cwLoadSpot(S, m, G) {
+  const k = m.stage, L = S.cw.men[m.ld], ui = L.q;
+  if (k === 2) return cwSafe(S, G.heap + 1.1 * (m.q - (m.nb - 1) / 2), 5.1, 0);
+  if (k === 3) { const qp = ui === 0 ? 0 : ui & 1 ? -(ui + 1) / 2 : ui / 2; return cwSafe(S, G.ties + 1.5 + 4.2 * qp - 3 * m.k, -4.4, Math.PI / 2); }
+  const cx = G.rails - 10.5 * ui, two = L.mem.length < 4, front = two ? m.k === 0 : m.k < 2, north = two ? m.k === 0 : !(m.k & 1);
+  return cwSafe(S, cx + (front ? 4 : -4), -5.3 + (north ? -0.6 : 0.6), Math.PI / 2);
+}
+// A point s along a path of straight pieces (run on beyond both ends): [x, z, heading].
+function cwPathAt(P, s) {
+  let i = 0, a = P[0], b = P[1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  while (s > len && i < P.length - 2) { s -= len; i++; a = P[i]; b = P[i + 1]; len = Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  const ux = len > 1e-6 ? (b[0] - a[0]) / len : 1, uz = len > 1e-6 ? (b[1] - a[1]) / len : 0;
+  return [a[0] + ux * s, a[1] + uz * s, Math.atan2(ux, uz)];
+}
+const cwPathLen = P => { let n = 0; for (let i = 1; i < P.length; i++) n += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); return n; };
+// A unit's way out with its load, from where its leader took it up (L.p0) to the front as it is now.
+function cwPath(S, L) {
+  const f = S.ln.f, M = LINE.M, k = L.stage, p = L.p0;
+  if (k === 2) { const tx = Math.max(p[0] + 0.5, f[2] * M + 0.5 + (L.q & 3)); return [p, [p[0], 4.2], [tx, 4.2], [tx, 3.4]]; }
+  if (k === 3) { const dx = f[3] * M + 0.45; return [p, [p[0] + 0.6, p[1]], [p[0] + 1.6, -3.9], [dx, -3.9], [dx, 1.6]]; }
+  const ex = Math.max(p[0] + 16, f[4] * M + 6.5), zr = L.n & 1 ? 1.025 : -1.025;
+  return [p, [p[0] + 5, p[1]], [p[0] + 8, -2.6], [ex - 6.5, -2.6], [ex - 4.5, zr], [ex, zr]];
+}
+// ---- Walking ----
+// One tick's walk towards (tx, tz), by the way points still to pass (m.rt) and, on the line, along the walkers' lane
+// beside the track when the way is long. He goes round a man in his way, waits when he cannot, and after most of a
+// minute squeezes past; on the line he never leaves the ground lnWalkable allows. True when he is there.
+function cwStep(S, m, v, line) {
+  const rt = m.rt, way = rt && rt.length;
+  let ax = m.tx, az = m.tz, real = true;
+  if (way) { ax = rt[0][0]; az = rt[0][1]; real = false; }
+  else if (line && Math.abs(ax - m.x) > 5) { az = 3.6 + (m.id & 3) * 0.3; ax = m.x + (ax > m.x ? 2.5 : -2.5); real = false; }
+  const dx = ax - m.x, dz = az - m.z, d = Math.hypot(dx, dz);
+  if (d < (way ? 0.9 : 0.02)) {
+    if (way) { rt.shift(); if (!rt.length) delete m.rt; return cwStep(S, m, v, line); }
+    m.mv = 0; m.w = 0;
+    return true;
+  }
+  const st = Math.min(v, d), ux = dx / d, uz = dz / d, men = S.cw.men, pl = m.pl, R2 = CW.R2, mx = m.x, mz = m.z;
+  const ok = (nx, nz, hard) => {
+    if (line && !cwOk(S, nx, nz)) return false;
+    if (hard) return true;
+    for (let i = 0; i < men.length; i++) { const o = men[i]; if (o === m || o.pl !== pl) continue; const ox = o.x - nx, oz = o.z - nz; if (ox * ox + oz * oz < R2 && (o.x - mx) * ux + (o.z - mz) * uz > 0) return false; }
+    return true;
+  };
+  let nx = mx + ux * st, nz = mz + uz * st;
+  if (line) nz = cwFz(nx, nz);
+  if (!ok(nx, nz, m.w > 6)) {
+    let got = false;
+    const T = CW.TURN[m.id & 1];
+    for (let i = 0; i < 4 && !got; i++) { const c = T[i][0], s = T[i][1], x2 = mx + (ux * c - uz * s) * st; let z2 = mz + (uz * c + ux * s) * st; if (line) z2 = cwFz(x2, z2); if (ok(x2, z2, false)) { nx = x2; nz = z2; got = true; } }
+    if (!got) { m.w++; m.mv = 0; return false; }
+  } else if (st === d) { nx = ax; nz = line ? cwFz(ax, az) : az; }
+  m.w = 0; m.f = cwR3(Math.atan2(nx - mx, nz - mz)); m.x = cwR3(nx); m.z = cwR3(nz); m.mv = 1;
+  if (st === d && Math.hypot(ax - m.x, az - m.z) < 0.02) {
+    if (way) { rt.shift(); if (!rt.length) delete m.rt; return false; }
+    if (real) { m.mv = 0; return true; }
+  }
+  return false;
+}
+const cwGo = (m, x, z, rt) => { m.tx = cwR3(x); m.tz = cwR3(z); if (rt && rt.length) m.rt = rt; else delete m.rt; };
+// Is the place (x, z) free for a man to stand: no other man there or bound there, and off the piles' ground.
+function cwFree(S, m, x, z, G) {
+  if (G) {
+    if (z > 4.4 && z < 7.8 && Math.abs(x - G.heap) < 4.2) return false;
+    if (z > 7.6 && x > G.camp - 23.5 && x < G.camp + 9.5) return false;
+    if (z < -3.7 && ((x > G.ties - 13 && x < G.ties + 12) || (x > G.rails - 28 && x < G.rails + 8))) return false;
+  }
+  for (const o of S.cw.men) { if (o === m || o.pl !== m.pl) continue; if (Math.hypot(o.x - x, o.z - z) < 0.95 || Math.hypot(o.tx - x, o.tz - z) < 0.95) return false; }
+  return true;
+}
+// ---- The foreman (plan 3.3) ----
+const cwLead = S => (S.ln.crew >= 12 ? CW.LEAD_M : CW.LEAD_SMALL_M);   // (a small crew clears further ahead at a time, to walk less)
+// The work open to the clearers: to LEAD_M ahead of the diggers, and not over the creek before the trestle stands.
+function cwOpen0(S) {
+  const L = S.ln, f = L.f;
+  let cap = Math.min(lnLimit(S, 0), f[1] + cwLead(S)), m = f[0], wu = -L.wu[0];
+  if (f[1] < CW.BRIDGE_M[1]) cap = Math.min(cap, CW.BRIDGE_M[1] + LINE.GAP[1] + 0.5);   // (just far enough for the trestle to be finished: the diggers keep 6 m behind)
+  if (!lnOn(S) || m >= cap - 1e-9) return 0;
+  while (m < cap - 1e-9) { const seg = lnSegAt(m), d = Math.min(cap, seg[1]) - m; wu += d * lnCost(0, m); m += d; }
+  return Math.max(0, wu);
+}
+// Shares the men on the line out among the six stages: in proportion to what each front costs a metre here (so the
+// fronts move at one speed), less for a stage with little work open, none for one with none; a stage the next one is
+// waiting on always gets a man; ties and rails get an even number when they get more than one; as many men as
+// possible stay where they are (the lowest id moves first). Then each gang's slots, roles and carrying units.
+function cwAssign(S) {
+  const C = S.cw, L = S.ln, men = C.men.filter(m => (m.pl === 2 && m.st !== 'left' && m.st !== 'toTrain') || (m.st === 'ride' && L.tr.ph === 'stand')), n = men.length;
+  C.fa = S.time; C.idle = [0, 0, 0, 0, 0, 0];
+  if (!n) return;
+  const open = [0, 1, 2, 3, 4, 5].map(k => (k ? lnOpenWork(S, k) : cwOpen0(S))), cost = open.map((o, k) => lnCost(k, L.f[k]) || 1);
+  const Dm = n * 48 / cost.reduce((a, b) => a + b, 0);       // the metres an hour this crew makes when every front moves
+  const lim = k => (k ? lnLimit(S, k) : open[0] > 0 ? Math.min(lnLimit(S, 0), L.f[1] + cwLead(S)) : L.f[0]);
+  // A stage counts when it has work open, or will have as the gang ahead moves on (it has caught up and waits; the
+  // clearers at their lead only in a big crew); not when it is finished or out of supplies. The men go one by one to
+  // the stage with the fewest men for what its front costs a metre here, so the slowest front is as fast as can be.
+  const w = open.map((o, k) => { const b = lim(k) - L.f[k], sup = lnSupOf(k), wait = b < 0.5 && L.f[k] < LINE.LEN_M && (k ? !sup || L.sup[sup] > 1 : n >= 20); return o > 0 || wait ? cost[k] : 0; });
+  const tot = w.reduce((a, b) => a + b, 0);
+  if (!(tot > 0)) return;                                    // nothing open anywhere: everyone waits where he is
+  const cnt = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < n; i++) { let b = -1; for (let k = 0; k < 6; k++) if (w[k] > 0 && (b < 0 || cnt[k] / w[k] < cnt[b] / w[b] - 1e-12 || (Math.abs(cnt[k] / w[k] - cnt[b] / w[b]) <= 1e-12 && w[k] > w[b]))) b = k; cnt[b]++; }
+  // Then the men follow the work: a gang with under a quarter of an hour's work open a man (it has caught up and
+  // waits on the gang ahead) lends men, one at a time, to the stage with the most work waiting a man, while that is
+  // well over half an hour's. So a small crew's men move from stage to stage, and a big crew throws its spare hands
+  // at the cut, the trestle and the rock.
+  for (let pass = 0; pass < n; pass++) {
+    let k = -1, d = -1;
+    for (let j = 0; j < 6; j++) if (open[j] / (cnt[j] + 1) > (cnt[j] ? 40 : 0.001) && (k < 0 || open[j] / (cnt[j] + 1) > open[k] / (cnt[k] + 1))) k = j;
+    if (k < 0) break;
+    for (let j = 5; j >= 0; j--) if (j !== k && cnt[j] > 0 && open[j] / cnt[j] < Math.min(15, open[k] / (cnt[k] + 1) / 2) && (d < 0 || open[j] / cnt[j] < open[d] / cnt[d])) d = j;
+    if (d < 0) break;
+    cnt[d]--; cnt[k]++;
+  }
+  for (const k of [3, 4]) if (cnt[k] > 1 && cnt[k] & 1) {
+    let d = -1; for (const j of [1, 2, 5, 0]) if (cnt[j] > 1 && (d < 0 || cnt[j] > cnt[d])) d = j;
+    if (d >= 0) { cnt[d]--; cnt[k]++; } else { let r = -1; for (const j of [1, 2, 5, 0]) if (w[j] > 0 && (r < 0 || w[j] > w[r])) r = j; if (r >= 0) { cnt[k]--; cnt[r]++; } }
+  }
+  // a gang one man over or under its share is left alone (men are not marched about for a trifle)
+  const cur = [0, 0, 0, 0, 0, 0];
+  let loose = 0, calm = true;
+  for (const m of men) if (m.stage >= 0) cur[m.stage]++; else loose++;
+  for (let k = 0; k < 6; k++) if (Math.abs(cnt[k] - cur[k]) > 1 || !cnt[k] !== !cur[k]) calm = false;
+  if (calm && !loose) return;
+  // who stays, who moves
+  const gang = [[], [], [], [], [], []], movers = [], moved = new Set();
+  for (let k = 0; k < 6; k++) { const here = men.filter(m => m.stage === k).sort((a, b) => b.id - a.id); gang[k] = here.slice(0, cnt[k]); for (const m of here.slice(cnt[k])) movers.push(m); }
+  for (const m of men) if (m.stage < 0) movers.push(m);
+  movers.sort((a, b) => a.id - b.id);
+  for (let k = 0; k < 6; k++) while (gang[k].length < cnt[k] && movers.length) { const m = movers.shift(); m.slot = 1000 + m.id; m.stage = k; gang[k].push(m); moved.add(m.id); }
+  for (let k = 0; k < 6; k++) {
+    const g = gang[k].sort((a, b) => a.slot - b.slot || a.id - b.id), sig = g.map(m => m.id).join(','), changed = sig !== C.g[k];
+    C.g[k] = sig;
+    g.forEach((m, j) => { m.slot = j; });
+    if (!changed) continue;
+    // roles: the rock gang's rakers (one in three, six at most) and barrow men; the tie pairs; the rail gangs of four
+    const nr = k === 2 ? Math.min(6, Math.floor(g.length / 3)) : 0, nb = g.length - nr, un = k === 3 ? 2 : k === 4 ? 4 : 1;
+    g.forEach((m, j) => {
+      delete m.mem; delete m.ld; delete m.k; delete m.p0; delete m.nb;
+      if (k === 2 && j >= nb) { m.r = 's'; m.q = j - nb; m.want = 'rake'; }
+      else if (k === 2) { m.r = 'c'; m.q = j; m.nb = nb; m.ld = m.id; m.k = 0; m.mem = [m.id]; m.want = 'barrow'; }
+      else if (k === 3 || k === 4) {
+        const ui = Math.floor(j / un), u0 = ui * un, size = Math.min(un, g.length - u0), lone = size === 1 || (size === 3 && j === u0 + 2);
+        m.want = k === 3 ? null : 'tongs';
+        if (lone) { m.r = 'x'; m.q = 0; }
+        else { const L0 = g[u0]; m.r = 'c'; m.q = ui; m.ld = L0.id; m.k = j - u0; if (j === u0) m.mem = g.slice(u0, u0 + (size === 3 ? 2 : size)).map(o => o.id); }
+      } else { m.r = 's'; m.q = j; m.want = CW.TOOLS[k].includes(m.tool) ? m.tool : CW.TOOLS[k][(j + (j >> 2)) % CW.TOOLS[k].length]; }
+      if (m.mem) { m.s = 0; m.n = m.n | 0; if (m.st === 'work') m.a = 'back'; }
+      if ((m.st === 'work' || m.st === 'walk') && (moved.has(m.id) || m.tool !== m.want)) cwGoWork(m);   // (a man who stays with his gang and his tool works on: he only shifts along)
+    });
+  }
+}
+// To work: by the tool row first when the job needs another tool than the one in his hands.
+function cwGoWork(m) { m.st = m.tool === m.want ? 'walk' : 'tool'; m.a = 'go'; m.w = 0; delete m.rt; }
+// ---- A carrying unit's tick (its leader's): barrow men alone, tie pairs, rail gangs ----
+// 'back' (each walks to his load spot) > 'load' > 'out' (together along the unit's path, keeping clear of the unit
+// ahead) > 'set' (the load put down at the front) > 'back'. A unit rests together, between loads.
+function cwUnit(S, L, G, v, dt) {
+  const men = S.cw.men, mem = L.mem, k = L.stage;
+  if (L.a === 'back' || L.a === 'load') {
+    let all = true;
+    for (const id of mem) { const m = men[id]; if (m.st !== 'work') { all = false; continue; } const p = cwLoadSpot(S, m, G); if (Math.hypot(p.x - m.x, p.z - m.z) > 0.05) { cwGo(m, p.x, p.z); if (!cwStep(S, m, k === 2 ? CW.CARRY * v / CW.WALK : v, true)) all = false; } else { m.mv = 0; m.f = p.f; } }
+    if (!all) { L.a = 'back'; return; }
+    if (L.a === 'back') { L.a = 'load'; L.t = S.time; if (mem.some(id => men[id].sta <= CW.REST_AT)) { for (const id of mem) cwRest(S, men[id], G, mem.length > 1 ? men[mem[0]] : null); L.a = 'back'; } return; }
+    if (S.time - L.t < (k === 4 ? 60 : 40)) return;
+    for (const o of men) if (o !== L && o.mem && o.stage === k && o.a === 'out' && o.s < (k === 4 ? 14 : k === 3 ? 5 : 1.6)) return;   // the unit ahead has not got clear yet
+    L.a = 'out'; L.s = 0;
+    if (k === 4) { const a = men[mem[0]], b = men[mem[mem.length - 1]]; L.p0 = [cwR3((a.x + b.x) / 2), cwR3((a.z + b.z) / 2)]; } else L.p0 = [L.x, L.z];
+    return;
+  }
+  const P = cwPath(S, L), len = cwPathLen(P);
+  if (L.a === 'out') {
+    let go = true;
+    const gap = k === 4 ? 14 : k === 3 ? 4.6 : 1.5;
+    for (const o of men) { if (o === L || !o.mem || o.stage !== k || (o.a !== 'out' && o.a !== 'set')) continue; const ro = o.a === 'set' ? 0 : cwPathLen(cwPath(S, o)) - o.s, r = len - L.s; if ((ro < r || (ro === r && o.id < L.id)) && r - ro < gap) go = false; }
+    if (go) L.s = cwR3(Math.min(len, L.s + CW.CARRY * dt));
+    for (const id of mem) men[id].mv = go ? 1 : 0;
+    if (L.s >= len - 1e-6) { L.a = 'set'; L.t = S.time; L.n = (L.n | 0) + 1; }
+  } else if (S.time - L.t >= 60) { L.a = 'back'; for (const id of mem) men[id].mv = 0; return; }
+  const sEnd = L.a === 'set' ? len : L.s;
+  mem.forEach((id, i) => {
+    const m = men[id];
+    let p;
+    if (k === 4) { const two = mem.length < 4, front = two ? i === 0 : i < 2, north = two ? i === 0 : !(i & 1); p = cwPathAt(P, sEnd + (front ? 4 : -4)); p[1] += north ? -0.6 : 0.6; }
+    else p = cwPathAt(P, sEnd - 3 * i);
+    m.x = cwR3(p[0]); m.z = cwR3(cwFz(p[0], p[1])); m.f = cwR3(p[2]); m.tx = m.x; m.tz = m.z;
+    if (L.a === 'set') { m.mv = 0; if (k === 3) m.f = i ? 0 : Math.PI; if (k === 2) m.f = Math.PI; }
+  });
+}
+// A rest: the tool put down, off to the verge to sit (one time in three by the water barrel first); a unit rests
+// side by side. `by`: the man to sit beside.
+function cwRest(S, m, G, by) {
+  const C = S.cw, r = rngFor(S.seed, 'cw', C.day, m.id, m.rn | 0), side = (by || m).z < 0 || ((by || m).z === 0 && m.id & 1) ? -1 : 1, x0 = (by || m).x;
+  m.rn = (m.rn | 0) + 1; m.st = 'rest'; m.a = 'toRest'; m.t = S.time; delete m.rt;
+  let spot = null;
+  for (let i = 0; i < 40 && !spot; i++) {
+    const kx = (i >> 1) % 10, x = x0 + (kx & 1 ? -1 : 1) * Math.ceil(kx / 2) * 1.1, z = side * (5.6 + (i % 3)) * (i >= 20 ? -1 : 1), p = cwSafe(S, x, z, 0);
+    if (Math.abs(p.z) > 5 && cwFree(S, m, p.x, p.z, G)) spot = p;
+  }
+  if (!spot) spot = { x: m.x, z: m.z };
+  m.rx = spot.x; m.rz = spot.z;
+  const bx = G.camp + 7.5, bz = 8.6;
+  if (rngNext(r) < 0.34 && Math.abs(bx - m.x) < 26 && !by) {
+    for (let i = 0; i < 6; i++) { const a = Math.PI * (i + (m.id % 6)) / 3, x = cwR3(bx + 1.25 * Math.sin(a)), z = cwR3(bz + 1.25 * Math.cos(a)); if (cwOk(S, x, z) && cwFree(S, m, x, z, null)) { m.a = 'toDrink'; cwGo(m, x, z); return; } }
+  }
+  cwGo(m, spot.x, spot.z);
+}
+// ---- The sim tick's crew step (after wtTick) ----
+function cwTick(S, ev) {
+  const L = S.ln;
+  if (!L) return;
+  let C = S.cw;
+  if (!C) { if (!L.run) return; cwNewDay(S, L.day); C = S.cw; if (!C) return; }
+  const sod = rrSod(S.time), T = LINE.T;
+  C.sk = C.lt === S.tick; C.lt = S.tick | 0;                 // (the station's ticks are not being played: a jump of the clock)
+  if (sod === T.COUNT && (L.run || C.men.length)) hcTick(S, ev);   // the head count at 22:00
+  const men = C.men;
+  if (!men.length) return;
+  const dt = CFG.TICK_GAME_S / 60, v = CW.WALK * dt, ph = L.tr.ph, H = lnHours(S), day = L.day;
+  let TR = null, G = null, nLine = 0;
+  for (const m of men) if (m.pl === 2) nLine++;
+  if (nLine || ph === 'stand') { TR = lnTrain(S); G = cwGeo(S); }
+  const steps = TR && TR.at === 'line' ? TR.steps : null;
+  if (ph === 'stand' && C.t0 < 0 && sod < T.AWAY) {          // the train is at the railhead: the foreman shares out everyone aboard (and anyone left here last night)
+    C.t0 = S.time; C.g = ['', '', '', '', '', ''];
+    for (const m of men) if (m.st === 'ride' || m.pl === 2) { m.stage = -1; if (m.pl === 2) m.st = 'idle'; }
+    cwAssign(S);
+  }
+  // The foreman: when the men get off, before the afternoon, when a gang has stood idle, and every hour.
+  if (nLine && ph === 'stand') {
+    let idle = false;
+    for (let k = 0; k < 6; k++) if (C.idle[k] >= 300 && C.g[k]) idle = true;
+    if (sod === T.MEAL1 - 1200 || (H.work && S.time - C.fa >= (idle ? 300 : CW.REDO_S))) cwAssign(S);
+  }
+  const wu = [0, 0, 0, 0, 0, 0], bo = C.bo;
+  for (let i = 0; i < men.length; i++) {
+    const m = men[i];
+    if (m.pl === 2) {
+      // ---- on the line ----
+      if (m.st === 'left' && !(ph === 'stand' && sod < T.AWAY)) continue;
+      if (ph !== 'stand') { m.st = 'left'; m.a = ''; m.mv = 0; delete m.rt; continue; }   // the train has gone without him
+      if (m.st === 'toTrain') {
+        cwGo(m, steps.x + 0.2, steps.z + 0.9);
+        if (m.tool && m.x < TR.cars[3].x1) m.tool = null;   // his tool handed up into the supply boxcar
+        if (cwStep(S, m, v, true) || Math.hypot(m.x - m.tx, m.z - m.tz) < 0.9) { m.st = 'ride'; m.pl = 0; m.tool = null; m.mv = 0; m.stage = -1; delete m.rt; }
+        continue;
+      }
+      if (H.pack || sod >= T.WORK1 - 5400) {                 // packing up: each man leaves in time to be aboard by 18:17
+        if (sod >= T.AWAY - 300 - (Math.abs(m.x - steps.x) + Math.abs(m.z - 3.5) + 2) / CW.WALK * 60) { m.st = 'toTrain'; m.a = ''; delete m.rt; m.w = 0; continue; }
+      }
+      if (H.meal && sod < T.MEAL1 - 900 && m.st !== 'meal') { const q = CW.SEATS[m.id % CW.SEATS.length], p = cwSafe(S, G.camp + q[0], 9.2 + q[1], 0); m.st = 'meal'; m.a = 'go'; m.sx = p.x; m.sz = p.z; cwGo(m, p.x, p.z); }
+      switch (m.st) {
+        case 'meal':
+          if (!H.meal || sod >= T.MEAL1 - 900) { m.sta = 100; if (m.stage >= 0) cwGoWork(m); else m.st = 'idle'; break; }
+          if (m.a === 'go') { cwGo(m, m.sx, m.sz); if (cwStep(S, m, v, true)) { m.a = 'eat'; m.t = S.time; m.f = cwR3(Math.atan2(G.camp - m.x, 9.2 - m.z)); } }
+          else if (S.time - m.t > 600) m.sta = Math.min(100, m.sta + 0.5);
+          break;
+        case 'tool': {
+          if (m.a === 'go') {
+            const early = C.t0 >= 0 && S.time - C.t0 < 1500 && m.tool === null && TR.cars.length > 4;
+            const p = early ? cwSafe(S, TR.cars[4].x0 + 3 + (14 - m.id % 15), 3.4 + (m.id >= 15 ? 0.9 : 0), Math.PI) : cwSafe(S, G.camp - 22 + (m.id % 15), 8.3 + (m.id >= 15 ? 1.1 : 0), Math.PI);
+            cwGo(m, p.x, p.z);
+            if (cwStep(S, m, v, true)) { m.a = 'swap'; m.t = S.time; m.f = p.f; }
+          } else if (S.time - m.t >= CW.SWAP_S) { m.tool = m.want; m.st = 'walk'; m.a = 'go'; }
+          break;
+        }
+        case 'walk': {
+          const p = m.r === 'c' ? cwLoadSpot(S, m, G) : cwSlot(S, m);
+          cwGo(m, p.x, p.z);
+          if (cwStep(S, m, m.tool === 'barrow' ? CW.CARRY * dt : v, true)) { m.st = 'work'; m.f = p.f; m.t = S.time; if (m.mem) m.a = 'back'; }
+          break;
+        }
+        case 'rest':
+          if (m.a === 'toDrink') { if (cwStep(S, m, v, true)) { m.a = 'drink'; m.t = S.time; m.f = cwR3(Math.atan2(G.camp + 7.5 - m.x, 8.6 - m.z)); } }
+          else if (m.a === 'drink') { if (S.time - m.t >= 60) { m.a = 'toRest'; cwGo(m, m.rx, m.rz); } }
+          else if (m.a === 'toRest') { if (cwStep(S, m, v, true)) { m.a = 'sit'; m.t = S.time; m.f = m.z < 0 ? 0 : Math.PI; for (const o of men) if (o !== m && o.pl === 2 && o.st === 'rest' && o.a === 'sit' && Math.hypot(o.x - m.x, o.z - m.z) < 1.6) { m.f = cwR3(Math.atan2(o.x - m.x, o.z - m.z)); o.f = cwR3(Math.atan2(m.x - o.x, m.z - o.z)); break; } } }
+          else if (S.time - m.t >= CW.REST_S) { m.sta = 100; if (m.stage >= 0) cwGoWork(m); else m.st = 'idle'; }
+          break;
+        case 'work': {
+          if (m.r === 'c') { if (m.mem) cwUnit(S, m, G, v, dt); }
+          else {
+            const p = cwSlot(S, m), d = Math.hypot(p.x - m.x, p.z - m.z);
+            if (m.a === 'mv' ? d > 0.02 : d > 0.9) { m.a = 'mv'; cwGo(m, p.x, p.z); if (cwStep(S, m, v, true)) { m.a = ''; m.f = p.f; } }
+            else { m.a = ''; m.mv = 0; m.f = p.f; }
+            if (m.sta <= CW.REST_AT && H.work) { cwRest(S, m, G, null); break; }
+          }
+          if (!H.work) break;
+          let k = 1;
+          for (let b = 0; b < bo.length; b++) { const B = bo[b]; if (B.stage === m.stage && S.tick < B.until && Math.abs(m.x - B.x) <= 12 * LINE.M && B.k > k) k = B.k; }
+          wu[m.stage] += m.skill / C.mean * CW.K * k * dt;
+          m.sta = Math.max(0, m.sta - CW.TIRE * CW.TIRE_K[m.stage] * (m.stage === 0 && lnKindAt(L.f[0]) === 'prairie' ? 0.8 : 1) * dt * C.u[m.stage]);
+          break;
+        }
+        default:              // 'idle': no stage yet (just off the train, or nothing open): the foreman places him
+          m.mv = 0;
+          if (m.stage >= 0) cwGoWork(m);
+      }
+      continue;
+    }
+    // ---- aboard ----
+    if (m.st === 'ride') {
+      if (ph === 'stand' && steps && S.time >= C.bq && m.off !== day && sod < T.WORK1) {   // off at the railhead, one after another
+        m.off = day;
+        C.bq = S.time + 16;
+        Object.assign(m, { pl: 2, st: 'idle', a: '', x: cwR3(steps.x), z: cwR3(steps.z + 0.5), f: 0, w: 0, t: S.time, tool: null, sta: cwR3(72 + 28 * rngNext(rngFor(S.seed, 'cw', day, m.id, 'am'))) });
+        m.tx = m.x; m.tz = m.z;
+        if (m.stage >= 0) cwGoWork(m);
+      } else if (ph === 'eStand' && S.time >= C.bq) {        // off at the station in the evening
+        C.bq = S.time + 16;
+        const s = cwSeat(m.id), K = PROTO.PLANK, gate = PROTO.CAMP.gate;
+        Object.assign(m, { pl: 1, st: 'toCamp', a: '', x: K.x, z: K.z1 - 0.6, f: Math.PI, w: 0, t: S.time });
+        cwGo(m, s.x, s.z, [[K.x, K.z0 - 0.2], [gate.x, gate.z]]);
+      } else if (ph === 'home' && sod > T.BACK) { const c = cwCot(m.id); Object.assign(m, { st: 'bed', pl: 0, x: c.x, z: c.z }); }   // (never: the train came home without stopping)
+      continue;
+    }
+    // ---- at the station: the camp, the muster, the plank walk ----
+    const morning = sod >= 17000 && sod < 12 * 3600, late = sod < 17000;   // (late: past midnight, a very late train)
+    if (m.st === 'bed') {
+      if (morning && sod >= CW.UP_S + (m.id % 10) * 30 && m.up !== day) {
+        const s = cwSeat(m.id), c = cwCot(m.id);
+        m.up = day; m.pl = 1; m.st = 'camp'; m.a = 'toSeat'; m.x = c.x; m.z = c.z; m.w = 0;
+        cwGo(m, s.x, s.z, cwBedRoute(m.id).reverse().slice(1));
+      }
+      continue;
+    }
+    if (m.st === 'camp') {
+      if (m.a === 'toSeat') { if (cwStep(S, m, v, false)) { const s = cwSeat(m.id); m.f = cwR3(s.f); m.a = morning || late || sod >= 19.5 * 3600 ? 'eat' : 'fire'; m.t = S.time; } }
+      else if (m.a === 'eat') {
+        if (morning) {
+          if (sod >= CW.EAT_S + m.id * 10) {
+            if (L.run && sod < T.DEP - 600) { const p = cwMuster(m.id), gate = PROTO.CAMP.gate; m.st = 'toTrain'; m.a = 'go'; cwGo(m, p.x, p.z, [[gate.x, gate.z], [PROTO.MUSTER.x0 + 0.6, PROTO.MUSTER.z0 - 1.2]]); }
+            else m.a = 'fire';
+          }
+        } else if (S.time - m.t >= 1500 && (late || sod >= CW.SUPPER_S)) { m.a = 'fire'; m.t = S.time; }
+      } else if (m.a === 'fire') {
+        if (!morning && sod >= 19.5 * 3600 && sod < CW.SUPPER_S && m.fed !== day) { m.fed = day; m.a = 'eat'; m.t = S.time - 1500; }
+        else if (!morning && (late || sod >= CW.BED_S + m.id * 40)) { const c = cwCot(m.id); m.a = 'toBed'; cwGo(m, c.x, c.z, cwBedRoute(m.id).slice(0, -1)); }
+        else if (!morning && m.dr !== day && sod >= CW.SUPPER_S + 300 + ((m.id * 7) % 30) * 60 && sod < CW.BED_S - 300) {
+          const a = Math.PI * (m.id % 6) / 3;
+          m.dr = day; m.a = 'toDrink'; cwGo(m, CW.BARREL[0] + 1.25 * Math.sin(a), CW.BARREL[1] + 1.25 * Math.cos(a));
+        }
+      } else if (m.a === 'toDrink') { if (cwStep(S, m, v, false)) { m.a = 'drink'; m.t = S.time; m.f = cwR3(Math.atan2(CW.BARREL[0] - m.x, CW.BARREL[1] - m.z)); } }
+      else if (m.a === 'drink') { if (S.time - m.t >= 90) { const s = cwSeat(m.id); m.a = 'toSeat'; cwGo(m, s.x, s.z); } }
+      else if (m.a === 'toBed') { if (cwStep(S, m, v, false)) { m.st = 'bed'; m.pl = 0; m.a = ''; m.mv = 0; } }
+      else m.a = 'fire';
+      continue;
+    }
+    if (m.st === 'toTrain') {
+      if (ph !== 'sStand' && ph !== 'sIn' && ph !== 'home') {   // the train has gone: back to the camp for the day
+        const s = cwSeat(m.id), gate = PROTO.CAMP.gate;
+        m.st = 'toCamp'; m.a = 'miss'; cwGo(m, s.x, s.z, [[gate.x, gate.z]]);
+      } else if (m.a === 'go') { if (cwStep(S, m, v, false)) { m.a = 'wait'; m.f = 0; } }
+      else if (m.a === 'wait') {
+        m.mv = 0;
+        if (ph === 'sStand' && S.time >= C.bq) { const K = PROTO.PLANK; C.bq = S.time + 16; m.a = 'board'; cwGo(m, K.x, K.z1 - 0.6, [[K.x - 0.5, K.z0 - 0.7], [K.x, K.z0 - 0.1]]); }
+      } else if (cwStep(S, m, v, false)) { m.st = 'ride'; m.pl = 0; m.a = ''; m.mv = 0; }
+      continue;
+    }
+    if (m.st === 'toCamp') { if (cwStep(S, m, v, false)) { const s = cwSeat(m.id); m.st = 'camp'; m.f = cwR3(s.f); m.t = S.time; if (m.a === 'miss') m.a = 'fire'; else { m.a = 'eat'; m.fed = day; } } continue; }
+  }
+  // The work done this tick, front by front from the head of the line; what a front could not take is lost (a gang
+  // waiting on the gang ahead), and a gang that gets nothing done is noted for the foreman.
+  if (H.work) for (let k = 0; k < 6; k++) {
+    if (!(wu[k] > 0)) { C.u[k] = 1; continue; }
+    const give = k === 0 ? Math.min(wu[0], cwOpen0(S)) : wu[k], back = give > 0 ? lnWork(S, k, give) : 0, used = (give - back) / wu[k];
+    C.u[k] = cwR3(Math.max(0.05, Math.min(1, used)));
+    C.idle[k] = used > 0.02 ? 0 : C.idle[k] + CFG.TICK_GAME_S;
+  }
+}
+// ---- For Play (plan 11.4) ----
+// The men of a stage on the line: [{ id, x, z, slot, name, sta, st }].
+function cwGang(S, stage) {
+  const out = [];
+  if (S && S.cw) for (const m of S.cw.men) if (m.pl === 2 && m.stage === stage) out.push({ id: m.id, x: m.x, z: m.z, slot: m.slot, name: cwName(S, m.id), sta: Math.round(m.sta), st: m.st });
+  return out;
+}
+// Men of the stage's gang within 12 m of x (line units) work at k times their pace until the tick `until`.
+function cwBoost(S, stage, x, k, until) {
+  if (!S || !S.cw || !(k > 0) || !(until > S.tick)) return;
+  S.cw.bo = S.cw.bo.filter(b => b.until > S.tick && b.stage !== stage);
+  S.cw.bo.push({ stage, x: cwR3(x), k: Math.min(3, k), until: Math.floor(until) });
+}
+// ---- Drawing lists ----
+// The men to draw in `place` ('station' | 'line'), in the townsfolk's shape with the navvies' own animation named:
+// [{ id (the man's number on the line; 'cw<n>' at the station, where the list joins the townsfolk's), who, name, x, y,
+// z, f, act ('walk' | 'work' | 'rest' | 'eat' | 'idle'), anim, frame, tool, stage, sta, st, held?, prop? }].
+// held: a thing in his hands { key (with <dir> for his facing), at ('tool' | 'grip': the mark in his frame's extra) };
+// prop: a thing beside him { key, dx, dz, before } (cwPixDress draws both).
+function cwDrawList(S, place) {
+  const C = S && S.cw, out = [];
+  if (!C || !C.men.length) return out;
+  const pl = place === 'line' ? 2 : 1, tick = S.tick | 0, men = C.men, work = pl === 2 && lnHours(S).work;
+  for (const m of men) {
+    if (m.pl !== pl) continue;
+    const wf = Math.floor(tick * 0.9 + m.id * 1.7) & 3, slow = (tick >> 3) + m.id, tool = m.tool, ld = m.ld !== undefined ? men[m.ld] : null, ua = ld && m.st === 'work' && ld.st === 'work' ? ld.a : '';
+    let act = 'idle', anim = 'idle', frame = slow & 1, y = 0, held = null, prop = null;
+    const carry = () => { if (tool === 'barrow') { anim = 'barrow'; frame = m.mv ? wf : 0; held = { key: 'tool/barrow/<dir>', at: 'grip' }; } else if (tool) { anim = 'shoulder'; frame = m.mv ? wf : 0; held = { key: 'tool/' + tool + '/held/<dir>', at: 'tool' }; } else if (m.mv) { anim = 'walk'; frame = wf; } };
+    if (m.st === 'left') { act = 'rest'; anim = 'sit'; frame = 0; }
+    else if (m.st === 'rest' && (m.a === 'sit' || m.a === 'drink')) {
+      act = 'rest';
+      if (m.a === 'drink') { anim = 'drink'; frame = slow & 1; } else { anim = 'sit'; frame = 0; if (tool) prop = { key: tool === 'barrow' ? 'tool/barrow/se' : 'tool/' + tool + '/ground', dx: 0.9, dz: 0.2, before: true }; }
+    } else if (m.st === 'meal' && m.a === 'eat') { act = 'eat'; anim = 'eat'; frame = slow & 1; }
+    else if (m.st === 'camp' && (m.a === 'eat' || m.a === 'fire' || m.a === 'drink')) {
+      const s = cwSeat(m.id);
+      act = m.a === 'eat' ? 'eat' : 'rest'; anim = m.a === 'eat' ? 'eat' : m.a === 'drink' ? 'drink' : 'sit'; frame = m.a === 'fire' ? 0 : slow & 1; if (m.a !== 'drink') y = s.y;
+    } else if (ua === 'out') {
+      act = 'work';
+      if (m.stage === 2) { anim = 'barrow'; frame = m.mv ? wf : 0; held = { key: 'tool/barrow/<dir>/full', at: 'grip' }; }
+      else if (m.stage === 3) { anim = m.k ? 'tieBack' : 'tieFront'; frame = m.mv ? wf : 0; }
+      else { anim = 'railCarry'; frame = m.mv ? wf : 0; if (m.k === 0) { const b = men[ld.mem[ld.mem.length - 1]]; prop = { key: 'line/rail_carried', dx: cwR3((b.x - m.x) / 2), dz: cwR3((b.z - m.z) / 2), before: false }; } }
+    } else if (ua === 'set') {
+      const p = Math.min(1, (S.time - ld.t) / 60);
+      act = 'work';
+      if (m.stage === 2) { anim = 'tip'; frame = p > 0.25 ? 1 : 0; held = { key: 'tool/barrow/<dir>' + (frame ? '/tipped' : '/full'), at: 'grip' }; }
+      else if (m.stage === 3) { anim = 'tieDrop'; frame = p > 0.4 ? 1 : 0; if (m.k === 1) prop = { key: 'line/tie_loose/z', dx: 0, dz: cwR3(0.1 - m.z), before: false }; }
+      else { anim = 'railDrop'; frame = p > 0.4 ? 1 : 0; if (m.k === 0) { const b = men[ld.mem[ld.mem.length - 1]]; prop = { key: 'line/rail_loose', dx: cwR3((b.x - m.x) / 2), dz: cwR3((b.z - m.z) / 2), before: false }; } }
+    } else if (m.mv) { act = 'walk'; carry(); }
+    else if (m.st === 'work' && work && m.r !== 'c') {
+      // at his slot: the stage's swing, with a pause now and then (a wiped brow, a word), more of them when the gang
+      // is waiting on the gang ahead
+      const u = C.u[m.stage], pause = (tick + m.id * 37) % 150 < 9 || ((m.id * 7 + (tick >> 5) * 3) % 10) / 10 >= u;
+      if (pause) carry();
+      else if (m.r === 'x') { act = 'work'; anim = m.stage === 3 ? 'tieDrop' : 'railDrop'; frame = (tick >> 2) & 1; if (m.stage === 3) prop = { key: 'line/tie_loose/z', dx: 1, dz: 0, before: false }; }
+      else { const A = CW.ANIM[tool]; act = 'work'; if (A) { anim = A[0]; frame = ((tick >> 1) + m.id * 3) % A[1]; } }
+    } else carry();
+    out.push({ id: pl === 2 ? m.id : 'cw' + m.id, who: 'navvy_' + 'abc'[m.who], name: cwName(S, m.id), x: m.x, y, z: m.z, f: m.f, act, anim, frame, tool, stage: m.stage, sta: Math.round(m.sta), st: m.st, held, prop });
+  }
+  return out;
+}
+// The things the crew works from on the line: [{ id, key, x, z, h, half }] (the piles, the dinner spot).
+function cwProps(S, place) {
+  const C = S && S.cw, L = S && S.ln;
+  if (place !== 'line' || !C || !C.men.length || !L || !L.days) return [];
+  const G = cwGeo(S), sod = rrSod(S.time), lvl = k => { const s = L.sup[k], c = LINE.SUP[k].cap; return Math.max(1, Math.min(3, Math.ceil(3 * s / (c / 2)))); };
+  const fire = sod >= 11.25 * 3600 && sod < 13.25 * 3600 ? 'camp/fire/' + (S.tick % 3) : 'camp/fire_out';
+  return [{ id: 'heap', key: 'line/rock_heap/' + lvl('rock'), x: G.heap, z: 6.3, h: 1, half: 1.2 }, { id: 'ties', key: 'line/tie_pile/' + lvl('ties'), x: G.ties, z: -6.3, h: 1, half: 1.1 },
+    { id: 'rails', key: 'line/rail_stack/' + lvl('rails'), x: G.rails, z: -7, h: 0.6, half: 0.7 }, { id: 'fire', key: fire, x: G.camp, z: 9.2, h: 0.5, half: 0.4 }, { id: 'kettle', key: 'camp/kettle', x: G.camp + 0.15, z: 9.3, h: 1.2, half: 0.3 },
+    { id: 'barrel', key: 'camp/barrel', x: G.camp + 7.5, z: 8.6, h: 1, half: 0.4 }, { id: 'rack', key: 'camp/toolrack', x: G.camp - 15, z: 7, h: 1.4, half: 0.5 }];
+}
+// (the renderer's hook: called with a man's sorted item to add what he holds and what lies beside him)
+function cwPixDress(it, q, x, z, dir, anim, fr) {
+  if (!it || !q || (!q.held && !q.prop)) return;
+  const draw = it.draw, y = q.y || 0, Hd = q.held, P = q.prop;
+  it.draw = g => {
+    if (P && P.before) pixSprite(g, P.key, x + P.dx, y, z + P.dz);
+    const pk = Hd ? pixPersonKey(q.who, anim, dir, fr) : null, e = pk ? (pixX(pk) || {})[Hd.at] : null, p = Hd ? pixProject(x, y, z) : null;
+    const hk = Hd ? Hd.key.replace('<dir>', dir) : null, back = !!Hd && Hd.at === 'grip' && (dir === 'ne' || dir === 'nw');
+    if (e && back) pixBlit(g, hk, Math.round(p.x) - PIX.vx + e[0], Math.round(p.y) - PIX.vy + e[1]);
+    draw(g);
+    if (e && !back) pixBlit(g, hk, Math.round(p.x) - PIX.vx + e[0], Math.round(p.y) - PIX.vy + e[1]);
+    if (P && !P.before) pixSprite(g, P.key, x + P.dx, y, z + P.dz);
+  };
+}
+// The camp at the station (plan section 4): [{ id, key, x, y, z, box [x0, z0, x1, z1, h], fade? }]. A tent to every four
+// men (the row by the yard first), each with its four cots; the cook tent, the table and benches, the fire, the water
+// barrel, the tool rack, the wash line. At night the tents with men awake inside are lit (lanterns out at bedtime),
+// the fire burns from supper until the camp sleeps and again at breakfast. With the player in the camp the tents'
+// near walls and roofs fade, so the men are seen in their cots.
+function cpItems(S) {
+  const C = S && S.cw;
+  if (!C || !C.men.length || !protoWorld(S.track)) return [];
+  const out = [], n = C.men.length, sod = rrSod(S.time), night = sod >= 19 * 3600 || sod < 6.25 * 3600, R = PROTO.CAMP, P = S.player || {};
+  const open = P.x > R.x0 - 1 && P.x < R.x1 + 1 && P.z > R.z0 - 1 && P.z < R.z1 + 1 && !P.away;
+  const tent = (id, kind, x, z, w, d, h, lit) => {
+    const s = lit ? '_lit' : '';
+    out.push({ id: id + 'b', key: `camp/${kind}/back${s}`, x, y: 0, z, box: [-w / 2, -d / 2, w / 2, d / 2, 0.1] });
+    out.push({ id: id + 'f', key: `camp/${kind}/front${s}`, x, y: 0, z, box: [w / 2 - 0.1, d / 2 - 0.1, w / 2, d / 2, h - 0.2], fade: open });
+    out.push({ id: id + 'r', key: `camp/${kind}/roof${s}`, x, y: 0, z, box: [w / 2 - 0.05, d / 2 - 0.05, w / 2 + 0.05, d / 2 + 0.05, h], fade: open });
+  };
+  for (let t = 0; t < Math.ceil(n / 4); t++) {
+    const T = cwTent(t);
+    let awake = false, abed = false;
+    for (let i = t * 4; i < Math.min(n, t * 4 + 4); i++) { const m = C.men[i]; if (m.st === 'bed') abed = true; else if (m.pl === 1) awake = true; }
+    tent('tent' + t, 'tent', T.x, T.z, 4.5, 6, 2.85, night && (awake || (abed && sod >= CW.UP_S - 300 && sod < 6 * 3600)));
+    if (open) for (let i = t * 4; i < Math.min(n, t * 4 + 4); i++) {
+      const m = C.men[i], c = cwCot(i);
+      out.push({ id: 'cot' + i, key: 'camp/cot_z', x: c.x, y: 0, z: c.z, box: [-0.4, -1.15, 0.4, 1.15, 0.5] });
+      if (m.st === 'bed') out.push({ id: 'abed' + i, key: `ppl/navvy_${'abc'[m.who]}/lie/sw/0`, x: c.x, y: 0, z: c.z, box: [-0.4, -1.15, 0.4, 1.15, 0.9] });
+    }
+  }
+  tent('cook', 'cooktent', CW.COOK[0], CW.COOK[1], 6, 8, 3.4, (sod >= 4.75 * 3600 && sod < 6 * 3600) || (sod >= 19 * 3600 && sod < 21 * 3600));
+  const burn = (sod >= 19 * 3600 + 900 && sod < 22.5 * 3600) || (sod >= CW.UP_S - 600 && sod < 6 * 3600);
+  out.push({ id: 'fire', key: burn ? 'camp/fire/' + ((S.tick | 0) % 3) : 'camp/fire_out', x: CW.FIRE[0], y: 0, z: CW.FIRE[1], box: [-0.5, -0.5, 0.5, 0.5, 0.5] });
+  out.push({ id: 'kettle', key: 'camp/kettle', x: CW.FIRE[0] + 0.1, y: 0, z: CW.FIRE[1] + 0.1, box: [-0.3, -0.3, 0.5, 0.5, 1.3] });
+  out.push({ id: 'table', key: 'camp/table', x: CW.TABLE[0], y: 0, z: CW.TABLE[1], box: [-2, -0.6, 2, 0.6, 0.9] });
+  out.push({ id: 'benchN', key: 'camp/bench', x: CW.TABLE[0], y: 0, z: CW.TABLE[1] - 1.05, box: [-2, -0.25, 2, 0.25, 0.45] });
+  out.push({ id: 'benchS', key: 'camp/bench', x: CW.TABLE[0], y: 0, z: CW.TABLE[1] + 1.05, box: [-2, -0.25, 2, 0.25, 0.45] });
+  out.push({ id: 'barrel', key: 'camp/barrel', x: CW.BARREL[0], y: 0, z: CW.BARREL[1], box: [-0.4, -0.4, 0.4, 0.4, 1] });
+  out.push({ id: 'rack', key: 'camp/toolrack', x: CW.RACK[0], y: 0, z: CW.RACK[1], box: [-1.5, -0.3, 1.5, 0.3, 1.5] });
+  out.push({ id: 'wash', key: 'camp/washline', x: CW.WASH[0], y: 0, z: CW.WASH[1], box: [-2, -0.15, 2, 0.15, 1.6] });
+  return out;
+}
+// The line only, on a bare state (the pace check): { days, done, f, log, sup } when the last spike is in, or at maxDays.
 function cwSimDays(seed, crew, maxDays) {
   const S = { seed, time: 0, tick: 0, track: { world: 'proto' }, player: {}, dv: { ...dvNewStore(), crew } };
   for (let i = 0; i < maxDays * 10800 - 1 && !(S.ln && S.ln.done >= 0); i++) { S.time += CFG.TICK_GAME_S; S.tick++; const ev = []; wtTick(S, ev); cwTick(S, ev); }
-  return { days: S.ln.days, done: S.ln.done, f: S.ln.f.slice(), log: S.ln.log.slice(), sup: { ...S.ln.sup } };
+  return { days: S.ln.days, done: S.ln.done, f: S.ln.f.slice(), log: S.ln.log.slice(), sup: { ...S.ln.sup }, S };
 }
-// The head count (plan section 4): everyone the game simulates, at 22:00. Stand-in: the rail men by number only (home
-// once the work train has brought them back), plus whoever hcRoll lists (Town's, from stage 2: empty until then).
-function hcRoll(S) { return []; }                            // Town: [{ id, name, home, at }] for the townsfolk and hired workers
+// ---- The head count (plan section 4): everyone the game simulates, at 22:00 ----
+// The roll: [{ id, name, home, at }] for the townsfolk (home when indoors at this hour, or when the town's day is not
+// being played: the night passed in a jump) and the rail men (home: the camp; at: 'the camp', 'aboard the work
+// train', or 'the line at <m> m'). Town adds the hired workers and the residents here (stage 2 and 3).
+function hcRoll(S) {
+  const out = [], st = S.tf, live = !!st && Array.isArray(st.ag) && typeof TF_AGENTS !== 'undefined' && st.ag.length === TF_AGENTS.length && st.day === tfDay(S) && !(S.cw && S.cw.sk);
+  if (typeof TF_AGENTS !== 'undefined' && S.tf) TF_AGENTS.forEach((A, i) => { const a = live ? st.ag[i] : null; out.push({ id: 'tf_' + A.id, name: A.name, home: A.home, at: !a || a.in ? A.home : 'the town' }); });
+  const C = S.cw, ph = S.ln ? S.ln.tr.ph : 'home', stn = ph === 'sStand' || ph === 'eStand';
+  if (C) for (const m of C.men) out.push({ id: 'cw' + m.id, name: cwName(S, m.id), home: 'the camp', at: m.pl === 2 ? `the line at ${Math.round(m.x / LINE.M)} m` : m.st === 'ride' && !stn ? 'aboard the work train' : 'the camp' });
+  return out;
+}
 function hcCount(S) {
-  const L = S.ln, n = L && L.run ? L.crew : 0, ph = L ? L.tr.ph : 'home', back = ph === 'home' || ph === 'eOut' || ph === 'eStand' || ph === 'sIn' || ph === 'sStand', roll = hcRoll(S) || [];
-  const out = roll.filter(p => p.at !== p.home).map(p => ({ id: p.id, name: p.name, where: p.at }));
-  if (!back) for (let i = 0; i < n; i++) out.push({ id: 'cw' + i, name: 'Rail man ' + (i + 1), where: 'the line' });
-  return { total: n + roll.length, home: n + roll.length - out.length, out };
+  const roll = hcRoll(S) || [], out = roll.filter(p => p.at !== p.home).map(p => ({ id: p.id, name: p.name, where: p.at }));
+  return { total: roll.length, home: roll.length - out.length, out };
 }
-function hcTick(S, ev) { const c = hcCount(S); S.ln.hc = { day: S.ln.day, total: c.total, home: c.home }; ev.push({ t: 'hcDone', total: c.total, home: c.home, out: c.out.length }); }
-function cwCheckSaveShape(st) { if (st.cw !== undefined && (!st.cw || typeof st.cw !== 'object')) throw new Error('damaged save: the crew'); }
+function hcTick(S, ev) {
+  const c = hcCount(S);
+  S.ln.hc = { day: S.ln.day, total: c.total, home: c.home };
+  if (c.out.length) S.ln.hc.out = c.out.slice(0, 40).map(p => p.name + ': ' + p.where);
+  ev.push({ t: 'hcDone', total: c.total, home: c.home, out: c.out.length, names: c.out.slice(0, 6).map(p => p.name) });
+}
+function cwCheckSaveShape(st) {
+  const C = st.cw, bad = () => { throw new Error('damaged save: the crew'); }, num = v => typeof v === 'number' && Number.isFinite(v);
+  if (C === undefined) return;
+  if (!C || typeof C !== 'object' || !Array.isArray(C.men) || C.men.length > 30 || !Array.isArray(C.idle) || !Array.isArray(C.u) || !Array.isArray(C.g) || !Array.isArray(C.bo)) bad();
+  C.men.forEach((m, i) => { if (!m || m.id !== i || typeof m.st !== 'string' || ![0, 1, 2].includes(m.pl) || !num(m.x) || !num(m.z) || !num(m.tx) || !num(m.tz) || !num(m.sta) || !num(m.skill) || !Number.isInteger(m.stage) || m.stage < -1 || m.stage > 5 || (m.mem !== undefined && (!Array.isArray(m.mem) || m.mem.some(id => !Number.isInteger(id) || id < 0 || id >= C.men.length))) || (m.ld !== undefined && !(m.ld >= 0 && m.ld < C.men.length))) bad(); });
+}
+const CW_TEST = { CW, cwGeo, cwAssign, cwSlot, cwOpen0, cwProps, cwName, cwCot, cwTent, cwSeat, cwMuster, cwFz };
 
 // ==== Section: on the line (D32) ====
 // Owner: Play (plans/d32-tech.md 1.6 and section 7: riding out and back, walking among the men, joining in, the
@@ -23539,7 +24165,7 @@ function pixScene(alpha, Lgiven) {
   // D27 (R): the townsfolk (W's tfDrawList: walking their errands, standing, talking, on a bench); anyone not walking
   // turns what stands in front of them see-through (the east row's backs over its door spots).
   for (const q of L.tf) {
-    const dir = pixDirOf(q.f), [anim, fr] = pixActAnim(q.act, q, (String(q.id).length + (+q.id || 0)) * 0.41);
+    const dir = pixDirOf(q.f), [anim, fr] = q.frame !== undefined && q.anim ? [q.anim, q.frame] : pixActAnim(q.act, q, (String(q.id).length + (+q.id || 0)) * 0.41);   // (D32: the rail men name their own animation)
     const wy = pixWalkerY('tf' + q.id, q.x, q.z, Number.isFinite(q.y) ? q.y : pixSimY(q.x, q.z));
     const it = pixPersonItem('tf' + q.id, q.who || 'cowhand', q.x, wy.y, q.z, dir, anim, fr, { k: 'tf', id: q.id, who: q.who }, false);
     it.base = wy.base; it.after = wy.after;
@@ -24356,7 +24982,9 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
     if (!inX(x)) continue;
     const dir = pixDirOf(q.f), [anim, fr] = q.frame !== undefined && q.anim ? [q.anim, q.frame] : pixActAnim(q.act, q, (+q.id || 0) * 0.41);
     out.push(pixPersonItem('cw' + q.id, q.who || 'worker', x, q.y || 0, z, dir, anim, fr, { k: 'cw', id: q.id, who: q.who }, false));
+    pixCall('cwPixDress', out[out.length - 1], q, x, z, dir, anim, fr);   // Crew: what he holds and what lies beside him
   }
+  for (const q of pixCall('cwProps', S, 'line') || []) if (inX(q.x)) out.push(pixLnProp('cq' + q.id, q.key, q.x, q.z, q.h, q.half, null));   // Crew: the piles and the dinner spot
   const p = pixCall('lpPose', S);
   if (p && !p.riding) { const [x, z] = at('lp', p.x, p.z), [anim, fr] = pixActAnim(p.act, p, 0); out.push(pixPersonItem('lp', 'agent', x, p.y || 0, z, pixDirOf(p.f), anim, fr, { k: 'lp' }, false)); }
   return out;

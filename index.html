@@ -5893,11 +5893,660 @@ function tfDebugScenario(S) {
 const TF_TEST = { TF, TF_AGENTS, TF_ROUTINES, get TOWN_GRAPH() { return TOWN_GRAPH; }, tfSt, tfPlanDay, tfPlans, tfErrandAt, tfMeetDone, tfDay, tfNow, tfDoorOf, tfPose, tfTick, tfDrawList, tfAt, townPath, tfCheckSaveShape, tfDebugScenario, townGraphBuild };
 
 // ==== Section: hired workers (D32) ====
-// Owner: Town, stage 2 (plans/d32-tech.md 7.3: ticket punchers, cargo loaders, delivery men). Prefixes hw, HW; store
-// S.hw. UNTIL TOWN LANDS these are Foundation's empty stand-ins: nobody is hired, whatever dev mode asks for.
-function hwTick(S, ev) {}
-function hwDrawList(S) { return []; }                        // the townsfolk's draw shape
-function hwCheckSaveShape(st) { if (st.hw !== undefined && (!st.hw || typeof st.hw !== 'object')) throw new Error('damaged save: hired workers'); }
+// Owner: Town, stage 2 (plans/d32-tech.md 7.3 and 7.4). Prefixes hw, HW; store S.hw. Hired station hands, hired at
+// once from dev mode (dvSet punch / load / deliver; the counts in S.dv): ticket punchers (0 to 3), cargo loaders (0 to
+// 4) and delivery men (0 to 2). Each is a simulated man with a name (HW.NAMES, shuffled by the seed) and a home (the
+// hotel, until stage 3 gives him a house), drawn in the station agent's uniform with the agent's animations (the
+// townsfolk's draw shape, hwDrawList; inside a coach in P's shape, hwPbList). Pure simulation but for the drawing
+// helpers at the end (called by the renderer only).
+//
+// They share the work with the player (the designer's choice): each does his job on his own and takes what the
+// player leaves. "The queue" is D31's: the player's own job (S.fr.job: the goods he tapped, J.q, the good in hand and
+// every good his steps name: hwPlayerIds) is his claim; a man claims a good by naming it in his job (m.job.id) and
+// takes only a good nobody holds or claims, the oldest (lowest id) first. The player always has first call: while a
+// man has not got a good in his hands yet, a player's job that names it makes him let it go (in the same tick, and
+// again at the end of his lift). A good in a man's hands, or on a delivery man's cart, is in the place CREW { who:
+// 'hw<id>' } (or 'hw<id>c<slot>', the cart's eight places), so it is in one place every tick and itemAudit counts it.
+// The player's frAuto refuses a good in a CREW place ("A station hand has that").
+// - Puncher: when a passenger train stands, he takes the lowest coach with travellers seated and not punched that no
+//   other puncher works (the player's coach last), walks to its nearer usable end, climbs in (PB.CLIMB_S), walks the
+//   aisle and punches seat by seat (pbPunchBy: P's marks and counts), HW.PUNCH_K times the player's punch time,
+//   leaving the traveller the player punches. When his coach has nothing left to punch and nobody still boarding it,
+//   he climbs down and looks for another coach, else goes back to his post on platform 1. A train is not ready while
+//   a puncher is aboard (P's pbWhyNotReady). The coach he works in is drawn cut away (hwCutaway).
+// - Loader: unloads the standing freight trains' goods for the town into their storage rows (frStoreSpot) and loads
+//   the goods for the railroad from the OUT rows into a standing train that still takes goods (no more than it
+//   needs, counting what other loaders carry to it), each carried by hand (F's spot rules and times, HW.LOAD_K times
+//   the player's; a hand truck good is heaved), opening a shut boxcar door first (F's door state). His own small
+//   walker: the walk grid's static path between two spots (hwPath), straight lines inside a car.
+// - Delivery man: from HW.DELIVER_S (17:30) loads his own platform cart (a second cart, not in S.tools) from storage
+//   with up to HW.CART_N goods for the town in the street's order, pushes it by the cart grid's path to each shop
+//   (FR_SHOP_ORDER), carries each good to the door and hands it in (the keeper steps out as for the player), loads
+//   the goods the shops put out at 17:00 on the way, and brings them back to the OUT rows. No new trip after
+//   HW.LAST_S (22:30): what is left on the cart goes back into storage.
+// - Their day: at HW.IN_S (06:00) each walks from the hotel to his post; from HW.OFF_S (20:30) a puncher or loader
+//   with nothing in hand and no train standing walks home, the delivery man once his cart is empty at its spot after
+//   HW.LAST_S. Indoors (st 'home') they are not drawn and count as home in the head count (hwRoll, via hcRoll).
+//   Hired in working hours they come at once from the hotel; let go (a lower count), the last hired of that kind
+//   leaves at once and what he holds goes into storage.
+//
+// While the player is away on the line (S.player.away; plan 7.4; the designer: what nobody covers goes undone and
+// counts against him). Provisional rules, worked out with the day's summary (hwAwayTick):
+// - A standing train leaves by itself (its own crew sends it) when its work is done and its time has come, or at the
+//   latest HW.GRACE_S (10 minutes) after its time, its time moved on by however late it came in (a late train still
+//   gets its stand): unpunched travellers ride free and travellers not aboard yet are left behind, both counted
+//   missed (P's pbOnDepart); goods for the town not unloaded leave with the train (used up 'soldOutside', marked
+//   left: 1 in the item log, which F's audit accepts: "goods left aboard"); goods for the railroad not loaded wait in
+//   the OUT rows for the next day's trains. Never while the work train blocks its way (wtBlocks).
+// - Trains that come in late while he is away are counted ("trains late": mostly the relief man's 10 minutes).
+// - Goods not delivered wait in storage for the next evening (and the shops put out nothing new while their spot
+//   still holds goods: F's rule).
+// - The figures go into S.ln.awStats (Foundation's: levers, late, missed, left), shown by the summary's line "While
+//   you were on the line: ..."; what the hired men did is the summary's line "Station hands: ..." (hwSummaryLine).
+// S.hw (made only when dev mode hires someone) = { next (the next man's id), men: [{ id, k ('punch' | 'load' |
+// 'deliver'), n (his number among his kind), st ('home' | 'work'), x, z, f (heading, x = sin f), y (null on the
+// ground, else a car's or coach's floor), steps (null, or [{ s: 'walk', x, z, cart?, line? (straight, at y), car?,
+// out? } | { s: 'aisle', ls } | { s: 'dest' } (plans where the good in hand goes) | { s: 'act', a, dur, ... }]), i,
+// t0 (the act's start, -1 not started), pts (the walk's points left), job (null, or { id (the good he claims), from,
+// up (lifting begun), cart, load, stock, out } for a loader or delivery man, { stock, pax } for a puncher), in (a
+// puncher in a coach: { stock, s (u along the aisle), clm (1 up, -1 down, 0), f, mv }), car (a loader inside a car:
+// its stock), cart (a delivery man's cart: { x, z, f }) }], tday (the day of tot), tot: { punched, unloaded, loaded,
+// delivered, picked } }. With nobody hired there is no S.hw and the game plays and hashes exactly as before.
+const HW = {
+  NAMES: ['Amos Pruitt', 'Lem Hatcher', 'Silas Odum', 'Otis Lyle', 'Jed Tolliver', 'Gus Varner', 'Rufe Dobbins', 'Abner Sykes', 'Cal Whitlow', 'Hiram Booth', 'Zeke Marlow', 'Wash Purdy'],
+  PUNCH_K: 1.5,      // a punch takes 1.5 times the player's (plan 12, provisional choice 9)
+  LOAD_K: 1.3,       // a lift, a put-down, a door, a hand-in: 1.3 times the player's
+  WALK_U: 0.6,       // walking: u a tick (4.5u a game minute; the player 6.3 at his real speed)
+  CART_U: 0.56,      // pushing the cart (4.2u a game minute)
+  AISLE_U: 0.3,      // in a coach's aisle (the travellers' pace)
+  IN_S: 6 * 3600,    // to work from the hotel at 06:00 (seconds of the day)
+  OFF_S: 20 * 3600 + 1800,       // home from 20:30 when nothing is in hand
+  DELIVER_S: 17 * 3600 + 1800,   // the delivery men load their carts from 17:30 (the shops put their goods out at 17:00)
+  LAST_S: 22 * 3600 + 1800,      // no new trip to town after 22:30
+  CART_N: 8,         // goods on a delivery man's cart (one to each of A2's 8 cells)
+  GRACE_S: 600,      // while the player is away: a train leaves by itself at the latest this long after its time
+  HOME: [-8.5, -52], // the hotel's door: where they lodge
+};
+const HW_KINDS = ['punch', 'load', 'deliver'];
+const hwOn = S => !!(S && S.hw && S.track && protoWorld(S.track) && S.rr && S.rr.on);
+const hwWho = id => 'hw' + id;
+const hwDur = (s, k) => Math.max(CFG.TICK_GAME_S, Math.round(s * k / CFG.TICK_GAME_S) * CFG.TICK_GAME_S);
+function hwNames(seed) {
+  if (hwNames.s === seed) return hwNames.v;
+  const a = HW.NAMES.slice(), r = rngFor(seed, 'hw', 'names');
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rngNext(r) * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
+  hwNames.s = seed; hwNames.v = a;
+  return a;
+}
+const hwName = (S, m) => hwNames(S.seed)[m.id % HW.NAMES.length];
+// Each man's post (where he waits for work): punchers on platform 1 under the canopy, loaders on the cargo platform
+// between the storage blocks, a delivery man at his cart's handle on the cart lane.
+function hwPost(S, m) {
+  if (m.k === 'punch') return frSnap(S, -9 + 6 * m.n, -14.6);
+  if (m.k === 'load') return frSnap(S, -6 + 3 * m.n, 8.2);
+  const c = hwCartHome(m);
+  return frSnap(S, c.x - FR.PUSH_D, c.z);
+}
+const hwCartHome = m => ({ x: -1 - 7 * m.n, z: FR.LANE_Z });
+// The goods the player's job names (his claim: D31's queue, the good in hand, every good of his steps).
+function hwPlayerIds(S) {
+  const J = S.fr && S.fr.job, out = new Set();
+  if (!J) return out;
+  for (const id of J.q || []) out.add(id);
+  if (Number.isInteger(J.item)) out.add(J.item);
+  if (J.src && Number.isInteger(J.src.id)) out.add(J.src.id);
+  for (const st of J.steps || []) if (Number.isInteger(st.id)) out.add(st.id);
+  return out;
+}
+// The good in a man's hands, and those on his cart.
+const hwHand = (S, m) => itemsAt(S, { kind: 'CREW', who: hwWho(m.id) })[0];
+function hwCartGoods(S, m) {
+  const out = [], pre = hwWho(m.id) + 'c', I = S.items;
+  for (let i = 0; i < I.next; i++) { const w = I.alive[i] ? I.where[i] : null; if (w && w.kind === 'CREW' && typeof w.who === 'string' && w.who.startsWith(pre)) out.push(i); }
+  return out;
+}
+const hwSlotOf = (S, id) => +String(S.items.where[id].who).split('c')[1];
+// ---- Hiring (the counts in S.dv, at once) ----
+function hwSync(S, ev) {
+  const D = S.dv;
+  if (!D || (!S.hw && !(D.punch || D.load || D.deliver))) return;
+  const H = S.hw || (S.hw = { next: 0, men: [], tday: -1, tot: {} });
+  for (const k of HW_KINDS) {
+    const want = Math.max(0, D[k] | 0);
+    let mine = H.men.filter(m => m.k === k);
+    while (mine.length > want) { const m = mine[mine.length - 1]; hwDismiss(S, m, ev); H.men = H.men.filter(q => q !== m); mine = mine.slice(0, -1); }
+    while (mine.length < want) {
+      const used = new Set(mine.map(q => q.n));
+      let n = 0; while (used.has(n)) n++;
+      const m = { id: H.next++, k, n, st: 'home', x: HW.HOME[0], z: HW.HOME[1], f: Math.PI, y: null, steps: null, i: 0, t0: -1, pts: null, job: null };
+      if (k === 'deliver') { const c = hwCartHome(m); m.cart = { x: c.x, z: c.z, f: Math.PI / 2 }; }
+      H.men.push(m); mine.push(m);
+      ev.push({ t: 'hwHired', id: m.id, k, name: hwName(S, m) });
+    }
+  }
+  H.men.sort((a, b) => a.id - b.id);
+}
+// Let go: what he holds goes into storage (or onto the ground by his post if the storage is full).
+function hwDismiss(S, m, ev) {
+  const ids = [hwHand(S, m)].concat(m.k === 'deliver' ? hwCartGoods(S, m) : []).filter(id => id !== undefined);
+  for (const id of ids) {
+    const p = hwPost(S, m), w = frStoreSpot(S, id) || { kind: 'GROUND', x: Math.round(p.x * 100), z: Math.round(p.z * 100) };
+    itemMove(S, id, w, ev);
+  }
+  ev.push({ t: 'hwLeft', id: m.id, k: m.k });
+}
+// ---- Walking: the walk grid's static path (no trains stamped, so it is the same after a reload), pulled straight ----
+function hwPath(S, x0, z0, x1, z1, cart) {
+  const T = S.track, G = walkGrid(T, !!cart), D = G.sc, dq = D.dq;
+  D.dq = 0xFFFFFFFF;   // no cell counts as under a train while this path is found (the stamps are the player's)
+  try {
+    let s = walkCell(x0, z0);
+    if (!(G.cost[s] > 0)) s = walkNearest(G, s, -1);
+    if (s < 0) return [[x1, z1]];
+    const g0 = walkCell(x1, z1), goal = G.cost[g0] > 0 && G.comp[g0] === G.comp[s] ? g0 : walkNearest(G, g0, G.comp[s]);
+    if (goal < 0) return [[x1, z1]];
+    const r = walkAStar(G, s, goal), pts = r.cells.slice(1).map(walkCentre);
+    if (goal === g0 && r.reached) { if (pts.length) pts[pts.length - 1] = [x1, z1]; else pts.push([x1, z1]); }
+    const out = [];
+    let cx = x0, cz = z0, i = 0;
+    while (i < pts.length) {
+      let k = i;
+      for (let j = i + 1; j < Math.min(pts.length, i + WALK.LOOK); j++) { if (walkClear(G, cx, cz, pts[j][0], pts[j][1])) k = j; else break; }
+      out.push(pts[k]); cx = pts[k][0]; cz = pts[k][1]; i = k + 1;
+    }
+    return out.length ? out : [[x1, z1]];
+  } finally { D.dq = dq; }
+}
+// One tick of a walk step: true when he is there.
+function hwWalk(S, m, st) {
+  if (!m.pts) { m.pts = st.line ? [[st.x, st.z]] : hwPath(S, m.x, m.z, st.x, st.z, st.cart); if (st.car !== undefined) m.car = st.car; }
+  m.y = st.line && Number.isFinite(st.y) ? st.y : null;
+  let left = st.cart ? HW.CART_U : HW.WALK_U;
+  while (left > 1e-9 && m.pts.length) {
+    const [x, z] = m.pts[0], d = Math.hypot(x - m.x, z - m.z);
+    if (d > 1e-9) m.f = Math.atan2(x - m.x, z - m.z);
+    if (d <= left) { m.x = x; m.z = z; left -= d; m.pts.shift(); }
+    else { m.x += (x - m.x) / d * left; m.z += (z - m.z) / d * left; left = 0; }
+  }
+  if (st.cart && m.cart) { m.cart.x = m.x + Math.sin(m.f) * FR.PUSH_D; m.cart.z = m.z + Math.cos(m.f) * FR.PUSH_D; m.cart.f = m.f; }
+  if (m.pts.length) return false;
+  m.pts = null;
+  if (st.out) m.car = null;
+  return true;
+}
+// ---- Each tick (after the townsfolk; Foundation's hook) ----
+function hwTick(S, ev) {
+  if (!S.track || !protoWorld(S.track) || !S.rr || !S.rr.on) return;
+  if (S.player.away) hwAwayTick(S, ev);
+  if (!S.hw && !(S.dv && (S.dv.punch || S.dv.load || S.dv.deliver))) return;
+  hwSync(S, ev);
+  const H = S.hw, day = S.pd ? S.pd.day : rrDayOf(S);
+  if (H.tday !== day) { H.tday = day; H.tot = {}; }
+  const ctx = { mine: hwPlayerIds(S), sod: rrSod(S.time) };
+  for (const m of H.men) hwManTick(S, m, ev, ctx);
+}
+function hwManTick(S, m, ev, ctx) {
+  const sod = ctx.sod;
+  if (m.st === 'home') {
+    if (sod < HW.IN_S || sod >= HW.OFF_S) return;
+    m.st = 'work'; m.x = HW.HOME[0]; m.z = HW.HOME[1]; m.y = null; m.f = Math.PI; hwStop(S, m);
+    ev.push({ t: 'hwCame', id: m.id });
+  }
+  // The player has first call: a good his job names that this man has claimed and not lifted yet is let go.
+  if (m.job && Number.isInteger(m.job.id) && ctx.mine.has(m.job.id) && !m.job.up) hwStop(S, m);
+  if (m.car !== undefined && m.car !== null && frCarWhy(S, m.car)) hwOutOfCar(S, m);   // the car has gone or is leaving
+  if (m.in && !pbGeo(S, m.in.stock, null)) hwOffCoach(S, m);
+  if (!m.steps) hwBrain(S, m, ev, ctx);
+  if (m.steps) hwRun(S, m, ev, ctx);
+}
+function hwStop(S, m) { m.steps = null; m.i = 0; m.t0 = -1; m.pts = null; m.job = null; }
+function hwOutOfCar(S, m) { const p = m.job && m.job.out ? m.job.out : frSnap(S, m.x, m.z); m.x = p.x; m.z = p.z; m.y = null; m.car = null; hwStop(S, m); }
+function hwOffCoach(S, m) { const p = frSnap(S, m.x, m.z - PB.STEP_Z); m.x = p.x; m.z = p.z; m.y = null; m.in = null; hwStop(S, m); }
+// Runs his steps for this tick: a walk takes the tick; an act starts, counts its time and ends.
+function hwRun(S, m, ev, ctx) {
+  for (let n = 0; n < 8 && m.steps; n++) {
+    const st = m.steps[m.i];
+    if (!st) { hwStop(S, m); return; }
+    if (st.s === 'walk') { if (hwWalk(S, m, st)) { m.i++; m.t0 = -1; } return; }
+    if (st.s === 'aisle') {
+      const g = pbGeo(S, m.in.stock, null), d = st.ls - m.in.s;
+      if (Math.abs(d) > 1e-6) { m.in.s = pbR(m.in.s + Math.sign(d) * Math.min(Math.abs(d), HW.AISLE_U)); m.in.f = Math.sign(d) * g.h > 0 ? 'se' : 'nw'; m.in.mv = 1; hwPlaceIn(S, m, g); return; }
+      m.in.mv = 0; m.i++; m.t0 = -1; continue;
+    }
+    if (st.s === 'dest') { if (hwDestSteps(S, m)) { hwStop(S, m); return; } continue; }
+    if (m.t0 < 0) {   // an act starts
+      const why = hwActWhy(S, m, st, ctx);
+      if (why) { if (st.a === 'put' || st.a === 'cput') { m.steps.splice(m.i, 1, { s: 'dest' }); m.pts = null; continue; } hwStop(S, m); return; }
+      m.t0 = S.time;
+      if (Number.isFinite(st.fx) && Math.hypot(st.fx - m.x, st.fz - m.z) > 1e-6) m.f = Math.atan2(st.fx - m.x, st.fz - m.z);
+      if ((st.a === 'pick' || st.a === 'cpick') && m.job) m.job.up = 1;
+      if (st.a === 'up') m.in = { stock: st.stock, s: st.end * PB.END_S, clm: 1, f: 'ne', mv: 0 };
+      if (st.a === 'punch' && m.in) { m.in.f = pbSeatLocal(st.seat).side === 'N' ? 'ne' : 'sw'; m.in.mv = 0; }
+    }
+    if (m.in && (st.a === 'up' || st.a === 'down')) hwPlaceIn(S, m, pbGeo(S, m.in.stock, null), st);
+    if (S.time - m.t0 < st.dur) return;
+    if (hwActDo(S, m, st, ev, ctx)) { hwStop(S, m); return; }
+    m.i++; m.t0 = -1;
+  }
+}
+// ---- What each kind does next (when his steps have run out) ----
+function hwBrain(S, m, ev, ctx) {
+  const sod = ctx.sod;
+  if (m.k === 'punch' ? hwPunchNext(S, m, ctx) : m.k === 'load' ? hwLoadNext(S, m, ctx) : hwDeliverNext(S, m, ctx)) return;
+  // Nothing to do: home after hours, else at his post.
+  const off = sod >= HW.OFF_S || sod < HW.IN_S, free = m.k === 'deliver' ? sod >= HW.LAST_S || sod < HW.IN_S : off && !S.rr.runs.some(r => r.ph === 'stand' && !r.through);
+  if (free && hwHand(S, m) === undefined && !m.in && (m.car === undefined || m.car === null)) {
+    if (Math.hypot(m.x - HW.HOME[0], m.z - HW.HOME[1]) > 0.7) { m.steps = [{ s: 'walk', x: HW.HOME[0], z: HW.HOME[1] }]; m.i = 0; m.t0 = -1; return; }
+    m.st = 'home'; ev.push({ t: 'hwHome', id: m.id });
+    return;
+  }
+  const p = hwPost(S, m);
+  if (Math.hypot(m.x - p.x, m.z - p.z) > 0.7) { m.steps = [{ s: 'walk', x: p.x, z: p.z }]; m.i = 0; m.t0 = -1; }
+}
+// -- Punchers --
+function hwPunchNext(S, m, ctx) {
+  const B = pbSt(S), pj = B.job && B.job.k === 'punch' ? B.job.id : -1, others = S.hw.men.filter(q => q !== m && q.k === 'punch');
+  if (m.in) {
+    const g = pbGeo(S, m.in.stock, null), taken = new Set(others.map(q => q.job && q.job.pax).filter(v => v !== undefined));
+    const cand = S.pax.list.filter(p => p.stock === m.in.stock && p.s === 'sitting' && !p.punched && p.id !== pj && !taken.has(p.id))
+      .sort((a, b) => Math.abs(pbSeatLocal(a.seat).rx - m.in.s) - Math.abs(pbSeatLocal(b.seat).rx - m.in.s) || a.id - b.id);
+    if (cand.length) {
+      const p = cand[0];
+      m.job = { stock: m.in.stock, pax: p.id };
+      m.steps = [{ s: 'aisle', ls: pbR(pbSeatLocal(p.seat).rx) }, { s: 'act', a: 'punch', stock: m.in.stock, seat: p.seat, pax: p.id, dur: hwDur(PB.PUNCH_S, HW.PUNCH_K) }]; m.i = 0; m.t0 = -1;
+      return true;
+    }
+    const st = pbCarStatus(S, m.in.stock);
+    m.job = { stock: m.in.stock };
+    if (st && (st.boarding || st.toPunch)) { m.in.mv = 0; return true; }   // travellers still coming to their seats (or the player's last one): he waits in the aisle
+    const ends = pbEnds(S, g).filter(e => e.ok).sort((a, b) => Math.abs(a.end * PB.END_S - m.in.s) - Math.abs(b.end * PB.END_S - m.in.s));
+    const e = ends[0] || { end: m.in.s >= 0 ? 1 : -1 };
+    m.steps = [{ s: 'aisle', ls: e.end * PB.END_S }, { s: 'act', a: 'down', end: e.end, dur: PB.CLIMB_S }]; m.i = 0; m.t0 = -1;
+    return true;
+  }
+  // On the ground: the lowest coach with tickets to punch that no other puncher works (the player's coach last).
+  const P = S.player, busy = new Set(others.map(q => q.job && q.job.stock).filter(v => v !== undefined));
+  let best = null;
+  for (const run of S.rr.runs) {
+    if (run.kind !== 'pax' || run.ph !== 'stand') continue;
+    const tr = rrTrainOf(S, run);
+    if (!tr) continue;
+    tr.consist.forEach((c, i) => {
+      if (c.k !== 'coach' || busy.has(c.id)) return;
+      const st = pbCarStatus(S, c.id);
+      if (!st || !st.toPunch) return;
+      const rank = (P.in && P.in.stock === c.id ? 100 : 0) + i;
+      if (!best || rank < best.rank) best = { rank, stock: c.id };
+    });
+  }
+  if (!best) return false;
+  const g = pbGeo(S, best.stock, null), ends = pbEnds(S, g).filter(e => e.ok).sort((a, b) => Math.hypot(a.x - m.x, a.z - m.z) - Math.hypot(b.x - m.x, b.z - m.z));
+  if (!ends.length) return false;
+  const e = ends[0];
+  m.job = { stock: best.stock };
+  m.steps = [{ s: 'walk', x: e.x, z: e.z }, { s: 'act', a: 'up', stock: best.stock, end: e.end, dur: PB.CLIMB_S }]; m.i = 0; m.t0 = -1;
+  return true;
+}
+// A puncher's place in his coach (and on its end steps while he climbs, st the climb).
+function hwPlaceIn(S, m, g, st) {
+  if (!g) return;
+  const I = m.in, C = PROTO_STOCK.coach;
+  if (st) {
+    const t = Math.min(1, (S.time - m.t0) / st.dur), u = st.a === 'up' ? t : 1 - t, e = st.end;
+    const [x0, z0] = pbW(g, e * PB.END_S, -PB.STEP_Z), [x1, z1] = pbW(g, e * PB.END_S, 0), y0 = walkDeckY(S.track, x0, z0);
+    m.x = pbR(x0 + (x1 - x0) * u); m.z = pbR(z0 + (z1 - z0) * u); m.y = pbR(y0 + (C.ends.deckY - y0) * u); I.clm = st.a === 'up' ? 1 : -1; I.f = st.a === 'up' ? 'ne' : 'sw';
+    return;
+  }
+  const [x, z] = pbW(g, I.s, 0);
+  m.x = pbR(x); m.z = pbR(z); m.y = Math.abs(I.s) > C.ends.door.x ? C.ends.deckY : C.floor; I.clm = 0;
+}
+// -- Loaders --
+// The next good to move: a good for the town in a standing freight train (out of it, into its storage row), else a
+// good for the railroad in the OUT rows (into a standing train that still takes goods). Oldest first; never one the
+// player names, nor one another man has claimed.
+function hwLoadNext(S, m, ctx) {
+  const go = steps => { m.steps = steps; m.i = 0; m.t0 = -1; return true; };
+  if (m.car !== undefined && m.car !== null) { const st = hwExitCar(S, m); return st ? go(st) : false; }
+  const held = hwHand(S, m);
+  if (held !== undefined) { m.job = { id: held, up: 1 }; return go([{ s: 'dest' }]); }
+  const claimed = new Set(S.hw.men.filter(q => q !== m && q.job && Number.isInteger(q.job.id)).map(q => q.job.id)), I = S.items;
+  const free = id => !claimed.has(id) && !ctx.mine.has(id) && frOnTop(S, id);
+  const runs = frStanding(S);
+  for (const t of runs) for (const c of t.tr.consist) {
+    if (!CARGO_CAR_RULES[c.k] || frCarWhy(S, c.id)) continue;
+    const ids = itemsAt(S, { kind: 'CAR', stockId: c.id }).filter(id => !frIsOut(S, id) && !FR.COLLECT.includes(itemType(S, id)) && free(id)).sort((a, b) => a - b);
+    if (ids.length) { hwPlanTake(S, m, ids[0], c.id); return true; }
+  }
+  for (const t of runs) {
+    const going = S.hw.men.filter(q => q.job && q.job.load === t.tr.id).length;
+    if (t.need - going <= 0) continue;
+    const car = t.tr.consist.find(c => c.k === 'boxcar') || t.tr.consist.find(c => CARGO_CAR_RULES[c.k]);
+    if (!car) continue;
+    let best;
+    for (let i = 0; i < I.next && best === undefined; i++) { const w = I.alive[i] ? I.where[i] : null; if (w && w.kind === 'CELL' && frIsOut(S, i) && free(i)) best = i; }
+    if (best !== undefined) { hwPlanTake(S, m, best, null, t.tr.id, car.id); return true; }
+  }
+  return false;
+}
+function hwVerb(S, id) { const v = frGood(itemType(S, id)).verb; return v === 'truck' ? 'heave' : v; }
+// The steps to take a good: to it (opening a shut boxcar first, into the car) and the lift; a 'dest' step then plans
+// the rest, once it is in his hands.
+function hwPlanTake(S, m, id, stock, loadTr, loadStock) {
+  const w = S.items.where[id], kind = itemType(S, id), sp = frSpotOf(S, w, kind), verb = hwVerb(S, id), gr = frGridOf(w), steps = [];
+  m.job = { id, from: { ...w } };
+  if (loadTr !== undefined) { m.job.load = loadTr; m.job.stock = loadStock; }
+  if (stock !== null && stock !== undefined) {
+    const g = frCarGeo(S, stock);
+    m.job.out = frSnap(S, g.out.x, g.out.z);
+    steps.push({ s: 'walk', x: m.job.out.x, z: m.job.out.z });
+    if (g.k === 'boxcar' && frDoorFrac(S, stock) < 1) steps.push({ s: 'act', a: 'door', stock, dur: hwDur(FR.DOOR_S, HW.LOAD_K), fx: g.out.x, fz: g.z });
+    steps.push(...hwIntoCar(g, sp.stand));
+  } else steps.push({ s: 'walk', x: sp.stand.x, z: sp.stand.z });
+  steps.push({ s: 'act', a: 'pick', id, from: { ...w }, verb, dur: hwDur(frActS(verb, w.layer || 0, gr && gr.g), HW.LOAD_K), fx: sp.good.x, fz: sp.good.z }, { s: 'dest' });
+  m.steps = steps; m.i = 0; m.t0 = -1;
+}
+const hwIntoCar = (g, stand) => [{ s: 'walk', line: true, x: g.in.x, z: g.in.z, y: g.y, car: g.f.car.id }, { s: 'walk', line: true, x: stand.x, z: g.in.z, y: g.y }, { s: 'walk', line: true, x: stand.x, z: stand.z, y: g.y }];
+function hwExitCar(S, m) {
+  const g = frCarGeo(S, m.car);
+  if (!g) { hwOutOfCar(S, m); return null; }
+  const o = frSnap(S, g.out.x, g.out.z);
+  return [{ s: 'walk', line: true, x: m.x, z: g.in.z, y: g.y }, { s: 'walk', line: true, x: g.in.x, z: g.in.z, y: g.y }, { s: 'walk', line: true, x: o.x, z: o.z, out: 1 }];
+}
+// Replaces the 'dest' step with the steps that take the good in his hands where it goes (out of a car first): a
+// loader's to its storage row or into the train, a delivery man's onto his cart, else into storage. True when it can
+// go nowhere now.
+function hwDestSteps(S, m) {
+  const id = hwHand(S, m);
+  if (id === undefined) { m.steps.splice(m.i, 1); return false; }
+  const kind = itemType(S, id), steps = [], inCar = m.car !== undefined && m.car !== null ? frCarGeo(S, m.car) : null, verb = hwVerb(S, id);
+  if (m.k === 'deliver' && m.job && m.job.cart && hwCartGoods(S, m).length < HW.CART_N) {
+    const used = new Set(hwCartGoods(S, m).map(q => hwSlotOf(S, q)));
+    let k = 0; while (used.has(k)) k++;
+    const st = hwCartStand(m);
+    steps.push({ s: 'walk', x: st.x, z: st.z }, { s: 'act', a: 'cput', id, slot: k, dur: hwDur(FR.PICK_S[verb] || FR.PICK_S.carry, HW.LOAD_K), fx: m.cart.x, fz: m.cart.z });
+    m.steps.splice(m.i, 1, ...steps);
+    return false;
+  }
+  let to = null;
+  if (frIsOut(S, id) && m.job && m.job.stock !== undefined && !frCarWhy(S, m.job.stock)) {
+    const g = frCarGeo(S, m.job.stock);
+    if (g.k === 'boxcar' && frDoorFrac(S, m.job.stock) < 1) {
+      const o = frSnap(S, g.out.x, g.out.z);
+      if (inCar) steps.push(...hwExitCar(S, m));
+      steps.push({ s: 'walk', x: o.x, z: o.z }, { s: 'act', a: 'door', stock: m.job.stock, dur: hwDur(FR.DOOR_S, HW.LOAD_K), fx: g.out.x, fz: g.z }, { s: 'dest' });
+      m.steps.splice(m.i, 1, ...steps);
+      return false;
+    }
+    const d = frPutDest(S, id, { kind: 'CAR', stockId: m.job.stock });
+    if (typeof d !== 'string') to = d;
+  }
+  if (!to) to = frStoreSpot(S, id);
+  if (!to) return true;
+  const sp = frSpotOf(S, to, kind), gr = frGridOf(to);
+  if (to.kind === 'CAR') {
+    const g = frCarGeo(S, to.stockId), o = frSnap(S, g.out.x, g.out.z);
+    m.job.out = o;
+    if (inCar && inCar.f.car.id === to.stockId) steps.push({ s: 'walk', line: true, x: sp.stand.x, z: m.z, y: g.y }, { s: 'walk', line: true, x: sp.stand.x, z: sp.stand.z, y: g.y });
+    else { if (inCar) steps.push(...hwExitCar(S, m)); steps.push({ s: 'walk', x: o.x, z: o.z }, ...hwIntoCar(g, sp.stand)); }
+  } else { if (inCar) steps.push(...hwExitCar(S, m)); steps.push({ s: 'walk', x: sp.stand.x, z: sp.stand.z }); }
+  steps.push({ s: 'act', a: 'put', id, to: { ...to }, verb, dur: hwDur(frActS(verb, to.layer || 0, gr && gr.g), HW.LOAD_K), fx: sp.good.x, fz: sp.good.z });
+  m.steps.splice(m.i, 1, ...steps);
+  return false;
+}
+// -- Delivery men --
+const hwCartAt = (c, p) => Math.hypot(c.x - p.x, c.z - p.z);
+function hwCartStand(m) { const c = m.cart; return { x: c.x - Math.sin(c.f) * FR.PUSH_D, z: c.z - Math.cos(c.f) * FR.PUSH_D }; }
+// Push the cart so that its middle stands at the spot (along the spot's axis, coming from where it is).
+function hwPushTo(S, m, spot) {
+  const dx = spot.x - m.cart.x, dz = spot.z - m.cart.z, f = spot.axis === 'z' ? (dz >= 0 ? 0 : Math.PI) : (dx >= 0 ? Math.PI / 2 : -Math.PI / 2);
+  const s = frSnap(S, spot.x - Math.sin(f) * FR.PUSH_D, spot.z - Math.cos(f) * FR.PUSH_D, true), st = hwCartStand(m), steps = [];
+  if (Math.hypot(m.x - st.x, m.z - st.z) > 0.7) steps.push({ s: 'walk', x: st.x, z: st.z });
+  steps.push({ s: 'act', a: 'grab', dur: hwDur(FR.GRAB_S, HW.LOAD_K), fx: m.cart.x, fz: m.cart.z }, { s: 'walk', x: s.x, z: s.z, cart: true }, { s: 'act', a: 'park', dur: hwDur(FR.PARK_S, HW.LOAD_K), f });
+  return steps;
+}
+function hwDeliverNext(S, m, ctx) {
+  const sod = ctx.sod, I = S.items, home = hwCartHome(m), atHome = hwCartAt(m.cart, home) < 3, load = hwCartGoods(S, m), eve = sod >= HW.DELIVER_S && sod < HW.LAST_S;
+  const go = (steps, job) => { m.steps = steps; m.job = job || null; m.i = 0; m.t0 = -1; return true; };
+  const held = hwHand(S, m);
+  if (held !== undefined) return go([{ s: 'dest' }], { id: held, up: 1, cart: atHome && eve && !frIsOut(S, held) });
+  const J = S.fr && S.fr.job, plShop = J && (J.k === 'deliver' || J.k === 'pickup') ? J.shop : null;
+  const claimed = new Set(S.hw.men.filter(q => q !== m && q.job && Number.isInteger(q.job.id)).map(q => q.job.id));
+  const free = id => !claimed.has(id) && !ctx.mine.has(id);
+  const lift = id => hwDur(FR.PICK_S[hwVerb(S, id)] || FR.PICK_S.carry, HW.LOAD_K);
+  if (atHome) {
+    // Back with the pickups (or after hours with whatever is left): each into storage.
+    const back = load.filter(id => frIsOut(S, id) || !eve);
+    if (back.length) { const id = back[0], st = hwCartStand(m); return go([{ s: 'walk', x: st.x, z: st.z }, { s: 'act', a: 'cpick', id, dur: lift(id), fx: m.cart.x, fz: m.cart.z }, { s: 'dest' }], { id }); }
+    if (!eve) return false;
+    // Loading: the goods for the town in storage, in the street's order, until the cart is full.
+    if (load.length < HW.CART_N) {
+      let best = null;
+      for (let i = 0; i < I.next; i++) {
+        const w = I.alive[i] ? I.where[i] : null;
+        if (!w || w.kind !== 'CELL' || !frShopOf(S, i) || !free(i) || !frOnTop(S, i)) continue;
+        const k = FR_SHOP_ORDER.indexOf(frShopOf(S, i));
+        if (!best || k < best.k || (k === best.k && i < best.id)) best = { id: i, k };
+      }
+      if (best) {
+        const id = best.id, w = I.where[id], sp = frSpotOf(S, w, itemType(S, id)), verb = hwVerb(S, id);
+        return go([{ s: 'walk', x: sp.stand.x, z: sp.stand.z }, { s: 'act', a: 'pick', id, from: { ...w }, verb, dur: hwDur(frActS(verb, w.layer || 0, 'cell'), HW.LOAD_K), fx: sp.good.x, fz: sp.good.z }, { s: 'dest' }], { id, from: { ...w }, cart: 1 });
+      }
+    }
+  }
+  if (!eve) return load.length || !atHome ? go(hwPushTo(S, m, { x: home.x, z: home.z, axis: 'x' })) : false;
+  // In town (or setting off): the next shop in the street's order with goods on the cart for it, or pickups waiting.
+  const room = HW.CART_N - load.length;
+  let shop = null;
+  for (const sh of FR_SHOP_ORDER) {
+    if (load.some(id => frShopOf(S, id) === sh) || (room > 0 && sh !== plShop && itemsAt(S, { kind: 'SHOP', shop: sh }).some(free))) { shop = sh; break; }
+  }
+  if (!shop) return atHome ? false : go(hwPushTo(S, m, { x: home.x, z: home.z, axis: 'x' }));
+  const spot = frShopCartSpot(shop), sh = frShop(shop);
+  if (hwCartAt(m.cart, spot) > FR.NEAR) return go(hwPushTo(S, m, spot));
+  const st = hwCartStand(m), mine = load.filter(id => frShopOf(S, id) === shop);
+  if (mine.length) {
+    const id = mine[mine.length - 1];
+    return go([{ s: 'walk', x: st.x, z: st.z }, { s: 'act', a: 'cpick', id, dur: lift(id), fx: m.cart.x, fz: m.cart.z },
+      { s: 'walk', x: sh.door.x, z: sh.door.z }, { s: 'act', a: 'hand', id, shop, dur: hwDur(FR.HAND_S, HW.LOAD_K), fx: sh.door.x + (sh.side === 'W' ? -1 : 1), fz: sh.door.z }], { id, up: 1 });
+  }
+  const id = itemsAt(S, { kind: 'SHOP', shop }).filter(free)[0], w = I.where[id], sp = frSpotOf(S, w, itemType(S, id)), verb = hwVerb(S, id);
+  return go([{ s: 'walk', x: sp.stand.x, z: sp.stand.z }, { s: 'act', a: 'pick', id, from: { ...w }, verb, dur: hwDur(FR.PICK_S[verb], HW.LOAD_K), fx: sp.good.x, fz: sp.good.z }, { s: 'dest' }], { id, from: { ...w }, cart: 1 });
+}
+// ---- An act: can it start (a reason if not), and its end ----
+function hwActWhy(S, m, st, ctx) {
+  const I = S.items, who = hwWho(m.id);
+  if (st.a === 'pick') {
+    if (!I.alive[st.id] || !cargoSame(I.where[st.id], st.from) || ctx.mine.has(st.id)) return 'moved';
+    if (!frOnTop(S, st.id)) return 'under';
+    if (st.from.kind === 'CAR' && (frCarWhy(S, st.from.stockId) || frDoorFrac(S, st.from.stockId) < 1)) return 'car';
+    return itemCanMove(S, st.id, { kind: 'CREW', who });
+  }
+  if (st.a === 'put') {
+    if (!I.alive[st.id] || (I.where[st.id] || {}).who !== who) return 'gone';
+    if (st.to.kind === 'CAR' && (frCarWhy(S, st.to.stockId) || frDoorFrac(S, st.to.stockId) < 1)) return 'car';
+    const gr = frGridOf(st.to);
+    if (gr) { const { c, r } = frCR(st.to), why = frSpotWhy(S, gr, c, r, st.to.layer || 0, itemType(S, st.id), frOcc(S, gr), st.id); if (why) return why; }
+    return itemCanMove(S, st.id, st.to);
+  }
+  if (st.a === 'cpick') return I.alive[st.id] && String((I.where[st.id] || {}).who).startsWith(who + 'c') ? null : 'gone';
+  if (st.a === 'cput') return I.alive[st.id] && (I.where[st.id] || {}).who === who ? itemCanMove(S, st.id, { kind: 'CREW', who: who + 'c' + st.slot }) : 'gone';
+  if (st.a === 'hand') return I.alive[st.id] && (I.where[st.id] || {}).who === who && frShopOf(S, st.id) === st.shop ? null : 'gone';
+  if (st.a === 'door') return frCarWhy(S, st.stock);
+  if (st.a === 'up') return pbGeo(S, st.stock, null) ? null : 'gone';
+  if (st.a === 'punch') { const p = S.pax.list.find(q => q.id === st.pax), B = pbSt(S); return p && p.s === 'sitting' && !p.punched && p.stock === st.stock && !(B.job && B.job.k === 'punch' && B.job.id === p.id) ? null : 'gone'; }
+  return null;
+}
+function hwActDo(S, m, st, ev, ctx) {
+  const I = S.items, F = frSt(S), H = S.hw, who = hwWho(m.id), tot = k => { H.tot[k] = (H.tot[k] || 0) + 1; };
+  if (st.a === 'pick' || st.a === 'cpick') {
+    if (hwActWhy(S, m, st, ctx)) return 'moved';   // (the player has named it meanwhile, or it has gone)
+    const from = I.where[st.id], r = itemMove(S, st.id, { kind: 'CREW', who }, ev);
+    if (!r.ok) return r.why;
+    ev.push({ t: 'hwTaken', id: st.id, who: m.id });
+    if (from.kind === 'CAR' && !frIsOut(S, st.id)) {
+      const f = carryCarOf(S, from.stockId), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null;
+      ev.push({ t: 'frUnloaded', run: run ? run.id : null, id: st.id, by: who });
+      pdCount(S, 'unloaded'); F.tot.unloaded++; tot('unloaded');
+    }
+    if (from.kind === 'SHOP') { ev.push({ t: 'frPicked', shop: from.shop, id: st.id, by: who }); pdCount(S, 'picked'); F.tot.picked++; tot('picked'); }
+    return null;
+  }
+  if (st.a === 'put' || st.a === 'cput') {
+    const to = st.a === 'cput' ? { kind: 'CREW', who: who + 'c' + st.slot } : st.to, r = itemMove(S, st.id, to, ev);
+    if (!r.ok) return r.why;
+    if (to.kind === 'CELL') { ev.push({ t: 'frStored', id: st.id, by: who }); F.tot.stored++; }
+    if (to.kind === 'CAR') { const f = carryCarOf(S, to.stockId), run = f && f.tr.owner === 'rr' ? rrRunOf(S, f.tr.id) : null; ev.push({ t: 'frLoaded', run: run ? run.id : null, id: st.id, by: who }); tot('loaded'); }
+    m.job = null;
+    return null;
+  }
+  if (st.a === 'hand') {
+    const keeper = typeof tfAt === 'function' ? !!tfAt(S, frShop(st.shop).bld) : true, r = itemConsume(S, st.id, 'business', ev);
+    if (!r.ok) return r.why;
+    ev.push({ t: 'frDelivered', shop: st.shop, id: st.id, keeper, by: who });
+    pdCount(S, 'delivered'); F.tot.delivered++; tot('delivered');
+    m.job = null;
+    return null;
+  }
+  if (st.a === 'door') { F.doors[st.stock] = { o: FR.DOOR_S, mv: 0 }; ev.push({ t: 'frDoor', stock: st.stock, open: true, by: who }); return null; }
+  if (st.a === 'park') { m.f = st.f; m.cart.f = st.f; m.cart.x = m.x + Math.sin(st.f) * FR.PUSH_D; m.cart.z = m.z + Math.cos(st.f) * FR.PUSH_D; return null; }
+  if (st.a === 'up') { m.in.clm = 0; m.in.f = 'se'; hwPlaceIn(S, m, pbGeo(S, st.stock, null)); return null; }
+  if (st.a === 'down') {
+    const g = pbGeo(S, m.in.stock, null);
+    if (g) { const [x, z] = pbW(g, st.end * PB.END_S, -PB.STEP_Z); m.x = pbR(x); m.z = pbR(z); }
+    m.y = null; m.in = null; m.job = null; m.f = Math.PI;
+    return null;
+  }
+  if (st.a === 'punch') {
+    if (!pbPunchBy(S, st.stock, st.seat, who, ev)) return 'gone';
+    tot('punched'); m.job = { stock: st.stock };
+    return null;
+  }
+  return null;
+}
+// ---- While the player is away on the line (plan 7.4; the rules are at the head of this section) ----
+function hwAwayTick(S, ev) {
+  const L = S.ln;
+  if (!L) return;
+  const A = () => L.awStats || (L.awStats = {});
+  for (const e of ev) if ((e.t === 'rrArrived' || (e.t === 'rrLeft' && e.through)) && (e.late || 0) > RR.LATE_S) A().late = (A().late || 0) + 1;
+  for (const run of S.rr.runs) {
+    if (run.ph !== 'stand' || run.through) continue;
+    const tr = rrTrainOf(S, run);
+    if (!tr) continue;
+    const due = Math.max(run.dep, run.tArr + Math.max(RR.DWELL_S, run.dep - run.arr));
+    const ready = S.time >= run.dep && S.time - run.tArr >= RR.DWELL_S && (run.kind === 'pax' ? pxReady(S, run, tr) : cgReady(S, run, tr));
+    if ((!ready && S.time < due + HW.GRACE_S) || wtBlocks(S, run.to)) continue;
+    if (S.hw) for (const m of S.hw.men) if (m.in && tr.consist.some(c => c.id === m.in.stock)) hwOffCoach(S, m);
+    if (run.kind === 'freight' && frOn(S)) {
+      let n = 0;
+      for (const id of frAboard(S, tr).ids) {
+        if (frIsOut(S, id)) continue;
+        if (itemConsume(S, id, 'soldOutside', ev).ok) { S.items.used[S.items.used.length - 1].left = 1; n++; }
+      }
+      if (n) { A().left = (A().left || 0) + n; ev.push({ t: 'hwLeftAboard', run: run.id, n }); }
+    }
+    const n0 = ev.length;
+    rrDepart(S, run, tr, ev, true);
+    for (let k = n0; k < ev.length; k++) if (ev[k].t === 'pbMissed') A().missed = (A().missed || 0) + ev[k].n;
+    ev.push({ t: 'hwSentOff', run: run.id, ready, late: Math.max(0, S.time - run.dep) });
+  }
+}
+// ---- For the other sections ----
+// A puncher aboard this train (P's pbWhyNotReady: the train is not ready while he is).
+function hwOnTrain(S, tr) { return !!(S && S.hw && tr && S.hw.men.some(m => m.in && tr.consist.some(c => c.id === m.in.stock))); }
+// A traveller holding his ticket out to a puncher (P's pbDrawList).
+function hwTicketOf(S, paxId) { return !!(S && S.hw && S.hw.men.some(m => m.in && m.steps && m.t0 >= 0 && (m.steps[m.i] || {}).a === 'punch' && m.steps[m.i].pax === paxId)); }
+// The head count (Crew's hcRoll): [{ id, name, home, at }].
+function hwRoll(S) {
+  if (!S || !S.hw) return [];
+  return S.hw.men.map(m => ({ id: 'hw' + m.id, name: hwName(S, m), home: 'the hotel', at: m.st === 'home' ? 'the hotel' : m.z < -30 ? 'the town' : 'the station' }));
+}
+// The summary's line for the hired men's day, or null with nobody hired.
+function hwSummaryLine(S) {
+  const H = S && S.hw;
+  if (!H || !H.men.length) return null;
+  const T = H.tot || {}, parts = [], n = (v, one, many) => `${v} ${v === 1 ? one : many}`, c = { punch: 0, load: 0, deliver: 0 };
+  if (T.punched) parts.push(n(T.punched, 'ticket punched', 'tickets punched'));
+  if (T.unloaded) parts.push(n(T.unloaded, 'good unloaded', 'goods unloaded'));
+  if (T.loaded) parts.push(n(T.loaded, 'good loaded', 'goods loaded'));
+  if (T.delivered) parts.push(n(T.delivered, 'good delivered', 'goods delivered'));
+  if (T.picked) parts.push(n(T.picked, 'pickup fetched', 'pickups fetched'));
+  for (const m of H.men) c[m.k]++;
+  const who = [c.punch && n(c.punch, 'puncher', 'punchers'), c.load && n(c.load, 'loader', 'loaders'), c.deliver && n(c.deliver, 'delivery man', 'delivery men')].filter(Boolean).join(', ');
+  return `${who}: ${parts.length ? parts.join(', ') : 'nothing to do'}.`;
+}
+// ---- Drawing (read by the renderer only) ----
+// The men outdoors, in the townsfolk's shape with the agent's animation by name: [{ id, who, name, k, x, y, z, f, act, anim, frame }].
+function hwDrawList(S) {
+  if (!hwOn(S)) return [];
+  const out = [];
+  for (const m of S.hw.men) {
+    if (m.st === 'home' || m.in) continue;   // (in a coach or on its steps: P's list, hwPbList)
+    const st = m.steps && m.steps[m.i], acting = st && st.s === 'act' && m.t0 >= 0, prog = acting ? Math.min(1, (S.time - m.t0) / st.dur) : 0, held = hwHand(S, m) !== undefined;
+    const walking = st && st.s === 'walk' && !!m.pts, pushing = walking && st.cart;
+    let anim = 'idle', frame = Math.floor((S.tick + m.id * 3) / 6) % 2;
+    if (pushing) { anim = 'push'; frame = S.tick % 4; }
+    else if (walking) { anim = held ? 'carry' : 'walk'; frame = S.tick % 4; }
+    else if (acting && /^(pick|put|cpick|cput)$/.test(st.a)) { anim = 'lift'; frame = Math.min(1, Math.floor(prog * 2)); }
+    else if (acting && st.a === 'door') { anim = 'door'; frame = Math.min(1, Math.floor(prog * 2)); }
+    else if (acting && st.a === 'hand') { anim = 'handOver'; frame = Math.min(1, Math.floor(prog * 2)); }
+    else if (acting && (st.a === 'grab' || st.a === 'park')) { anim = 'push'; frame = 0; }
+    else if (held) { anim = 'carry'; frame = 0; }
+    const y = Number.isFinite(m.y) ? m.y : walkDeckY(S.track, m.x, m.z);
+    out.push({ id: 'hw' + m.id, who: 'agent', name: hwName(S, m), k: m.k, x: m.x, y, z: m.z, f: m.f, act: walking ? 'walk' : 'idle', anim, frame });
+  }
+  return out;
+}
+// The punchers in a coach (or on its end steps), in P's draw shape (with stock), for the cut-away coach.
+function hwPbList(S) {
+  if (!hwOn(S)) return [];
+  const out = [];
+  for (const m of S.hw.men) {
+    if (!m.in) continue;
+    const st = m.steps && m.steps[m.i], acting = st && st.s === 'act' && m.t0 >= 0, prog = acting ? Math.min(1, (S.time - m.t0) / st.dur) : 0, f = m.in.f || 'se';
+    let act = 'idle', frame = Math.floor(S.tick / 6) % 2;
+    if (acting && (st.a === 'up' || st.a === 'down')) { act = 'climb'; frame = Math.floor(prog * 4) % 2; }
+    else if (acting && st.a === 'punch') { act = 'punch'; frame = Math.min(2, Math.floor(prog * 3)); }
+    else if (m.in.mv) { act = 'walk'; frame = S.tick % 4; }
+    out.push({ id: 'hw' + m.id, who: 'agent', x: m.x, y: m.y, z: m.z, f, dir: f, act, frame, stock: m.in.stock, seat: null, hw: m.id, key: `ppl/agent/${act}/${f}/${frame}` });
+  }
+  return out;
+}
+// The coaches a puncher works in, drawn cut away as the player's is.
+function hwCutaway(S) { return hwOn(S) ? S.hw.men.filter(m => m.in && !m.in.clm).map(m => m.in.stock) : []; }
+// The delivery men's carts with their loads and the goods in the men's hands, as sorted items (the renderer's own
+// pixToolItem and pixGoodsItem).
+function hwPixItems(S) {
+  if (!hwOn(S) || typeof pixToolItem !== 'function') return [];
+  const out = [], I = S.items, good = (id, extra) => { const c = I.waybill[id].commodity; return { id, kind: itemType(S, id), variant: FR_VARIANT[c] || null, tag: frTagOf(S, id), commodity: c, rot: 'x', frame: 0, layer: 0, ...extra }; };
+  for (const m of S.hw.men) {
+    if (m.st === 'home' || m.in) continue;
+    if (m.cart) {
+      const T = { id: 'hwc' + m.id, k: 'cart27' }, load = hwCartGoods(S, m).map(id => good(id, { place: 'cart', tool: T.id, cell: hwSlotOf(S, id) }));
+      out.push(pixToolItem(T, { x: m.cart.x, y: walkDeckY(S.track, m.cart.x, m.cart.z), z: m.cart.z, f: m.cart.f }, load));
+    }
+    const id = hwHand(S, m);
+    if (id !== undefined) {
+      const fx = Math.sin(m.f), fz = Math.cos(m.f), y = (Number.isFinite(m.y) ? m.y : walkDeckY(S.track, m.x, m.z)) + 0.95;
+      const it = pixGoodsItem(good(id, { place: 'crew', x: m.x + fx * 0.35, y, z: m.z + fz * 0.35, alongZ: Math.abs(fz) > Math.abs(fx) }), 'hwg' + id);
+      if (fx + fz > 0) it.after = ['tfhw' + m.id];
+      out.push(it);
+    }
+  }
+  return out;
+}
+// ---- Saving ----
+function hwCheckSaveShape(st) {
+  if (st.hw === undefined) return;
+  const H = st.hw, bad = () => { throw new Error('damaged save: hired workers'); }, num = v => typeof v === 'number' && Number.isFinite(v);
+  if (!H || typeof H !== 'object' || !Number.isInteger(H.next) || !Array.isArray(H.men) || !H.tot || typeof H.tot !== 'object') bad();
+  for (const m of H.men) {
+    if (!m || !Number.isInteger(m.id) || m.id < 0 || m.id >= H.next || !HW_KINDS.includes(m.k) || !Number.isInteger(m.n) || (m.st !== 'home' && m.st !== 'work') || !num(m.x) || !num(m.z) || !num(m.f)) bad();
+    if (m.steps !== null && (!Array.isArray(m.steps) || !Number.isInteger(m.i))) bad();
+    if (m.k === 'deliver' && (!m.cart || !num(m.cart.x) || !num(m.cart.z))) bad();
+  }
+}
+const HW_TEST = { HW, hwSync, hwPath, hwPlayerIds, hwRoll, hwSummaryLine, hwDrawList, hwPbList, hwCutaway, hwPixItems, hwOnTrain, hwTicketOf, hwCartGoods, hwHand, hwName, hwPost, hwAwayTick, hwCheckSaveShape };
 
 // ==== Section: the bigger town (D32) ====
 // Owner: Town, stage 3 (plans/d32-tech.md section 8: homes, roles, rooms, the simple economy). Prefixes tn, TN; store
@@ -7245,6 +7894,7 @@ function hcRoll(S) {
   const out = [], st = S.tf, live = !!st && Array.isArray(st.ag) && typeof TF_AGENTS !== 'undefined' && st.ag.length === TF_AGENTS.length && st.day === tfDay(S) && !(S.cw && S.cw.sk);
   if (typeof TF_AGENTS !== 'undefined' && S.tf) TF_AGENTS.forEach((A, i) => { const a = live ? st.ag[i] : null; out.push({ id: 'tf_' + A.id, name: A.name, home: A.home, at: !a || a.in ? A.home : 'the town' }); });
   const C = S.cw, ph = S.ln ? S.ln.tr.ph : 'home', stn = ph === 'sStand' || ph === 'eStand';
+  out.push(...hwRoll(S));   // D32 (Town): the hired station hands (home: the hotel)
   if (C) for (const m of C.men) out.push({ id: 'cw' + m.id, name: cwName(S, m.id), home: 'the camp', at: m.pl === 2 ? `the line at ${Math.round(m.x / LINE.M)} m` : m.st === 'ride' && !stn ? 'aboard the work train' : 'the camp' });
   return out;
 }
@@ -11070,12 +11720,25 @@ function pbWhyNotReady(S, run, tr) {
   if (coming || boarding) return `${coming + boarding} still to take their seats`;
   if (toPunch) return `${toPunch} ticket${toPunch > 1 ? 's' : ''} still to punch`;
   if (P.in && tr && P.in.tr === tr.id) return 'Step off the train first';
+  if (hwOnTrain(S, tr)) return 'The ticket puncher is still aboard';   // D32 (Town): a hired puncher steps off first
   return null;
 }
 function pbReady(S, run, tr) {
   if (!pbOn(S.track)) return ppReady(S, run, tr);
   if (!S.pax || !ppPax(run)) return true;
   return pbWhyNotReady(S, run, tr) === null;
+}
+// D32 (the lead's, for Town's hired punchers; plans/d32-tech.md 11.4): punches the ticket of the traveller seated at
+// this seat of this coach as a worker (who), with the same marks and counts as the player's punch (p.punched, the
+// totals, pdCount 'punched', pbPunched with by). Not the traveller the player is punching. True when punched.
+function pbPunchBy(S, stock, seat, who, ev) {
+  if (!S.pax || !pbOn(S.track)) return false;
+  const B = pbSt(S), p = S.pax.list.find(q => q.stock === stock && q.seat === seat && q.s === 'sitting' && !q.punched);
+  if (!p || (B.job && B.job.k === 'punch' && B.job.id === p.id)) return false;
+  const g = pbGeo(S, stock, null);
+  p.punched = true; B.tot.punched++; pdCount(S, 'punched');
+  if (ev) ev.push({ t: 'pbPunched', run: g ? g.run.id : p.run, tr: g ? g.tr.id : null, stock, id: p.id, by: who });
+  return true;
 }
 function pbRefuse(ev, why) { ev.push({ t: 'pbRefused', why }); }
 // The commands (from the command switch: pbEnter, pbWalk, pbPunch, pbLeave; and the D25 'punch' while board is on).
@@ -11176,6 +11839,7 @@ function pbDrawList(S) {
       if (p.s === 'sitting') {
         const tk = J && J.k === 'punch' && J.id === p.id;
         act = anim = tk ? 'sitTicket' : 'sit';
+        if (!tk && hwTicketOf(S, p.id)) { act = anim = 'sitTicket'; frame = 1; }   // D32 (Town): to a hired puncher
         if (tk) { t = J.on ? Math.min(1, J.acc / PB.PUNCH_S) : 0; frame = J.on ? 1 : 0; }
       } else if (p.s === 'standing') { act = anim = 'standUp'; t = Math.min(1, p.bt / PB.STAND_S); frame = t < 0.5 ? 0 : 1; }
       else if (p.s === 'climb') { act = anim = 'climb'; t = Math.min(1, p.bt / PB.CLIMB_S); frame = Math.floor(t * 4) % 2; }
@@ -12301,6 +12965,7 @@ function frCmd(S, c, ev) {
     const id = c.item;
     if (!Number.isInteger(id) || id < 0 || id >= I.next || !I.alive[id]) return no('There is no such good');
     const w = I.where[id], shop = frShopOf(S, id);
+    if (w.kind === 'CREW') return no('A station hand has that');   // D32 (Town): in a hired man's hands or on his cart
     if (w.kind === 'SHOP' && FR.KEEPER) c = { t: 'frPickup', shop: w.shop };
     else if (w.kind === 'CART' && shop && !frHeld(S).length) {
       const sh = frShop(shop), cp = frToolPose(S, w.tool);
@@ -13272,8 +13937,8 @@ function frAuditDay(S) {
   for (const u of I.used) {
     const wb = I.waybill[u.id], C = wb && COMMODITIES[wb.commodity];
     if (!C || !GOODS27[C.type] || !u.from) continue;
-    if (u.reason === 'business' && (!frShopOf(S, u.id) || !(['HAND', 'TRUCK', 'CARRIED', 'CART'].includes(u.from.kind) || (u.from.kind === 'CAR' && FR.COLLECT.includes(itemType(S, u.id)))))) out.push(`freight: good ${u.id} used up as business from ${u.from.kind}`);
-    if (u.reason === 'soldOutside' && (itemTag(wb) !== 'OUTSIDE' || u.from.kind !== 'CAR')) out.push(`freight: good ${u.id} sold from ${u.from.kind}`);
+    if (u.reason === 'business' && (!frShopOf(S, u.id) || !(['HAND', 'TRUCK', 'CARRIED', 'CART', 'CREW'].includes(u.from.kind) || (u.from.kind === 'CAR' && FR.COLLECT.includes(itemType(S, u.id)))))) out.push(`freight: good ${u.id} used up as business from ${u.from.kind}`);
+    if (u.reason === 'soldOutside' && !u.left && (itemTag(wb) !== 'OUTSIDE' || u.from.kind !== 'CAR')) out.push(`freight: good ${u.id} sold from ${u.from.kind}`);
   }
   const grids = new Map();
   for (let i = 0; i < I.next; i++) {
@@ -13365,6 +14030,7 @@ function pdSummary(S, ev) {
   const D = S.pd; D.ph = 'summary'; D.sum = { day: D.day, ...D.stats };
   // D32: with the line on, the head count and what happened while the player was on the line (two lines on the summary).
   if (S.ln && S.ln.run) { const c = hcCount(S), a = awSummaryLine(S); D.sum.hc = { total: c.total, home: c.home }; if (a) D.sum.away = a; }
+  { const hw = hwSummaryLine(S); if (hw) D.sum.hw = hw; }   // D32 (Town): what the hired station hands did
   ev.push({ t: 'pdSummary', sum: D.sum });
 }
 function pdCmd(S, c, ev) {
@@ -22003,6 +22669,7 @@ function pdOpenSum() {
   if (h27) lines.push(['Town', `${m.delivered} delivered, ${m.picked || 0} picked up`]);
   if (m.hc) lines.push(['Head count', `Counted home: ${m.hc.home} of ${m.hc.total}`]);   // D32: with the line on
   if (m.away) lines.push(['The line', m.away]);
+  if (m.hw) lines.push(['Station hands', m.hw]);   // D32 (Town)
   const box = $('pdSumBody');
   box.textContent = '';
   for (const [k, v] of lines) { const r = document.createElement('div'); r.className = 'pdSumRow'; r.innerHTML = '<b></b><span></span>'; r.firstChild.textContent = k; r.lastChild.textContent = v; r.dataset.k = k.toLowerCase(); box.appendChild(r); }
@@ -23910,7 +24577,7 @@ function pixCall(name, ...a) {
 }
 function pixLists() {
   const arr = v => Array.isArray(v) ? v : [];
-  return { pb: arr(pixCall('pbDrawList', S)), pbPose: pixCall('pbPlayerPose', S), cut: arr(pixCall('pbCutaway', S)).map(String), fr: arr(pixCall('frDrawList', S)),
+  return { pb: arr(pixCall('pbDrawList', S)).concat(arr(pixCall('hwPbList', S))), pbPose: pixCall('pbPlayerPose', S), cut: arr(pixCall('pbCutaway', S)).concat(arr(pixCall('hwCutaway', S))).map(String), fr: arr(pixCall('frDrawList', S)),   // D32 (Town): the hired punchers (pb, cut)
     frPose: pixCall('frPose', S), cart: pixCall('frCartPose', S), truck: pixCall('frTruckPose', S),
     tf: pixTfList(arr(pixCall('tfDrawList', S))).concat(arr(pixCall('cwDrawList', S, 'station')), arr(pixCall('hwDrawList', S))) };   // D32: the rail men and the hired workers at the station, in the townsfolk's shape
 }
@@ -24091,6 +24758,7 @@ function pixActAnim(act, q, ph) {
     case 'sitTicket': return ['sitTicket', fr !== null ? fr : pixCycle(0.8, 2, ph)];
     case 'sitDown': case 'standUp': case 'climb': return [act, fr !== null ? fr : pixCycle(2, 2, ph)];
     case 'benchSit': return ['benchSit', 0];
+    case 'punch': return ['punch', fr !== null ? fr : pixCycle(4, 3, ph)];   // D32 (Town): a hired puncher
     case 'talk': return ['talk', fr !== null ? fr : pixCycle(1.5, 2, ph)];
     case 'ticket': return ['ticket', fr !== null ? fr : pixCycle(2, 2, ph)];
     case 'board': return ['board', fr !== null ? fr : pixCycle(3, 3)];
@@ -24847,6 +25515,7 @@ function pixScene(alpha, Lgiven) {
       load.forEach(id => pixGoodsDraw(g, S, id, bx, by - 6 - 5 * S.items.where[id].slot, true, x, y + 0.8, z));
     }, 'tool' + T.id));
   }
+  for (const it of pixCall('hwPixItems', S) || []) out.push(it);   // D32 (Town): the delivery men's carts and the goods the hired men carry
   // The player (the station agent), unless riding inside a car (D24) or inside a car cut away (drawn with it).
   if (agent && !(inCar && PIX.cutIds.includes('tr' + inCar.tr.id + '/' + inCar.vi))) out.push(agent);
   // Travellers: P's D27 list outside the cars cut away (waiting on platform 1, on the benches, walking from town,

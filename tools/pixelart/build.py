@@ -191,7 +191,11 @@ def write(frames, ground):
         groups.setdefault(group, []).append(img)
     sheets, sheet_pos, urls = [], {}, []
     for gi, (group, imgs) in enumerate(sorted(groups.items())):
-        sheet, pos = pack(imgs, 256 if group == 'font' else 512)
+        mw = 256 if group == 'font' else 512
+        sheet, pos = pack(imgs, mw)
+        while sheet.shape[0] > 4000 and mw < 4096:   # the packed index holds 0 to 4095: a tall sheet is packed wider
+            mw *= 2
+            sheet, pos = pack(imgs, mw)
         data = png_bytes(sheet)
         fn = f'sheet-{group}.png'
         with open(os.path.join(OUT, fn), 'wb') as f:

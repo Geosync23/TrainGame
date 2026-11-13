@@ -43,6 +43,8 @@ OWNERS = {
     'sprites_camp': ('camp/',),                   # D32: the crew's camp
     # D32 the journey (Artist 3): the wild country's near side, the landmarks, the wildlife
     'sprites_wild_near': ('wild/near/', 'wild/mark/', 'wild/life/'),
+    # D32 wild country, Artist 2: the far-side borders and their ranks, and the regions' ground (plans/pixel/d32/far)
+    'sprites_wild_far': ('wild/far/', 'tile/wild/'),
 }
 
 

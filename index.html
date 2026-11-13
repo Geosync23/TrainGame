@@ -21886,6 +21886,7 @@ function lpHudFrame() {
   const Q = S.lp, line = lnViewOn(), now = performance.now(), L = S.ln;
   if (lpUi.view !== null && lpUi.view !== line) { lpUi.flash = now; cam.ox = cam.oz = 0; }   // a switch of the view: the screen fades in, on him
   lpUi.view = line;
+  if (!Q && now - lpUi.flash > 500 && lpUi.fade.hidden && lpUi.bar.hidden && !lpUi.cardFor) return;   // (nothing of Play's up: no work a frame)
   // The fade (dark while the ride is between the two places).
   const sod = lpFrameSod(), k = Math.max(Q ? lpFade(S, sod) : 0, 1 - (now - lpUi.flash) / 450);
   const fd = lpUi.fade;

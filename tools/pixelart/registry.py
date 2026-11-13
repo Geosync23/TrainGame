@@ -34,6 +34,12 @@ OWNERS = {
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
     'sprites_nature': ('nat/',),           # D27 nature (A3)
     'sprites_ground': ('tile/', 'dock/'),  # D27 ground tiles and the cargo platform's pieces (A3)
+    # D32 PLACEHOLDERS (the foundation's stand-ins, sprites_d32ph.py; the longest prefix wins, so these keys are its
+    # until the artist's real module takes each over: then drop the prefix here and the key there).
+    'sprites_d32ph': ('tile/prairie/', 'tile/woodfloor/', 'tile/rockground/', 'tile/hill_lit/', 'tile/hill_shade/',
+                      'tile/field/', 'tile/river', 'tile/riverbank/', 'tile/ln_cleared/', 'tile/ln_bed/', 'tile/ln_rock/',
+                      'nat/pine/', 'nat/oak/', 'nat/stump/', 'nat/felled', 'nat/brush/', 'nat/brush_cut', 'nat/mound/',
+                      'nat/fence_x', 'nat/fence_z', 'nat/haystack', 'line/', 'veh/crewcar/', 'veh/gondola/'),
 }
 
 

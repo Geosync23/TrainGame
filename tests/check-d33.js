@@ -57,11 +57,11 @@ module.exports = async function checkD33() {
       if (!s.men.every(m => m.pl === 1 && (m.st === 'camp' || m.st === 'toTrain') && m.x < -40)) P('at 06:00 the men are not in or by the camp: ' + JSON.stringify(s.men.map(m => [m.st, m.pl, Math.round(m.x)])));
       await page.tap('#pdStart'); await frames(3); await lesson();
       await page.evaluate(() => window.__railhead.setSpeed(0));
-      if (full) { await step(60); await look(-47, -24, 1.5); await shot('men-leave-camp'); await unlook(); }
+      if (full) { await look(-52, -30, 1.0); await shot('men-leave-camp'); await unlook(); }   // (06:00: the men are coming out of the camp for the muster)
 
       // ---- The men board, seen; the train leaves before any passenger train has left ----
       let seenPlank = new Set(), seenMuster = new Set(), maxJump = 0, lastFront = null, shotBoard = false, lineClass = false, fade = false;
-      for (let i = 0; i < 700; i++) {
+      for (let i = 0; i < 1400; i++) {
         s = await st();
         lineClass = lineClass || s.line; fade = fade || s.fade;
         s.men.forEach((m, k) => { if (m.pl === 1 && m.st === 'toTrain' && m.a === 'board') seenPlank.add(k); if (m.pl === 1 && m.st === 'toTrain') seenMuster.add(k); });
@@ -74,7 +74,7 @@ module.exports = async function checkD33() {
         }
         if (full && s.ph === 'out' && s.front > 120 && !shotBoard.out) { shotBoard = { out: 1 }; await look(s.front - 20, 0, 0.5); await shot('train-on-its-way'); await unlook(); }
         if (s.ph === 'stand') break;
-        await step(s.sod < D.DEP - 60 ? 8 : 1); await lesson();
+        await step(s.men.some(m => m.pl === 1 && m.st === 'toTrain') ? 2 : s.sod < D.DEP - 60 ? 8 : 1); await lesson();
       }
       if (s.ph !== 'stand') P(`the work train did not reach the railhead: ${s.ph} at ${s.hhmm}`);
       if (seenPlank.size !== 5 || seenMuster.size !== 5) P(`${seenMuster.size} of 5 men were seen walking to the train and ${seenPlank.size} boarding over the plank walk`);

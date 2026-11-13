@@ -88,6 +88,7 @@ const checks = {
   'the town\'s economy (D32, Town)': d32Later('./check-towneconomy'),
   'three line days end to end (D32, the lead)': d32Later('./check-d32-day'),
   'play-test fixes by real taps: one tap per good, the small cart, the pace, the soft patch (D31)': require('./check-d31'),
+  'one world: the line joined to the station (D33, by real taps from the first morning: the men board, the train runs out, the six kinds of work in view, the walk from the platform, the evening return, the line longer next day)': require('./check-d33'),
 };
 function d32Later(file) {
   if (require('fs').existsSync(require('path').join(__dirname, file + '.js'))) return require(file);

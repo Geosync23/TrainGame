@@ -1877,7 +1877,7 @@ function applyCommand(S, c, ev) {
     case 'pgDeliver': pgDeliverCmd(S, c, ev); break;    // D25: hand the goods for a shop in at its door (section "prototype goods")
     case 'pdStart': case 'pdEndDay': case 'pdNextDay': case 'pdLesson': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day; D27: the lessons' Show me, Skip and replay (section "prototype day")
     case 'dvSet': case 'dvSkip': dvCmd(S, c, ev); break;   // D32 (Foundation): dev mode's choices (section "the line (D32)")
-    case 'lpRide': case 'lpBack': case 'lpWalk': case 'lpJoin': case 'lpLeave': case 'lgDone': lpCmd(S, c, ev); break;   // D32 (Play): on the line
+    case 'lpRide': case 'lpGo': case 'lpBack': case 'lpWalk': case 'lpJoin': case 'lpLeave': case 'lgDone': lpCmd(S, c, ev); break;   // D32 (Play): on the line
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
     case 'stepOff': rideStepOffCmd(S, ev); break;
@@ -6982,7 +6982,7 @@ function lnLife(seed, c) {
 // D33: a new line is "a screen or so into construction": every stage already under way in the first stretch
 // (LINE.F0: cleared, bed, rock, ties, two rail lengths, the first spikes; metres from the line's x 0. The first 72 m
 // are the finished track from the yard out past the junction, long enough for the work train to stand clear of the main line).
-LINE.F0 = D33.on ? [105, 98, 92, 87, 78.2, 72] : [60, 60, 60, 60, 60, 60];
+LINE.F0 = D33.on ? [105, 98, 92, 88, 78.2, 72] : [60, 60, 60, 60, 60, 60];
 function lnNewStore() {
   return { on: false, crew: 0, run: false, day: -1, f: LINE.F0.slice(), wu: [0, 0, 0, 0, 0, 0], sup: { rock: 0, ties: 0, rails: 0, kegs: 0 },
     tr: { ph: 'home', t: 0, x: 0 }, days: 0, log: [], view: 'station', done: -1 };
@@ -7825,6 +7825,9 @@ function cwTick(S, ev) {
         case 'tool': {
           if (m.a === 'go') {
             const early = C.t0 >= 0 && S.time - C.t0 < 1500 && m.tool === null && TR.cars.length > 4;
+            // D33: a small crew (under 12) keeps its tools with the gangs: a man changing stage swaps where he stands
+            // (a minute), so the little team is at work, not walking to the tool row and back
+            if (D33.on && !early && L.crew < 12) { m.a = 'swap'; m.t = S.time; m.mv = 0; break; }
             const p = early ? cwSafe(S, TR.cars[4].x0 + 3 + (14 - m.id % 15), 3.4 + (m.id >= 15 ? 0.9 : 0), Math.PI) : cwSafe(S, G.camp - 25.5 + (m.id % 15), 8.3 + (m.id >= 15 ? 1.1 : 0), Math.PI);
             cwGo(m, p.x, p.z);
             if (cwStep(S, m, v, true)) { m.a = 'swap'; m.t = S.time; m.f = p.f; }
@@ -8389,12 +8392,12 @@ function lpCmd(S, c, ev) {
     if (!Q && !c.stn) {
       if (P.ride || P.in) return no('Step off the train first.');
       if (carryHeld(S).length || (P.tool !== null && P.tool !== undefined)) return no('Put down what you are carrying before you leave the yard.');
-      Object.assign(P, { mode: 'to', tx: D33.GATE + 0.7, tz: Math.max(-4.2, Math.min(4.6, c.z / 100)), use: null, act: null });
-      if (Math.abs(P.tz) < 2.9) P.tz = P.z < 0 ? -3.2 : 3.4;   // (beside the track, not on it)
+      // (past the board on the town's side of track 2: the station's walkers do not cross a track but at a crossing; out on the line he may)
+      Object.assign(P, { mode: 'to', tx: D33.GATE + 0.7, tz: P.z > 2.3 && P.x > 66 ? 3.4 : -3.4, use: null, act: null });
       P.lnGo = { x: Math.round(c.x), z: Math.round(c.z) };
     } else if (Q && Q.ph === 'line' && c.stn) {
       if (Q.j) lgLeave(S, ev, 'walked');
-      const tz = Math.abs(Q.z) < 2.9 ? (Q.z < 0 ? -3.2 : 3.4) : Math.max(-4.2, Math.min(4.6, Q.z));
+      const tz = -3.4;   // (in on the town's side of track 2, from where the station's paths lead everywhere)
       delete Q.home; Q.go = { x: Math.round(c.x), z: Math.round(c.z) }; Q.tx = D33.GATE - 1.4 - D33.LX; Q.tz = tz;
     }
     return;
@@ -25377,13 +25380,17 @@ function pixChunkBuild(T, ci, cj) {
   cv.width = cv.height = N;
   const g = cv.getContext('2d', { alpha: false }), G = pixTrackGeo(T), sheet = si => PIXA.imgs[si];   // (opaque: drawn as a plain copy)
   g.imageSmoothingEnabled = false;
-  g.fillStyle = PIX.COL.grass[0]; g.fillRect(0, 0, N, N);
+  // (D33, a check's marker colour, PIX.lnBg: the ground past the map's east, north and south edges is left in it, to
+  // show that the wild country's own ground covers every pixel there)
+  const mark = D33.on && PIX.lnBg ? PROTO.BOUNDS : null;
+  g.fillStyle = (mark && PIX.lnBg) || PIX.COL.grass[0]; g.fillRect(0, 0, N, N);
   const cs = [[l, t], [l + N, t], [l, t + N], [l + N, t + N]].map(([a, b]) => pixUnproject(a, b, 0));
   const i0 = Math.floor(Math.min(...cs.map(q => q.x))) - 1, i1 = Math.ceil(Math.max(...cs.map(q => q.x))) + 1;
   const j0 = Math.floor(Math.min(...cs.map(q => q.z))) - 1, j1 = Math.ceil(Math.max(...cs.map(q => q.z))) + 1;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
     if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1) continue;
+    if (mark && (i >= mark.x1 + 8 || j < mark.z0 || j >= mark.z1)) continue;   // (the two grounds mix over the 8u east of the edge)
     const f = pixF(pixCellTile(G, i, j));
     if (f) g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], sx - f[5], sy - f[6], f[3], f[4]);
   }
@@ -27042,7 +27049,7 @@ function pixFrame(alpha, dt) {
   // Draw: the ground, the flat decals, then everything in painter's order. If that hides the agent or a traveller in
   // a line behind a train, a building or a bridge, draw once more with those see-through (pixSeeThrough).
   const drawAll = () => {
-    g.fillStyle = PIX.outside || PIX.COL.grass[1]; g.fillRect(0, 0, nw, nh);   // past the ground layer's edge: its own grass
+    g.fillStyle = (pixLnOn() && PIX.lnBg) || PIX.outside || PIX.COL.grass[1]; g.fillRect(0, 0, nw, nh);   // past the ground layer's edge: its own grass (D33: never seen east, north or south of the map; PIX.lnBg: a check's marker colour)
     PIX.stats.fills = 0; PIX.stats.draws = 0; PIX.drawn = []; PIX.curId = null;
     const tg = performance.now();
     if (hasArtGround) pixSprite(g, 'ground', 0, 0, 0);
@@ -27987,7 +27994,7 @@ window.__railhead = {
   lnView: { track: on => { PIX.lnTrack = on ? new Set() : null; PIX.lnChunks.clear(); }, tracked: () => [...(PIX.lnTrack || [])], live: () => (PIX.lnLiveKeys || []).slice(), lifeOf: c => pixLnLifeOf(c), time: () => PIX.lnT,
     // how far (native px) a sprite anchored at z reaches up the screen past the near border's line (the men's side of it)
     over: (key, z) => { const f = pixF(key); if (!f) return null; const c = document.createElement('canvas'); c.width = f[3]; c.height = f[4]; const g = c.getContext('2d'); g.drawImage(PIXA.imgs[f[0]], f[1], f[2], f[3], f[4], 0, 0, f[3], f[4]); const d = g.getImageData(0, 0, f[3], f[4]).data; let m = -1e9; for (let y = 0; y < f[4]; y++) for (let x = 0; x < f[3]; x++) if (d[(y * f[3] + x) * 4 + 3]) { const o = -8 * (z - LINE.BORDER.S) + (x - f[5]) / 2 - (y - f[6]); if (o > m) m = o; } return m; },
-    baked: pixLnBaked, bg: c => { PIX.lnBg = c || null; PIX.lnChunks.clear(); }, on: lnViewOn, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
+    baked: pixLnBaked, bg: c => { PIX.lnBg = c || null; PIX.lnChunks.clear(); PIX.chunks.clear(); }, on: lnViewOn, d33: D33, inWorld: pixLnOn, lnIn: pixLnIn, branchPose: pixBranchPose, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
   d27: { PROTO, PROTO_STOCK, PROTO_LEVELS, PROTO_DOCK, PROTO_DOCK_LEVEL, PROTO_DECKS, PROTO_LEVERS, TOWN27, SHOPS27, STORE27_OUT, GOODS27, SHOP_GOODS27, CARGO27, TOOL_KINDS,
     d27On, walkDeckY, walkLevelAt, walkBridgeAt, walkStep, storeCellAt, storeCellOf, itemAudit, cargo27Where, cargo27Key, protoCreekAt, protoDebugEvening, rngFor, playerModeTick,
     flags: () => ({ ...WORLDS.proto.d27 }), protoStow, migrate18to19: proto18to19 },

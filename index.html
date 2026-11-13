@@ -6602,7 +6602,7 @@ const LN_TEST = { LINE, PROTO_SCHEDULE_WORK, lnKindAt, lnKindCell, lnRegionAt, l
 // a front moves); carrying trips, shuffling up as the front moves and waiting for a load are all part of 'work', so
 // the pace depends only on the minutes worked. Nothing random but rngFor(seed, 'cw', ...).
 const CW = {
-  K: 1.58,                                     // wu a minute of a man of skill 1.0 at work (the pace's one knob; check-crew holds the windows)
+  K: 1.54,                                     // wu a minute of a man of skill 1.0 at work (the pace's one knob; check-crew holds the windows)
   WALK: 2.4, CARRY: 1.8,                       // u a game minute, free and under a load (plan 3.1)
   TIRE: 1.6, TIRE_K: [1, 1.2, 1, 1, 1, 1.2], REST_AT: 20, REST_S: 420, SWAP_S: 60,
   R2: 0.55 * 0.55,                             // a walker keeps this far (u, squared) from a man ahead of him
@@ -6639,9 +6639,9 @@ function cwCot(i) { const T = cwTent(i >> 2), c = i & 3; return { x: T.x + (c & 
 // A man's seat in the yard: the ring by the fire, the two benches at the table, the outer ring.
 function cwSeat(i) {
   const F = CW.FIRE, ring = (k, n, r) => { const a = 2 * Math.PI * (k + 0.5) / n; return { x: cwR3(F[0] + r * Math.sin(a)), z: cwR3(F[1] + r * Math.cos(a)), f: a + Math.PI, y: 0 }; };
-  if (i < 10) return ring(i, 10, 2.4);
+  if (i < 10) return ring(i, 10, 3);
   if (i < 18) { const b = i - 10; return { x: CW.TABLE[0] - 1.5 + (b & 3), z: CW.TABLE[1] + (b < 4 ? -1.05 : 1.05), f: b < 4 ? 0 : Math.PI, y: 0.5 }; }
-  return ring(i - 18, 14, 3.9);
+  return ring(i - 18, 12, 4.7);
 }
 // The way from the yard to a man's cot (the tents of the back row are reached by the alley beside the front row's).
 function cwBedRoute(i) {
@@ -6660,7 +6660,7 @@ function cwNewDay(S, day) {
   const L = S.ln, n = L ? L.crew | 0 : 0;
   if (!S.cw) { if (!n) return; S.cw = { day: -1, men: [], fa: 0, idle: [0, 0, 0, 0, 0, 0], u: [1, 1, 1, 1, 1, 1], g: ['', '', '', '', '', ''], bq: 0, t0: -1, bo: [] }; }
   const C = S.cw, sod = rrSod(S.time);
-  C.day = day; C.t0 = -1; C.bq = 0; C.bo = []; C.g = ['', '', '', '', '', ''];
+  C.day = day; C.t0 = -1; C.bq = 0; C.mq = 0; C.bn = 0; C.bo = []; C.g = ['', '', '', '', '', ''];
   if (C.men.length > n) C.men.length = n;
   while (C.men.length < n) C.men.push(cwNewMan(S, C.men.length));
   C.mean = cwR3(C.men.reduce((a, m) => a + m.skill, 0) / Math.max(1, n));   // (the crew's pace is that of n men of skill 1.0, whoever they are)
@@ -6668,7 +6668,7 @@ function cwNewDay(S, day) {
     m.sta = 100;
     if (m.pl === 2) continue;                                // left on the line last night: he joins in when the train comes
     // (a crew taken on after the morning has begun: at the muster, or aboard when the train already stands)
-    if (L.run && sod >= LINE.T.ARR - 600 && sod < LINE.T.DEP) { const p = cwMuster(m.id); Object.assign(m, sod >= LINE.T.ARR ? { st: 'ride', pl: 0 } : { st: 'toTrain', pl: 1, a: 'wait', x: p.x, z: p.z, tx: p.x, tz: p.z, f: 0 }); }
+    if (L.run && sod >= LINE.T.ARR - 600 && sod < LINE.T.DEP) { const p = cwMuster(m.id); Object.assign(m, sod >= LINE.T.ARR ? { st: 'ride', pl: 0 } : { st: 'toTrain', pl: 1, a: 'wait', ms: m.id, x: p.x, z: p.z, tx: p.x, tz: p.z, f: 0 }); C.mq = Math.max(C.mq, m.id + 1); }
   }
 }
 // ---- Places on the line ----
@@ -6720,9 +6720,9 @@ function cwSlot(S, m) {
 function cwLoadSpot(S, m, G) {
   const k = m.stage, L = S.cw.men[m.ld], ui = L.q;
   if (k === 2) return cwSafe(S, G.heap + 1.1 * (m.q - (m.nb - 1) / 2), 5.1, 0);
-  if (k === 3) { const qp = ui === 0 ? 0 : ui & 1 ? -(ui + 1) / 2 : ui / 2; return cwSafe(S, G.ties + 1.5 + 4.2 * qp - 3 * m.k, -4.4, Math.PI / 2); }
+  if (k === 3) { const qp = ui === 0 ? 0 : ui & 1 ? -(ui + 1) / 2 : ui / 2; return cwSafe(S, G.ties + 1.5 + 5.2 * qp - 3 * m.k, -4.9, Math.PI / 2); }
   const cx = G.rails - 10.5 * ui, two = L.mem.length < 4, front = two ? m.k === 0 : m.k < 2, north = two ? m.k === 0 : !(m.k & 1);
-  return cwSafe(S, cx + (front ? 4 : -4), -5.3 + (north ? -0.6 : 0.6), Math.PI / 2);
+  return cwSafe(S, cx + (front ? 4 : -4), -6 + (north ? -0.6 : 0.6), Math.PI / 2);
 }
 // A point s along a path of straight pieces (run on beyond both ends): [x, z, heading].
 function cwPathAt(P, s) {
@@ -6735,7 +6735,7 @@ const cwPathLen = P => { let n = 0; for (let i = 1; i < P.length; i++) n += Math
 // A unit's way out with its load, from where its leader took it up (L.p0) to the front as it is now.
 function cwPath(S, L) {
   const f = S.ln.f, M = LINE.M, k = L.stage, p = L.p0;
-  if (k === 2) { const tx = Math.max(p[0] + 0.5, f[2] * M + 0.5 + (L.q & 3)); return [p, [p[0], 4.2], [tx, 4.2], [tx, 3.4]]; }
+  if (k === 2) { const tx = Math.max(p[0] + 0.5, f[2] * M + 0.5); return [p, [p[0], 4.2], [tx, 4.2], [tx, 3.4]]; }
   if (k === 3) { const dx = f[3] * M + 0.45; return [p, [p[0] + 0.6, p[1]], [p[0] + 1.6, -3.9], [dx, -3.9], [dx, 1.6]]; }
   const ex = Math.max(p[0] + 16, f[4] * M + 6.5), zr = L.n & 1 ? 1.025 : -1.025;
   return [p, [p[0] + 5, p[1]], [p[0] + 8, -2.6], [ex - 6.5, -2.6], [ex - 4.5, zr], [ex, zr]];
@@ -6951,6 +6951,8 @@ function cwTick(S, ev) {
     if (sod === T.MEAL1 - 1200 || (H.work && S.time - C.fa >= (idle ? 300 : CW.REDO_S))) cwAssign(S);
   }
   const wu = [0, 0, 0, 0, 0, 0], bo = C.bo;
+  let lx = -1e9;                                             // the furthest man already leaving through the narrow place at the creek
+  if (nLine && sod >= T.WORK1 - 5400) for (const m of men) if (m.pl === 2 && m.st === 'toTrain' && m.x > lx && m.x > CW.CREEK[0] - 4 && m.x < CW.CREEK[1] + 4) lx = m.x;
   for (let i = 0; i < men.length; i++) {
     const m = men[i];
     if (m.pl === 2) {
@@ -6964,7 +6966,8 @@ function cwTick(S, ev) {
         continue;
       }
       if (H.pack || sod >= T.WORK1 - 5400) {                 // packing up: each man leaves in time to be aboard by 18:17
-        if (sod >= T.AWAY - 300 - (Math.abs(m.x - steps.x) + Math.abs(m.z - 3.5) + 2) / CW.WALK * 60) { m.st = 'toTrain'; m.a = ''; delete m.rt; m.w = 0; continue; }
+        // (on the trestle the men nearer the train leave with those coming up behind them: there is no room to pass)
+        if (sod >= T.AWAY - 300 - (Math.abs(m.x - steps.x) + Math.abs(m.z - 3.5) + 2) / CW.WALK * 60 || (lx > m.x && m.x > CW.CREEK[0] - 4)) { m.st = 'toTrain'; m.a = ''; delete m.rt; m.w = 0; continue; }
       }
       if (H.meal && sod < T.MEAL1 - 900 && m.st !== 'meal') { const q = CW.SEATS[m.id % CW.SEATS.length], p = cwSafe(S, G.camp + q[0], 9.2 + q[1], 0); m.st = 'meal'; m.a = 'go'; m.sx = p.x; m.sz = p.z; cwGo(m, p.x, p.z); }
       switch (m.st) {
@@ -7046,7 +7049,7 @@ function cwTick(S, ev) {
       else if (m.a === 'eat') {
         if (morning) {
           if (sod >= CW.EAT_S + m.id * 10) {
-            if (L.run && sod < T.DEP - 600) { const p = cwMuster(m.id), gate = PROTO.CAMP.gate; m.st = 'toTrain'; m.a = 'go'; cwGo(m, p.x, p.z, [[gate.x, gate.z], [PROTO.MUSTER.x0 + 0.6, PROTO.MUSTER.z0 - 1.2]]); }
+            if (L.run && sod < T.DEP - 600) { const p = cwMuster(m.id), gate = PROTO.CAMP.gate; m.st = 'toTrain'; m.a = 'go'; delete m.ms; cwGo(m, p.x, p.z, [[gate.x, gate.z], [PROTO.MUSTER.x0 + 0.6, PROTO.MUSTER.z0 - 1.2]]); }
             else m.a = 'fire';
           }
         } else if (S.time - m.t >= 1500 && (late || sod >= CW.SUPPER_S)) { m.a = 'fire'; m.t = S.time; }
@@ -7067,10 +7070,13 @@ function cwTick(S, ev) {
       if (ph !== 'sStand' && ph !== 'sIn' && ph !== 'home') {   // the train has gone: back to the camp for the day
         const s = cwSeat(m.id), gate = PROTO.CAMP.gate;
         m.st = 'toCamp'; m.a = 'miss'; cwGo(m, s.x, s.z, [[gate.x, gate.z]]);
-      } else if (m.a === 'go') { if (cwStep(S, m, v, false)) { m.a = 'wait'; m.f = 0; } }
-      else if (m.a === 'wait') {
+      } else if (m.a === 'go') {
+        if (!m.rt && m.ms === undefined) { const p = cwMuster(m.ms = C.mq++); cwGo(m, p.x, p.z); }   // (his place in the muster: the next one, in the order the men come)
+        if (cwStep(S, m, v, false)) { m.a = 'wait'; m.f = 0; }
+      } else if (m.a === 'wait') {
         m.mv = 0;
-        if (ph === 'sStand' && S.time >= C.bq) { const K = PROTO.PLANK; C.bq = S.time + 16; m.a = 'board'; cwGo(m, K.x, K.z1 - 0.6, [[K.x - 0.5, K.z0 - 0.7], [K.x, K.z0 - 0.1]]); }
+        if (ph === 'sStand' && S.time >= C.bq && (m.ms <= C.bn || S.time >= C.bq + 48)) {
+          C.bn = Math.max(C.bn, m.ms + 1); const K = PROTO.PLANK; C.bq = S.time + 16; m.a = 'board'; cwGo(m, K.x, K.z1 - 0.6, [[K.x - 0.5, K.z0 - 0.7], [K.x, K.z0 - 0.1]]); }
       } else if (cwStep(S, m, v, false)) { m.st = 'ride'; m.pl = 0; m.a = ''; m.mv = 0; }
       continue;
     }
@@ -7151,8 +7157,8 @@ function cwProps(S, place) {
   if (place !== 'line' || !C || !C.men.length || !L || !L.days) return [];
   const G = cwGeo(S), sod = rrSod(S.time), lvl = k => { const s = L.sup[k], c = LINE.SUP[k].cap; return Math.max(1, Math.min(3, Math.ceil(3 * s / (c / 2)))); };
   const fire = sod >= 11.25 * 3600 && sod < 13.25 * 3600 ? 'camp/fire/' + (S.tick % 3) : 'camp/fire_out';
-  return [{ id: 'heap', key: 'line/rock_heap/' + lvl('rock'), x: G.heap, z: 6.3, h: 1, half: 1.2 }, { id: 'ties', key: 'line/tie_pile/' + lvl('ties'), x: G.ties, z: -6.3, h: 1, half: 1.1 },
-    { id: 'rails', key: 'line/rail_stack/' + lvl('rails'), x: G.rails, z: -7, h: 0.6, half: 0.7 }, { id: 'fire', key: fire, x: G.camp, z: 9.2, h: 0.5, half: 0.4 }, { id: 'kettle', key: 'camp/kettle', x: G.camp + 0.15, z: 9.3, h: 1.2, half: 0.3 },
+  return [{ id: 'heap', key: 'line/rock_heap/' + lvl('rock'), x: G.heap, z: 6.3, h: 1, half: 1.2 }, { id: 'ties', key: 'line/tie_pile/' + lvl('ties'), x: G.ties, z: -6.6, h: 1, half: 1.1 },
+    { id: 'rails', key: 'line/rail_stack/' + lvl('rails'), x: G.rails, z: -7.6, h: 0.6, half: 0.7 }, { id: 'fire', key: fire, x: G.camp, z: 9.2, h: 0.5, half: 0.4 }, { id: 'kettle', key: 'camp/kettle', x: G.camp + 0.15, z: 9.3, h: 1.2, half: 0.3 },
     { id: 'barrel', key: 'camp/barrel', x: G.camp + 7.5, z: 8.6, h: 1, half: 0.4 }, { id: 'rack', key: 'camp/toolrack', x: G.camp - 15, z: 7, h: 1.4, half: 0.5 }];
 }
 // (the renderer's hook: called with a man's sorted item to add what he holds and what lies beside him)
@@ -7180,8 +7186,8 @@ function cpItems(S) {
   const out = [], n = C.men.length, sod = rrSod(S.time), night = sod >= 19 * 3600 || sod < 6.25 * 3600, R = PROTO.CAMP, P = S.player || {};
   const open = P.x > R.x0 - 1 && P.x < R.x1 + 1 && P.z > R.z0 - 1 && P.z < R.z1 + 1 && !P.away;
   const tent = (id, kind, x, z, w, d, h, lit) => {
-    const s = lit ? '_lit' : '';
-    out.push({ id: id + 'b', key: `camp/${kind}/back${s}`, x, y: 0, z, box: [-w / 2, -d / 2, w / 2, d / 2, 0.1] });
+    const s = lit && !open ? '_lit' : '';                    // (seen through, only the inside glows: the light is drawn over everything)
+    out.push({ id: id + 'b', key: `camp/${kind}/back${lit ? '_lit' : ''}`, x, y: 0, z, box: [-w / 2, -d / 2, w / 2, d / 2, 0.1] });
     out.push({ id: id + 'f', key: `camp/${kind}/front${s}`, x, y: 0, z, box: [w / 2 - 0.1, d / 2 - 0.1, w / 2, d / 2, h - 0.2], fade: open });
     out.push({ id: id + 'r', key: `camp/${kind}/roof${s}`, x, y: 0, z, box: [w / 2 - 0.05, d / 2 - 0.05, w / 2 + 0.05, d / 2 + 0.05, h], fade: open });
   };
@@ -24527,6 +24533,7 @@ function pixNightF(sod) { const h = sod / 3600; return h >= 21 || h < 5 ? 1 : h 
 function pixGlow(key) {
   if (key in PIXA.glow) return PIXA.glow[key];
   const base = key === 'veh/lamp/1' ? 'veh/lamp/0' : key.replace(/_lit(?=\/|$)/, ''), a = PIX_ATLAS.frames[key], b = PIX_ATLAS.frames[base];
+  if (a && /^camp\/fire\/\d$/.test(key)) { const cv = document.createElement('canvas'); cv.width = a[3]; cv.height = a[4]; cv.getContext('2d').drawImage(PIXA.imgs[a[0]], a[1], a[2], a[3], a[4], 0, 0, a[3], a[4]); return (PIXA.glow[key] = cv); }   // D32 (Crew): a camp fire is all light
   if (!a || base === key || !b || a[3] !== b[3] || a[4] !== b[4]) return (PIXA.glow[key] = null);
   const w = a[3], h = a[4], cv = document.createElement('canvas'), g = cv.getContext('2d'), t = document.createElement('canvas').getContext('2d');
   cv.width = w; cv.height = h; t.canvas.width = w; t.canvas.height = h;
@@ -24544,7 +24551,7 @@ function pixNight(g, nw, nh) {
   const N = PIX.NIGHT_RGB, c = k => Math.round(255 - (255 - N[k]) * f);
   g.globalCompositeOperation = 'multiply'; g.fillStyle = `rgb(${c(0)},${c(1)},${c(2)})`; g.fillRect(0, 0, nw, nh);
   g.globalCompositeOperation = 'source-over';
-  for (const d of PIX.drawn) { const gl = d.key && /_lit$|^veh\/lamp\/1$/.test(d.key) ? pixGlow(d.key) : null; if (gl) g.drawImage(gl, d.l - PIX.vx, d.t - PIX.vy); }
+  for (const d of PIX.drawn) { const gl = d.key && /_lit$|^veh\/lamp\/1$|^camp\/fire\/\d$/.test(d.key) ? pixGlow(d.key) : null; if (gl) g.drawImage(gl, d.l - PIX.vx, d.t - PIX.vy); }
 }
 // The camera's knobs (D27, R; plans/d27-tech.md 1.6): the dead zone (a share of the view), the look-ahead (u, walking and
 // with a cart) and how fast it eases in (s), how fast the view re-centres on him standing and frames a car (s), and

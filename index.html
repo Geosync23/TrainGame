@@ -6623,10 +6623,11 @@ const LINE = (() => {
     SUP: { rock: { carry: 110, cap: 220, per: 0.5, stage: 2 }, ties: { carry: 360, cap: 720, per: 1 / 0.6, stage: 3 },
       rails: { carry: 48, cap: 96, per: 2 / 9.1, stage: 4 }, kegs: { carry: 10, cap: 20, per: 4 / 0.6 / 150, stage: 5 } },
     // The day (seconds of the day). The crew works every day (the lead's decision 3: no Sunday rest).
-    // D33: the work train comes in at 06:05, stands from 06:15 and leaves at 06:40 (was 05:40, 05:50, 06:20): the day
-    // opens at 06:00, so the player sees the men leave the camp, board, and the train go, the first train out (the first
-    // passenger train comes in at 06:45 and leaves at 07:35).
-    T: { PLAN: H(5), IN: H(6, 5), ARR: H(6, 15), DEP: H(6, 40), OFF: H(6, 45), WORK0: H(7), MEAL0: H(12), MEAL1: H(13), WORK1: H(18), AWAY: H(18, 20),
+    // D33: the work train comes in at 05:50 and stands from 06:00, when the day opens, so the player sees the men come
+    // out of the camp, muster and board; it leaves at 06:22 (was 06:20), the first train out, twenty minutes before the
+    // first passenger train comes in (a train for the platform crosses from track 2 at about 06:27, so it cannot leave
+    // much later than this).
+    T: { PLAN: H(5), IN: H(5, 50), ARR: H(6), DEP: H(6, 22), OFF: H(6, 25), WORK0: H(7), MEAL0: H(12), MEAL1: H(13), WORK1: H(18), AWAY: H(18, 20),
       BACK: H(19), EIN: H(19, 5), EARR: H(19, 15), EDEP: H(19, 35), EOFF: H(19, 45), COUNT: H(22) },
     OUT_MIN: 20, OUT_PER: 10,                    // the run out from 06:25: 20 game minutes plus 10 x (spiked / 2,520)
     SLOW_U: 120, SLOW_V: 12.8,                   // the last 120u at 12.8u a minute
@@ -7423,7 +7424,7 @@ const CW = {
   TURN: [[[0.57, 0.82], [0.57, -0.82], [-0.17, 0.98], [-0.17, -0.98]], [[0.57, -0.82], [0.57, 0.82], [-0.17, -0.98], [-0.17, 0.98]]],   // the ways round a man in the way (cos, sin)
   BACKLOG_M: 6,                                // a gang with this many metres open ahead of it gets its plain share; more with more, less with less
   REDO_S: 1800,                                // the foreman looks at the shares again this often
-  LEAD_M: 12, LEAD_SMALL_M: D33.on ? 8 : 24,                                  // the clearers keep at most this far ahead of the diggers (so the gangs read as one site)
+  LEAD_M: 12, LEAD_SMALL_M: D33.on ? 10 : 24,                                  // the clearers keep at most this far ahead of the diggers (so the gangs read as one site)
   TOOLS: [['hook', 'axe'], ['pick', 'shovel'], ['barrow', 'rake'], [null], ['tongs'], ['maul']],   // each stage's tools (tie men carry with their hands)
   ANIM: { hook: ['hook', 3], axe: ['axe', 4], pick: ['pick', 4], shovel: ['shovel', 4], rake: ['rake', 3], maul: ['maul', 4] },
   CREEK: [544 * LINE.M - 9.9, 544 * LINE.M + 9.9],   // the creek's stretch (u): crossed on the trestle's deck only
@@ -7434,7 +7435,7 @@ const CW = {
   // The camp at the station (station units, inside PROTO.CAMP): the yard with the fire and the table to the south, the
   // tents in two rows north of it (the row by the yard first), the cook tent at the west end.
   FIRE: [-62, -35.5], TABLE: [-72, -36], BARREL: [-67.5, -39.4], RACK: [-56, -39.6], WASH: [-80, -32.4], COOK: [-80.5, -45.5],
-  UP_S: 5 * 3600 + 35 * 60, EAT_S: 5 * 3600 + 57 * 60,   // D33: half an hour later (was 05:05 and 05:27), with the work train's later times
+  UP_S: 5 * 3600 + 25 * 60, EAT_S: 5 * 3600 + 47 * 60,   // D33: twenty minutes later (was 05:05 and 05:27): the men come out of their tents as the day opens
   SUPPER_S: 20 * 3600 + 900, BED_S: 21 * 3600,
 };
 // The dinner spot's seats on the line (offsets from its fire): twelve by three, less the places at the fire itself.

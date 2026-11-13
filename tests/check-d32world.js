@@ -11,9 +11,10 @@
 // - Clearances at the station: the camp clear of every building, the creek and the cart path; the muster clear of
 //   buildings and the lever frame; the standing work train (61u, crew car -40 to -27, engine 3 to 21) between the
 //   switches, clear of the cart crossing, under the footbridges.
-// - The line off: a new game has no S.dv, S.ln or S.cw and still none after 300 ticks; the railroad's runs are the same
-//   with the line on (the work train is a scripted run, not a railroad run: PROTO_SCHEDULE_WORK w1 05:50 to 06:20 and
-//   w2 19:15 to 19:35 on track 2).
+// - The line off (D33: the parked separate-line build, the page's ?d33=0): a new game has no S.dv, S.ln or S.cw and
+//   still none after 300 ticks; the railroad's runs are the same with the line on (the work train is a scripted run,
+//   not a railroad run: PROTO_SCHEDULE_WORK w1 and w2 on track 2). With D33 on (the default) a new game has the line
+//   on with the starting crew: check-d33 plays it.
 // - Saving: schema 19 still; save-v19.json loads with the line off and hashes as recorded; a save made with the line
 //   on and in view reloads to the same hash and plays on the same; a damaged line is refused.
 // - The clock: 5 ticks a real second in the prototype (7.5 elsewhere); the player's pace times 1.5, so his real speed
@@ -50,7 +51,7 @@ module.exports = async function checkD32World() {
       const wantTot = [22660, 58440, 32916, 29584, 24600, 24600];
       if (tot.some((v, i) => !near(v, wantTot[i], 1e-6))) B('wu by stage: ' + tot.join(', '));
       if (!near(tot.reduce((a, b) => a + b, 0), 192800, 1e-6)) B('the whole line is ' + tot.reduce((a, b) => a + b, 0) + ' wu, not 192,800');
-      if (JSON.stringify(LINE.GAP) !== '[0,6,6,4,9.1,9.1]') B('the gaps');
+      if (JSON.stringify(LINE.GAP) !== (R.lnView.d33.on ? '[0,5,5,4,9.1,4]' : '[0,6,6,4,9.1,9.1]')) B('the gaps: ' + JSON.stringify(LINE.GAP));
       if (LINE.SUP.rock.carry !== 110 || LINE.SUP.ties.carry !== 360 || LINE.SUP.rails.carry !== 48 || LINE.SUP.kegs.carry !== 10) B('the supplies carried');
       if (L.lnKindAt(100) !== 'prairie' || L.lnKindAt(540) !== 'bridge' || L.lnKindAt(800) !== 'cut' || L.lnKindAt(2519) !== 'prairie') B('lnKindAt');
       const regs = ['prairie', 'creek', 'hills', 'woods', 'rocks', 'river', 'canyon', 'pass', 'valley'], regM = {};
@@ -142,15 +143,24 @@ module.exports = async function checkD32World() {
       if (!R.proto.protoTrackAt(S0().track, -6, P.PLANK.x)) B('track 1 is not straight where the plank walk crosses it');
       function S0() { return R.state; }
       // ---- The line off ----
-      const S = R.newState(1866, 'proto');
+      const S = R.newState(1866, 'proto'), d33 = R.lnView.d33.on;
       if (S.schemaVersion !== 19 || R.CFG.SCHEMA_VERSION !== 19) B('the schema is not 19');
-      if ('dv' in S || 'ln' in S || 'cw' in S || 'lp' in S || 'hw' in S || 'tn' in S || 'away' in S.player) B('a new game carries D32 stores');
-      R.simTick(S, [{ t: 'pdStart' }]);
-      for (let i = 0; i < 300; i++) R.simTick(S, []);
-      if ('dv' in S || 'ln' in S || 'cw' in S) B('D32 stores appeared with the line off');
+      if (!d33) {
+        if ('dv' in S || 'ln' in S || 'cw' in S || 'lp' in S || 'hw' in S || 'tn' in S || 'away' in S.player) B('a new game carries D32 stores');
+        R.simTick(S, [{ t: 'pdStart' }]);
+        for (let i = 0; i < 300; i++) R.simTick(S, []);
+        if ('dv' in S || 'ln' in S || 'cw' in S) B('D32 stores appeared with the line off');
+        const tr0 = L.lnTrain(S);
+        if (tr0.at !== 'away' || tr0.cars.length || L.lnOn(S) || L.lnOpenWork(S, 0) !== 0 || L.lnWork(S, 0, 5) !== 5) B('the line\'s functions with the line off');
+      } else {
+        // D33: the line is part of the world from the first morning, with the starting crew
+        if (!S.ln || !S.ln.on || S.ln.crew !== 5 || !S.cw || S.cw.men.length !== 5 || 'lp' in S || 'away' in S.player) B('a new game does not begin with the line on and a crew of 5');
+        if (!S.ln.f.every((v, i) => v === LINE.F0[i]) || !(LINE.F0[0] > LINE.F0[5] && LINE.F0[5] * LINE.M > 60)) B('a new game\'s fronts: ' + S.ln.f.join(', '));
+        R.simTick(S, [{ t: 'pdStart' }]);
+        for (let i = 0; i < 300; i++) R.simTick(S, []);
+        if (!(S.ln.f[5] >= LINE.F0[5])) B('the line went backwards');
+      }
       const offRuns = S.rr.runs.map(q => q.svc + ':' + q.kind + ':' + q.arr).join();
-      const tr0 = L.lnTrain(S);
-      if (tr0.at !== 'away' || tr0.cars.length || L.lnOn(S) || L.lnOpenWork(S, 0) !== 0 || L.lnWork(S, 0, 5) !== 5) B('the line\'s functions with the line off');
       // ---- The clock and the player's pace ----
       if (L.clockRate(S.track) !== 5 || L.clockRate({ world: 'hub' }) !== 7.5 || L.clockRate({ world: 'start' }) !== 7.5) B(`the clock: ${L.clockRate(S.track)} ticks a second`);
       if (!near(L.playerK(S.track) * L.clockRate(S.track), R.CFG.TICKS_PER_REAL_S) || L.playerK({ world: 'hub' }) !== 1) B('the player\'s pace does not make up for the clock');
@@ -171,7 +181,7 @@ module.exports = async function checkD32World() {
       if ('ln' in st || 'dv' in st) B('the v19 save gained a line');
       if (L.lnOn(st)) B('the line is on in the v19 save');
       for (let i = 0; i < 60; i++) R.simTick(st, []);
-      if ('ln' in st || 'dv' in st) B('the v19 save gained a line after 60 ticks');
+      if ('ln' in st || 'dv' in st) B('the v19 save gained a line after 60 ticks');   // (D33: an old save's line starts at its next morning, pdNextDay)
       // ---- The line on: three days through the commands ----
       const play = () => {
         // (the line with the day's own cycle but no railroad trains: nobody plays the station here, and a train left
@@ -180,7 +190,8 @@ module.exports = async function checkD32World() {
         G.rr.on = false;
         const clk = () => { const s = (G.time + 5 * 3600) % 86400; return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
         let ev = R.simTick(G, [{ t: 'pdStart' }, { t: 'dvSet', k: 'crew', v: 30 }]);
-        if (!G.ln || !G.ln.on || G.ln.crew !== 30 || G.ln.tr.ph !== 'sStand') B('a crew of 30 chosen in the morning is not at work that day: ' + JSON.stringify(G.ln && G.ln.tr));
+        const ph0 = G.ln && G.ln.tr.ph;
+        if (!G.ln || !G.ln.on || G.ln.crew !== 30 || !G.ln.run || !(ph0 === 'sStand' || (d33 && ph0 === 'home'))) B('a crew of 30 chosen in the morning is not at work that day: ' + JSON.stringify(G.ln && G.ln.tr));
         const days = [];
         let save = null, minSup = 1e9;
         for (let d = 0; d < 3; d++) {
@@ -188,10 +199,10 @@ module.exports = async function checkD32World() {
             ev = R.simTick(G, []);
             for (const e of ev) if (e.t === 'wtPhase' || e.t === 'hcDone' || e.t === 'lnDone') log.push(d + ' ' + clk() + ' ' + e.t + ' ' + (e.ph || e.home + '/' + e.total));
             const f = G.ln.f;
-            for (let k = 1; k < 6; k++) if (f[k] > f[k - 1] - LINE.GAP[k] + 1e-6 && f[k] > 60 + 1e-6) { B(`day ${d} ${clk()}: front ${k} at ${f[k]} is inside its gap behind ${f[k - 1]}`); i = 1e9; break; }
+            for (let k = 1; k < 6; k++) if (f[k] > f[k - 1] - LINE.GAP[k] + 1e-6 && f[k] > LINE.F0[k] + 1e-6) { B(`day ${d} ${clk()}: front ${k} at ${f[k]} is inside its gap behind ${f[k - 1]}`); i = 1e9; break; }
             if (f[0] > f[1] + LINE.CLEAR_AHEAD + 1e-6) { B('the clearers ran ahead'); break; }
             for (const k of Object.keys(G.ln.sup)) minSup = Math.min(minSup, G.ln.sup[k]);
-            if (d === 1 && !save && clk() === '10:00') { R.simTick(G, [{ t: 'dvSet', k: 'view', v: 'line' }]); save = JSON.stringify({ state: G }); }
+            if (d === 1 && !save && clk() === '10:00') { R.simTick(G, [{ t: 'dvSet', k: 'view', v: 'line' }]); save = JSON.stringify({ state: G }); }   // (D33: one world, so the view stays 'station')
           }
           days.push({ f6: G.ln.f[5], sum: G.pd.sum && G.pd.sum.hc, days: G.ln.days, hc: G.ln.hc });
           if (d < 2) R.simTick(G, [{ t: 'pdNextDay' }]);
@@ -211,7 +222,7 @@ module.exports = async function checkD32World() {
       if (A.minSup < 0) B('a supply went below zero');
       const TOT = 30 + R.tf.TF_AGENTS.length;   // (Crew: the head count is the 30 rail men and the townsfolk; one townsman may still be out at 22:00)
       A.days.forEach((d, i) => {
-        const grew = d.f6 - (i ? A.days[i - 1].f6 : 60);
+        const grew = d.f6 - (i ? A.days[i - 1].f6 : LINE.F0[5]);
         if (!(grew > (i === 2 ? 80 : 120) && grew < 260)) B(   // (Crew: the third day is the day at the creek, where most of the crew goes to the trestle and back)
         `day ${i + 1}: ${grew.toFixed(1)} m spiked`);
         if (d.days !== i + 1) B(`day ${i + 1}: the line counts ${d.days} working days`);
@@ -219,7 +230,12 @@ module.exports = async function checkD32World() {
         if (!d.hc || d.hc.total !== TOT || d.hc.home < TOT - 1 || (d.hc.out || []).some(q => /the line|the work train/.test(q))) B(`day ${i + 1}: the 22:00 head count is ${JSON.stringify(d.hc)}`);
       });
       const first = A.log.filter(l => l.startsWith('0 ')).map(l => l.slice(2));
-      const wantLog = ['06:20 wtPhase sOut', '06:25 wtPhase out', '06:45 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone'];
+      // D33: the work train comes in at 06:05, stands from 06:15, leaves at 06:40 (the first train out) and runs in
+      // one motion from the station to the railhead ('sOut' while it is on the station's map, then 'out'), standing
+      // there a few minutes later; in the evening it holds just outside the junction ('gap') and backs in at 19:05.
+      const wantLog = d33
+        ? ['06:05 wtPhase sIn', '06:15 wtPhase sStand', '06:40 wtPhase sOut', '06:42 wtPhase out', '06:44 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone']
+        : ['06:20 wtPhase sOut', '06:25 wtPhase out', '06:45 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone'];
       if (first.map(l => l.replace(/^(22:00 hcDone) \d+\/\d+$/, '$1')).join('|') !== wantLog.join('|')) B('the work train\'s first day: ' + first.join(' | '));
       if (A.G.ln.log.length !== 2 || A.G.ln.log.some(q => !(q.m > 120))) B('the line\'s log: ' + JSON.stringify(A.G.ln.log));
       // lnWork and lnOpenWork at the edges
@@ -237,7 +253,7 @@ module.exports = async function checkD32World() {
       else {
         const s1 = R.migrate(JSON.parse(A.save)).state, s2 = R.migrate(JSON.parse(A.save)).state;
         if (R.stateHash(s1) !== R.stateHash(JSON.parse(A.save).state)) B('a save made on the line does not reload to the same hash');
-        if (s1.ln.view !== 'line' || s1.ln.tr.ph !== 'stand') B('the save is not on the line');
+        if (s1.ln.view !== (d33 ? 'station' : 'line') || s1.ln.tr.ph !== 'stand') B('the save is not on the line');
         for (let i = 0; i < 400; i++) { R.simTick(s1, []); R.simTick(s2, []); }
         if (R.stateHash(s1) !== R.stateHash(s2)) B('two reloads do not play on the same');
         out.saveBytes = { ln: JSON.stringify(s1.ln).length, dv: JSON.stringify(s1.dv).length };
@@ -291,13 +307,16 @@ module.exports = async function checkD32World() {
     await page.tap('#devBtn');
     await page.waitForTimeout(200);
     const rows = await page.evaluate(() => [...document.querySelectorAll('#devRows .dvRow')].map(q => q.dataset.row + (q.classList.contains('grey') ? ':grey' : '')));
-    for (const id of ['crew', 'punch', 'load', 'deliver', 'ride:grey', 'look:grey', 'skip', 'status']) if (!rows.includes(id)) P(`the dev panel has no row ${id} (rows: ${rows.join(' ')})`);   // (stage 2: the hire rows are live)
+    // (stage 2: the hire rows are live; D33: "Ride out as a rail worker" and "Ride out now" are live, and "Look at
+    // the line", the separate line screen's own row, is gone with it)
+    const d33on = await page.evaluate(() => window.__railhead.lnView.d33.on);
+    for (const id of ['crew', 'punch', 'load', 'deliver', ...(d33on ? ['ride', 'rideNow'] : ['ride:grey', 'look:grey']), 'skip', 'status']) if (!rows.includes(id)) P(`the dev panel has no row ${id} (rows: ${rows.join(' ')})`);
     await page.tap('#devRows button[data-dv="crew:30"]');
     await page.evaluate(() => window.__railhead.step(2));
     await page.waitForTimeout(500);
     const ui2 = await page.evaluate(() => { const S = window.__railhead.state; return { dv: S.dv, on: S.ln && S.ln.on, status: (document.getElementById('devStatus') || {}).textContent || '' }; });
     if (!ui2.dv || ui2.dv.crew !== 30 || !ui2.on) P('tapping Rail crew 30 did not start the line: ' + JSON.stringify(ui2.dv));
-    if (!/Crew today: 30/.test(ui2.status) || !/Spiked: 60 of 2,520 m/.test(ui2.status)) P('the dev panel\'s status: ' + ui2.status.replace(/\n/g, ' / '));
+    if (!/Crew today: 30/.test(ui2.status) || !new RegExp('Spiked: ' + (d33on ? await page.evaluate(() => Math.floor(window.__railhead.ln.LINE.F0[5])) : 60) + ' of 2,520 m').test(ui2.status)) P('the dev panel\'s status: ' + ui2.status.replace(/\n/g, ' / '));
     await page.screenshot({ path: screenshotPath('d32-dev-panel-portrait') });
     if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }

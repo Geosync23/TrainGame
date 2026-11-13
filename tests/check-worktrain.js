@@ -1,7 +1,9 @@
 // Check: the work train (plans/d32-tech.md section 2 and 11.5, Foundation's). Three days played by the D27 bot
 // (tests/proto-bot.js) with a rail crew of 30, against the same three days with the line off.
 // - Out and back on time each day: at the station on track 2 from 05:50 (standing at 06:00 when the day opens), away
-//   at 06:20, at the railhead by 06:55, the working day, away from the railhead at 18:20, back at the station 19:15 to
+//   at 06:20 (D33: 06:22, running on in one motion from the station to the railhead: the phase 'sOut' while it is on
+//   the station's map, then 'out'), at the railhead by 06:55 (D33: by 06:35), the working day, away from the railhead
+//   at 18:20, back at the station 19:15 to
 //   19:35 when the clock runs that far (the bot may end its day earlier: then the line's evening is played through by
 //   the jump to the next morning and nothing is lost).
 // - Where it stands at the station: the crew car x -40 to -27, the engine 3 to 21, clear of the switches and the cart
@@ -73,14 +75,17 @@ module.exports = async function checkWorkTrain() {
     if (JSON.stringify(off.sum.map(s => [s.day, s.late, s.trains])) !== JSON.stringify(on.sum.map(s => [s.day, s.late, s.trains]))) P('the days\' summaries differ with the line on');
     // the first day's phases, in full (the day opens at 06:00 with the train standing)
     const d0 = on.wt.filter(l => l.startsWith('0 ')).map(l => l.slice(2));
-    for (const [i, w] of ['06:00 sStand', '06:20 sOut', '06:25 out', '06:45 stand'].entries()) if (d0[i] !== w) P(`day 1: the work train's phase ${i + 1} is "${d0[i]}", expected "${w}"`);
+    const d33 = await page.evaluate(() => window.__railhead.lnView.d33.on);
+    for (const [i, w] of (d33 ? ['06:22 sOut', '06:24 out', '06:26 stand', '18:20 back'] : ['06:00 sStand', '06:20 sOut', '06:25 out', '06:45 stand']).entries()) if (d0[i] !== w) P(`day 1: the work train's phase ${i + 1} is "${d0[i]}", expected "${w}"`);
     // every phase event is at its time, whichever day it falls on
-    const T = { sIn: '05:40', sStand: '05:50', sOut: '06:20', out: '06:25', back: '18:20', gap: '19:00', eIn: '19:05', eStand: '19:15', eOut: '19:35', home: '19:45' };
+    const T = d33 ? { sIn: '05:50', sStand: '06:00', sOut: '06:22', back: '18:20', gap: '19:00', eIn: '19:05', eStand: '19:15', eOut: '19:35', home: '19:45' }
+      : { sIn: '05:40', sStand: '05:50', sOut: '06:20', out: '06:25', back: '18:20', gap: '19:00', eIn: '19:05', eStand: '19:15', eOut: '19:35', home: '19:45' };
     // (the evening's phases at their times or later by the wait for a clear road, in step with each other)
     const mins = t => +t.slice(0, 2) * 60 + +t.slice(3), held = {};
     for (const l of on.wt.slice(1)) {
       const [d, t, ph] = l.split(' ');
-      if (ph === 'stand') { if (!(t >= '06:45' && t <= '06:55')) P(`the work train reached the railhead at ${t}`); }
+      if (ph === 'stand') { if (!(t >= (d33 ? '06:24' : '06:45') && t <= (d33 ? '06:40' : '06:55'))) P(`the work train reached the railhead at ${t}`); }
+      else if (d33 && ph === 'out') { if (!(t >= '06:22' && t <= '06:30')) P(`the work train left the station's map at ${t}`); }
       else if (/^e(In|Stand|Out)$|^home$/.test(ph)) { const late = mins(t) - mins(T[ph]); if (late < 0 || late > 180 || (held[d] !== undefined && late < held[d])) P(`day ${d}: the work train's phase ${ph} came at ${t} (its time is ${T[ph]})`); held[d] = Math.max(held[d] || 0, late); }
       else if (T[ph] !== t) P(`the work train's phase ${ph} came at ${t}, expected ${T[ph]}`);
     }

@@ -431,7 +431,7 @@ The designer, after playing D20 and D21: "Why doesn't the game explain this? Stu
 
 ## Sections of index.html
 
-config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town: stand-ins), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation), drawing each frame, main loop, test hooks, start.
+config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town: stand-ins), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`), drawing each frame, main loop, test hooks, start.
 
 ## Draw calls
 
@@ -1427,6 +1427,159 @@ This replaces the Foundation's "natural borders" paragraph above where they diff
 **Provisional choices (Play, stage 2).** The worth (0.5 to 1.25 men), the lift (1.15 at most, within 12 m, from an average of 60), the 4-minute cap and the one-second spacing; the beats (760 ms digging, 620 ms spiking) and the timing window (90 to 330 ms); the rake's 4 s and its level 0.9; the clearers' place 1.8u into the brush; the player is not drawn in his own ties game (his end is the dot).
 
 **Check.** `check-linegames.js`, portrait and landscape, by Chromium touch events (taps, swipes, press-hold-drag-release, a second thumb on Step out): the Join button beside each gang, thumb-sized and on the screen; each game at good, fair and poor timing gives that word (portrait; landscape plays good) and the sim takes it; three good rounds lift the diggers near him (`cwBoost`, the panel says so), poor rounds let it lapse; Step out mid-carry leaves no round sent and him empty-handed; the whole session's ticks replayed from its start give the same hash; a flood of `lgDone` one a tick is taken at most once in 8 ticks and is worth no more than one man at 1.25; no console errors. Screenshots `linegames-<game>-<orient>.png` mid-round. `check-linelessons.js`: in the sim each line lesson opens at its moment, steps on, finishes, never opens twice, comes back after replay, and a mid-day state as JSON plays on to the same hash; on the page the first card holds the game on the line, Show me lets it run, the game panel waits under the first card of the spikers' lesson, the card is inside the screen, Settings has the Lessons row on the line. Screenshots `linelessons-*.png`.
+
+## D33 (one world)
+
+The designer played D32 and asked for one continuous world: the line joined to the station, the crew really boarding
+the work train, the work train the first train out, and the men visible at their work. Built 2026-11-13 by one
+builder; the switch is the page's `?d33=0`, which brings back D32's separate line screen (parked, not deleted).
+
+### What he saw, and why
+
+Played again here exactly as he did (a fresh game, Settings > Dev mode, a crew, "Ride out"), these are the causes, all
+of them now impossible:
+
+1. **The men stayed in camp.** The crew only began at the next 05:00 (`lnNewDay`), unless it was taken on in the short
+   window 05:00 to 06:20 on a day the line was not yet running. Dev mode's note said so ("from the next 05:00"), but a
+   crew chosen at, say, 10:00 did nothing at all that day, and the day he was playing had already gone past the work
+   train's departure (06:20), so the first train he could have seen was the next morning's. **Now** the line is on from
+   the first morning of a new game with the starting crew of 5, and a crew set in dev mode takes effect **at once**, at
+   any hour (`lnCrewNow`, `cwResize`): the new men join where the crew is (in camp before the muster, aboard while the
+   train runs, stepping off at the railhead while it stands there).
+2. **He never saw them board or ride.** The work train stood at the station from 05:50 and left at 06:20, but the
+   player's day opens at 06:00 and the first thing he does is the board card, so the muster (05:05 to about 06:10) was
+   mostly over before he could look, and the ride itself was a fade to black and a second fade in the line's own
+   screen. **Now** the men get up at 05:25, breakfast at 05:47 and walk out of the camp as the day opens; the train
+   stands at the station from 06:00 to 06:22 with the men crossing the plank walk into the crew car in front of him,
+   and runs **in one motion, in view, on the same map** from the station out to the railhead (no fade, no screen).
+3. **No work was visible.** With the line turned on mid-day, nothing had been built that day, so at the look point
+   there was nothing but the empty strip; and with 5 men the six fronts were up to 110u apart (the clearers could run
+   60 m ahead), so even on a working day a phone screen held one or two men at most. **Now** a new game's line is
+   already a screen into construction (`LINE.F0`: cleared 105 m, bed 98, rock 92, ties 88, rails 78.2, spiked 72), the
+   gaps between the fronts are smaller with D33 on (`LINE.GAP` `[0, 5, 5, 4, 9.1, 4]`) and a small crew's clearers keep
+   10 m ahead instead of 24 (`CW.LEAD_SMALL_M`), so the whole work site is about 50 to 60u long: all six kinds of work
+   fit on one phone screen (check-d33 measures it in both orientations).
+4. **The line was a separate place.** "Look at the line" and "Ride out" switched the view; the station was gone while
+   he was out there. **Now** there is one map and one camera.
+
+### One world: how the line is drawn in the station's frame
+
+The sim keeps the line's own frame (x along the line from the junction, z across). The world's frame is the station's:
+a point of the line (x, z) lies at world (x + `D33.LX`, z), with `D33.LX = 80`. `D33` holds the numbers: `LX`, the
+junction `JX` 96, the yard limit board `GATE` 88, the station map's east edge `EDGE` 95 (`PROTO.BOUNDS.x1`), the wood
+`WOOD` 96 to 192, the starting crew `CREW0` 5, the run's speed.
+
+- **Drawing.** `pixLnIn(fn)` runs fn with the projection's origin moved by `LX`, so the line's own code (chunks,
+  scatter, the wild country, the men) goes on working in line units and lands on the world's pixels; `pixWorldIn` is
+  the other way about. The chunk grids of the station and the line are therefore the same grid. `pixFrame` draws the
+  station's ground, then the line's chunks over it, then **one** sorted list of the station's things and the line's
+  (`pixLnAdd` moves each line item's box into the world's frame and draws it through `pixLnIn`).
+- **The join.** A line chunk that reaches the station's map takes that station chunk as its base (one blit at build
+  time, `pixStnChunk`), draws the line's country over the part outside the map, and is then opaque: the station's own
+  chunk is not drawn under it at all. Over the 8u east of the map's edge the two grounds mix cell by cell, so there is
+  no line to see. A line chunk that gets nothing of the line's is thrown away and the station draws its own.
+- **Round the whole station.** East of the map the line's corridor; north, south and west of it the line's open
+  country (ground and scatter, no border belts, no wall), so at the furthest zoom **no edge of the world is seen
+  anywhere** round the station, which is the designer's standing rule. The town's north end now runs into oak country
+  instead of stopping at a flat green edge.
+- **The junction.** The new line is track 2 carried on east: where the yard's track 2 ends at the map's edge it is the
+  line's own roadbed from `EDGE` on, laid by the gangs (so the player walks out of the yard onto the works without a
+  joint). The **main line to the east** branches at `JX` (a 30 degree curve of the yard's own radius, then a straight)
+  and runs away north-east into a wood, where it is lost to sight: a railroad train east of the junction is drawn
+  along that branch (`pixBranchPose`, inside D30's smooth drawing so each car still steps on whole pixels) and is not
+  drawn at all once it is under the trees. The sim's trains stay on the straight, so no route, block, lever or
+  timetable changes. The station's creek is carried on south past the map's edge and joins the country's own ground.
+- **The yard limit board** stands at `GATE` (88), east of the last switch and the junction. Walking east past it the
+  station's man becomes the line's man at that step (`lpGate`: `S.lp` at the same spot, `S.player.away = 'line'`), and
+  walking back west past it he is the station's man again: no screen, no fade, no teleport. A tap beyond the board
+  from the station (or at the station from the line) is one command, `lpGo`, which walks him to the board and on.
+
+### The work train
+
+- Times (`LINE.T`): in at 05:50, standing on track 2 at the station from 06:00 (when the player's day opens) to 06:22,
+  the first train out; at the railhead about four minutes later; away at 18:20; it holds just outside the junction
+  (`D33.HOLD_M`, its last car clear of the main line) from about 19:00, backs in at 19:05, stands 19:15 to 19:35 and
+  backs away west. It leaves at 06:22 and not later because the first passenger train crosses from track 2 to the
+  platform at about 06:27 (check-worktrain measures that no railroad train comes within 6u of it).
+- The run is one continuous motion in the one world (`wtOutW`, `wtRunS`: four minutes plus a minute for every 180u,
+  eased in and out), so the player sees it go and can ride it. Its phases keep their names: `sOut` while it is on the
+  station's map, then `out`, then `stand`.
+- **Riding it** is boarding it: walk to the crew car and tap it (at the station in the morning, at the railhead to
+  come home). The dev panel's "Ride out as a rail worker" and "Ride out now" stay as shortcuts; the bar's "Ride home"
+  and "Back now" stay. Missing the train now leaves him standing at the station (he can walk out along the line);
+  before, he was spirited out to the railhead.
+
+### The line from the start, and old saves
+
+A new prototype game calls `lnBegin`: it takes on the starting crew of 5 and plays the line's own morning from 05:00
+to 06:00, so the men are found at breakfast in the camp with the work train coming in. `LINE.F0` gives the fronts.
+The line's growth is simulated every day whether or not the player watches (`wtTick` and `cwTick` run every tick, and
+`lnSkipTo` plays the night through when the clock jumps).
+
+Old saves (no `S.ln`, no `S.dv`) load exactly as before and keep their hash: check-save's fixtures pass unchanged and
+schema 19 is unchanged. Such a game's **line begins the next morning**: `pdNextDay` gives it the starting crew, so the
+men come out of the camp at 05:25 and the first work train is that day's.
+
+### Where each owner's code changed
+
+- **Foundation (the line, D32):** `D33` (the switch and the numbers) before `LINE`; `LINE.T`, `LINE.GAP`, `LINE.F0`;
+  the work train's one-motion run (`wtOutW`, `wtRunS`, `wtTa`, `wtX1`, the `gap` phase holding in view at `HOLD_M`);
+  `lnBegin`, `lnCrewNow`; `lnSetView` is a no-op with D33 on (one world).
+- **Crew:** `CW.UP_S` / `EAT_S` twenty minutes later; `CW.LEAD_SMALL_M` 10; `cwResize` (a crew changed in the day); a
+  small crew swaps tools where it stands instead of walking to the tool row; rest spots spread over a wider ring (the
+  work site is shorter now).
+- **Play:** `lpGate` and the `lpGo` command (the yard limit), `lpMissed`, no fades with D33 on, `lpSetDown` puts him at
+  the railhead by the men, `lpHud` / `lpTap` / the Join button work without the line's screen, the lessons' words; and
+  a walk round the work train no longer stalls when he stands exactly on the corner he is making for (`lpNext`).
+- **The renderer (R's section):** `pixLnIn` / `pixWorldIn` / `pixLnOn` / `pixLnInStn`, `pixBranch` / `pixBranchPose`,
+  `pixStnChunk`, `pixLnAdd`, `pixLnFocusW`, `d33Tap`, the camera (it follows him out on the line and is no longer held
+  at the map's east and south edges), the station's chunk builder (the branch's ballast, ties and rails; it leaves a
+  chunk to the line when the line's chunk covers it), the line's chunk builder (the station's base, the two grounds
+  mixing, the creek carried on, the wood's scalloped ends, no wall west of the map's edge).
+- **D30 (trains drawn smoothly):** the bend onto the branch happens inside `pixTrainDrawPoses`, before the snapping.
+- **U's day:** the station's Next job line and job buttons stand aside while he is away on the line.
+
+### Speed
+
+Measured in check-pixperf (Chromium at phone size, 4x-throttled CPU, best of three windows). The station at the
+furthest zoom (scale 1) before D33: 7.16 ms average portrait, 7.01 landscape. With the line joined but drawn as a
+see-through layer over the station: 8.7 and **25.1** (landscape: a dozen screen-sized alpha blends a frame). With the
+join as built (the line's chunk standing on the station's own, one opaque layer, and the line's scene not built over
+the station): **7.4 to 8.9** both ways, the 98th centile 10 to 18. The default zoom is unchanged (3.7 portrait, 4.4
+landscape). So that one case keeps its own budget in check-pixperf (10 ms average, 20 ms at the 98th centile) with the
+reason written there: the view now shows the world round the station instead of one flat fill. Nothing else moved.
+Walking from the platform to the men builds no chunk inside a frame (check-pixrender's walk cases and check-d33).
+
+### Provisional choices for the designer
+
+- The line's place in the world: `LX` 80, the junction at x 96, the yard limit board at 88, the wood from 96 to 192.
+  The line's first metres (its own x 0 to about 10) lie under the yard's own track, so the roadbed is drawn from the
+  map's edge east.
+- The main line to the east turns away north-east into a wood and is lost under the trees. The alternative was to let
+  the new line branch off instead; the main line turns because the new line is the one the player walks.
+- The starting fronts (a screen into construction) and the smaller gaps between them.
+- The men's hours twenty minutes later (up 05:25) and the work train at 05:50 / 06:00 / 06:22.
+- A crew set in dev mode takes effect at once at any hour (the alternative was to send the train out again).
+- Boarding by a tap on the crew car; the bar's buttons kept as they were.
+- The separate line screen and its fades are parked behind `?d33=0` and still checked there (check-lineplay,
+  check-linegames, check-linelessons run against it).
+
+### Checks
+
+New: `tests/check-d33.js` (in run-all.js) plays a fresh default game by taps from the first morning in both
+orientations: the line on with 5 men and every stage under way; the men walking out of the camp and boarding over the
+plank walk (all five seen); the train leaving at 06:22 before any passenger train has left and running out with no
+jump; all six kinds of work seen through day 1 with the men never more than about 60u apart and nobody idle; the walk
+from the platform to the men by taps with the camera on him, no blank background at the furthest zoom and no screen
+switch; "away" from the yard limit board; a save out on the line reloading to the same hash; boarding the crew car at
+the railhead and riding home with the men; the men back in camp; the line longer the next morning; 30 men chosen at
+09:30 at work by 10:30. Changed: check-d32world (the gaps, the fronts, the work train's day, a new game's line, the
+dev panel's rows), check-worktrain (the new times and the one-motion run), check-crew (the work site in the one
+world), check-camp (breakfast at 05:47), check-linerender (the region tour runs against `?d33=0`; a new part checks
+the join in the one world from nineteen places at the furthest zoom), check-smooth and tests/train-play.js (curveE
+stops at the junction, where the trains are drawn curving away, and the recorder now knows its train is already on
+its way out), check-pixperf (the furthest-zoom station case's own budget), check-lineplay / check-linegames /
+check-linelessons (`?d33=0`, and they aim their walk again as the gangs move on).
 
 ## Next
 

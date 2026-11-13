@@ -27125,6 +27125,14 @@ function pixLnIn(fn) {
   P.lnIn = true; P.OX += dx; P.OY += dy;
   try { return fn(); } finally { P.OX -= dx; P.OY -= dy; P.lnIn = false; }
 }
+// The other way about: fn in the world's own frame while the line's is in force (a station chunk built as the base
+// of a line chunk).
+function pixWorldIn(fn) {
+  const P = PIX_PROJ, dx = 8 * D33.LX, dy = 4 * D33.LX;
+  if (!P.lnIn) return fn();
+  P.lnIn = false; P.OX -= dx; P.OY -= dy;
+  try { return fn(); } finally { P.OX += dx; P.OY += dy; P.lnIn = true; }
+}
 // Is the line's point (x, z) on the station's own ground? (East of the map's edge, and north and south of the map, the
 // wild country is drawn; west of the map the station's plain grass stays, as before.)
 const pixLnInStn = (x, z) => x + D33.LX < D33.EDGE && z >= PROTO.BOUNDS.z0 && z < PROTO.BOUNDS.z1;
@@ -27196,10 +27204,14 @@ function pixLnChunkBuild(ci, cj, F) {
   const N = PIX.CH, sp = pixLnChunkSpan(ci, cj, N), { l, t } = sp, cv = document.createElement('canvas'), M = LINE.M, seed = S.seed;
   cv.width = cv.height = N;
   const d33 = D33.on, LX = D33.LX, EDGE = D33.EDGE;
-  const g = cv.getContext('2d', sp.stn ? { willReadFrequently: true } : { alpha: false }), sheet = si => PIXA.imgs[si];
+  // D33: a chunk that reaches the station's map takes the station's own ground as its base (one blit of that chunk,
+  // built here if it was not made yet), so the whole of it is opaque: blending a second see-through layer over the
+  // station each frame cost 20 ms a frame at the furthest zoom in landscape. pixGroundDraw then leaves it to us.
+  const g = cv.getContext('2d', { alpha: false }), sheet = si => PIXA.imgs[si];
   g.imageSmoothingEnabled = false;
-  if (!sp.stn) { g.fillStyle = PIX.lnBg || PIX.COL.grass[0]; g.fillRect(0, 0, N, N); }   // (never seen; PIX.lnBg: a check's marker colour)
-  cv.solid = !sp.stn; PIX.lnPuts = 0;
+  g.fillStyle = PIX.lnBg || (sp.stn ? PIX.outside || PIX.COL.grass[1] : PIX.COL.grass[0]); g.fillRect(0, 0, N, N);   // (never seen; PIX.lnBg: a check's marker colour)
+  if (sp.stn && !PIX.lnBg) { const b = pixStnChunk(ci, cj); if (b) g.drawImage(b, 0, 0); }
+  cv.solid = true; cv.stn = sp.stn; PIX.lnPuts = 0;
   const GB = d33 && sp.w0 + LX < 150 && sp.w1 + LX > D33.JX && sp.v0 < 3 && sp.v1 > -40 ? pixBranch().G : null;   // the main line's branch crosses this chunk
   const jN = Math.floor(-LINE.BORDER.N - 14);   // north of this the far wall and the rank behind it cover everything (the wall's foot is ragged, and deep in places)
   const put = (key, wx, wz, wy) => { const f = pixF(key); if (!f) return false; const p = pixProject(wx, wy || 0, wz); g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], Math.round(p.x) - l - f[5], Math.round(p.y) - t - f[6], f[3], f[4]); return true; };
@@ -27208,7 +27220,7 @@ function pixLnChunkBuild(ci, cj, F) {
     const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
     if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || j < jN) continue;
     // D33: the station's own ground is left clear, and over the 8u east of the map's edge the two grounds mix cell by cell
-    if (sp.stn && (pixLnInStn(i, j) || (i + LX < EDGE + 8 && j >= PROTO.BOUNDS.z0 && j < PROTO.BOUNDS.z1 && lnHash(seed, i, j, 3) > (i + LX - EDGE + 1) / 9))) continue;
+    if (sp.stn && (pixLnInStn(i, j) || (i + LX < EDGE + 8 && j >= PROTO.BOUNDS.z0 && j < PROTO.BOUNDS.z1 && lnHash(seed, i, j, 3) > (i + LX - EDGE + 1) / 9))) continue;   // (the station's own ground, under this chunk already)
     let key = lnTile(seed, i, j), road = false;
     if (GB && pixTrackAt(GB, i + 0.5 + LX, j + 0.5)) { key = 'tile/ballast/' + (1 + ((i * 7 + j * 3) & 1)); road = true; }
     else if (sp.bed && j >= -LINE.ROW && j < LINE.ROW && (d33 ? i + LX >= EDGE : i >= 0)) {
@@ -27278,7 +27290,12 @@ function pixLnChunkBuild(ci, cj, F) {
       if (key) pixLnPut(g, l, t, N, key, i, 0, j);
     }
   }
-  cv.empty = sp.stn && !PIX.lnPuts && !GB;   // (D33: wholly the station's ground: never drawn)
+  // D33: a chunk that leaves the station's ground clear is drawn over it, so only the part of it that holds anything
+  // is drawn (box: its pixels' bounding box, null for nothing at all). Over the station's map most of such a chunk is
+  // clear, and at the furthest zoom in landscape blending the whole of a dozen of them cost 20 ms a frame.
+  // Nothing of the line's in it after all (wholly the station's own ground): it is thrown away and the station draws
+  // its own chunk there, as before.
+  if (sp.stn && !PIX.lnPuts && !GB) { const e = document.createElement('canvas'); e.width = e.height = 1; e.empty = true; return e; }
   return cv;
 }
 // The big sheets of the wild country are decoded by the browser when first drawn (tens of milliseconds each): the
@@ -27418,6 +27435,16 @@ function pixLnOverlays(E, ci, cj) {   // one step a call (frame 0 to compare wit
   E.ov = W.out; E.ovW = null;
   return true;
 }
+// D33: the station's own ground chunk (ci, cj) as a picture, made now if it was not made yet, for a line chunk that
+// covers part of the station's map to stand on. null outside the station's ground layer.
+function pixStnChunk(ci, cj) {
+  const N = PIX.CH, T = S.track, cmax = Math.ceil(PIX_PROJ.W / N) - 1, rmax = Math.ceil(PIX_PROJ.H / N) - 1;
+  if (ci < 0 || cj < 0 || ci > cmax || cj > rmax) return null;
+  const k = ci + ',' + cj;
+  let C = PIX.chunks.get(k);
+  if (!C) { const cv = pixWorldIn(() => pixChunkBuild(T, ci, cj)); PIX.chunks.set(k, C = { cv, used: (PIX.chunkStats.frame || 0) - 1 }); PIX.chunkStats.built++; }
+  return C.cv;
+}
 // Draws the line's ground under the view from its chunk cache: every missing one at once (no blank ground is ever
 // shown), one stale one (its fronts have moved) a frame, the ring round the view in idle time.
 function pixLnGroundDraw(g, all) {
@@ -27431,7 +27458,7 @@ function pixLnGroundDraw(g, all) {
   const t0 = performance.now(), stamp = St.frame = (St.frame || 0) + 1;
   if (stamp % 30 === 1) pixLnWarmSheets();
   let made = 0, missing = 0, stale = 0, redone = 0;
-  const make = (ci, cj, key) => { const a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a, old = C.get(ci + ',' + cj); C.set(ci + ',' + cj, { cv, used: stamp, key, wet: cv.wet, solid: cv.solid, ov: old ? old.ov : undefined }); St.built++; St.ms = ms; St.worst = Math.max(St.worst, ms); };
+  const make = (ci, cj, key) => { const a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a, old = C.get(ci + ',' + cj); C.set(ci + ',' + cj, { cv, used: stamp, key, wet: cv.wet, solid: cv.solid && !cv.empty, stn: cv.stn, ov: old ? old.ov : undefined }); St.built++; St.ms = ms; St.worst = Math.max(St.worst, ms); };
   const wf = Math.floor((PIX.lnT || 0) / PIX.LN_WATER_S) % 3, ovWant = [];   // the water's frame: a calm rate
   for (let cj = r0; cj <= r1; cj++) for (let ci = c0; ci <= c1; ci++) {
     const k = ci + ',' + cj, key = pixLnChunkKey(pixLnChunkSpan(ci, cj, N), F);
@@ -27439,7 +27466,7 @@ function pixLnGroundDraw(g, all) {
     if (!E) { make(ci, cj, key); made++; E = C.get(k); }   // never a blank (the designer's rule): a chunk in view is made at once, whatever it costs this frame
     else if (E.key !== key) { if (all || !redone) { make(ci, cj, key); redone++; St.rebuilt++; E = C.get(k); } else stale++; }
     E.used = stamp;
-    if (E.cv.empty) continue;   // D33: the station's own ground
+    if (E.cv.empty) continue;   // nothing of the line's there: the station's own ground chunk is drawn instead
     g.drawImage(E.cv, ci * N - PIX.vx, cj * N - PIX.vy);
     PIX.stats.draws++;
     if (E.wet) { if (!E.ov) ovWant.push([ci, cj]); else if (wf && E.ov[wf - 1]) { g.drawImage(E.ov[wf - 1], ci * N - PIX.vx, cj * N - PIX.vy); PIX.stats.draws++; } }
@@ -27477,7 +27504,7 @@ function pixLnChunkAhead() {
     const [ci, cj] = w.shift(), k = ci + ',' + cj;
     if (PIX.lnChunks.has(k)) return;
     const F = pixLnFronts(), a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a;
-    PIX.lnChunks.set(k, { cv, used: (St.frame || 0) - 1, key: pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), F), wet: cv.wet, solid: cv.solid });
+    PIX.lnChunks.set(k, { cv, used: (St.frame || 0) - 1, key: pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), F), wet: cv.wet, solid: cv.solid && !cv.empty, stn: cv.stn });
     St.built++; St.ahead = (St.ahead || 0) + 1; St.ms = ms; St.worst = Math.max(St.worst, ms);
   };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 120 });
@@ -27677,8 +27704,9 @@ function pixLnAdd(all, alpha, dt) {
   const list = pixLnIn(() => {
     const cs = [[PIX.vx - 16, PIX.vy - 8], [PIX.vx + nw + 16, PIX.vy - 8], [PIX.vx - 16, PIX.vy + nh + 96], [PIX.vx + nw + 16, PIX.vy + nh + 96]].map(([a, b]) => pixUnproject(a, b, 0));
     const x1 = Math.max(...cs.map(c => c.x));
-    if (x1 + LX < 40) return [];   // the view is west of everything the line has
-    return pixLnScene(alpha, Math.min(...cs.map(c => c.x)), x1, Math.min(...cs.map(c => c.z)), Math.max(...cs.map(c => c.z)));
+    if (x1 + LX < D33.EDGE - 8) return [];   // the view is west of everything the line has (nothing of it stands on the station's map)
+    // (the west end of what the line draws: its own ground begins at the map's edge, so the scene is not built over the station)
+    return pixLnScene(alpha, Math.max(Math.min(...cs.map(c => c.x)), D33.EDGE - LX - 8), x1, Math.min(...cs.map(c => c.z)), Math.max(...cs.map(c => c.z)));
   });
   for (const it of list) {
     const draw = it.draw;

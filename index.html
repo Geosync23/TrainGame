@@ -23449,7 +23449,7 @@ function lgFrame() {
   lgUi.last = now;
   // The lesson card is on the line too (U's card, shown here as the line's HUD), and a first card holds the game.
   const les = $('pdLesson'); if (les && les.classList.contains('lnHud') !== line) les.classList.toggle('lnHud', line);
-  const hold = !!les && !les.hidden && les.classList.contains('hold');
+  const hold = (!!les && !les.hidden && les.classList.contains('hold')) || setUi.open;   // (and Settings open: the game waits under it)
   // Join: beside a gang at work, not while he works with one.
   const k = Q && !j && Q.ph === 'line' && line && !Q.home && S.ln && lnHours(S).work && !lpUi.cardFor ? lgNearStage(S) : -1, J = lgUi.join;
   if (k >= 0 && !hold) {

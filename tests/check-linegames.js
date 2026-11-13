@@ -27,7 +27,7 @@ module.exports = async function checkLineGames() {
       const start = await page.evaluate(() => {
         const R = window.__railhead, S = () => R.state, sod = () => (S().time + 5 * 3600) % 86400;
         R.pdui.closeBoard(); R.send({ t: 'pdStart' }); R.send({ t: 'dvSet', k: 'crew', v: 30 }); R.step(2);
-        for (let n = 0; n < 60000 && !(S().ln && S().ln.day >= 3 && sod() > 9 * 3600); n++) R.step(1);
+        for (let n = 0; n < 60000 && !(S().ln && S().ln.day >= 3 && sod() > 9 * 3600); n++) { const ph = S().pd.ph; if (ph === "summary") R.send({ t: "pdNextDay" }); else if (ph === "morning") R.send({ t: "pdStart" }); R.step(1); }   // (the station's days go on as the player's would)
         R.send({ t: 'lpRide', how: 'now' }); R.step(2);
         window.__lgRec = []; window.__lgSave = R.exportSave(); window.__lgH0 = R.hash();
         const orig = window.simTick;

@@ -162,14 +162,285 @@ def scene_crew(A):
     save(c, 'crew-scene.png', 3)
 
 
+# ------------------------------------------------------------------------------------------------ the track
+def items_draw(A, c, ox, oy, items):
+    """items: [(key, x, z, y)] drawn back to front by x + z."""
+    for key, x, z, y in sorted(items, key=lambda t: (t[1] + t[2], t[3])):
+        px, py = proj(x, z, y)
+        A.draw(c, key, ox + px, oy + py)
+
+
+def roadbed(A, c, ox, oy, fr, x0, x1, base, zr=9, j0=None):
+    """The right of way at fronts fr = [f1..f6] (u): tiles, laid ties, rails, spikes, joints."""
+    f1, f2, f3, f4, f5, f6 = fr
+    def pick(i, j):
+        x = i + 0.5; zc = j + 0.5
+        h = hsh(i, j, 3)
+        if x < f3 and abs(zc) < 2.3:
+            return f'tile/ln_rock/{1 + int(h * 2)}'
+        if x < f3 and j in (-3, 2):
+            return f'tile/ln_rock_edge_{"n" if j < 0 else "s"}'
+        if x < f2 and abs(zc) < 3:
+            return f'tile/ln_bed/{1 + int(h * 2)}'
+        if x < f2 and j in (-4, 3):
+            return f'tile/ln_bed_edge_{"n" if j < 0 else "s"}'
+        if x < f1 and abs(zc) < 5:
+            return f'tile/ln_cleared/{1 + int(h * 2)}'
+        return base(i, j)
+    ground(A, c, ox, oy, x0, x1, -zr if j0 is None else j0, zr, pick)
+    flat = []
+    k = 0
+    x = x0 + 0.43
+    while x < min(f4, x1):
+        flat.append((f'line/tie_laid/{1 + k % 2}', x, 0.0, 0.0)); x += 0.857; k += 1
+    items_draw(A, c, ox, oy, flat)
+    for i in range(x0, int(min(f5, x1))):
+        px, py = proj(i, 0)
+        A.draw(c, 'line/rails', ox + px, oy + py)
+    x = x0 + 0.43
+    while x < min(f6, x1):
+        px, py = proj(x, 0); A.draw(c, 'line/spiked', ox + px, oy + py); x += 0.857
+    j = x0
+    while j < min(f5, x1):
+        px, py = proj(j, 0); A.draw(c, 'line/joint', ox + px, oy + py); j += 13
+
+
+def base_prairie(i, j):
+    if 'tile/prairie/1' in ATLAS[0].frames:
+        return f'tile/prairie/{1 + int(hsh(i, j, 5) * 4)}'
+    return grass_pick(i, j) if hsh(i, j, 9) > 0.25 else f'tile/drygrass/{1 + int(hsh(i, j, 4) * 2)}'
+
+
+ATLAS = [None]
+
+
+def track(A):
+    """The line at every stage along one straight run, with the gangs at their fronts, the work piles and the tools;
+    and the stages one by one, side by side (the same 10u for each)."""
+    W, Hh = 600, 360
+    c = canvas(W, Hh)
+    ox, oy = 60, 40
+    fr = [48, 40, 32, 24, 16, 8]
+    roadbed(A, c, ox, oy, fr, -8, 66, base_prairie, zr=30, j0=-14)
+    who = ('navvy_a', 'navvy_b', 'navvy_c')
+    it = []
+    for x in range(50, 66, 4):
+        it.append(('line/stake', x, -4.6, 0)); it.append(('line/stake', x, 4.6, 0))
+    for k, x in enumerate((49.5, 51.0, 53.5, 55.0, 57.5, 59.0, 61.5)):
+        it.append((f'nat/brush/{1 + k % 3}', x, -2.5 + (k % 3) * 1.9, 0))
+    for k, x in enumerate((44.0, 46.0)):
+        it.append(('nat/brush_cut', x, 3.0 - k * 5.5, 0))
+    m = [0]
+    def man(anim, d, f, x, z):
+        it.append((f'ppl/{who[m[0] % 3]}/{anim}/{d}/{f}', x, z, 0)); m[0] += 1
+    man('hook', 'se', 1, 49.0, -2.2); man('hook', 'se', 2, 47.5, 2.2); man('hook', 'ne', 0, 46.0, -3.0)
+    man('pick', 'se', 2, 39.5, -2.0); man('shovel', 'se', 2, 38.3, 2.0); man('pick', 'se', 0, 37.0, -1.0)
+    man('shovel', 'sw', 3, 36.0, 2.6)
+    it.append(('line/earth_heap/1', 36.5, 5.4, 0)); it.append(('line/earth_heap/2', 41.5, -6.0, 0))
+    man('rake', 'se', 0, 31.0, -1.6); man('rake', 'se', 1, 30.0, 1.6)
+    it.append(('line/rock_heap/2', 33.0, 4.2, 0)); it.append(('line/rock_heap/1', 29.0, -4.4, 0))
+    man('tieFront', 'se', 0, 25.5, -4.0); man('tieBack', 'se', 0, 22.5, -4.0)
+    man('tieDrop', 'sw', 1, 23.5, 1.4)
+    it.append(('line/tie_loose/z', 23.2, 0.0, 0))
+    for k, x in enumerate((15.5,)):
+        man('railCarry', 'se', 0, x - 4, -0.7); man('railCarry', 'se', 1, x + 4, -0.7)
+        man('railCarry', 'se', 2, x - 4, 0.7); man('railCarry', 'se', 3, x + 4, 0.7)
+        it.append(('line/rail_carried', x, 0.0, 0))
+    man('maul', 'se', 2, 7.0, -1.8); man('maul', 'sw', 3, 5.5, 1.9); man('maul', 'se', 0, 3.5, -1.8)
+    it.append(('line/keg', 6.0, -3.6, 0)); it.append(('line/spikes', 4.5, 3.4, 0))
+    it.append(('tool/pick/ground', 41.0, 4.6, 0)); it.append(('tool/shovel/ground', 34.0, -4.3, 0))
+    it.append(('tool/rake/ground', 26.0, 3.4, 0)); it.append(('tool/maul/ground', 1.5, 3.2, 0))
+    it.append(('line/tie_pile/2', 2.0, -7.0, 0)); it.append(('line/rail_stack/2', -2.0, 6.5, 0))
+    it.append(('line/tie_pile/3', 10.0, -7.5, 0))
+    man('walk', 'nw', 2, 20.0, 4.0); man('shoulder', 'se', 1, 18.0, 3.6)
+    items_draw(A, c, ox, oy, it)
+    # the barrows (pusher and barrow drawn together, the barrow at his grip)
+    for (d, f, x, z, anim) in (('se', 1, 30.0, -4.4, 'barrow'), ('se', 1, 28.0, 3.6, 'tip')):
+        key = f'ppl/navvy_b/{anim}/{d}/{f}'
+        px, py = proj(x, z)
+        A.draw(c, key, ox + px, oy + py)
+        gx, gy = A.extra[key]['grip']
+        A.draw(c, f'tool/barrow/{d}/' + ('full' if anim == 'barrow' else 'tipped'), ox + px + gx, oy + py + gy)
+    label(c, 'the six fronts, 8u apart: brush, cleared, dug bed, rock, ties, rails, spiked', 4, 4)
+    save(c, 'track-stages.png', 3)
+    W, Hh = 700, 150
+    c = canvas(W, Hh)
+    names = ['cleared', 'bed', 'rock', 'ties', 'rails', 'spiked']
+    for k in range(6):
+        fr = [99 if s <= k else -99 for s in range(6)]
+        roadbed(A, c, 70 + k * 112, 34, fr, 0, 10, base_prairie, zr=6)
+        label(c, names[k], 40 + k * 112, 4)
+    save(c, 'track-each.png', 3)
+
+
+# ------------------------------------------------------------------------------------------------ the country
+# A stand-in for Foundation's lnTile / lnScatter, only for the review: kinds of ground and what stands on them.
+SCATTER = {
+    'prairie': [('nat/grass/{}', 6, 0.22), ('nat/flowers/{}', 3, 0.10), ('nat/stones/{}', 3, 0.02),
+                ('nat/sage/{}', 4, 0.03), ('nat/boulder/4', 0, 0.006), ('nat/bones', 0, 0.002),
+                ('nat/burrow', 0, 0.004), ('nat/pear/{}', 2, 0.006)],
+    'brush': [('nat/brush/{}', 3, 0.07), ('nat/sage/{}', 4, 0.07), ('nat/rabbitbrush/{}', 2, 0.05),
+              ('nat/grass/{}', 6, 0.06), ('nat/bush/{}', 2, 0.02)],
+    'woods': [('nat/pine/{}', 3, 0.075), ('nat/oak/{}', 2, 0.015), ('nat/stump/{}', 2, 0.01), ('nat/bush/{}', 2, 0.03),
+              ('nat/log_x', 0, 0.004), ('nat/snag', 0, 0.004), ('nat/stones/{}', 3, 0.02), ('nat/grass/{}', 6, 0.03)],
+    'hills': [('nat/grass/{}', 6, 0.08), ('nat/juniper/{}', 2, 0.02), ('nat/boulder/{}', 4, 0.012),
+              ('nat/sage/{}', 4, 0.03), ('nat/flowers/{}', 3, 0.03)],
+    'rock': [('nat/boulder/{}', 4, 0.05), ('nat/outcrop/{}', 2, 0.008), ('nat/juniper/{}', 2, 0.015),
+             ('nat/pear/{}', 2, 0.02), ('nat/stones/{}', 3, 0.05), ('nat/deadtree', 0, 0.002)],
+    'river': [('nat/cottonwood/{}', 3, 0.03), ('nat/willow/{}', 2, 0.03), ('nat/grass/{}', 6, 0.1),
+              ('nat/cattails/{}', 2, 0.01), ('nat/bush/{}', 2, 0.02)],
+    'field': [('nat/haystack', 0, 0.006), ('nat/grass/{}', 6, 0.02)],
+}
+
+
+def vnoise(i, j, n, s=0):
+    a, b = i // n, j // n
+    u, v = (i % n) / n, (j % n) / n
+    f = lambda t: t * t * (3 - 2 * t)
+    su, sv = f(u), f(v)
+    h00, h10, h01, h11 = hsh(a, b, s), hsh(a + 1, b, s), hsh(a, b + 1, s), hsh(a + 1, b + 1, s)
+    return (h00 * (1 - su) + h10 * su) * (1 - sv) + (h01 * (1 - su) + h11 * su) * sv
+
+
+def patch(i, j, n, s, p):
+    """Soft-edged patches (as the game's dry grass): smooth noise plus a little hash dither."""
+    return vnoise(i, j, n, s) + (hsh(i, j, s + 1) - 0.5) * 0.18 > p
+
+
+def tile_of(kind, i, j):
+    h = hsh(i, j, 21)
+    if kind in ('prairie', 'brush'):
+        return 'tile/trail/x' if j == 9 and i % 23 < 15 else f'tile/prairie/{1 + int(h * 4)}'
+    if kind == 'woods':
+        return f'tile/prairie/{1 + int(h * 4)}' if patch(i, j, 6, 7, 0.68) else f'tile/woodfloor/{1 + int(h * 3)}'
+    if kind == 'hills':
+        s = vnoise(i, j, 7, 31) * 2 - 1 + (h - 0.5) * 0.2
+        return f'tile/hill_lit/{1 + int(h * 2)}' if s > 0.3 else (f'tile/hill_shade/{1 + int(h * 2)}' if s < -0.3 else f'tile/prairie/{1 + int(h * 4)}')
+    if kind == 'rock':
+        return f'tile/prairie/{2 + int(h * 2)}' if patch(i, j, 5, 9, 0.62) else f'tile/rockground/{1 + int(h * 3)}'
+    if kind == 'field':
+        return f'tile/field/{1 + (i // 12) % 2}' if j < -8 else f'tile/prairie/{1 + int(h * 4)}'
+    return f'tile/prairie/{1 + int(h * 4)}'
+
+
+def scatter(kind, x0, x1, z0, z1, keep_row=True, seed=0):
+    out = []
+    for ci in range(int(x0) // 2, int(x1) // 2):
+        for cj in range(int(z0) // 2, int(z1) // 2):
+            for k, (key, n, p) in enumerate(SCATTER[kind]):
+                if hsh(ci, cj, 100 + k + seed) < p:
+                    x = ci * 2 + hsh(ci, cj, 200 + k) * 2; z = cj * 2 + hsh(ci, cj, 300 + k) * 2
+                    if not keep_row and abs(z) < 5.5:
+                        continue
+                    kk = key.format(1 + int(hsh(ci, cj, 400 + k) * n)) if n else key
+                    if kk.startswith('nat/grass/'):
+                        kk += '/0'
+                    out.append((kk, x, z, 0))
+                    break
+    return out
+
+
+def panel(A, kind, W, Hh, fr, extra=(), base=None, keep_row=False, water=None):
+    c = canvas(W, Hh)
+    ox, oy = 30, 30
+    x0, x1 = -6, 60
+    zr = 30
+    def pick(i, j):
+        if water:
+            w = water(i, j)
+            if w:
+                return w
+        return (base or (lambda i, j: tile_of(kind, i, j)))(i, j)
+    roadbed(A, c, ox, oy, fr, x0, x1, pick, zr=zr, j0=-26)
+    it = scatter(kind, x0, x1, -26, zr, keep_row)
+    it = [t for t in it if not (water and water(int(t[1]), int(t[2])))]
+    it += list(extra)
+    items_draw(A, c, ox, oy, it)
+    return c
+
+
+import math
+
+
+def country(A):
+    """The country along the line, kind by kind, each with the line at some stage and its scatter; the creek with
+    the trestle in its stages; the cut through the rise; the river alongside."""
+    W, Hh = 520, 300
+    done = [99] * 6
+    shots = []
+    # prairie: the finished line, a mile board, rolling mounds beyond
+    shots.append(('prairie', panel(A, 'prairie', W, Hh, done, extra=[('line/mile_board', 20, -3.2, 0),
+                                                                     ('nat/mound/2', 30, -22, 0), ('nat/mound/1', 52, 24, 0)])))
+    # brush: the clearers' front at 30
+    shots.append(('brush', panel(A, 'brush', W, Hh, [30, 22, 16, 10, 4, -9], keep_row=True)))
+    # woods: felled trees, stumps on the cleared strip
+    wx = [('nat/stump/1', 30, -3, 0), ('nat/stump/2', 34, 2.5, 0), ('nat/felled', 38, -7, 0), ('nat/stump/1', 26, 4, 0)]
+    shots.append(('woods', panel(A, 'woods', W, Hh, [40, 28, 18, 8, -9, -9], extra=wx)))
+    # hills with mounds
+    hx = [('nat/mound/3', 12, -24, 0), ('nat/mound/2', 40, -20, 0), ('nat/mound/1', 26, 20, 0), ('nat/mound/3', 54, 26, 0)]
+    shots.append(('hills', panel(A, 'hills', W, Hh, done, extra=hx)))
+    # the cut: the rise from x 16 to 48, dug to x 32
+    cx = []
+    for k, kind in enumerate(('up', 'full', 'full', 'down')):
+        xm = 20 + k * 8
+        idx = {'up': '_up', 'full': '', 'down': '_down'}[kind]
+        cx += [(f'line/cut_bank_n{idx}', xm, -4, 0), (f'line/cut_bank_s{idx}', xm, 4, 0)]
+        if xm > 32:
+            cx.append((f'line/rise/{ {"up": 1, "full": 2, "down": 3}[kind] }', xm, 0, 0))
+    cx += [('line/earth_heap/2', 30, -8, 0), ('line/earth_heap/1', 26, 8, 0)]
+    shots.append(('the cut', panel(A, 'hills', W, Hh, [60, 32, 20, 10, -9, -9], extra=cx)))
+    # rock
+    shots.append(('rock', panel(A, 'rock', W, Hh, done)))
+    # the river alongside (south of the line)
+    def riv(i, j):
+        e = 14 + int(3 * math.sin(i * 0.15))
+        if j > e + 1:
+            return f'tile/river/{0}'
+        if j == e + 1:
+            return 'tile/riverbank/s'
+        return None
+    shots.append(('river', panel(A, 'river', W, Hh, done, water=riv)))
+    # the creek and the trestle: bents at 22, 28, 34; stages shown left to right
+    def creek(i, j):
+        if 23 <= i <= 32:
+            return 'tile/water/0'
+        if i == 22:
+            return 'tile/bank/e'
+        if i == 33:
+            return 'tile/bank/w'
+        return None
+    bx = [('line/trestle_bent', 23.0, 0, 0), ('line/trestle_part/3', 28.0, 0, 0), ('line/trestle_part/2', 33.0, 0, 0),
+          ('line/trestle_deck', 25.5, 0, 0.0), ('line/trestle_deck_half', 30.5, 0, 0.0),
+          ('nat/cattails/1', 23, 9, 0), ('nat/cattails/2', 32, -9, 0), ('nat/willow/1', 21, 12, 0),
+          ('nat/willow/2', 35, -14, 0)]
+    shots.append(('creek and trestle', panel(A, 'prairie', W, Hh, [21, 21, 21, 21, 21, -9], extra=bx, water=creek)))
+    shots.append(('far town fields', panel(A, 'field', W, Hh, done, extra=[('nat/fence_x', 20, -8, 0),
+                                                                          ('nat/fence_x', 28, -8, 0), ('nat/fence_x', 36, -8, 0),
+                                                                          ('line/end_stake', 40, -2.6, 0), ('nat/haystack', 30, -16, 0)])))
+    for k in range(0, len(shots), 3):
+        grp = shots[k:k + 3]
+        out = canvas(W, Hh * len(grp))
+        for n, (name, img) in enumerate(grp):
+            out[n * Hh:(n + 1) * Hh] = img
+            label(out, name, 4, n * Hh + 4)
+        save(out, f'country-{k // 3 + 1}.png', 2)
+    # a long strip of prairie for repetition (200u)
+    c = canvas(900, 220)
+    ground(A, c, 20, -20, 0, 120, -40, 40, lambda i, j: tile_of('prairie', i, j))
+    items_draw(A, c, 20, -20, scatter('prairie', 0, 120, -40, 40))
+    save(c, 'prairie-long.png', 2)
+
+
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else 'all'
     A = Atlas()
+    ATLAS[0] = A
     if what in ('navvy', 'all'):
         sheet_navvies(A)
         scene_crew(A)
-    if what in ('track', 'all') and 'track' in globals():
-        globals()['track'](A)
+    for name in ('track', 'country', 'train'):
+        if what in (name, 'all') and name in globals():
+            globals()[name](A)
 
 
 if __name__ == '__main__':

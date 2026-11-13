@@ -410,13 +410,13 @@ for _r in (1, 2, 3):
 def _river(rank):
     H = {1: 9.0, 2: 14.0, 3: 17.0}[rank]
     def hf(ctx, u, z):
-        n = ctx.vn(u, z, 4.0, 3.0, 121 + rank)
-        b = H * rise(z, -1.5 - n, -10.0) * (0.8 + 0.35 * ctx.vn(u, z, 8.0, 6.0, 123))
+        n = ctx.vn(u, z, 4.0, 3.0, 121 + rank) + 2.5 * ctx.vn(u, z, 8.0, 6.0, 126 + rank)
+        b = H * rise(z, -1.0 - n, -10.0 - 0.5 * n) * (0.8 + 0.35 * ctx.vn(u, z, 8.0, 6.0, 123))
         wob = (ctx.vn(u, z, 2.0, 1.5, 124) - 0.5) * 2.4
         ledge = terrace(b + wob, 3.0, 0.82) - wob
         m = K.smooth((ctx.vn(u, z, 4.0, 3.0, 125) - 0.4) / 0.2)       # rock ledges only in places
         return b + 0.4 * m * (ledge - b) + 0.6 * rise(z, 0.0, -1.5)
-    tex = slope_mix(under_canopy(ground_tex('river'), 1), rock_tex('rock', 0.9, seed=7), 1.6, 2.4)
+    tex = slope_mix(under_canopy(ground_tex('river'), 1), rock_tex('rock', 0.9, seed=7), 2.0, 2.8)
     lod = LOD[rank]
     def things(ctx, side, hf):
         def pine(x, z, y, r):
@@ -431,7 +431,7 @@ def _river(rank):
         if rank == 1:
             trees(ctx, side, hf, 2.0, 1.0, 0.0, -2.0, 131, 0.5, bush, rad=1.2)
             trees(ctx, side, hf, 4.0, 2.5, -1.0, -3.5, 132, 0.6, cotton, rad=rad_broad(8.0))
-        trees(ctx, side, hf, 2.0, 1.5, -3.0, -D, 133 + rank, 0.7, pine, rad=rad_pine(9))
+        trees(ctx, side, hf, 2.0, 1.5, -3.0 if rank == 1 else -0.3, -D, 133 + rank, 0.7, pine, rad=rad_pine(9))
         trees(ctx, side, hf, 4.0, 3.0, -2.5, -D, 136 + rank, 0.35, oak, rad=rad_broad(5.4))
         trees(ctx, side, hf, 2.0, 1.5, -2.0, -D, 139 + rank, 0.25, bush, rad=1.2)
     return hf, tex, things

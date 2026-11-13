@@ -72,6 +72,7 @@ const checks = {
   'the pixel frame-time budget (D27, R)': require('./check-pixperf'),
   'the atlas: every key the code asks for, the budget (D27, the integrator)': require('./check-atlas'),
   'the D27 day end to end (D27, the integrator)': require('./check-d27-day'),
+  'play-test fixes by real taps: one tap per good, the small cart, the pace, the soft patch (D31)': require('./check-d31'),
 };
 
 (async () => {

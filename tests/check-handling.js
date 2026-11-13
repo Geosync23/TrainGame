@@ -113,7 +113,10 @@ module.exports = async function checkHandling() {
         const barrel = R.cargo.itemCreate(S, wbFor('whiskey', 'saloon'), X.frStoreSpot(S, null, 'barrel', 'SALOON'), null).id;
         pl.send({ t: 'frTake', item: barrel });
         e = pl.send({ t: 'frPut', to: { kind: 'CART', cell: 0, layer: 1 } });
-        if (!e.some(x => x.t === 'frRefused')) B('a barrel was stacked on a crate on the cart');
+        // D31 (FR.CART_MIX): on the small cart a good sits on whatever is under it, so a barrel may stand on a crate
+        // (in storage a stack is still one kind); nothing goes on the barrel (next).
+        if (refusals(e).length || S.items.where[barrel].kind !== 'CART' || S.items.where[barrel].layer !== 1) B('a barrel was not stacked on a crate on the cart');
+        pl.send({ t: 'frTake', item: barrel });
         pl.send({ t: 'frPut', to: { kind: 'CART', cell: 2 } });
         pl.send({ t: 'frTake', item: crates[2].id });
         e = pl.send({ t: 'frPut', to: { kind: 'CART', cell: 2, layer: 1 } });

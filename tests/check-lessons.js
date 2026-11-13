@@ -394,12 +394,17 @@ module.exports = async function checkLessons() {
         await checkOverlap('a boxcar door with the cart');
         sent = await tap(/^Take cart/, 'beside the cart');
         if (sent && !sent.some(q => q.t === 'frCart' && q.act === 'grab')) P('Take cart sent ' + JSON.stringify(sent));
+        // D31: Lift and Put in reach are the step-by-step buttons, parked behind D31.TAP (one tap per good, which
+        // check-d31.js plays by real taps): checked here with the switch off, as ?d31=0 gives them.
+        await ev(() => { window.__railhead.d31.TAP = false; });
+        await goTo(fr.at.x, fr.at.z);
         sent = await tap(/^Lift/, 'beside a good');
         if (sent && !sent.some(q => q.t === 'frTake' && q.item === 501)) P('Lift sent ' + JSON.stringify(sent));
         await ev(() => { const S = window.__railhead.state, I = S.items, id = I.next++; I.waybill[id] = { commodity: 'hardware', consignee: { kind: 'BUSINESS', id: 'store' }, destTownId: 0 }; I.where[id] = { kind: 'HAND', slot: 0 }; I.alive[id] = true; window.__fake.goods = []; window.__fake.handId = id; });
         await goTo(fr.at.x + 0.5, fr.at.z);
         sent = await tap(/^Put/, 'with a good in hand beside the cart');
         if (sent && !sent.some(q => q.t === 'frPut' && q.to && q.to.kind === 'CART')) P('Put sent ' + JSON.stringify(sent));
+        await ev(() => { window.__railhead.d31.TAP = true; });
         const st = await ev(o => { window.__fake.car[o.stock].unload = 0; window.__railhead.pdui.ui.jobTick = -1; return window.__railhead.pdui.job(); }, fr);
         if (!/^Stack the good for the town in their shops' rows \(general store first\)/.test(st.text) || !st.t || st.t.k !== 'cell') P('the Next job line with a good for the town in hand: ' + JSON.stringify(st));
         await ev(() => { const S = window.__railhead.state; S.items.where[window.__fake.handId] = null; S.items.alive[window.__fake.handId] = false; });

@@ -629,14 +629,18 @@ def truck_load(kind):
 
 
 # ---------------------------------------------------------------- the platform cart
-CART_L, CART_W, CART_TOP = 4.2, 3.2, 0.85   # D27 integration: 5 x 4 cells (was 3.4 x 1.6, 4 x 2), the integrator's provisional bigger cart
-CART_ROWS, CART_COLS = 4, 5
+# D31 (the designer: "the cart is much too large"): back to a hand cart a little longer than a man, 3.4 x 1.6 u, 4 x 2
+# cells. Parked: the D27 integration's dray (CART_D27: 4.2 x 3.2 u, 5 x 4 cells); to bring it back put its numbers in
+# the two lines below, rebuild and embed, and set CARGO27 and FR's cart numbers in index.html back (see DEV_NOTES D31).
+CART_D27 = dict(L=4.2, W=3.2, ROWS=4, COLS=5)
+CART_L, CART_W, CART_TOP = 3.4, 1.6, 0.85
+CART_ROWS, CART_COLS = 2, 4
 CART_R = 0.3
 CELL = 0.8
 
 
 def cart_cells():
-    """The bed's 5 x 3 cells in the cart's own frame (a forwards, b to the left of travel... here +z), u from the
+    """The bed's cells (CART_COLS x CART_ROWS) in the cart's own frame (a forwards, b to the left of travel... here +z), u from the
     cart's centre: [(c, r, a, b)]; c 0..3 from the handle end to the front, r 0 (left, -b) to 2 (+b)."""
     out = []
     for c in range(CART_COLS):
@@ -646,7 +650,7 @@ def cart_cells():
 
 
 def platform_cart(phase=0.0, o=None):
-    """The four-wheel station cart: a plank bed 4.2 x 2.4 u at 0.85 u on an iron-strapped frame, four small iron
+    """The four-wheel station cart: a plank bed CART_L x CART_W u at 0.85 u on an iron-strapped frame, four small iron
     wheels, low rails along the sides, a push handle at the rear (-x) end at 1.0 u. Facing +x. Anchor: its centre
     at the ground."""
     o = o or new_oid(True)

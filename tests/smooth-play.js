@@ -125,7 +125,10 @@ function summarise(rec) {
   let wob = 0; for (let i = 1; i < off.length; i++) { const d = Math.hypot(off[i][0] - off[i - 1][0], off[i][1] - off[i - 1][1]); if (d < 12) wob = Math.max(wob, d); }
   out.screenWobbleMax = +wob.toFixed(2);
   // the cart and the handled good against the agent: how much their offset from him jumps frame to frame (native px)
-  const rel = (k) => { let m = 0, n = 0; for (let i = 1; i < rec.length; i++) { const a = rec[i - 1], b = rec[i]; if (!a[k] || !b[k] || a.ax === null || b.ax === null || (k === 'good' && (a.good[2] !== b.good[2] || a.good[3] !== 'hand' || b.good[3] !== 'hand' || a.ph !== b.ph))) continue; const d = Math.hypot((b[k][0] - b.ax) - (a[k][0] - a.ax), (b[k][1] - b.ay) - (a[k][1] - a.ay)); if (d < 12) { m = Math.max(m, d); if (d > 2.01) n++; } } return [+m.toFixed(2), n]; };
+  // (D31: the cart only while he pushes it. Walking past the parked cart his own step is the change, and at the faster
+  // pace a slow frame's step is over 2 px.)
+  const pushing = r => r.tool !== null && r.tool !== undefined;
+  const rel = (k) => { let m = 0, n = 0; for (let i = 1; i < rec.length; i++) { const a = rec[i - 1], b = rec[i]; if (!a[k] || !b[k] || a.ax === null || b.ax === null || (k === 'cart' && !(pushing(a) && pushing(b))) || (k === 'good' && (a.good[2] !== b.good[2] || a.good[3] !== 'hand' || b.good[3] !== 'hand' || a.ph !== b.ph))) continue; const d = Math.hypot((b[k][0] - b.ax) - (a[k][0] - a.ax), (b[k][1] - b.ay) - (a[k][1] - a.ay)); if (d < 12) { m = Math.max(m, d); if (d > 2.01) n++; } } return [+m.toFixed(2), n]; };
   [out.cartVsAgentMax, out.cartVsAgentOver2] = rel('cart');
   [out.goodVsAgentMax, out.goodVsAgentOver2] = rel('good');
   // a good being lifted or set down (drawn 'moving'): its drawn step a frame (native px), and how many over 3

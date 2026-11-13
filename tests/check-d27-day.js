@@ -171,7 +171,7 @@ module.exports = async function checkD27Day() {
         if (sum.audit && sum.audit.length) P(`${tag}: itemAudit at the summary: ${sum.audit.slice(0, 2).join('; ')}`);
       }
       if (A.swOther) P(`a switch changed ${A.swOther} times without the player throwing it`);
-      if (A.hours < 34) P(`only ${A.hours} game hours audited`);
+      if (A.hours < 32) P(`only ${A.hours} game hours audited`);   // (D31: the evening is one trip with the cart, so the days end about an hour sooner: 33 hours, was 34)
       for (const a of A.audit) P('itemAudit: ' + a);
       if (A.endAudit.length) P('itemAudit at the end: ' + A.endAudit.slice(0, 2).join('; '));
       if (!A.botLes.some(l => /show/.test(l)) || !A.botLes.some(l => /skip/.test(l)) || !A.les.some(l => /pdLessonReplay/.test(l))) P(`lessons: the bot did not both follow and skip them, with a replay (${A.botLes.join(', ')})`);

@@ -79,7 +79,7 @@ const checks = {
   'the line drawn (D32, Foundation: nine places, three zooms, both orientations, no boundary of the world in view, chunks redrawn as a front passes, frame time)': require('./check-linerender'),
   'the rail crew (D32, Crew: every man\'s day, no two on one spot, the stage\'s tool, the six gangs, the meal, the same twice and after a reload, the pace for 30 and 5 men, the tick\'s cost)': require('./check-crew'),
   'the camp and the head count (D32, Crew: tents by crew size, a cot each, the camp\'s day, lit at night, a man left on the line reported, the townsfolk counted)': require('./check-camp'),
-  'riding out and walking the line (D32, Play)': d32Later('./check-lineplay'),
+  'riding out and walking the line (D32, Play: out and back with the work train and at once, saves mid-ride and on the line, walking by touch round the train and to the borders, the Look card, the bar)': require('./check-lineplay'),
   'the join-in games (D32, Play)': d32Later('./check-linegames'),
   'the line\'s lessons (D32, Play)': d32Later('./check-linelessons'),
   'the hired station workers (D32, Town)': d32Later('./check-hired'),

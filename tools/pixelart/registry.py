@@ -34,6 +34,7 @@ OWNERS = {
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
     'sprites_nature': ('nat/',),           # D27 nature (A3)
     'sprites_ground': ('tile/', 'dock/'),  # D27 ground tiles and the cargo platform's pieces (A3)
+    'sprites_navvy': ('ppl/navvy_', 'tool/'),     # D32: the rail crew and their tools (the D32 artist)
 }
 
 

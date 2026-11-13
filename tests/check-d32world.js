@@ -72,36 +72,52 @@ module.exports = async function checkD32World() {
       if (!(rows > 20 && things > 1000)) B(`the scatter is thin: ${things} things, ${rows} on the right of way`);
       for (const m of [100, 400, 700, 1000, 1400, 1800, 2030, 2200, 2400]) if (L.lnRegionCell(1866, Math.floor(m * LINE.M), 0) !== L.lnRegionCell(7, Math.floor(m * LINE.M), 0) || L.lnRegionCell(7, Math.floor(m * LINE.M), 0) !== L.lnRegionAt(m)) B(`the region at ${m} m moves with the seed`);
       // thick with small things: the open prairie has at least 6 a cell
-      { let n = 0, cells = 0; for (let ci = 12; ci < 40; ci++) for (const cj of [-6, 5]) { cells++; n += L.lnScatter(1866, ci, cj).filter(q => !q.edge).length; } N(`the home prairie: ${(n / cells).toFixed(1)} things a cell of 8u`); if (n / cells < 6) B('the prairie is sparse: ' + (n / cells).toFixed(1) + ' things a cell'); }
-      // the natural borders
+      { let n = 0, cells = 0; for (let ci = 12; ci < 40; ci++) for (const cj of [-1, 0]) { cells++; n += L.lnScatter(1866, ci, cj).filter(q => !q.edge).length; } N(`the home prairie: ${(n / cells).toFixed(1)} things a cell of 8u`); if (n / cells < 6) B('the prairie is sparse: ' + (n / cells).toFixed(1) + ' things a cell'); }
+      // the natural borders: straight, as the wilds artists' art is (the far wall's front line, the near side's edge),
+      // closer in at the canyon's shelf (the near side) and the rock cut (both sides)
+      const WD = LINE.WILD, BD = LINE.BORDER;
       for (const seed of [1866, 7]) for (let x = 60; x < LINE.LEN; x += 13) {
         if (Math.abs(x - 544 * LINE.M) < 14) continue;   // the creek's crossing
-        const n = L.lnBorder(seed, x, -1), s = L.lnBorder(seed, x, 1);
-        if (n.d < 8.5 - 1e-9 || n.d > 11.5 + 1e-9 || s.d < 11 - 1e-9 || s.d > 14 + 1e-9 || n.end || s.end) { B(`the border at x ${x}: ${n.d.toFixed(2)} north, ${s.d.toFixed(2)} south`); break; }
-        if (!L.lnWalkable(seed, x, -n.d + 1) || !L.lnWalkable(seed, x, s.d - 1) && !L.lnWaterAt(seed, x, s.d - 1) || L.lnWalkable(seed, x, -n.d - 0.1) || L.lnWalkable(seed, x, s.d + 0.1)) { B(`walking does not stop at the border at x ${x}`); break; }
+        const n = L.lnBorder(seed, x, -1), s = L.lnBorder(seed, x, 1), cut = x >= WD.ROCKCUT[0] && x < WD.ROCKCUT[1], shelf = x >= WD.SHELF[0] && x < WD.SHELF[1];
+        if (n.d !== (cut ? WD.ROCKCUT[2] : BD.N) || s.d !== (cut ? WD.ROCKCUT[2] : shelf ? WD.SHELF[2] : BD.S) || n.end || s.end) { B(`the border at x ${x}: ${n.d.toFixed(2)} north, ${s.d.toFixed(2)} south`); break; }
+        if (!L.lnWalkable(seed, x, -n.d + n.pad + 0.1) || !L.lnWalkable(seed, x, s.d - s.pad - 0.1) || L.lnWalkable(seed, x, -n.d + n.pad - 0.1) || L.lnWalkable(seed, x, s.d - s.pad + 0.1)) { B(`walking does not stop at the border at x ${x}`); break; }
         for (let z = -n.d + 0.5; z < s.d - 0.5; z += 1) if (L.lnWaterAt(seed, x, z) && Math.abs(x - 544 * LINE.M) > 12) { B(`water inside the corridor at ${x}, ${z.toFixed(1)}`); x = 1e9; break; }
       }
+      if (!(BD.N <= 10 && BD.S <= 11.5)) B('the borders are not close to the track');
       if (L.lnBorder(1866, -15, -1).d > 4 || L.lnBorder(1866, -15, 1).d > 4 || L.lnBorder(1866, LINE.X1 - 5, 1).d > 4 || !L.lnBorder(1866, -15, 1).end) B('the borders do not close in at the strip\'s ends');
       if (L.lnWalkable(1866, LINE.X0 - 1, 0) || L.lnWalkable(1866, LINE.X1 + 1, 0) || !L.lnWalkable(1866, 100, 0)) B('walking at the strip\'s ends');
       if (L.lnWalkable(1866, 544 * LINE.M, 0) || L.lnWalkable(1866, 544 * LINE.M, 0, 530) || !L.lnWalkable(1866, 544 * LINE.M, 0, 560) || L.lnWalkable(1866, 544 * LINE.M, 6, 560)) B('the creek is walked through, or the built trestle is not');
-      // each region's belts, both sides, by the wilds keys with stand-ins; its landmarks
-      for (const [a, b, , rg] of LINE.SEGS) {
-        if (a < 60 || b - a < 100) continue;
-        const ci0 = Math.floor((a + 30) * LINE.M / 8), ci1 = Math.floor((b - 30) * LINE.M / 8), cnt = { far: 0, near: 0 };
-        for (let ci = ci0; ci <= ci1; ci++) for (let cj = -5; cj <= 5; cj++) for (const q of L.lnScatter(1866, ci, cj)) {
-          if (!q.edge || q.mark) continue;
-          const sd = q.z < 0 ? 'far' : 'near', bd = L.lnBorder(1866, q.x, q.z < 0 ? -1 : 1).d;
-          if (q.key.indexOf(`wild/${sd}/`) !== 0) B(`a belt thing with the key ${q.key}`);
-          if (Math.abs(q.z) < bd) B(`a belt thing inside the corridor at ${q.x.toFixed(0)}, ${q.z.toFixed(1)}`);
-          if (sd === 'near' && q.h > 1.5 && Math.abs(q.z) < bd + 8) B(`a tall thing (${q.alt}, ${q.h} u) close on the near side at x ${q.x.toFixed(0)}`);
-          cnt[sd]++;
+      // the wilds artists' art: every module, piece, blend, landmark and tile the layout asks for is in the atlas;
+      // no variant twice running on the far side; regions begin on multiples of 16u; nothing of the scatter stands
+      // under the art; the ends' woods stay inside the straight borders
+      {
+        const miss = new Set(), need = k => { if (!F[k]) miss.add(k); };
+        for (let row = 0; row < 6; row++) { let prev = ''; for (let n = -6; n < 236; n++) { const q = L.lnWildFar(1866, row, n); need(q.key); if (q.key === prev) B(`far side row ${row}: ${q.key} twice running at module ${n}`); prev = q.key; if (q.z !== -(BD.N + [0, 14, 30][Math.min(row, 2)] + (row > 2 ? 20 * (row - 2) : 0))) B(`far side row ${row} stands at z ${q.z}`); } }
+        const seenTo = new Set(); for (let n = 0; n < 236; n++) { const k = L.lnWildFar(1866, 0, n).key; if (/\/to_/.test(k)) seenTo.add(k); }
+        if (seenTo.size !== 16) B(`${seenTo.size} of the far side's 16 transition modules of rank 1 are used`);
+        const blends = new Set(), marks = new Set();
+        for (const band of ['edge', 'mid', 'far']) for (let n = -8; n < (band === 'edge' ? 470 : 235); n++) { const q = L.lnWildNear(1866, band, n); if (!q) continue; need(q.key); if (/_to_/.test(q.key)) blends.add(q.key); if (q.mark) marks.add(q.mark); }
+        if (blends.size !== 24) B(`${blends.size} of the near side's 24 blend pieces are used`);
+        for (const k of Object.values(WD.EDGE_MARKS)) if (!marks.has(k)) B(`the edge landmark ${k} is not on the line`);
+        for (const q of LINE.MARKS) { need(q.key); const reg = Object.entries(LINE.REGIONS).find(([, R]) => R.marks.includes(q.name)); if (!reg || LINE.RUNS[L.lnRunIx(q.x)].k !== reg[0]) B(`the landmark ${q.name} is not in its region`); if (q.side !== 'c' && L.lnWalkable(1866, q.x, q.z)) B(`the landmark ${q.name} stands where a man can walk`); }
+        for (const R of LINE.RUNS) if (Number.isFinite(R.x0) && R.x0 % 16) B(`${R.k} begins at ${R.x0} u`);
+        for (let i = -40; i < 3700; i += 3) for (const j of [-8, 0, 8, 30, 90]) { const k = L.lnTileWild(1866, i, j); if (k) need(k); }
+        const bl = new Set(); for (let i = 0; i < 3600; i++) for (let j = -6; j < 8; j++) { const k = L.lnTileWild(1866, i, j); if (k && /blend/.test(k)) bl.add(k); }
+        if (bl.size !== 32) B(`${bl.size} of the 32 ground blend tiles are used`);
+        if (miss.size) B('the wilds art asked for but not in the atlas: ' + [...miss].slice(0, 8).join(', '));
+        for (let ci = -4; ci < 470; ci++) for (let cj = -4; cj <= 9; cj++) for (const q of L.lnScatter(1866, ci, cj)) {
+          if (q.z < -BD.N + 0.3 || (q.z > BD.S - 0.5 && q.z < BD.S + WD.NEAR_END)) { B(`a scattered thing (${q.key}) under the wilds art at ${q.x.toFixed(0)}, ${q.z.toFixed(1)}`); ci = 1e9; break; }
         }
-        const per = (ci1 - ci0 + 1);
-        if (cnt.far / per < 5 || cnt.near / per < 1.2) B(`${rg} (${a} to ${b} m): its belts are thin: ${(cnt.far / per).toFixed(1)} far and ${(cnt.near / per).toFixed(1)} near things per 8u`);
+        // wildlife: some in every region that has any, never where a man can walk, the same from the same seed
+        const life = {}; let lifeN = 0;
+        for (let c = 0; c < 78; c++) for (const q of L.lnLife(1866, c)) { lifeN++; life[q.kind] = (life[q.kind] || 0) + 1; if (!q.water && L.lnWalkable(1866, q.x, q.z)) B(`a ${q.kind} stands in the men's way at ${q.x}, ${q.z}`); }
+        N(`wildlife on the line (seed 1866): ${lifeN} beasts: ${JSON.stringify(life)}`);
+        for (const k of ['deer', 'buffalo', 'duck', 'fox', 'prairie_dog']) if (!life[k]) B(`no ${k} anywhere on the line`);
+        if (lifeN > 60) B(`${lifeN} beasts: not sparing`);
+        if (JSON.stringify(L.lnLife(1866, 30)) !== JSON.stringify(L.lnLife(1866, 30))) B('the wildlife is not the same twice');
       }
-      for (const [rg, Rg] of Object.entries(LINE.REGIONS)) for (const mk of Rg.marks) { const x = mk.m * LINE.M, z = mk.side * (L.lnBorder(1866, x, mk.side).d + mk.off), hit = L.lnScatter(1866, Math.floor(x / 8), Math.floor(z / 8)).find(q => q.mark === mk.name); if (!hit || hit.key !== 'wild/mark/' + mk.name || L.lnRegionAt(mk.m) !== rg) B(`the landmark ${mk.name} is not in its place in ${rg}`); }
       if (L.lnWaterAt(1866, 544 * LINE.M, 0) !== 2 || L.lnWaterAt(1866, 544 * LINE.M, 30) !== 2) B('no creek under the bridge');
-      let riv = 0; for (let x = 1620 * LINE.M; x < 1900 * LINE.M; x += 20) { const d = L.lnBorder(1866, x, 1).d; for (let z = d; z <= d + 6; z += 0.5) if (L.lnWaterAt(1866, x, z) === 2) { riv++; break; } }
+      let riv = 0; for (let x = 1620 * LINE.M; x < 1900 * LINE.M; x += 20) { const d = LINE.BORDER.S; for (let z = d; z <= d + 6; z += 0.5) if (L.lnWaterAt(1866, x, z) === 2) { riv++; break; } }
       if (riv < 19) B('the river does not run close alongside the line in the river run');
       // trees on the right of way in the woods: about one per 6 m
       let trees = 0; for (let ci = Math.ceil(1000 * LINE.M / 8); ci < Math.floor(1260 * LINE.M / 8); ci++) for (let cj = -1; cj <= 0; cj++) for (const q of L.lnScatter(1866, ci, cj)) if (q.row && /pine|oak/.test(q.key)) trees++;

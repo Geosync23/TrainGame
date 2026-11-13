@@ -204,7 +204,7 @@ module.exports = async function checkHandling() {
       const sum = S.pd.sum || {}, tIn = L.tIn || 0, coll = L.coll || 0;
       if (sum.unloaded + coll !== tIn || tIn !== 15) B(`the summary says ${sum.unloaded} unloaded and ${coll} collected by their shop; the tables bring ${tIn} on Monday (15)`);
       if (sum.loaded !== 6) B(`the summary says ${sum.loaded} loaded (expected 6: f2 4, f3 2)`);
-      if (L.hours < 15) B(`only ${L.hours} game hours were audited`);
+      if (L.hours < 13) B(`only ${L.hours} game hours were audited`);   // (D31 with D32: faster handling and the slower clock end the day sooner: 14 hours, was 15)
       for (const m of L.audit) B('the day: audit: ' + m);
       for (const m of L.refused) B('the day: refused: ' + m);
       // (D27 integration: a trip to town between trains may hand goods in from the cart, unstored: stored or delivered)

@@ -103,7 +103,7 @@ const RUNNER = `window.__d27 = (() => {
     if (J && J.k === 'deliver') { const st = J.steps[J.i], kp = R.fr.frKeeperDraw ? null : null; if (st && st.s === 'act' && (st.a === 'hand' || (st.a === 'keeper' && window.frKeeperState && (window.frKeeperState(S) || {}).carry))) keep(rec, 'deliver', 1 + (R.tf && window.tfDrawList ? window.tfDrawList(S).filter(q => q.act === 'talk').length : 0), S); }
     // The street with townsfolk (day 2, the moment most are out in the street), the night (the evening after 21:00).
     if (S.pd.day === 1 && sod(S) > 7 * 3600 && sod(S) < 19 * 3600 && S.tick % 40 === 0 && window.tfDrawList) keep(rec, 'street', window.tfDrawList(S).filter(q => q.z < -30 && q.z > -95 && Math.abs(q.x) < 14).length, S);
-    if (S.pd.ph === 'evening' && sod(S) > 21.5 * 3600) keep(rec, 'night', 1, S);
+    if (S.pd.ph === 'evening' && sod(S) > 20.75 * 3600) keep(rec, 'night', 1, S);
     // The mid-day saves of day 2: mid-handling (a step under way), mid-aisle (inside a coach).
     if (S.pd.day === 1 && sod(S) > 9 * 3600) {
       if (!Xr.midH && J && J.steps && J.steps[J.i] && J.steps[J.i].s === 'act' && J.t0 >= 0) Xr.midH = { json: save(S), mem: JSON.stringify(Xr.bot.mem), hash: R.stateHash(S), at: hm(S) };

@@ -54,7 +54,12 @@ async function checkTrains(problems, notes) {
     if (!(m.moveFrames > 200)) P(`the train moved in only ${m.moveFrames} frames`);
     const unblended = r.rec.filter(q => q.blend === false && Math.abs(q.v) > 1e-3).length;
     if (unblended) P(`${unblended} frames drew the running train at its tick position (not blended)`);
-    if (m.jumps) P(`a car jumped ${m.jumps} times (a frame's drawn step more than its exact step + ${TP.JUMP_PX} px; largest step ${m.carStepMax} px)`);
+    // D32 (the slower clock, 5 ticks a real second): re-measured. In 'walk' the engine takes one diagonal pixel step (2, 2:
+    // 2.83 px) as it leaves the straight for the leg's curve (its line on the rails moves over by a pixel there). At 7.5
+    // ticks a second the exact motion in that frame (0.69 px) kept it under the limit (exact + 2.3); at 5 it is 0.46 px,
+    // so the same step counts once. One such step is allowed there; the limit itself is unchanged.
+    const jumpsOk = setup === 'walk' && speed === 1 ? 1 : 0;
+    if (m.jumps > jumpsOk) P(`a car jumped ${m.jumps} times (a frame's drawn step more than its exact step + ${TP.JUMP_PX} px; largest step ${m.carStepMax} px)`);
     if (m.backSteps) P(`a car stepped backwards against its motion ${m.backSteps} times`);
     if (m.stepEvenMax > (speed > 1 ? 2.3 : 1.8)) P(`a car's steps were uneven: a drawn step against the exact motion since its last step differed by ${m.stepEvenMax} px (a step along the rails is 2.24 px)`);
     if (m.stillOver) P(`a car stood still on screen while the sim moved it more than ${TP.STILL_PX} px (${m.stillOver} frames, up to ${m.worstStillMs} ms)`);
@@ -133,11 +138,11 @@ module.exports = async function checkSmooth() {
         await page.waitForTimeout(250);
         await page.screenshot({ path: require('./browser').screenshotPath(`d29-smooth-${name}-close-${orient}`) });
       };
-      let ok = await until('d27coach', (R, s) => { if (!s.pb.job && !s.player.in && !s._sent) { s._sent = 1; R.send({ t: 'pbPunch', stock: s.pax.list.find(p => p.s === 'sitting' && !p.punched && !p.through && p.to !== 'hub').stock }); } const J = s.pb.job; return !!(J && J.k === 'punch' && J.on && J.acc > 0); });
+      let ok = await until('d27coach', (R, s) => { if (!s.pb.job && !s.player.in && !s._sent) { s._sent = 1; R.send({ t: 'pbPunch', stock: s.pax.list.find(p => p.s === 'sitting' && !p.punched && !p.through && p.to !== 'hub').stock }); } const J = s.pb.job; return !!(J && J.k === 'punch' && J.on && J.acc >= 0); });   // D32: a punch is one tick under the slower clock (the ticket held out, then punched), so there is no tick with it half done
       await shot('coach-punch', ok);
       ok = await until(null, (R, s) => s.pb.tot.punched > 0, 50);
       await shot('coach-next', ok);
-      ok = await until('d27freight', (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; return !!(st && st.a === 'pick' && J.t0 >= 0 && s.time - J.t0 > 0); }, 600);
+      ok = await until('d27freight', (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; return !!(st && st.a === 'pick' && J.t0 >= 0 && s.time - J.t0 >= 0); }, 600);   // D32: a lift is one tick now (as above)
       await shot('freight-lift', ok);
       ok = await until(null, (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; const tg = R.fr.frTarget(s); return !!(st && (st.s === 'walk' || st.s === 'go') && tg && tg.a === 'put' && Math.hypot(tg.x - s.player.x, tg.z - s.player.z) < 5); }, 600);
       await shot('freight-carry', ok);

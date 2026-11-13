@@ -6619,15 +6619,302 @@ function cwCheckSaveShape(st) { if (st.cw !== undefined && (!st.cw || typeof st.
 
 // ==== Section: on the line (D32) ====
 // Owner: Play (plans/d32-tech.md 1.6 and section 7: riding out and back, walking among the men, joining in, the
-// lessons). Prefixes lp, LP, lg, LG; store S.lp. UNTIL PLAY LANDS these are Foundation's empty stand-ins: there is no
-// player on the line (lpPose is null: the line's view looks where the dev panel's "Look at the line" puts it and a
-// drag moves it), and the commands lpRide, lpBack, lpWalk, lpJoin, lpLeave and lgDone do nothing.
-function lpTick(S, ev) {}
-function lpCmd(S, c, ev) {}
-function lpTap(x, z, hit) { return false; }                  // a tap at the line's point (x, z) while the line is in view; true if it took it
-function lpPose(S) { return null; }                          // { x, y, z, f, act, tool?, riding? } or null when not on the line
-function lpHud() { return null; }                            // the line's top bar and overlays (Play); null: Foundation's plain bar
-function lpCheckSaveShape(st) { if (st.lp !== undefined && (!st.lp || typeof st.lp !== 'object')) throw new Error('damaged save: on the line'); }
+// lessons). Prefixes lp, LP, lg, LG; store S.lp. Stage 1: riding out and back, the player on the line in person,
+// walking by touch (the page side, lpTap, lpHud and the Look card, is the block "Line (D32)" in "HUD and panels").
+// Joining in (lpJoin, lpLeave, lgDone) is stage 2: those commands do nothing yet.
+//
+// S.lp (absent: the player is at the station as always) = { ph, dir?, x, z, f, mv?, tx?, tz?, home?, pts? }
+//   ph 'muster'   at the station, walking to the muster (the station's own walk, P.mode 'to') and waiting for the train
+//      'board'    at the station, walking the plank walk to the crew car's steps (pts: what is left of the walk)
+//      'aboardS'  at the station in the crew car (dir 'out': standing, then leaving; 'home': backing in)
+//      'ride'     on the line in the crew car, running out to the railhead
+//      'line'     on the line in person: x, z, f (line units), walking to tx, tz (mv: he moved this tick); home: he is
+//                 walking to the crew car's steps to ride home
+//      'aboardL'  on the line in the crew car, waiting for 18:20 and riding home
+//      'alight'   at the station, off the evening train, walking the plank walk to the muster (pts)
+//   From the Ride out command until he is back at the muster S.player.away is 'line' (so the station's player takes no
+//   commands: Foundation's awRefuse), and while he is on the line the station's player is parked at the muster.
+//   While riding, x and z are where the view looks: the crew car, or, while the view is dark, the point it fades in at.
+// Everything follows the work train's phase (S.ln.tr.ph), so a save made at any moment loads into the same moment.
+const LP = {
+  MX: -43, MZ: -13,                 // the muster's middle (PROTO.MUSTER), where he waits and is parked while away
+  PLANK_TOP: -10.0,                 // the plank walk's north end, beside the muster (PROTO.PLANK runs z -9.4 to -2.6)
+  BESIDE: 3.4,                      // on the line he steps down this far south of the track, by the crew car's steps
+  PAD: 0.45,                        // how close to a car's side or end he walks
+  FADE_S: 40,                       // a fade, in game seconds (one real second at 1x)
+  HOME_S: 120,                      // riding home: the view watches the train pull away this long, then fades
+  SUB: 0.41,                        // the longest step checked at once (as the station's PLAYER_SUB_U)
+  PHASES: ['muster', 'board', 'aboardS', 'ride', 'line', 'aboardL', 'alight'],
+};
+const lpCl = v => Math.max(0, Math.min(1, v));
+// The work train on the line as one box (its cars stand end to end on z 0), padded by LP.PAD, or null.
+function lpTrainBox(S, T) {
+  T = T || lnTrain(S);
+  if (T.at !== 'line' || !T.cars.length) return null;
+  const wid = c => ((c.k === 'loco' ? PROTO_STOCK.loco : PROTO_STOCK.cars[c.k] || PROTO_STOCK[c.k]) || { wid: 4 }).wid || 4;
+  return { x0: T.cars[T.cars.length - 1].x0 - LP.PAD, x1: T.cars[0].x1 + LP.PAD, z: Math.max(...T.cars.map(wid)) / 2 + LP.PAD };
+}
+const lpInBox = (B, x, z) => !!B && x > B.x0 && x < B.x1 && Math.abs(z) < B.z;
+// Does the segment from (x, z) to (tx, tz) pass through the box's inside?
+function lpSegHits(B, x, z, tx, tz) {
+  if (!B) return false;
+  let t0 = 0, t1 = 1;
+  const e = 1e-6;
+  for (const [p, d, lo, hi] of [[x, tx - x, B.x0 + e, B.x1 - e], [z, tz - z, -B.z + e, B.z - e]]) {
+    if (Math.abs(d) < 1e-12) { if (p <= lo || p >= hi) return false; continue; }
+    let a = (lo - p) / d, b = (hi - p) / d;
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+    if (t0 >= t1) return false;
+  }
+  return true;
+}
+// The next point to walk to from (x, z) on the way to (tx, tz): straight there, or round the nearer end of the train.
+function lpNext(B, x, z, tx, tz) {
+  if (!lpSegHits(B, x, z, tx, tz)) return [tx, tz];
+  const zz = B.z + 0.25, sa = z >= 0 ? 1 : -1, sb = tz >= 0 ? 1 : -1;
+  let best = null;
+  for (const E of [B.x0 - 0.3, B.x1 + 0.3]) {
+    const len = Math.hypot(E - x, sa * zz - z) + Math.abs(sa - sb) * zz + Math.hypot(tx - E, tz - sb * zz);
+    if (!best || len < best.len) best = { len, c1: [E, sa * zz], c2: [E, sb * zz] };
+  }
+  return lpSegHits(B, x, z, best.c2[0], best.c2[1]) ? best.c1 : best.c2;
+}
+// A point inside the train's box moved out to the nearer side he can stand on (unchanged if it is clear).
+function lpOutOfBox(S, B, x, z) {
+  if (!lpInBox(B, x, z)) return [x, z];
+  const s = z >= 0 ? 1 : -1;
+  for (const zz of [s * (B.z + 0.05), -s * (B.z + 0.05)]) if (lnWalkable(S.seed, x, zz, S.ln.f[1])) return [x, zz];
+  return [x, s * (B.z + 0.05)];
+}
+// Where a straight walk from (x, z) towards (tx, tz) ends: the last point he can stand on before a natural border,
+// the water or the strip's end (the train is walked round, not stopped at).
+function lpClampWalk(S, x, z, tx, tz) {
+  const n = Math.ceil(Math.hypot(tx - x, tz - z) / 0.2), f2 = S.ln.f[1];
+  let lx = x, lz = z;
+  for (let i = 1; i <= n; i++) {
+    const px = x + (tx - x) * i / n, pz = z + (tz - z) * i / n;
+    if (!lnWalkable(S.seed, px, pz, f2)) break;
+    lx = px; lz = pz;
+  }
+  return [lx, lz];
+}
+// The crew car's middle on the line (where the view rides) at the second of the day sod, or null.
+function lpCarPoint(S, sod) {
+  const T = lnTrain(S, sod), c = T.at === 'line' ? T.cars[T.cars.length - 1] : null;
+  return c ? { x: (c.x0 + c.x1) / 2, z: 0, steps: T.steps } : null;
+}
+// The second of the day the morning ride's view fades in: the train 120u from its stop, braking in.
+const lpFadeInAt = L => (L.tr.ta !== undefined ? L.tr.ta : LINE.T.OFF + (LINE.OUT_MIN + LINE.OUT_PER) * 60) - LINE.SLOW_U / LINE.SLOW_V * 60;
+// How dark the view is (0 clear, 1 black) at the second of the day sod: the rides' fades, from the state alone, so a
+// reload mid-ride shows the same.
+function lpFade(S, sod) {
+  const Q = S && S.lp, L = S && S.ln;
+  if (!Q || !L) return 0;
+  const T = LINE.T, tr = L.tr, F = LP.FADE_S, he = tr.he || 0;
+  if (Q.ph === 'aboardS') return Q.dir === 'home' ? (tr.ph === 'eIn' ? 1 - lpCl((sod - (T.EIN + he)) / F) : tr.ph === 'gap' ? 1 : 0) : tr.ph === 'sOut' ? lpCl((sod - (T.OFF - F)) / F) : 0;
+  if (Q.ph === 'ride') return tr.ph === 'out' ? 1 - lpCl((sod - lpFadeInAt(L)) / F) : 0;
+  if (Q.ph === 'aboardL') return tr.ph === 'back' ? lpCl((sod - (T.AWAY + LP.HOME_S)) / F) : tr.ph === 'gap' ? 1 : 0;
+  return 0;
+}
+// The player on the line in person at once, beside the crew car's steps (or where the train will stand), the
+// station's player parked at the muster.
+function lpSetDown(S, ev, how) {
+  const L = S.ln, P = S.player, T = lnTrain(S);
+  let x;
+  if (T.at === 'line') x = T.steps.x;
+  else x = (L.tr.ph === 'out' && L.tr.x1 !== undefined ? L.tr.x1 : wtStandM(L)) * LINE.M - LINE.TRAIN_LEN + 0.7;
+  x = Math.max(LINE.X0 + 2, Math.min(LINE.X1 - 2, x));
+  let z = LP.BESIDE;
+  for (const zz of [LP.BESIDE, 3.0, -LP.BESIDE, -3.0, 0]) if (lnWalkable(S.seed, x, zz, L.f[1])) { z = zz; break; }
+  S.lp = { ph: 'line', x, z, f: 0 };
+  P.away = 'line'; Object.assign(P, { x: LP.MX, z: LP.MZ, mode: 'idle', use: null });
+  lnSetView(S, 'line');
+  ev.push({ t: 'lpOnLine', how: how || 'now' });
+}
+// Back at the station at once: at the muster, the station in view.
+function lpHomeNow(S, ev) {
+  const P = S.player;
+  lnSetView(S, 'station');
+  Object.assign(P, { x: LP.MX, z: LP.MZ, f: Math.PI, mode: 'idle', use: null });
+  delete P.away; delete S.lp;
+  ev.push({ t: 'lpHome' });
+}
+// Walks the station's player along the points left in Q.pts (the plank walk) at his walking pace; true when done.
+function lpWalkPts(S, Q) {
+  const P = S.player;
+  let left = playerWalkSpeed(S.track, false) * DT_MIN;
+  while (Q.pts.length && left > 1e-9) {
+    const [px, pz] = Q.pts[0], d = Math.hypot(px - P.x, pz - P.z);
+    if (d <= left) { if (d > 1e-9) P.f = Math.atan2(px - P.x, pz - P.z); P.x = px; P.z = pz; left -= d; Q.pts.shift(); continue; }
+    P.f = Math.atan2(px - P.x, pz - P.z); P.x += (px - P.x) / d * left; P.z += (pz - P.z) / d * left; left = 0;
+  }
+  return !Q.pts.length;
+}
+// One tick of walking on the line: straight, round the train, stopped where he cannot stand.
+function lpWalkTick(S, Q, B, ev) {
+  delete Q.mv;
+  if (Q.tx === undefined) return;
+  const f2 = S.ln.f[1];
+  if (lpInBox(B, Q.tx, Q.tz)) [Q.tx, Q.tz] = lpOutOfBox(S, B, Q.tx, Q.tz);   // (the train moved up onto where he was going)
+  let left = playerWalkSpeed(S.track, false) * DT_MIN;
+  for (let g = 0; g < 40 && left > 1e-9; g++) {
+    const [nx, nz] = lpNext(B, Q.x, Q.z, Q.tx, Q.tz), d = Math.hypot(nx - Q.x, nz - Q.z);
+    if (d < 1e-9) break;
+    const s = Math.min(left, LP.SUB, d), x = s === d ? nx : Q.x + (nx - Q.x) / d * s, z = s === d ? nz : Q.z + (nz - Q.z) / d * s;
+    if (!lnWalkable(S.seed, x, z, f2) || lpInBox(B, x, z)) { delete Q.tx; delete Q.tz; ev.push({ t: 'lpStopped' }); break; }
+    Q.f = Math.atan2(x - Q.x, z - Q.z); Q.x = x; Q.z = z; Q.mv = 1; left -= s;
+    if (x === Q.tx && z === Q.tz) break;
+  }
+  if (Q.tx !== undefined && Q.x === Q.tx && Q.z === Q.tz) { delete Q.tx; delete Q.tz; ev.push({ t: 'lpArrived' }); }
+}
+// The sim tick's step for the player on the line (after pbTick).
+function lpTick(S, ev) {
+  const Q = S.lp;
+  if (!Q) return;
+  const L = S.ln, P = S.player;
+  if (!L || !protoWorld(S.track)) { lpHomeNow(S, ev); return; }
+  const T = LINE.T, tr = L.tr, ph = tr.ph, sod = rrSod(S.time);
+  switch (Q.ph) {
+    case 'muster':
+      if (ph === 'sStand' && (Math.hypot(P.x - LP.MX, P.z - LP.MZ) < 1.5 || P.mode !== 'to')) {
+        // the train stands: over the plank walk to the crew car's steps
+        const st = lnTrain(S).steps;
+        Object.assign(P, { mode: 'idle', use: null });
+        Object.assign(Q, { ph: 'board', pts: [[st.x, LP.PLANK_TOP], [st.x, st.z]] });
+        ev.push({ t: 'lpBoarding' });
+      } else if (!(ph === 'sIn' || ph === 'sStand' || (ph === 'home' && L.run && sod < T.IN))) lpSetDown(S, ev, 'missed');   // the train has gone (or is not coming): there at once
+      break;
+    case 'board':
+      if (ph !== 'sStand' || lpWalkPts(S, Q)) { delete Q.pts; Object.assign(Q, { ph: 'aboardS', dir: 'out' }); ev.push({ t: 'lpAboard' }); }
+      break;
+    case 'aboardS':
+      if (Q.dir === 'home') {
+        if (ph === 'eStand' || ph === 'eOut' || ph === 'home') {
+          // off the evening train at the steps, over the plank walk to the muster
+          const K = PROTO.PLANK;
+          Object.assign(P, { x: K.x, z: K.z1, f: Math.PI, mode: 'idle', use: null });
+          Object.assign(Q, { ph: 'alight', pts: [[K.x, LP.PLANK_TOP], [LP.MX, LP.MZ]] });
+          delete Q.dir;
+          ev.push({ t: 'lpAlight' });
+        } else if (ph !== 'eIn' && ph !== 'gap') lpHomeNow(S, ev);
+      } else if (ph === 'out') {
+        // the train has left the map: the view goes to the line, dark until the train brakes in at the railhead
+        Object.assign(P, { x: LP.MX, z: LP.MZ, mode: 'idle', use: null });
+        Q.ph = 'ride'; delete Q.dir;
+        const c = lpCarPoint(S, Math.max(sod, lpFadeInAt(L)));
+        if (c) { Q.x = c.x; Q.z = c.z; } else { Q.x = 0; Q.z = 0; }
+        lnSetView(S, 'line');
+        ev.push({ t: 'lpRiding', dir: 'out' });
+      } else if (ph !== 'sStand' && ph !== 'sOut') lpSetDown(S, ev, 'missed');
+      break;
+    case 'ride':
+      if (ph === 'stand') {
+        // the train has stopped at the railhead: he steps down beside the crew car's steps
+        const st = lnTrain(S).steps;
+        Object.assign(Q, { ph: 'line', x: st.x, z: LP.BESIDE, f: 0 });
+        if (!lnWalkable(S.seed, Q.x, Q.z, L.f[1])) Q.z = st.z + 0.1;
+        ev.push({ t: 'lpOnLine', how: 'train' });
+      } else if (ph === 'out') { const c = lpCarPoint(S, Math.max(sod, lpFadeInAt(L))); if (c) { Q.x = c.x; Q.z = c.z; } }
+      else lpSetDown(S, ev, 'missed');
+      break;
+    case 'line': {
+      const Tn = lnTrain(S), B = lpTrainBox(S, Tn);
+      if (lpInBox(B, Q.x, Q.z)) [Q.x, Q.z] = lpOutOfBox(S, B, Q.x, Q.z);   // the train moved up onto him: he steps aside
+      if (Q.home) {
+        if (ph !== 'stand') { delete Q.home; delete Q.tx; delete Q.tz; ev.push({ t: 'lpRefused', why: 'The work train has gone without you. "Back now" takes you to the station.' }); }
+        else { Q.tx = Tn.steps.x; Q.tz = Tn.steps.z + 0.2; }
+      }
+      lpWalkTick(S, Q, B, ev);
+      if (Q.home && Q.tx === undefined) {
+        delete Q.home;
+        if (Math.hypot(Q.x - Tn.steps.x, Q.z - Tn.steps.z) < 0.8) { delete Q.mv; Q.ph = 'aboardL'; const c = lpCarPoint(S); Q.x = c.x; Q.z = c.z; ev.push({ t: 'lpAboard' }); }
+        else ev.push({ t: 'lpRefused', why: 'Something is in the way of the crew car.' });
+      }
+      break;
+    }
+    case 'aboardL':
+      if (ph === 'stand' || ph === 'back') { if (lpFade(S, sod) < 1) { const c = lpCarPoint(S); if (c) { Q.x = c.x; Q.z = c.z; } } }
+      else if (ph === 'eIn') {
+        // the train backs in at the station: the view goes back there
+        Object.assign(Q, { ph: 'aboardS', dir: 'home' });
+        lnSetView(S, 'station');
+        ev.push({ t: 'lpRiding', dir: 'home' });
+      } else if (ph !== 'gap') lpHomeNow(S, ev);
+      break;
+    case 'alight':
+      if (lpWalkPts(S, Q)) { Object.assign(P, { mode: 'idle', use: null }); delete P.away; delete S.lp; ev.push({ t: 'lpHome' }); }
+      break;
+    default: lpHomeNow(S, ev);
+  }
+}
+// The commands: lpRide { how: 'train' | 'now' }, lpBack { how: 'train' | 'now' }, lpWalk { x, z } (hundredths of a
+// line unit, as walkTo's). lpJoin, lpLeave, lgDone: stage 2.
+function lpCmd(S, c, ev) {
+  if (!protoWorld(S.track)) return;
+  const no = why => ev.push({ t: 'lpRefused', why }), P = S.player, L = S.ln, Q = S.lp;
+  if (c.t === 'lpRide') {
+    if (!L) return no('The line is not being built: choose a rail crew in the dev panel first.');
+    if (Q && !/^(muster|board|aboardS|ride)$/.test(Q.ph)) return no('You are out on the line already.');
+    if (!Q && (P.ride || P.in)) return no('Step off the train first.');
+    if (!Q && (carryHeld(S).length || (P.tool !== null && P.tool !== undefined))) return no('Put down what you are carrying first.');
+    const ph = L.tr.ph, sod = rrSod(S.time);
+    if (!Q && c.how !== 'now' && L.run && (ph === 'sIn' || ph === 'sStand' || (ph === 'home' && sod < LINE.T.IN))) {
+      S.lp = { ph: 'muster' };
+      P.away = 'line'; Object.assign(P, { mode: 'to', tx: LP.MX, tz: LP.MZ, use: null });
+      ev.push({ t: 'lpMuster' });
+      return;
+    }
+    if (Q && c.how !== 'now') return;
+    lpSetDown(S, ev, c.how === 'now' ? 'now' : 'gone');
+    return;
+  }
+  if (!Q) return;
+  if (c.t === 'lpBack') {
+    if (c.how === 'train') {
+      if (Q.ph !== 'line') return;
+      if (L.tr.ph !== 'stand' || rrSod(S.time) >= LINE.T.AWAY) return no('The work train is not standing at the railhead.');
+      Q.home = 1;
+      ev.push({ t: 'lpToTrain' });
+      return;
+    }
+    lpHomeNow(S, ev);
+    return;
+  }
+  if (c.t === 'lpWalk') {
+    if (Q.ph !== 'line' || !Number.isFinite(c.x) || !Number.isFinite(c.z)) return;
+    let tx = c.x / 100, tz = c.z / 100;
+    const B = lpTrainBox(S);
+    if (lpInBox(B, tx, tz)) [tx, tz] = lpOutOfBox(S, B, tx, tz);
+    if (!lpSegHits(B, Q.x, Q.z, tx, tz) || !lnWalkable(S.seed, tx, tz, L.f[1])) [tx, tz] = lpClampWalk(S, Q.x, Q.z, tx, tz);
+    delete Q.home;
+    if (Math.hypot(tx - Q.x, tz - Q.z) < 0.05) { delete Q.tx; delete Q.tz; ev.push({ t: 'lpStopped' }); return; }
+    Q.tx = tx; Q.tz = tz;
+    return;
+  }
+  // lpJoin, lpLeave, lgDone: the join-in games (stage 2)
+}
+// For the renderer and pixFocus: { x, y, z, f, act, riding? } in line units, or null when he is not on the line. sod
+// (optional): the second of the day the frame is drawn at, so the view rides with the train as it is drawn.
+function lpPose(S, sod) {
+  const Q = S && S.lp;
+  if (!Q) return null;
+  if (Q.ph === 'line') return { x: Q.x, y: 0, z: Q.z, f: Q.f, act: Q.mv ? 'walk' : 'idle' };
+  if (Q.ph === 'ride' || Q.ph === 'aboardL') {
+    if (sod !== undefined && lpFade(S, sod) < 1) { const c = lpCarPoint(S, sod); if (c) return { x: c.x, y: 0, z: c.z, f: 0, act: 'idle', riding: true }; }
+    return { x: Q.x, y: 0, z: Q.z, f: 0, act: 'idle', riding: true };
+  }
+  return null;
+}
+function lpCheckSaveShape(st) {
+  if (st.lp === undefined) return;
+  const Q = st.lp, num = v => typeof v === 'number' && Number.isFinite(v), bad = () => { throw new Error('damaged save: on the line'); };
+  if (!Q || typeof Q !== 'object' || !LP.PHASES.includes(Q.ph)) bad();
+  if (!st.player || st.player.away !== 'line') bad();
+  if (/^(ride|line|aboardL)$/.test(Q.ph) && (!num(Q.x) || !num(Q.z))) bad();
+  if (Q.tx !== undefined && (!num(Q.tx) || !num(Q.tz))) bad();
+  if (Q.pts !== undefined && (!Array.isArray(Q.pts) || Q.pts.some(p => !Array.isArray(p) || !num(p[0]) || !num(p[1])))) bad();
+}
 
 // ==== Section: economy ====
 // Owner: M1 package 3 (builder C1). Cash, the Overland market, import orders by telegraph, contracts, the
@@ -18334,7 +18621,7 @@ const $ = id => document.getElementById(id);
 let toastTimer = 0;
 function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
 function handleEvent(e) {
-  if (e.t === 'dvRefused' || e.t === 'awRefused') { toast(e.why); return; }   // D32
+  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { toast(e.why); return; }   // D32
   if (pdUiOn() && pdEventFirst(e)) return;   // D25 (U): the prototype's switch and train names
   if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
@@ -21527,6 +21814,181 @@ $('lnBarW').addEventListener('click', () => { if (PIX.lnLook) pixLnLookAt(PIX.ln
 $('lnBarE').addEventListener('click', () => { if (PIX.lnLook) pixLnLookAt(PIX.lnLook.x / LINE.M + 60, PIX.lnLook.z); });
 $('lnBarHead').addEventListener('click', () => { if (S.ln) pixLnLookAt(pixLnHeadM(), 0); });
 
+// ---- Line (D32) ----
+// Owner: Play (plans/d32-tech.md 1.6 and 11.5). The page's side of "on the line (D32)": the dev panel's buttons
+// (dvAddRow), the line's top bar while the player is out there in person (in place of Foundation's look-point bar,
+// which stays for the dev panel's "Look at the line"), the rides' fades, a tap on the line (lpTap: walk, or a Look
+// card for a man or his gang) and the station's view riding with the crew car. Everything shown is worked out from the
+// state each frame, so a reload shows the same. The elements are made here (#lpBar, #lpFade, #lpCard, class lnHud so
+// the page class `line` leaves them up).
+const lpUi = { bar: null, fade: null, card: null, cardFor: null, cardSig: '', cardT: 0, sig: '', flash: -1e9, view: null };
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `
+  #lpBar { left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 76px); top: 64px; z-index: 3; background: var(--paper);
+    border: 2px solid var(--edge); border-radius: 10px; padding: 6px 8px; display: grid; gap: 6px; box-sizing: border-box; max-width: 520px; }
+  #lpBar[hidden], #lpCard[hidden], #lpFade[hidden] { display: none; }
+  #lpBar, #lpCard, #lpFade { font-family: "Trebuchet MS", "DejaVu Sans", Verdana, sans-serif; }
+  #lpBarText { font-size: 14px; line-height: 1.25; color: var(--ink); }
+  #lpBarText small { display: block; font-size: 12.5px; color: #5a4a3a; }
+  #lpBarRow { display: flex; gap: 6px; flex-wrap: wrap; } #lpBarRow button { flex: 1 1 auto; min-height: 44px; font-size: 14px; padding: 0 10px; }
+  #lpBarRow button[hidden] { display: none; }
+  #lpFade { inset: 0; z-index: 2; background: #0d0b09; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  #lpFadeText { color: #e8dcc2; font-size: 16px; text-align: center; padding: 0 24px; }
+  #lpCard { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 10px); width: min(94vw, 380px); max-height: 48vh; overflow-y: auto; z-index: 4;
+    background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 8px 10px; box-sizing: border-box; color: var(--ink); }
+  #lpCard .row { display: flex; gap: 6px; align-items: center; } #lpCard h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; }
+  #lpCard button { min-width: 44px; min-height: 44px; font-size: 14px; }
+  #lpCardBody { font-size: 14px; line-height: 1.35; margin-top: 4px; } #lpCardBody .lpStam { display: inline-block; width: 90px; height: 10px; border: 1px solid var(--edge); vertical-align: middle; margin-right: 6px; }
+  #lpCardBody .lpStam i { display: block; height: 100%; background: #6f8f3a; }
+  @media (orientation: landscape) and (max-height: 500px) { #lpCard { left: auto; transform: none; right: calc(env(safe-area-inset-right) + 76px); width: 340px; max-height: calc(100vh - 20px); } }`;
+  document.head.appendChild(css);
+  const mk = (id, html) => { const d = document.createElement('div'); d.id = id; d.className = 'hud lnHud'; d.hidden = true; d.innerHTML = html; document.body.appendChild(d); return d; };
+  lpUi.fade = mk('lpFade', '<div id="lpFadeText"></div>');
+  lpUi.bar = mk('lpBar', '<div id="lpBarText" role="status"></div><div id="lpBarRow"><button id="lpBtnHome">Ride home</button><button id="lpBtnBack">Back now</button><button id="lpBtnSkip">Skip the ride</button><button id="lpBtnCentre">Centre</button></div>');
+  lpUi.card = mk('lpCard', '<div class="row"><h2 id="lpCardTitle"></h2><button id="lpCardGang">Gang</button><button id="lpCardClose" aria-label="Close">X</button></div><div id="lpCardBody"></div>');
+  lpUi.card.setAttribute('role', 'dialog');
+  $('lpBtnHome').addEventListener('click', () => send({ t: 'lpBack', how: 'train' }));
+  $('lpBtnBack').addEventListener('click', () => { lpCloseCard(); send({ t: 'lpBack', how: 'now' }); });
+  $('lpBtnSkip').addEventListener('click', () => { const Q = S.lp; send(Q && /^(aboardS|alight)$/.test(Q.ph) && (Q.dir === 'home' || Q.ph === 'alight') ? { t: 'lpBack', how: 'now' } : Q && Q.ph === 'aboardL' ? { t: 'lpBack', how: 'now' } : { t: 'lpRide', how: 'now' }); });
+  $('lpBtnCentre').addEventListener('click', () => { cam.ox = cam.oz = 0; });
+  $('lpCardClose').addEventListener('click', () => lpCloseCard());
+  $('lpCardGang').addEventListener('click', () => { const c = lpUi.cardFor; if (c && c.kind === 'man') { const k = lpStageOf(c.id); if (k >= 0) lpOpenCard('gang', k); } });
+  // The dev panel's buttons (Foundation's two stand-in rows go once these are added; "Look at the line" is kept here).
+  const busy = () => !!(S && S.lp), away = () => busy() && (!/^(muster|board|aboardS)$/.test(S.lp.ph) || S.lp.dir === 'home');   // (on the line, or riding home)
+  dvAddRow('ride', 'Ride out as a rail worker', () => { send({ t: 'lpRide', how: 'train' }); dvClose(); if (speed === 0) setSpeed(lastSpeed || 1); }, () => ({ hidden: busy(), disabled: !(S && S.ln) }));
+  dvAddRow('rideNow', 'Ride out now', () => { send({ t: 'lpRide', how: 'now' }); dvClose(); }, () => ({ hidden: away(), disabled: !(S && S.ln) }));
+  dvAddRow('backTrain', 'Come back with the evening train', () => { send({ t: 'lpBack', how: 'train' }); dvClose(); }, () => ({ hidden: !(S && S.lp && S.lp.ph === 'line'), disabled: !lpCanRideHome() }));
+  dvAddRow('backNow', 'Back to the station now', () => { lpCloseCard(); send({ t: 'lpBack', how: 'now' }); dvClose(); }, () => ({ hidden: !busy() }));
+  dvAddRow('look', 'Look at the line', () => { send({ t: 'dvSet', k: 'view', v: lnViewOn() ? 'station' : 'line' }); if (!lnViewOn()) PIX.lnLook = null; dvClose(); },
+    () => ({ hidden: busy(), disabled: !(S && S.ln), label: lnViewOn() ? 'Back to the station' : 'Look at the line' }));
+  const loop = () => { try { lpHudFrame(); } catch (e) { if (!lpUi.err) { lpUi.err = 1; console.error('line HUD: ' + (e && e.message)); } } requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+})();
+const lpCanRideHome = () => !!(S && S.lp && S.lp.ph === 'line' && S.ln && S.ln.tr.ph === 'stand' && rrSod(S.time) < LINE.T.AWAY);
+const lpClock = s => String(Math.floor(s / 3600) % 24).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0');
+// The second of the day the frame is drawn at (between the tick before and this one).
+const lpFrameSod = () => (typeof pixLnSod === 'function' ? pixLnSod(speed > 0 ? acc : 1) : rrSod(S.time));
+// Foundation's HUD asks each frame whether Play draws the line's bar: yes while the player is on the line in person.
+function lpHud() { return !!(S && S.lp && lnViewOn()); }
+// The station's view while he rides through it: the crew car's middle as drawn (pixPlayerPoint's hook), else null.
+function lpStationFocus(St) {
+  const Q = St && St.lp;
+  if (!Q || Q.ph !== 'aboardS' || !St.ln) return null;
+  const T = lnTrain(St, lpFrameSod()), c = T.at === 'station' ? T.cars[T.cars.length - 1] : null;
+  return c ? { x: (c.x0 + c.x1) / 2, y: 0, z: c.z || 0 } : null;
+}
+// Is the station's agent out of sight (in the crew car at the station)? (pixAgentItem's hook)
+function lpHideAgent(St) { return !!(St && St.lp && St.lp.ph === 'aboardS'); }
+// Each frame: the fade, the bar and the card.
+function lpHudFrame() {
+  if (!S) return;
+  const Q = S.lp, line = lnViewOn(), now = performance.now(), L = S.ln;
+  if (lpUi.view !== null && lpUi.view !== line) { lpUi.flash = now; cam.ox = cam.oz = 0; }   // a switch of the view: the screen fades in, on him
+  lpUi.view = line;
+  // The fade (dark while the ride is between the two places).
+  const sod = lpFrameSod(), k = Math.max(Q ? lpFade(S, sod) : 0, 1 - (now - lpUi.flash) / 450);
+  const fd = lpUi.fade;
+  if (k > 0.002) {
+    if (fd.hidden) fd.hidden = false;
+    const o = k.toFixed(3);
+    if (fd.style.opacity !== o) fd.style.opacity = o;
+    const txt = Q && k > 0.6 && Q.ph === 'ride' ? 'Riding out along the line to the railhead...' : Q && k > 0.6 && (Q.ph === 'aboardL' || (Q.ph === 'aboardS' && Q.dir === 'home')) ? 'Riding home along the line...' : '';
+    if ($('lpFadeText').textContent !== txt) $('lpFadeText').textContent = txt;
+  } else if (!fd.hidden) fd.hidden = true;
+  // The bar.
+  const bar = lpUi.bar;
+  if (!Q || !L) { if (!bar.hidden) bar.hidden = true; if (lpUi.cardFor) lpCloseCard(); return; }
+  const n = v => Math.floor(v).toLocaleString('en-US'), tr = L.tr, T = LINE.T;
+  let txt = '', sub = '', show = { home: false, back: false, skip: false, centre: false };
+  const homeAt = lpClock(T.AWAY);
+  if (Q.ph === 'muster') { txt = 'Riding out with the work train'; sub = tr.ph === 'sStand' ? `Walking to the muster by the water tower. The train leaves at ${lpClock(T.DEP)}.` : `Walking to the muster by the water tower. The train comes in at ${lpClock(T.ARR)} and leaves at ${lpClock(T.DEP)}.`; show.skip = true; show.back = true; }
+  else if (Q.ph === 'board') { txt = 'Boarding the crew car'; sub = `Away at ${lpClock(T.DEP)}.`; show.skip = true; }
+  else if (Q.ph === 'aboardS' && Q.dir !== 'home') { txt = 'In the crew car with the men'; sub = tr.ph === 'sStand' ? `Away at ${lpClock(T.DEP)}.` : 'Leaving for the line.'; show.skip = true; }
+  else if (Q.ph === 'ride') { txt = 'Riding out to the railhead'; sub = `${n(L.f[5])} m of track to the end of steel.`; show.skip = true; }
+  else if (Q.ph === 'line') {
+    txt = `On the line: ${n(L.f[5])} of ${n(LINE.LEN_M)} m spiked` + (L.on ? `, day ${L.days}` : L.done >= 0 ? ', finished' : '');
+    const H = lnHours(S);
+    sub = Q.home ? 'Walking to the crew car to ride home.' : tr.ph === 'stand' ? (H.meal ? 'The men are at their meal. ' : H.work ? 'The men are at work. ' : '') + `The work train goes home at ${homeAt}.` : tr.ph === 'out' ? 'The work train is on its way out.' : 'The work train has gone home: "Back now" takes you to the station.';
+    show.home = tr.ph === 'stand'; show.back = true; show.centre = Math.hypot(cam.ox, cam.oz) > 0.5;
+  } else if (Q.ph === 'aboardL') { txt = 'In the crew car'; sub = tr.ph === 'stand' ? `Home at ${homeAt}.` : 'Riding home.'; show.back = true; show.skip = tr.ph !== 'stand'; }
+  else if (Q.ph === 'alight') { txt = 'Back at the station'; sub = 'Off the work train, walking to the muster.'; }
+  else { txt = 'Riding home'; sub = 'The work train is backing in to the station.'; show.skip = true; }
+  const sig = [txt, sub, show.home, lpCanRideHome(), show.back, show.skip, show.centre].join('|');
+  if (sig !== lpUi.sig) {
+    lpUi.sig = sig;
+    $('lpBarText').innerHTML = '';
+    $('lpBarText').append(txt); const sm = document.createElement('small'); sm.textContent = sub; $('lpBarText').appendChild(sm);
+    $('lpBtnHome').hidden = !show.home; $('lpBtnHome').disabled = !lpCanRideHome(); $('lpBtnHome').textContent = `Ride home ${homeAt}`;
+    $('lpBtnBack').hidden = !show.back; $('lpBtnBack').textContent = Q.ph === 'muster' ? 'Stay here' : 'Back now';
+    $('lpBtnSkip').hidden = !show.skip; $('lpBtnCentre').hidden = !show.centre;
+  }
+  // Under the clock and the speed buttons; in a wide view beside them.
+  // (at the station below the Next job line too)
+  const tl = $('topleft').getBoundingClientRect(), nj = $('nextJob'), wide = line && window.innerWidth >= 600;
+  const below = Math.max(tl.bottom, !line && nj && !nj.hidden && nj.getClientRects().length ? nj.getBoundingClientRect().bottom : 0);
+  const top = Math.round(wide ? tl.top : below + 6) + 'px', left = wide ? Math.round(tl.right + 10) + 'px' : '';
+  if (bar.style.top !== top) bar.style.top = top;
+  if (bar.style.left !== left) bar.style.left = left;
+  if (bar.hidden) bar.hidden = false;
+  if (lpUi.cardFor && (Q.ph !== 'line' && Q.ph !== 'aboardL' || !line)) lpCloseCard();
+  if (lpUi.cardFor && now - lpUi.cardT > 400) { lpUi.cardT = now; lpCardRender(); }
+}
+// ---- The Look card for a man or a gang (the men are Crew's: cwDrawList and cwGang; a cwLook(S, id) giving
+// { name, stage, doing, stam } is used when Crew has one, else the draw list's own fields) ----
+function lpStageOf(id) {
+  for (let k = 0; k < 6; k++) if ((pixCall('cwGang', S, k) || []).some(m => String(m.id) === String(id))) return k;
+  const q = (pixCall('cwDrawList', S, 'line') || []).find(m => String(m.id) === String(id));
+  return q && Number.isInteger(q.stage) ? q.stage : -1;
+}
+const LP_ACT = { walk: 'walking', idle: 'standing by', work: 'at work', swing: 'swinging his tool', dig: 'digging', chop: 'felling trees', axe: 'felling trees', shovel: 'shovelling', carry: 'carrying', lift: 'lifting', sit: 'resting', rest: 'resting', eat: 'at his meal', meal: 'at his meal', sleep: 'asleep', board: 'climbing aboard', climb: 'climbing aboard', hammer: 'driving spikes', spike: 'driving spikes', talk: 'talking' };
+function lpManInfo(id) {
+  const q = (pixCall('cwDrawList', S, 'line') || []).find(m => String(m.id) === String(id)) || null;
+  const look = typeof cwLook === 'function' ? pixCall('cwLook', S, id) : null, o = look || {}, d = q || {};
+  const k = Number.isInteger(o.stage) ? o.stage : lpStageOf(id), st = [o.stam, d.stam, d.stamina].find(v => typeof v === 'number' && Number.isFinite(v));
+  return { found: !!(q || look), name: o.name || d.name || `Rail man ${id}`, stage: k, doing: o.doing || d.doing || LP_ACT[d.act] || d.act || 'standing by', stam: st === undefined ? null : Math.max(0, Math.min(1, st > 1 ? st / 100 : st)) };
+}
+function lpOpenCard(kind, id) { lpUi.cardFor = { kind, id }; lpUi.cardSig = ''; lpUi.card.hidden = false; lpCardRender(); }
+function lpCloseCard() { lpUi.cardFor = null; lpUi.cardSig = ''; if (lpUi.card) lpUi.card.hidden = true; }
+function lpCardRender() {
+  const c = lpUi.cardFor;
+  if (!c || !S.ln) { lpCloseCard(); return; }
+  const stam = v => v === null ? 'not known' : `<span class="lpStam"><i style="width:${Math.round(v * 100)}%"></i></span>${Math.round(v * 100)}%`, esc = t => String(t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+  let title, body, gangBtn = false;
+  if (c.kind === 'man') {
+    const m = lpManInfo(c.id);
+    if (!m.found) { lpCloseCard(); return; }
+    const gang = m.stage >= 0 ? (pixCall('cwGang', S, m.stage) || []).length : 0;
+    title = m.name; gangBtn = m.stage >= 0;
+    body = `Stage: ${m.stage >= 0 ? esc(LINE.STAGE_NAMES[m.stage]) + ` (a gang of ${gang})` : 'none'}<br>Doing: ${esc(m.doing)}<br>Stamina: ${stam(m.stam)}`;
+  } else {
+    const k = c.id, men = pixCall('cwGang', S, k) || [], H = lnHours(S), info = men.map(q => lpManInfo(q.id)), ss = info.map(i => i.stam).filter(v => v !== null);
+    title = `${LINE.STAGE_NAMES[k]} gang`;
+    body = `Men: ${men.length}<br>Front: ${Math.floor(S.ln.f[k]).toLocaleString('en-US')} m of ${LINE.LEN_M.toLocaleString('en-US')}<br>Now: ${H.work ? 'at work' : H.meal ? 'at their meal' : H.pack ? 'packing up' : 'off work'}`
+      + `<br>Stamina: ${ss.length ? stam(ss.reduce((a, b) => a + b, 0) / ss.length) + ' on average' : 'not known'}` + (info.length ? `<br><small>${info.slice(0, 10).map(i => esc(i.name)).join(', ')}${info.length > 10 ? ' and more' : ''}</small>` : '');
+  }
+  const sig = title + body + gangBtn;
+  if (sig === lpUi.cardSig) return;
+  lpUi.cardSig = sig;
+  $('lpCardTitle').textContent = title; $('lpCardBody').innerHTML = body; $('lpCardGang').hidden = !gangBtn;
+}
+// A tap on the line (Foundation's input branch, while the line is in view): a man (Crew's draw list, picked by his drawn
+// pixels) opens his card, the same man again his gang's; with a card open any other tap closes it; else a walk.
+// Without the player on the line (the dev panel's look point) nothing: Foundation's drag looks along the line.
+function lpTap(x, z, hit) {
+  const Q = S && S.lp;
+  if (!Q || !lnViewOn()) return false;
+  if (hit && hit.k === 'cw') {
+    const c = lpUi.cardFor;
+    if (c && c.kind === 'man' && String(c.id) === String(hit.id)) { const k = lpStageOf(hit.id); if (k >= 0) lpOpenCard('gang', k); }
+    else lpOpenCard('man', hit.id);
+    return true;
+  }
+  if (lpUi.cardFor) { lpCloseCard(); return true; }
+  if (Q.ph === 'line') send({ t: 'lpWalk', x: Math.round(x * 100), z: Math.round(z * 100) });
+  return true;
+}
+
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ndc(px, py) { return new THREE.Vector2(px / window.innerWidth * 2 - 1, -(py / window.innerHeight) * 2 + 1); }
@@ -23608,7 +24070,7 @@ PIX.toolAt = {};
 // pose F's handling step gives (frPose), else the D25 rules (punch, throw, push, carry, walk, idle), with what he holds.
 function pixAgentItem(alpha, L, goods, px, pz, inCar) {
   const Pl = S.player, C = PIX.COL;
-  if (Pl.ride) return null;
+  if (Pl.ride || (Pl.away && pixCall('lpHideAgent', S))) return null;   // (D32: in the work train's crew car)
   const pb = L.pbPose && Number.isFinite(L.pbPose.x) ? L.pbPose : null;
   const ax = pb ? pb.x : px, az = pb ? pb.z : pz;
   const wy = pb && Number.isFinite(pb.y) ? { y: pb.y, base: null } : inCar && !pb ? { y: inCar.car.floor || 1.6, base: null } : pixWalkerY('player', ax, az, typeof Pl.y === 'number' ? Pl.y : pixSimY(ax, az));
@@ -23880,6 +24342,8 @@ function pixSeeThrough() {
 function pixPlayerPoint(px, pz, L) {
   // D27 integration: on a train the agent is drawn at P's pose (pixAgentItem), so the view centres there.
   // (D29: the frame's blended pose when given, so the view glides with him in the aisle.)
+  const lr = S.player.away ? pixCall('lpStationFocus', S) : null;   // D32: riding through the station in the work train's crew car
+  if (lr) return pixProject(lr.x, lr.y, lr.z);
   const pb = L ? L.pbPose : pixCall('pbPlayerPose', S);
   if (pb && Number.isFinite(pb.x) && Number.isFinite(pb.y) && Number.isFinite(pb.z)) return pixProject(pb.x, pb.y, pb.z);
   const P = S.player, had = Object.prototype.hasOwnProperty.call(PIX.wy, 'player'), keep = PIX.wy.player;
@@ -24105,10 +24569,14 @@ PIX.lnStats = { built: 0, rebuilt: 0, ms: 0, worst: 0, missing: 0, stale: 0, ite
 // The second of the day a frame is drawn at (between the tick before and this one).
 function pixLnSod(alpha) { return rrSod(S.time) - (speed > 0 ? (1 - alpha) * CFG.TICK_GAME_S : 0); }
 // What the view follows: at the station the player; on the line the player there (Play), else the look point.
-function pixFocus() {
+function pixFocus(alpha) {
   if (!lnViewOn()) return { x: S.player.x, y: 0, z: S.player.z, place: 'station', player: true };
-  const p = pixCall('lpPose', S);
-  if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) return { x: p.x, y: p.y || 0, z: p.z, place: 'line', player: true };
+  // D32 (Play): with the frame's alpha, where he is drawn: between the tick before and this one, or riding with the train as drawn
+  const p = pixCall('lpPose', S, alpha === undefined ? undefined : pixLnSod(alpha));
+  if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) {
+    const pr = alpha !== undefined && !p.riding && speed > 0 && PIX.lnPrev ? PIX.lnPrev.get('lp') : null, near = pr && Math.hypot(p.x - pr[0], p.z - pr[1]) < PIX.LERP_MAX;
+    return { x: near ? lerp(pr[0], p.x, alpha) : p.x, y: p.y || 0, z: near ? lerp(pr[1], p.z, alpha) : p.z, place: 'line', player: true, riding: !!p.riding, moving: !!near && (pr[0] !== p.x || pr[1] !== p.z) };
+  }
   if (!PIX.lnLook || PIX.lnLookS !== S) { PIX.lnLookS = S; PIX.lnLook = { x: pixLnHeadM() * LINE.M, z: 0 }; }
   return { x: PIX.lnLook.x, y: 0, z: PIX.lnLook.z, place: 'line', player: false };
 }
@@ -24369,12 +24837,18 @@ function pixLnFrame(alpha, dt, t0) {
   const pan = 12 * dt * 60;
   if (keys.has('ArrowLeft')) pixPanBy(pan, 0); if (keys.has('ArrowRight')) pixPanBy(-pan, 0);
   if (keys.has('ArrowUp')) pixPanBy(0, pan); if (keys.has('ArrowDown')) pixPanBy(0, -pan);
-  const F = pixFocus(), cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const F = pixFocus(alpha), cl = (v, a, b) => Math.max(a, Math.min(b, v));
   if (!F.player) {   // no player on the line: a drag moves the look point itself
     PIX.lnLook.x = cl(F.x + cam.ox, LINE.X0, LINE.X1); PIX.lnLook.z = cl(F.z + cam.oz, -LINE.HALF_W - 30, LINE.HALF_W + 30);
     F.x = PIX.lnLook.x; F.z = PIX.lnLook.z; cam.ox = cam.oz = 0;
-  } else { cam.ox = cl(F.x + cam.ox, LINE.X0 - 20, LINE.X1 + 20) - F.x; cam.oz = cl(F.z + cam.oz, -LINE.HALF_W - 40, LINE.HALF_W + 40) - F.z; }
-  const q = pixProject(F.x + cam.ox, F.y, F.z + cam.oz), cx = Math.round(q.x) + 0.5 - vwF / 2, cy = Math.round(q.y) + 0.5 - vhF / 2;
+  } else {
+    if (F.moving && (cam.ox || cam.oz)) { const b = Math.exp(-dt / PIX.BACK_S); cam.ox *= b; cam.oz *= b; if (Math.hypot(cam.ox, cam.oz) < 0.1) cam.ox = cam.oz = 0; }   // D32 (Play): a look away eases back once he walks (the station's rule)
+    // (riding, the view is on the crew car; the look away is kept within the country beyond wherever he is)
+    if (F.riding) cam.ox = cam.oz = 0;
+    else { cam.ox = cl(F.x + cam.ox, Math.min(F.x, LINE.X0 - 20), Math.max(F.x, LINE.X1 + 20)) - F.x; cam.oz = cl(F.z + cam.oz, Math.min(F.z, -LINE.HALF_W - 40), Math.max(F.z, LINE.HALF_W + 40)) - F.z; }
+  }
+  // (D32, Play: on the player the camera sits between native pixels, as the station's: he stays in the middle and the ground glides)
+  const q = pixProject(F.x + cam.ox, F.y, F.z + cam.oz), cx = (F.player ? q.x : Math.round(q.x)) + 0.5 - vwF / 2, cy = (F.player ? q.y : Math.round(q.y)) + 0.5 - vhF / 2;
   PIX.camMove = PIX.camLast ? [cx - PIX.camLast[0], cy - PIX.camLast[1]] : [0, 0]; PIX.camLast = [cx, cy];
   pixCamSet(cx, cy);
   g.imageSmoothingEnabled = false;

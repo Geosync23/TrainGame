@@ -234,7 +234,7 @@ module.exports = async function checkD32World() {
       // one motion from the station to the railhead ('sOut' while it is on the station's map, then 'out'), standing
       // there a few minutes later; in the evening it holds just outside the junction ('gap') and backs in at 19:05.
       const wantLog = d33
-        ? ['06:05 wtPhase sIn', '06:15 wtPhase sStand', '06:40 wtPhase sOut', '06:42 wtPhase out', '06:44 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone']
+        ? ['06:22 wtPhase sOut', '06:24 wtPhase out', '06:26 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone']   // (D33: day 1 opens with the train already standing at the station, so its sIn and sStand are before the game begins)
         : ['06:20 wtPhase sOut', '06:25 wtPhase out', '06:45 wtPhase stand', '18:20 wtPhase back', '19:00 wtPhase gap', '19:05 wtPhase eIn', '19:15 wtPhase eStand', '19:35 wtPhase eOut', '19:45 wtPhase home', '22:00 hcDone'];
       if (first.map(l => l.replace(/^(22:00 hcDone) \d+\/\d+$/, '$1')).join('|') !== wantLog.join('|')) B('the work train\'s first day: ' + first.join(' | '));
       if (A.G.ln.log.length !== 2 || A.G.ln.log.some(q => !(q.m > 120))) B('the line\'s log: ' + JSON.stringify(A.G.ln.log));

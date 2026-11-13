@@ -23041,6 +23041,474 @@ function lpTap(x, z, hit) {
   return true;
 }
 
+// ---- Joining in (D32, Play stage 2; plan 7.1) ----
+// Owner: Play. The page's side of joining in: the Join button beside a gang, the game panel with Step out, and the six
+// games played by touch. Each game is a short round (a few seconds) that repeats while he stays; its result q (0 to
+// 100) goes to the sim as one command, lgDone { stage, q } (section "on the line (D32)": the worth, the cap, the lift).
+// The games keep their own clock (real time, stopped while the game is paused or a lesson's first card is up); their
+// random choices come from the game's seed and the round's number, never Math.random. A check can set the clock
+// (lgUi.clock) and drive a round by touches at exact times. Logical drawing box: 360 x 220 (scaled to fit the panel).
+const lgUi = { join: null, panel: null, cv: null, k: -1, r: null, rounds: 0, gt: 0, last: null, clock: null, fx: [], shake: 0, res: [], sig: '', left: false, ptr: null, box: null, sent: [] };
+const LGC = { W: 360, H: 220, GOOD: '#4f7f2a', FAIR: '#b98221', POOR: '#a8432f', INK: '#2b2118', PAPER: '#efe7d4', CHALK: '#f4f0e2', EARTH: '#8a6446', EARTH2: '#6d4c33', ROCK: '#8d8a82', ROCK2: '#6c6a64', GRASS: '#8e9f55', GRASS2: '#6f8240', WOOD: '#7a5233', WOOD2: '#5c3c24', STEEL: '#4b4f55', STEEL2: '#8f969c', SKY: '#e6dcc3' };
+const lgCol = q => q >= LG.GOOD ? LGC.GOOD : q >= LG.FAIR ? LGC.FAIR : LGC.POOR;
+const lgCl = (v, a, b) => Math.max(a, Math.min(b, v));
+// Timing: within 90 ms full marks, falling to none at 330 ms.
+const lgTimeS = e => e <= 90 ? 1 : e >= 330 ? 0 : 1 - (e - 90) / 240;
+// The round's random numbers: [0, 1) from the game's seed, the round and a salt (whole-number hashing, as rngFor).
+function lgRnd(salt) { const st = rngFor(S.seed, 'lg', lgUi.rounds, salt); return rngNext(st); }
+const lgT = () => lgUi.clock !== null ? lgUi.clock : lgUi.gt;
+// An atlas frame drawn into the panel at (x, y) (its anchor: between the feet), whole pixels scaled k.
+function lgSpr(g, key, x, y, k) {
+  const f = key && pixF(key);
+  if (!f) return false;
+  const [si, sx, sy, w, h, ax, ay] = f;
+  g.drawImage(PIXA.imgs[si], sx, sy, w, h, Math.round(x - ax * k), Math.round(y - ay * k), w * k, h * k);
+  return true;
+}
+const lgMan = (g, who, anim, dir, fr, x, y, k) => lgSpr(g, pixPersonKey(who, anim, dir, fr), x, y, k || 3);
+// Juice: chips, dust, sparks, rings and words, in the panel's box.
+function lgFx(kind, x, y, n, col, o) {
+  o = o || {};
+  for (let i = 0; i < n; i++) {
+    const a = (o.a !== undefined ? o.a : -Math.PI / 2) + ((i * 2.399) % 1 - 0.5) * (o.spread !== undefined ? o.spread : 2.4), v = (o.v || 120) * (0.6 + ((i * 0.618) % 1) * 0.8);
+    lgUi.fx.push({ kind, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: o.life || 600, col, size: o.size || 3, text: o.text, g: o.g !== undefined ? o.g : 420 });
+  }
+}
+const lgWord = (text, x, y, col) => lgUi.fx.push({ kind: 'word', x, y, vx: 0, vy: -30, t: 0, life: 900, col, size: 22, text, g: 0 });
+const lgRing = (x, y, col, r) => lgUi.fx.push({ kind: 'ring', x, y, vx: 0, vy: 0, t: 0, life: 380, col, size: r || 10, g: 0 });
+function lgFxDraw(g, dt) {
+  const out = [];
+  for (const p of lgUi.fx) {
+    p.t += dt; if (p.t >= p.life) continue;
+    p.vy += p.g * dt / 1000; p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000;
+    const a = 1 - p.t / p.life;
+    g.globalAlpha = Math.max(0, Math.min(1, a * 1.4));
+    if (p.kind === 'ring') { g.strokeStyle = p.col; g.lineWidth = 3; g.beginPath(); g.arc(p.x, p.y, p.size + (1 - a) * 26, 0, 7); g.stroke(); }
+    else if (p.kind === 'dust') { g.fillStyle = p.col; g.beginPath(); g.arc(p.x, p.y, p.size * (1 + (1 - a) * 2.5), 0, 7); g.fill(); }
+    else if (p.kind === 'word') { g.fillStyle = p.col; g.font = 'bold 22px Georgia, serif'; g.textAlign = 'center'; g.fillText(p.text, p.x, p.y); }
+    else { g.fillStyle = p.col; g.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size); }
+    out.push(p);
+  }
+  g.globalAlpha = 1;
+  lgUi.fx = out;
+}
+// Drawing helpers in the logical box.
+const lgRect = (g, x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
+function lgLine(g, x1, y1, x2, y2, c, w, dash) { g.strokeStyle = c; g.lineWidth = w || 2; g.setLineDash(dash || []); g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.setLineDash([]); }
+function lgText(g, t, x, y, c, size, al) { g.fillStyle = c || LGC.INK; g.font = `bold ${size || 16}px Georgia, serif`; g.textAlign = al || 'center'; g.fillText(t, x, y); }
+// A ring closing on a mark: from r0 at `from` to r1 at `at`.
+function lgCloser(g, x, y, t, from, at, r1, col) {
+  if (t < from || t > at + 120) return;
+  const p = lgCl((t - from) / (at - from), 0, 1), r = r1 + (1 - p) * 46;
+  g.strokeStyle = col || LGC.INK; g.lineWidth = 3; g.globalAlpha = 0.35 + 0.65 * p; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); g.globalAlpha = 1;
+}
+const lgMark = (g, x, y, r) => { g.strokeStyle = LGC.CHALK; g.lineWidth = 3; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); };
+function lgGround(g, top, c1, c2) { lgRect(g, 0, 0, LGC.W, top, LGC.SKY); lgRect(g, 0, top, LGC.W, LGC.H - top, c1); for (let i = 0; i < 40; i++) lgRect(g, (i * 97) % LGC.W, top + 6 + (i * 53) % (LGC.H - top - 8), 3, 2, c2); }
+// A round's end: q (0 to 100) and its word.
+function lgEnd(r, t, q, x, y) {
+  if (r.q !== undefined) return;
+  r.q = Math.round(lgCl(q, 0, 100)); r.end = t;
+  const w = LG.word(r.q);
+  lgWord(w === 'good' ? 'Good!' : w === 'fair' ? 'Fair' : 'Poor', x || 180, y || 70, lgCol(r.q));
+}
+// ---- The six games: start(r, t), frame(r, t), down/move/up(r, p, t), draw(g, r, t), hint(r, t), pose(r, t) ----
+const LG_GAMES = [
+  // 0. Clearing: swipe along the chalk line across the clump (three cuts fell it); in the woods a trunk, chopped from
+  //    the left and the right in turn (four cuts). Measured: each swipe's angle and distance from the mark, and the pace.
+  {
+    start(r, t) { r.tree = lnKindAt(S.ln.f[0]) === 'woods'; r.need = r.tree ? 4 : 3; r.cuts = []; r.t0 = t; this.mark(r); },
+    mark(r) {
+      const i = r.cuts.length;
+      if (r.tree) { r.dir = i % 2 ? -1 : 1; const y = 150 + (lgRnd('y' + i) - 0.5) * 16; r.m = { x1: 120, y1: y, x2: 240, y2: y }; }
+      else { const a = (lgRnd('a' + i) - 0.5) * 0.9, y = 130 + i * 14 + (lgRnd('y' + i) - 0.5) * 10, dx = Math.cos(a) * 85, dy = Math.sin(a) * 85; r.m = { x1: 180 - dx, y1: y - dy, x2: 180 + dx, y2: y + dy }; }
+    },
+    down(r, p, t) { r.sw = { x: p.x, y: p.y, t, pts: [p] }; },
+    move(r, p) { if (r.sw) r.sw.pts.push(p); },
+    up(r, p, t) {
+      const w = r.sw; r.sw = null;
+      if (!w || r.q !== undefined) return;
+      const dx = p.x - w.x, dy = p.y - w.y, len = Math.hypot(dx, dy);
+      if (len < 60 || t - w.t > 700) { r.msg = len < 60 ? 'A longer swipe, right across' : 'A quicker swipe'; r.msgT = t; return; }
+      const m = r.m, mx = m.x2 - m.x1, my = m.y2 - m.y1, ml = Math.hypot(mx, my);
+      let ang = Math.abs(Math.atan2(dx * my - dy * mx, dx * mx + dy * my)) * 180 / Math.PI;   // 0 to 180
+      const wrong = r.tree && Math.sign(dx) !== r.dir;
+      if (!r.tree) ang = Math.min(ang, 180 - ang); else if (wrong) ang = 180 - ang;
+      const cx = (w.x + p.x) / 2, cy = (w.y + p.y) / 2, off = Math.abs((cx - m.x1) * my - (cy - m.y1) * mx) / ml;
+      const s = (1 - lgCl((ang - 6) / 30, 0, 1)) * (1 - lgCl((off - 8) / 30, 0, 1)) * (wrong ? 0.3 : 1);
+      r.cuts.push({ s, t }); lgUi.shake = 3; r.slash = { x1: w.x, y1: w.y, x2: p.x, y2: p.y, t };
+      lgFx('chip', cx, cy, 10 + Math.round(s * 10), r.tree ? '#c9a26b' : '#7d9a3c', { a: Math.atan2(dy, dx), spread: 1.6, v: 200 });
+      lgFx('chip', cx, cy, 6, r.tree ? '#e3c995' : '#5d7a2c', { a: Math.atan2(dy, dx) - 0.6, spread: 1.2, v: 140 });
+      lgRing(cx, cy, lgCol(s * 100), 6);
+      if (r.cuts.length >= r.need) {
+        const gaps = r.cuts.map((c, i) => c.t - (i ? r.cuts[i - 1].t : r.t0)), avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+        const pace = lgCl(1 - (avg - 1200) / 2500, 0.7, 1), q = 100 * r.cuts.reduce((a, c) => a + c.s, 0) / r.cuts.length * pace;
+        lgFx('dust', 180, 175, 9, 'rgba(150,130,100,0.6)', { spread: 3, v: 70, g: -20, size: 5, life: 800 });
+        r.fell = t; lgEnd(r, t, q);
+      } else this.mark(r);
+    },
+    draw(g, r, t) {
+      lgGround(g, 120, LGC.GRASS, LGC.GRASS2);
+      for (const [x, ph] of [[34, 1], [326, 2]]) lgMan(g, 'navvy_' + (x < 100 ? 'b' : 'c'), r.tree ? 'axe' : 'hook', x < 100 ? 'se' : 'sw', Math.floor(t / 260 + ph) % (r.tree ? 4 : 3), x, 200, 2);
+      const left = r.need - r.cuts.length, fall = r.fell ? lgCl((t - r.fell) / 500, 0, 1) : 0;
+      g.save(); g.translate(180, 190); g.rotate(fall * 1.3); g.translate(-180, -190); g.globalAlpha = 1 - fall * 0.7;
+      if (r.tree) { lgRect(g, 163, 30, 34, 165, LGC.WOOD); lgRect(g, 170, 30, 6, 165, LGC.WOOD2); if (r.cuts.length) lgRect(g, r.dir > 0 ? 197 - 34 * r.cuts.length / r.need : 163, r.m.y1 - 5, 34 * r.cuts.length / r.need, 10, '#d8b886'); lgRect(g, 130, 10, 100, 40, '#4e6b2e'); lgRect(g, 145, 0, 70, 22, '#5d7c35'); }
+      else { const k = 0.55 + 0.45 * left / r.need; for (let i = 0; i < 9; i++) { const a = -Math.PI / 2 + (i - 4) * 0.22, L = (60 + (i % 3) * 12) * k; lgLine(g, 180 + (i - 4) * 4, 190, 180 + Math.cos(a) * L, 190 + Math.sin(a) * L, i % 2 ? '#56702c' : '#6f8a37', 6); } g.fillStyle = '#7f9b40'; g.beginPath(); g.ellipse(180, 190 - 62 * k, 50 * k, 34 * k, 0, 0, 7); g.fill(); }
+      g.restore(); g.globalAlpha = 1;
+      if (r.q === undefined) {
+        const m = r.m; lgLine(g, m.x1, m.y1, m.x2, m.y2, LGC.CHALK, 3, [8, 6]);
+        if (r.tree) { const ax = r.dir > 0 ? m.x1 - 14 : m.x2 + 14; lgLine(g, ax, m.y1, ax + r.dir * 20, m.y1, LGC.CHALK, 3); lgLine(g, ax + r.dir * 20, m.y1, ax + r.dir * 12, m.y1 - 6, LGC.CHALK, 3); lgLine(g, ax + r.dir * 20, m.y1, ax + r.dir * 12, m.y1 + 6, LGC.CHALK, 3); }
+      }
+      if (r.slash && t - r.slash.t < 220) { g.globalAlpha = 1 - (t - r.slash.t) / 220; lgLine(g, r.slash.x1, r.slash.y1, r.slash.x2, r.slash.y2, '#fffbe8', 4); g.globalAlpha = 1; }
+      if (r.sw && r.sw.pts.length > 1) { const a = r.sw.pts[0], b = r.sw.pts[r.sw.pts.length - 1]; lgLine(g, a.x, a.y, b.x, b.y, 'rgba(255,250,230,0.6)', 3); }
+      for (let i = 0; i < r.need; i++) lgRect(g, 160 + i * 12, 206, 8, 8, i < r.cuts.length ? lgCol(r.cuts[i].s * 100) : 'rgba(43,33,24,0.25)');
+    },
+    hint(r) { return r.tree ? (r.dir > 0 ? 'Swipe from the left along the chalk line' : 'Now from the right along the line') : 'Swipe along the chalk line, quick and straight'; },
+    pose(r, t) { const c = r.cuts.length ? r.cuts[r.cuts.length - 1].t : -1e9, d = t - c, a = r.tree ? 'axe' : 'hook'; return { anim: a, frame: d < 120 ? (r.tree ? 2 : 1) : d < 260 ? (r.tree ? 3 : 2) : 0 }; },
+  },
+  // 1. Digging the bed: four swings of the pick in time (a ring closes on the mark; tap as it meets it), then a flick
+  //    up to throw the earth into the barrow. Measured: each tap's error from its beat, the flick's.
+  {
+    start(r, t) { r.P = 760; r.b = [0, 1, 2, 3, 4].map(i => t + 1300 + i * r.P); r.s = []; r.depth = 0; r.fill = 0; },
+    frame(r, t) {
+      if (r.q !== undefined) return;
+      for (let i = 0; i < 4; i++) if (r.s[i] === undefined && t > r.b[i] + 330) { r.s[i] = 0; lgWord('Missed', 180, 110, LGC.POOR); }
+      if (r.s[4] === undefined && t > r.b[4] + 700) { r.s[4] = 0; this.done(r, t); }
+    },
+    hit(r, i, t) {
+      const s = lgTimeS(Math.abs(t - r.b[i])); r.s[i] = s; r.hitT = t;
+      lgRing(180, 160, lgCol(s * 100), 12); lgUi.shake = 2 + 3 * s;
+      if (s > 0.2) { lgFx('chip', 180, 160, 6 + Math.round(10 * s), LGC.EARTH, { spread: 1.8, v: 170 }); lgFx('dust', 180, 162, 3, 'rgba(120,90,60,0.5)', { v: 30, g: -10, size: 4, life: 700 }); r.depth += s; }
+      else lgFx('chip', 180, 158, 5, '#fff2b0', { v: 220, size: 2, life: 250 });
+    },
+    down(r, p, t) {
+      if (r.q !== undefined) return;
+      let best = -1, be = 1e9;
+      for (let i = 0; i < 4; i++) if (r.s[i] === undefined && Math.abs(t - r.b[i]) < r.P / 2 && Math.abs(t - r.b[i]) < be) { be = Math.abs(t - r.b[i]); best = i; }
+      if (best >= 0) this.hit(r, best, t);
+      r.fl = { y: p.y, t };
+    },
+    up(r, p, t) {
+      const f = r.fl; r.fl = null;
+      if (!f || r.q !== undefined || r.s[4] !== undefined || t < r.b[3] - 100) return;
+      if (f.y - p.y < 40 || t - f.t > 600) return;
+      r.s[4] = lgTimeS(Math.abs(f.t - r.b[4]) / 1.5); r.flick = t;
+      lgFx('chip', 180, 160, 18, LGC.EARTH, { a: -0.9, spread: 0.6, v: 260 }); r.fill = Math.min(1, r.fill + 0.6);
+      this.done(r, t);
+    },
+    done(r, t) { for (let i = 0; i < 4; i++) if (r.s[i] === undefined) r.s[i] = 0; const pk = (r.s[0] + r.s[1] + r.s[2] + r.s[3]) / 4; lgEnd(r, t, 100 * (0.8 * pk + 0.2 * (r.s[4] || 0))); },
+    draw(g, r, t) {
+      lgGround(g, 112, LGC.EARTH, LGC.EARTH2);
+      for (const [x, ph, w] of [[40, 0, 'b'], [320, 1, 'c']]) { const n = Math.floor((t - r.b[0]) / r.P + 10 + ph * 0.5), d = ((t - r.b[0]) % r.P + r.P) % r.P; lgMan(g, 'navvy_' + w, 'pick', x < 100 ? 'se' : 'sw', d < 120 ? 2 : d < 260 ? 3 : d > r.P - 260 ? 1 : 0, x, 196, 2); }
+      g.fillStyle = LGC.EARTH2; g.beginPath(); g.ellipse(180, 166, 28 + r.depth * 4, 7 + r.depth * 2.5, 0, 0, 7); g.fill();
+      lgRect(g, 286, 150, 44, 20, LGC.WOOD); lgRect(g, 290, 144, 36 * r.fill, 8, LGC.EARTH2); lgRect(g, 272, 166, 10, 10, LGC.INK);
+      lgMan(g, LG.WHO, r.flick ? 'shovel' : 'pick', 'se', this.pose(r, t).frame, 132, 186, 3);
+      if (r.q === undefined) {
+        lgMark(g, 180, 160, 14);
+        for (let i = 0; i < 4; i++) if (r.s[i] === undefined) lgCloser(g, 180, 160, t, r.b[i] - r.P, r.b[i], 14);
+        if (r.s.length >= 4 && r.s[4] === undefined && t > r.b[3]) { const a = Math.sin(t / 90) * 4; lgLine(g, 240, 150 + a, 240, 100 + a, LGC.CHALK, 4); lgLine(g, 240, 100 + a, 230, 112 + a, LGC.CHALK, 4); lgLine(g, 240, 100 + a, 250, 112 + a, LGC.CHALK, 4); }
+      }
+      for (let i = 0; i < 5; i++) lgRect(g, 154 + i * 12, 206, 8, 8, r.s[i] !== undefined ? lgCol(r.s[i] * 100) : 'rgba(43,33,24,0.25)');
+    },
+    hint(r, t) { return r.s.filter(v => v !== undefined).length >= 4 && r.s[4] === undefined ? 'Flick up: throw the earth in the barrow' : 'Tap as the ring meets the mark'; },
+    pose(r, t) { if (r.flick) { const d = t - r.flick; return { anim: 'shovel', frame: d < 150 ? 2 : 3 }; } const d = r.hitT ? t - r.hitT : 1e9, nx = r.b.find(b => b > t), w = nx ? nx - t : 1e9; return { anim: 'pick', frame: d < 110 ? 2 : d < 260 ? 3 : w < 260 ? 1 : 0 }; },
+  },
+  // 2. Laying rock: tap to tip the barrow when its nose is over the chalk cross, then drag side to side to rake the
+  //    heap level. Measured: the tip's distance from the cross, how level the stones are when the time is up.
+  {
+    start(r, t) { r.t0 = t + 500; r.v = 0.095 + lgRnd('v') * 0.03; r.mx = 170 + lgRnd('m') * 60; r.h = null; r.T = 3400; },
+    nose(r, t) { return 10 + Math.max(0, t - r.t0) * r.v + 44; },
+    frame(r, t) {
+      if (!r.h && this.nose(r, t) > 345) this.tip(r, t);
+      if (r.h && r.q === undefined) { const e = this.even(r); r.ev = e; if (e >= 0.92 || t - r.tipT > r.T) lgEnd(r, t, 100 * (0.35 * r.tipS + 0.65 * lgCl((e - 0.2) / 0.72, 0, 1))); }
+    },
+    tip(r, t) {
+      const n = Math.min(345, this.nose(r, t)), err = Math.abs(n - r.mx);
+      r.tipS = 1 - lgCl((err - 4) / 40, 0, 1); r.tipT = t; r.tx = n;
+      r.h = []; for (let c = 0; c < 36; c++) { const x = c * 10 + 5; r.h.push(4 + 36 * Math.exp(-((x - n) ** 2) / 900) + 5 * lgRnd('b' + c)); }
+      r.ev0 = this.sd(r);
+      lgFx('chip', n, 160, 26, LGC.ROCK2, { spread: 2.6, v: 150 }); lgFx('dust', n, 168, 6, 'rgba(140,135,125,0.55)', { v: 40, g: -15, size: 5, life: 800 }); lgUi.shake = 4;
+      lgRing(n, 176, lgCol(r.tipS * 100), 10);
+    },
+    sd(r) { const b = r.h.slice(2, 34), m = b.reduce((a, v) => a + v, 0) / b.length; return Math.sqrt(b.reduce((a, v) => a + (v - m) ** 2, 0) / b.length); },
+    even(r) { return 1 - lgCl(this.sd(r) / Math.max(1, r.ev0), 0, 1); },
+    down(r, p, t) { if (!r.h && t >= r.t0) this.tip(r, t); else r.rk = p; },
+    move(r, p, t) {
+      if (!r.h || !r.rk || r.q !== undefined) return;
+      const d = Math.abs(p.x - r.rk.x), k = Math.min(1, d / 12) * 0.5, H = r.h;
+      if (d > 0.5) {
+        for (let c = 1; c < 35; c++) { const x = c * 10 + 5; if (Math.abs(x - p.x) > 32) continue; const avg = (H[c - 1] + H[c + 1]) / 2, mv = (avg - H[c]) * k; H[c] += mv; H[c - 1] -= mv / 2; H[c + 1] -= mv / 2; }
+        r.rkT = t; if ((t | 0) % 3 === 0) lgFx('chip', p.x, 168, 1, LGC.ROCK2, { v: 60, spread: 3, life: 300, size: 2 });
+      }
+      r.rk = p;
+    },
+    up(r) { r.rk = null; },
+    draw(g, r, t) {
+      lgGround(g, 112, LGC.EARTH, LGC.EARTH2);
+      lgRect(g, 0, 176, LGC.W, 44, LGC.EARTH2);
+      for (const [x, w] of [[30, 'b'], [330, 'c']]) lgMan(g, 'navvy_' + w, 'rake', x < 100 ? 'se' : 'sw', Math.floor(t / 300 + (x > 100 ? 1 : 0)) % 3, x, 200, 2);
+      if (r.h) { g.fillStyle = LGC.ROCK; g.beginPath(); g.moveTo(0, 178); for (let c = 0; c < 36; c++) g.lineTo(c * 10 + 5, 178 - r.h[c]); g.lineTo(360, 178); g.fill(); for (let c = 0; c < 36; c++) lgRect(g, c * 10 + 2 + (c * 7) % 5, 178 - r.h[c] + 3, 3, 2, LGC.ROCK2); }
+      if (!r.h) {
+        lgLine(g, r.mx - 9, 170, r.mx + 9, 184, LGC.CHALK, 3); lgLine(g, r.mx - 9, 184, r.mx + 9, 170, LGC.CHALK, 3);
+        const n = this.nose(r, t); lgMan(g, LG.WHO, 'barrow', 'se', Math.floor(t / 150) % 4, n - 60, 186, 3);
+        lgRect(g, n - 44, 150, 44, 18, LGC.WOOD); lgRect(g, n - 42, 142, 40, 10, LGC.ROCK); g.fillStyle = LGC.INK; g.beginPath(); g.arc(n - 6, 172, 7, 0, 7); g.fill();
+      } else {
+        const e = r.ev || 0;
+        lgRect(g, 90, 12, 180, 14, 'rgba(43,33,24,0.2)'); lgRect(g, 90, 12, 180 * e, 14, lgCol(e * 100)); lgText(g, 'level', 180, 24, LGC.PAPER, 11);
+        lgMan(g, LG.WHO, 'rake', 'se', r.rkT && t - r.rkT < 200 ? Math.floor(t / 90) % 3 : 0, lgCl(r.rk ? r.rk.x - 30 : r.tx - 40, 20, 330), 196, 3);
+        if (r.q === undefined) { const a = Math.sin(t / 120) * 40; lgLine(g, 180 + a - 20, 60, 180 + a + 20, 60, LGC.CHALK, 3); }
+      }
+    },
+    hint(r) { return !r.h ? 'Tap to tip as the nose is over the cross' : 'Drag side to side to rake it level'; },
+    pose(r, t) { if (!r.h) return { anim: 'barrow', frame: Math.floor(t / 150) % 4, held: { key: 'tool/barrow/<dir>/full', at: 'grip' } }; if (t - r.tipT < 500) return { anim: 'tip', frame: 1, held: { key: 'tool/barrow/<dir>/tipped', at: 'grip' } }; return { anim: 'rake', frame: r.rkT && t - r.rkT < 200 ? Math.floor(t / 90) % 3 : 0 }; },
+  },
+  // 3. Laying ties, with a partner: press and hold as his "Hup!" ring fills, keep your end level with his as you walk
+  //    it up, let go on "Down!" with your end on its chalk mark. Measured: the lift's timing, keeping in step, the
+  //    let-go's timing and the distance from the mark. Let go early and the tie is set down where it is.
+  {
+    start(r, t) { r.tH = t + 1300; r.M = 200 + lgRnd('m') * 60; r.v = 0.075; r.px = 330; r.my = 330; r.dev = 0; r.dn = 0; r.st = 'hup'; },
+    frame(r, t, dt) {
+      if (r.st === 'hup' && t > r.tH + 600) { r.liftS = 0; r.st = 'carry'; r.tC = t; lgWord('Hup!', 300, 50, LGC.INK); }
+      if (r.st === 'carry') {
+        r.px = Math.max(r.M, 330 - (t - r.tC) * r.v);
+        if (r.held) { r.dev += Math.abs(r.my - r.px) * dt; r.dn += dt; }
+        if (r.px <= r.M && !r.tD) { r.tD = t + 250; }
+        if (r.tD && t > r.tD + 700) this.drop(r, t, 0);
+      }
+    },
+    down(r, p, t) {
+      if (r.st === 'hup') { r.liftS = lgTimeS(Math.abs(t - r.tH)); r.st = 'carry'; r.tC = Math.max(t, r.tH); r.held = true; r.my = lgCl(p.x, 20, 345); lgWord('Hup!', 300, 50, LGC.INK); lgFx('dust', 330, 176, 4, 'rgba(120,100,80,0.5)', { v: 30, g: -10, size: 4 }); }
+      else if (r.st === 'carry') { r.held = true; r.my = lgCl(p.x, 20, 345); }
+    },
+    move(r, p) { if (r.st === 'carry' && r.held) r.my = lgCl(p.x, 20, 345); },
+    up(r, p, t) { if (r.st === 'carry' && r.held) this.drop(r, t, r.tD ? lgTimeS(Math.abs(t - r.tD)) : 0); },
+    drop(r, t, relS) {
+      r.st = 'down'; r.held = false; r.tDn = t;
+      const markS = 1 - lgCl((Math.abs(r.my - r.M) + Math.abs(r.px - r.M) - 3) / 30, 0, 1), stepS = r.dn > 0 ? 1 - lgCl((r.dev / r.dn - 6) / 40, 0, 1) : 0;
+      lgFx('dust', r.px, 62, 6, 'rgba(130,110,90,0.55)', { v: 50, g: -10, size: 5, life: 700 }); lgFx('dust', r.my, 172, 6, 'rgba(130,110,90,0.55)', { v: 50, g: -10, size: 5, life: 700 }); lgUi.shake = 4;
+      lgRing(r.my, 172, lgCol(markS * 100), 8);
+      lgEnd(r, t, 100 * (0.2 * (r.liftS || 0) + 0.3 * stepS + 0.25 * relS + 0.25 * markS), 180, 40);
+    },
+    draw(g, r, t) {
+      lgRect(g, 0, 0, LGC.W, LGC.H, LGC.EARTH); for (let i = 0; i < 50; i++) lgRect(g, (i * 71) % 360, (i * 37) % 220, 3, 2, LGC.ROCK);
+      lgRect(g, 0, 40, LGC.W, 150, LGC.ROCK); for (let i = 0; i < 80; i++) lgRect(g, (i * 53) % 360, 42 + (i * 29) % 146, 3, 2, LGC.ROCK2);
+      for (let x = r.M - 40; x > -20; x -= 40) { lgRect(g, x - 7, 52, 14, 128, LGC.WOOD); lgRect(g, x - 7, 52, 4, 128, LGC.WOOD2); }
+      if (r.st !== 'down') { lgRect(g, r.M - 4, 50, 8, 6, LGC.CHALK); lgRect(g, r.M - 4, 174, 8, 6, LGC.CHALK); }
+      const up = r.st === 'carry' ? -6 : 0, x1 = r.px, x2 = r.st === 'hup' ? r.px : r.my;
+      g.save(); g.strokeStyle = LGC.WOOD2; g.lineWidth = 16; g.beginPath(); g.moveTo(x1, 60 + up); g.lineTo(x2, 172 + up); g.stroke(); g.strokeStyle = LGC.WOOD; g.lineWidth = 12; g.stroke(); g.restore();
+      lgMan(g, 'navvy_c', r.st === 'carry' ? 'tieBack' : r.st === 'down' ? 'tieDrop' : 'idle', 'sw', r.st === 'carry' ? Math.floor(t / 160) % 4 : r.st === 'down' ? 1 : 0, x1 + 8, 52, 2);
+      if (r.st === 'hup') { const p = lgCl((t - (r.tH - 900)) / 900, 0, 1); g.strokeStyle = LGC.INK; g.lineWidth = 4; g.beginPath(); g.arc(x1, 60, 16, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2); g.stroke(); }
+      if (r.st === 'carry' && r.held) { lgLine(g, r.my, 186, r.px, 186, Math.abs(r.my - r.px) < 10 ? LGC.GOOD : LGC.POOR, 3); }
+      if (r.tD && r.st === 'carry' && t > r.tD - 300) lgText(g, 'Down!', 290, 34, LGC.INK, 20);
+      g.fillStyle = r.held ? LGC.GOOD : LGC.PAPER; g.beginPath(); g.arc(x2, 176, 9, 0, 7); g.fill(); g.strokeStyle = LGC.INK; g.lineWidth = 2; g.stroke();
+    },
+    hint(r) { return r.st === 'hup' ? 'Press and hold as the "Hup!" ring fills' : r.st === 'carry' ? (r.tD ? 'Let go on "Down!", on the mark' : 'Keep your end level with his') : 'Down'; },
+    pose(r, t) { return r.st === 'carry' ? { anim: 'tieFront', frame: Math.floor(t / 160) % 4 } : r.st === 'down' ? { anim: 'tieDrop', frame: 1 } : { anim: 'tieDrop', frame: 0 }; },
+  },
+  // 4. Laying rails, with the gang: hold on the foreman's "Lift!" (after "One, two"), drag to keep the rail on the
+  //    gauge line as the gang walks it up, let go on "Down!". Measured: the lift's timing, the gauge error at the
+  //    drop, the let-go's timing. Let go early and the gang sets it down where it is.
+  {
+    start(r, t) { r.c = [t + 500, t + 1150, t + 1800]; r.tL = r.c[2]; r.tD = r.tL + 2300; r.A = 12 + lgRnd('a') * 8; r.ph = lgRnd('p') * 6; r.dx = 0; r.st = 'count'; },
+    gauge(r, t) { const k = r.st === 'count' ? 0 : t - r.tL; return r.A * Math.sin(k / 420 + r.ph) + k * 0.006 - r.dx; },
+    frame(r, t) {
+      if (r.st === 'count' && t > r.tL + 600) { r.liftS = 0; r.st = 'carry'; }
+      if (r.st === 'carry' && t > r.tD + 650) this.drop(r, t, 0);
+    },
+    down(r, p, t) {
+      if (r.st === 'count') { if (t < r.c[0]) return; r.liftS = lgTimeS(Math.abs(t - r.tL)); r.st = 'carry'; }
+      if (r.st === 'carry') { r.held = true; r.gx = p.x; r.dx0 = r.dx; }
+    },
+    move(r, p) { if (r.st === 'carry' && r.held) r.dx = r.dx0 + (p.x - r.gx) * 0.5; },
+    up(r, p, t) { if (r.st === 'carry' && r.held) this.drop(r, t, lgTimeS(Math.abs(t - r.tD))); },
+    drop(r, t, relS) {
+      const ge = Math.abs(this.gauge(r, t)); r.gEnd = ge; r.st = 'down'; r.held = false; r.tDn = t;
+      const gs = 1 - lgCl((ge - 3) / 25, 0, 1);
+      lgFx('spark', 60, 168, 10, '#ffe08a', { v: 180, size: 2, life: 350 }); lgFx('spark', 300, 168, 10, '#ffe08a', { v: 180, size: 2, life: 350 });
+      lgFx('dust', 180, 176, 8, 'rgba(130,120,105,0.5)', { v: 60, g: -10, size: 5, spread: 3.2, life: 700 }); lgUi.shake = 6;
+      lgWord('Clang!', 180, 120, LGC.INK);
+      lgEnd(r, t, 100 * (0.3 * (r.liftS || 0) + 0.35 * gs + 0.35 * relS), 180, 60);
+    },
+    draw(g, r, t) {
+      lgGround(g, 140, LGC.ROCK, LGC.ROCK2);
+      for (let x = 10; x < 360; x += 34) lgRect(g, x, 172, 22, 8, LGC.WOOD);
+      const lift = r.st === 'carry' ? lgCl((t - r.tL) / 250, 0, 1) : r.st === 'down' ? 1 - lgCl((t - r.tDn) / 120, 0, 1) : 0, y = 178 - lift * 16, walk = r.st === 'carry';
+      [70, 140, 220, 290].forEach((x, i) => lgMan(g, i === 2 ? LG.WHO : 'navvy_' + 'abc'[i % 3], walk ? 'railCarry' : r.st === 'down' && t - r.tDn < 500 ? 'railDrop' : 'railCarry', 'se', walk ? Math.floor(t / 170 + i) % 4 : 0, x - 6, 200, 2));
+      lgRect(g, 30, y - 6, 300, 7, LGC.STEEL); lgRect(g, 30, y - 6, 300, 2, LGC.STEEL2);
+      lgLine(g, 220, 132, 220, 140, LGC.GOOD, 3); lgText(g, 'you', 220, 128, LGC.GOOD, 11);
+      // the gauge: a top-down strip, the rail's line against the chalk gauge line
+      lgRect(g, 70, 10, 220, 34, 'rgba(43,33,24,0.18)'); lgLine(g, 180, 12, 180, 42, LGC.CHALK, 2, [4, 3]);
+      const ge = r.st === 'down' ? (r.gEnd || 0) : this.gauge(r, t), ok = Math.abs(ge) < 6;
+      lgRect(g, 180 + lgCl(ge, -100, 100) - 3, 14, 6, 26, ok ? LGC.GOOD : LGC.STEEL);
+      if (r.st === 'count') { const i = r.c.findIndex(c => t < c + 450 && t >= c - 150); if (i >= 0) lgText(g, ['One...', 'Two...', 'Lift!'][i], 180, 96, LGC.INK, i === 2 ? 26 : 20); }
+      if (r.st === 'carry' && t > r.tD - 350 && t < r.tD + 650) lgText(g, 'Down!', 180, 96, LGC.INK, 26);
+    },
+    hint(r) { return r.st === 'count' ? 'Press and hold on "Lift!"' : r.st === 'carry' ? 'Drag to keep the rail on the gauge line, let go on "Down!"' : 'Home on the ties'; },
+    pose(r, t) { return r.st === 'carry' ? { anim: 'railCarry', frame: Math.floor(t / 170) % 4 } : { anim: 'railDrop', frame: r.st === 'down' ? 1 : 0 }; },
+  },
+  // 5. Spiking, turn about with a partner: he strikes, then you, three times each; tap on your beat as the ring
+  //    closes on the spike. Measured: each blow's error from its beat; a blow off the beat bends the spike (lost).
+  {
+    start(r, t) { r.P = 620; r.b = [0, 1, 2, 3, 4, 5].map(i => t + 1000 + i * r.P); r.s = []; r.d = 0; },
+    mine(r) { return [1, 3, 5].map(i => r.b[i]); },
+    frame(r, t) {
+      if (r.q !== undefined) return;
+      for (const i of [0, 2, 4]) if (!r['p' + i] && t >= r.b[i] && r.q === undefined) { r['p' + i] = 1; r.d += 0.12; lgFx('spark', 196, 128 + r.d * 40, 5, '#ffe08a', { v: 150, size: 2, life: 250 }); }
+      const m = this.mine(r);
+      for (let i = 0; i < 3; i++) if (r.s[i] === undefined && t > m[i] + 330) this.bend(r, t, i);
+      if (r.q === undefined && r.s.length === 3 && r.s.every(v => v !== undefined)) lgEnd(r, t, 100 * (r.s[0] + r.s[1] + r.s[2]) / 3, 180, 50);
+    },
+    bend(r, t, i) { r.s[i] = 0; r.bent = t; lgWord('Bent!', 180, 80, LGC.POOR); lgFx('spark', 196, 140, 4, '#ffe08a', { v: 90, size: 2, life: 200 }); const ok = r.s.filter(v => v !== undefined); lgEnd(r, t, 35 * ok.reduce((a, b) => a + b, 0) / 3, 180, 50); r.q = Math.min(r.q, 44); },
+    down(r, p, t) {
+      if (r.q !== undefined) return;
+      const m = this.mine(r);
+      let best = -1, be = 1e9;
+      for (let i = 0; i < 3; i++) if (r.s[i] === undefined && Math.abs(t - m[i]) < be) { be = Math.abs(t - m[i]); best = i; }
+      if (best < 0 || t < m[best] - r.P) return;   // (before his first ring shows: not a blow)
+      const s = lgTimeS(be);
+      if (s <= 0) { this.bend(r, t, best); return; }
+      r.s[best] = s; r.hitT = t; r.d += 0.2 * s + 0.05;
+      lgRing(196, 128 + r.d * 40, lgCol(s * 100), 8); lgUi.shake = 2 + 3 * s;
+      lgFx('spark', 196, 128 + r.d * 40, 6 + Math.round(8 * s), '#ffe08a', { v: 200, size: 2, life: 300 });
+    },
+    draw(g, r, t) {
+      lgGround(g, 150, LGC.ROCK, LGC.ROCK2);
+      lgRect(g, 60, 158, 240, 12, LGC.WOOD); lgRect(g, 20, 148, 320, 9, LGC.STEEL); lgRect(g, 20, 148, 320, 2, LGC.STEEL2);
+      const top = 128 + Math.min(1, r.d) * 22;
+      if (r.bent) { lgLine(g, 196, 160, 198, top + 6, '#3a3d42', 4); lgLine(g, 198, top + 6, 210, top - 2, '#3a3d42', 4); }
+      else { lgRect(g, 194, top, 5, 160 - top, '#3a3d42'); lgRect(g, 190, top - 3, 13, 4, '#2a2d31'); }
+      const sw = (b, dir) => { const d = t - b; return d >= 0 && d < 120 ? 2 : d >= 120 && d < 260 ? 3 : d < 0 && d > -260 ? 1 : 0; };
+      const nextP = [0, 2, 4].map(i => r.b[i]).find(b => b > t - 260) || -1e9;
+      lgMan(g, 'navvy_c', 'maul', 'sw', sw(nextP), 250, 196, 3);
+      lgMan(g, LG.WHO, 'maul', 'se', this.pose(r, t).frame, 140, 196, 3);
+      if (r.q === undefined) { lgMark(g, 196, top - 1, 9); this.mine(r).forEach((b, i) => { if (r.s[i] === undefined) lgCloser(g, 196, top - 1, t, b - r.P, b, 9); }); }
+      for (let i = 0; i < 3; i++) lgRect(g, 168 + i * 12, 206, 8, 8, r.s[i] !== undefined ? lgCol(r.s[i] * 100) : 'rgba(43,33,24,0.25)');
+    },
+    hint(r) { return r.bent ? 'A bent spike: draw it, a new one' : 'Tap on your beat, as the ring closes'; },
+    pose(r, t) { const d = r.hitT ? t - r.hitT : 1e9, nx = this.mine(r).find(b => b > t), w = nx ? nx - t : 1e9; return { anim: 'maul', frame: d < 120 ? 2 : d < 260 ? 3 : w < 280 ? 1 : 0 }; },
+  },
+];
+// The world's frames for him while a game is up (lpPose asks): { anim, frame, held? }, or null.
+function lgPoseAnim(St, k) {
+  const r = lgUi.r;
+  if (St !== S || !r || lgUi.k !== k || !LG_GAMES[k].pose) return null;
+  return LG_GAMES[k].pose(r, lgT());
+}
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `
+  #lgJoin { position: fixed; z-index: 3; min-height: 48px; min-width: 120px; padding: 0 14px; font-size: 16px; transform: translate(-50%, 0); border-radius: 10px; box-shadow: 0 2px 0 rgba(0,0,0,0.25); }
+  #lgJoin[hidden], #lgPanel[hidden] { display: none; }
+  #lgPanel { left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); bottom: calc(env(safe-area-inset-bottom) + 8px); height: 318px; z-index: 3;
+    background: var(--paper); border: 2px solid var(--edge); border-radius: 10px; padding: 6px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; font-family: "Trebuchet MS", "DejaVu Sans", Verdana, sans-serif; color: var(--ink); }
+  #lgHead { display: flex; align-items: center; gap: 6px; min-height: 44px; }
+  #lgTitle { flex: 1; min-width: 0; font-size: 14px; line-height: 1.2; } #lgTitle small { display: block; font-size: 12px; color: #5a4a3a; }
+  #lgPips { display: flex; gap: 3px; } #lgPips i { width: 10px; height: 10px; border-radius: 5px; display: block; }
+  #lgOut { min-height: 44px; min-width: 88px; font-size: 15px; }
+  #lgCv { flex: 1; min-height: 0; width: 100%; touch-action: none; display: block; border-radius: 6px; }
+  #lgHint { font-size: 14px; text-align: center; min-height: 18px; }
+  @media (orientation: landscape) and (max-height: 500px) { #lgPanel { left: auto; top: calc(env(safe-area-inset-top) + 8px); width: 340px; height: auto; } }`;
+  document.head.appendChild(css);
+  const j = document.createElement('button'); j.id = 'lgJoin'; j.className = 'hud lnHud'; j.hidden = true; document.body.appendChild(j); lgUi.join = j;
+  const p = document.createElement('div'); p.id = 'lgPanel'; p.className = 'hud lnHud'; p.hidden = true; p.setAttribute('role', 'region'); p.setAttribute('aria-label', 'Working with the gang');
+  p.innerHTML = '<div id="lgHead"><div id="lgTitle"></div><div id="lgPips"></div><button id="lgOut">Step out</button></div><canvas id="lgCv"></canvas><div id="lgHint" role="status"></div>';
+  document.body.appendChild(p); lgUi.panel = p; lgUi.cv = $('lgCv');
+  j.addEventListener('click', () => { const k = +j.dataset.k; if (k >= 0) { lgUi.left = false; lpCloseCard(); send({ t: 'lpJoin', stage: k }); } });
+  $('lgOut').addEventListener('click', () => lgStepOut());
+  const pt = e => { const b = lgUi.box, R = lgUi.cv.getBoundingClientRect(); return b ? { x: (e.clientX - R.left - b.ox) / b.s, y: (e.clientY - R.top - b.oy) / b.s } : { x: 0, y: 0 }; };
+  const call = (fn, e) => { const r = lgUi.r, G = LG_GAMES[lgUi.k]; if (!r || !G || !G[fn] || lgUi.frozen) return; G[fn](r, pt(e), lgT()); };
+  lgUi.cv.addEventListener('pointerdown', e => { e.preventDefault(); try { lgUi.cv.setPointerCapture(e.pointerId); } catch (x) { /* (a synthetic pointer) */ } lgUi.ptr = e.pointerId; call('down', e); });
+  lgUi.cv.addEventListener('pointermove', e => { if (lgUi.ptr === e.pointerId) call('move', e); });
+  const end = e => { if (lgUi.ptr !== e.pointerId) return; lgUi.ptr = null; call('up', e); };
+  lgUi.cv.addEventListener('pointerup', end); lgUi.cv.addEventListener('pointercancel', end);
+  const loop = () => { try { lgFrame(); } catch (e) { if (!lgUi.err) { lgUi.err = 1; console.error('join-in games: ' + (e && e.message)); } } requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+})();
+// Step out: the round is dropped at once (nothing he holds stays in the air: the tie or rail is set down where it
+// is, the tool goes back) and the sim is told.
+function lgStepOut() { lgUi.r = null; lgUi.left = true; lgUi.fx = []; send({ t: 'lpLeave' }); }
+// Each frame: the Join button, the panel, the round.
+function lgFrame() {
+  const Q = S && S.lp, j = Q && Q.j, line = lnViewOn(), now = performance.now(), dt = lgUi.last === null ? 16 : Math.min(100, now - lgUi.last);
+  lgUi.last = now;
+  // The lesson card is on the line too (U's card, shown here as the line's HUD), and a first card holds the game.
+  const les = $('pdLesson'); if (les && les.classList.contains('lnHud') !== line) les.classList.toggle('lnHud', line);
+  const hold = !!les && !les.hidden && les.classList.contains('hold');
+  // Join: beside a gang at work, not while he works with one.
+  const k = Q && !j && Q.ph === 'line' && line && !Q.home && S.ln && lnHours(S).work && !lpUi.cardFor ? lgNearStage(S) : -1, J = lgUi.join;
+  if (k >= 0 && !hold) {
+    const p = pixToScreen(Q.x, 0, Q.z), txt = `Join the ${LG.GANG[k]}`, W = innerWidth, H = innerHeight;
+    if (J.textContent !== txt) J.textContent = txt;
+    J.dataset.k = String(k);
+    const x = lgCl(p.x, 80, W - 80), y = lgCl(p.y + 26, 120, H - 64);
+    J.style.left = Math.round(x) + 'px'; J.style.top = Math.round(y) + 'px';
+    if (J.hidden) J.hidden = false;
+  } else if (!J.hidden) J.hidden = true;
+  if (!j) lgUi.left = false;
+  const P = lgUi.panel;
+  if (!j || !line || lgUi.left) { if (!P.hidden) P.hidden = true; lgUi.r = null; lgUi.k = -1; return; }
+  if (P.hidden !== hold) P.hidden = hold;
+  if (lgUi.k !== j.k) { lgUi.k = j.k; lgUi.r = null; lgUi.res = []; lgUi.fx = []; lgUi.seen = j.n; }
+  lgUi.frozen = hold || (lgUi.clock === null && speed === 0);
+  if (!lgUi.frozen && lgUi.clock === null) lgUi.gt += dt;
+  lgStepRound(Q, j, lgUi.frozen ? 0 : dt);
+}
+// One frame of the round (also called by a check after it sets the clock): start, play, send the result, draw.
+function lgStepRound(Q, j, dt) {
+  const G = LG_GAMES[j.k], t = lgT();
+  if (!lgUi.r && Q.tx === undefined && lnHours(S).work) { lgUi.rounds++; lgUi.r = { t0: t }; G.start(lgUi.r, t); }
+  const r = lgUi.r;
+  if (r && G.frame && !lgUi.frozen) G.frame(r, t, dt);
+  if (r && r.q !== undefined && !r.sent) { r.sent = t; send({ t: 'lgDone', stage: j.k, q: r.q }); lgUi.res = lgUi.res.concat([r.q]).slice(-8); lgUi.sent.push(r.q); if (lgUi.sent.length > 50) lgUi.sent.shift(); }
+  if (r && r.sent && t - r.sent > 1100) lgUi.r = null;
+  // the panel's words
+  const n = v => v.toFixed(2).replace(/0$/, ''), lifted = j.lift && j.lift > S.tick ? cwGang(S, j.k).filter(m => m.st === 'work' && Math.abs(m.x - Q.x) <= 12 * LINE.M).length : 0;
+  const last = lgUi.res.length ? lgUi.res[lgUi.res.length - 1] : -1, open = lnOpenWork(S, j.k) > 0;
+  const title = `With the ${LG.GANG[j.k]}`, sub = Q.tx !== undefined ? 'Walking to your place...' : !open ? 'Waiting on the gang ahead (or the supplies)' : last >= 0 ? `Last: ${LG.word(last)} (worth ${n(LG.worth(last))} men)` + (lifted ? `, lifting ${lifted} men` : '') : 'Your worth: half a man to a man and a quarter';
+  const sig = title + sub + lgUi.res.join();
+  if (sig !== lgUi.sig) {
+    lgUi.sig = sig;
+    $('lgTitle').innerHTML = ''; $('lgTitle').append(title); const sm = document.createElement('small'); sm.textContent = sub; $('lgTitle').appendChild(sm);
+    $('lgPips').innerHTML = lgUi.res.slice(-5).map(q => `<i style="background:${lgCol(q)}" title="${LG.word(q)}"></i>`).join('');
+  }
+  const hint = r ? (r.msg && t - r.msgT < 900 ? r.msg : r.q !== undefined ? '' : G.hint(r, t)) : Q.tx !== undefined ? 'Walking to your place' : '';
+  if ($('lgHint').textContent !== hint) $('lgHint').textContent = hint;
+  lgDraw(G, r, t, dt);
+}
+function lgDraw(G, r, t, dt) {
+  const cv = lgUi.cv, dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth, ch = cv.clientHeight;
+  if (!cw || !ch) return;
+  if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(ch * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); }
+  const s = Math.min(cw / LGC.W, ch / LGC.H), ox = (cw - LGC.W * s) / 2, oy = (ch - LGC.H * s) / 2, g = cv.getContext('2d');
+  lgUi.box = { s, ox, oy };
+  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#d9cdb0'; g.fillRect(0, 0, cv.width, cv.height);
+  const sh = lgUi.shake > 0.2 ? (Math.sin(t * 0.09) * lgUi.shake) : 0; lgUi.shake *= Math.pow(0.5, dt / 60);
+  g.setTransform(dpr * s, 0, 0, dpr * s, dpr * (ox + sh), dpr * oy);
+  g.imageSmoothingEnabled = false;
+  g.save(); g.beginPath(); g.rect(0, 0, LGC.W, LGC.H); g.clip();
+  if (r) G.draw(g, r, t); else lgGround(g, 120, LGC.EARTH, LGC.EARTH2);
+  lgFxDraw(g, dt);
+  if (lgUi.frozen && lgUi.clock === null) { g.fillStyle = 'rgba(43,33,24,0.35)'; g.fillRect(0, 0, LGC.W, LGC.H); lgText(g, 'Paused', 180, 115, LGC.PAPER, 22); }
+  g.restore();
+}
+// For the checks: the point of the panel's box (x, y) on the screen (CSS px).
+function lgToScreen(x, y) { const b = lgUi.box, R = lgUi.cv.getBoundingClientRect(); return b ? { x: R.left + b.ox + x * b.s, y: R.top + b.oy + y * b.s } : null; }
+// The renderer's hook for him while he works with a gang (Foundation's line scene): what he holds (Crew's way of
+// drawing it), and over his head a small bar of his last q; a warm ring at his feet while he lifts the men near him.
+function lgPixDress(it, p, x, z, dir, anim, fr) {
+  if (!it || !p || !p.lg) return;
+  if (p.held) cwPixDress(it, p, x, z, dir, anim, fr);
+  const draw = it.draw, q = p.lg.q;
+  it.draw = g => {
+    const f = pixProject(x, 0, z), fx = Math.round(f.x) - PIX.vx, fy = Math.round(f.y) - PIX.vy;
+    if (p.lg.lift) { g.fillStyle = 'rgba(255,214,120,0.45)'; g.fillRect(fx - 7, fy - 1, 14, 3); g.fillRect(fx - 5, fy - 2, 10, 5); }
+    draw(g);
+    const h = pixProject(x, PIX.PERSON_H + 0.35, z), hx = Math.round(h.x) - PIX.vx - 6, hy = Math.round(h.y) - PIX.vy;
+    g.fillStyle = '#2b2118'; g.fillRect(hx - 1, hy - 1, 14, 4);
+    g.fillStyle = '#efe7d4'; g.fillRect(hx, hy, 12, 2);
+    if (q >= 0) { g.fillStyle = lgCol(q); g.fillRect(hx, hy, Math.max(1, Math.round(12 * q / 100)), 2); }
+  };
+}
+
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ndc(px, py) { return new THREE.Vector2(px / window.innerWidth * 2 - 1, -(py / window.innerHeight) * 2 + 1); }
@@ -25925,7 +26393,7 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
   }
   for (const q of pixCall('cwProps', S, 'line') || []) if (inX(q.x)) out.push(pixLnProp('cq' + q.id, q.key, q.x, q.z, q.h, q.half, null));   // Crew: the piles and the dinner spot
   const p = pixCall('lpPose', S);
-  if (p && !p.riding) { const [x, z] = at('lp', p.x, p.z), [anim, fr] = pixActAnim(p.act, p, 0); out.push(pixPersonItem('lp', 'agent', x, p.y || 0, z, pixDirOf(p.f), anim, fr, { k: 'lp' }, false)); }
+  if (p && !p.riding) { const [x, z] = at('lp', p.x, p.z), dir = pixDirOf(p.f), [anim, fr] = p.anim ? [p.anim, p.frame | 0] : pixActAnim(p.act, p, 0); out.push(pixPersonItem('lp', p.who || 'agent', x, p.y || 0, z, dir, anim, fr, { k: 'lp' }, false)); if (p.lg) pixCall('lgPixDress', out[out.length - 1], p, x, z, dir, anim, fr); }   // D32 (Play): at work with a gang
   return out;
 }
 // One frame of the line's view (pixFrame has made the canvas, sized the buffer and set the animations' clock).

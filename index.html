@@ -7575,7 +7575,7 @@ LG.word = q => q >= LG.GOOD ? 'good' : q >= LG.FAIR ? 'fair' : 'poor';
 // His place in a gang (line units): the clearers' in the brush just ahead of the cleared front, the others just
 // behind their front, either side of the track (beside the rail for the spikers); he faces the work.
 function lgSpot(S, k, side) {
-  const fx = S.ln.f[k] * LINE.M, x = k === 0 ? fx + 0.8 : fx - 0.9, z = side * (k === 0 ? 2.8 : k === 5 ? 1.3 : k >= 3 ? 2.0 : 1.6);
+  const fx = S.ln.f[k] * LINE.M, x = k === 0 ? fx + 1.8 : fx - 0.9, z = side * (k === 0 ? 2.8 : k === 5 ? 1.3 : k >= 3 ? 2.0 : 1.6);
   return { x, z, f: k === 5 ? (side > 0 ? Math.PI : 0) : Math.PI / 2 };
 }
 // The gang he is among (0 to 5), or -1: by the stretch each gang works (a gang stands behind its front, the

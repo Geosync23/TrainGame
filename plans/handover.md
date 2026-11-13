@@ -2,8 +2,8 @@
 
 ## Latest (2026-11-13): D31 fixes and D32 line building, stages 1 and 2
 - D31 (play-test fixes) and D32 stage 1 (the line, crew, camp, riding out, dev mode, the slower clock) are merged, fully tested and published as version 10 of https://claude.ai/artifact/215immEY4Skh13fN9fN2db. Turn the line on from Settings > Dev (or `?dev=1`).
-- D32 stage 2 (the six join-in games, the line's lessons, hired station workers and the away rules) is merged at c5b8f07; the full test on it was running when this was written. Push only after it passes.
-- The wilds art: three artists' work is in commits ac16eb7 (batch one, merged), 563ab99 (near side, landmarks, wildlife) and 588190a (far side, ground). A builder is fitting 563ab99 and 588190a into the line's view (the art build is slow: see DEV_NOTES D32 once it lands). The game file will grow by several MB; the designer said that is fine.
+- D32 stage 2 (the six join-in games, the line's lessons, hired station workers and the away rules) and the wilds art (nine regions, far and near borders, moving water, landmarks, wildlife) are merged, fully tested, pushed and published as version 11. The game file is 5.9 MB. Art rebuild: DEV_NOTES D32 (the far modules are cut from the committed sheets, about two minutes).
+- check-pixperf's station case at the furthest zoom sits on its budget and fails some runs even on a quiet machine (backlog).
 - Stage 3 (the bigger town: houses, roles, enterable buildings, the economy, the far town) is not started. Plan: plans/d32-tech.md section 8; the journey: plans/d32-journey.md.
 - Usage: the designer's cap is 80% of the allowance (overall and Fable), resetting Saturday 03:00 Eastern; the lead cannot read the meter and must ask. Programmers for hard pieces on Fable, the rest and art on Opus.
 - The machine restarted twice on 2026-11-13: helpers must commit often; after a restart, make a WIP commit in the helper's worktree and start a resume helper.

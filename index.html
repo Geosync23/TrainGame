@@ -7417,7 +7417,7 @@ function lpWalkTick(S, Q, B, ev) {
     Q.f = Math.atan2(x - Q.x, z - Q.z); Q.x = x; Q.z = z; Q.mv = 1; left -= s;
     if (x === Q.tx && z === Q.tz) break;
   }
-  if (Q.tx !== undefined && Q.x === Q.tx && Q.z === Q.tz) { delete Q.tx; delete Q.tz; ev.push({ t: 'lpArrived' }); }
+  if (Q.tx !== undefined && Math.hypot(Q.x - Q.tx, Q.z - Q.tz) < 1e-6) { Q.x = Q.tx; Q.z = Q.tz; delete Q.tx; delete Q.tz; ev.push({ t: 'lpArrived' }); }   // (within a rounding error: there)
 }
 // The sim tick's step for the player on the line (after pbTick).
 function lpTick(S, ev) {
@@ -7605,16 +7605,23 @@ function lgLeave(S, ev, why) {
   delete Q.j;
   ev.push({ t: 'lgLeft', stage: j.k, why: why || 'out', n: j.n });
 }
+// Where he can stand to work at stage k: his place (lgSpot), or, if the work train stands on it, the nearest point
+// beside the train, or, if it is not walkable, as near as he can get to it from where he is.
+function lgPlace(S, Q, k, side) {
+  const sp = lgSpot(S, k, side), B = lpTrainBox(S);
+  let x = sp.x, z = sp.z;
+  if (lpInBox(B, x, z)) [x, z] = lpOutOfBox(S, B, x, z);
+  if (!lnWalkable(S.seed, x, z, S.ln.f[1])) [x, z] = lpClampWalk(S, Q.x, Q.z, x, z);
+  return { x, z, f: sp.f };
+}
 // While he works with a gang (lpTick, before his walk): the hours, keeping up with the front.
 function lgTick(S, Q, ev) {
   const j = Q.j;
   if (!lnHours(S).work || Q.home) { lgLeave(S, ev, lnHours(S).meal ? 'meal' : 'hours'); return; }
   if (Q.tx !== undefined) return;
-  const sp = lgSpot(S, j.k, j.side);
-  if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > 1.2) {           // the front has moved on: he shuffles up with it
-    const [tx, tz] = lnWalkable(S.seed, sp.x, sp.z, S.ln.f[1]) ? [sp.x, sp.z] : lpClampWalk(S, Q.x, Q.z, sp.x, sp.z);
-    if (Math.hypot(tx - Q.x, tz - Q.z) > 0.05) { Q.tx = tx; Q.tz = tz; }
-  } else Q.f = sp.f;
+  const sp = lgPlace(S, Q, j.k, j.side);
+  if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > 1.2) { Q.tx = sp.x; Q.tz = sp.z; }   // the front has moved on: he shuffles up with it
+  else Q.f = sp.f;
 }
 // The commands: lpJoin { stage }, lpLeave {}, lgDone { stage, q (whole number 0 to 100) }.
 function lgCmd(S, c, ev) {
@@ -7628,8 +7635,8 @@ function lgCmd(S, c, ev) {
     if (Q.j) lgLeave(S, ev, 'switch');
     const side = Q.z < 0 ? -1 : 1;
     Q.j = { k, side, t: S.tick, last: S.tick, n: 0, q: -1, qs: [], wu: 0 };
-    const sp = lgSpot(S, k, side), [tx, tz] = lnWalkable(S.seed, sp.x, sp.z, S.ln.f[1]) ? [sp.x, sp.z] : lpClampWalk(S, Q.x, Q.z, sp.x, sp.z);
-    if (Math.hypot(tx - Q.x, tz - Q.z) > 0.05) { Q.tx = tx; Q.tz = tz; } else { delete Q.tx; delete Q.tz; }
+    const sp = lgPlace(S, Q, k, side);
+    if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > 0.05) { Q.tx = sp.x; Q.tz = sp.z; } else { delete Q.tx; delete Q.tz; }
     delete Q.home;
     ev.push({ t: 'lgJoined', stage: k });
     return;
@@ -7638,7 +7645,7 @@ function lgCmd(S, c, ev) {
   const j = Q.j, q = c.q;
   if (!j || c.stage !== j.k || !Number.isInteger(q) || q < 0 || q > 100) return;
   if (S.tick - j.last < LG.MIN_T || !lnHours(S).work) return;   // (too soon after the last: tapping fast gains nothing)
-  const sp = lgSpot(S, j.k, j.side);
+  const sp = lgPlace(S, Q, j.k, j.side);
   if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > LG.BACK) return;      // (not at his place)
   const min = Math.min(LG.CAP_MIN, (S.tick - j.last) * DT_MIN), wu = LG.worth(q) * LG.rate() * min;
   const o = lnWork.ev; lnWork.ev = ev;
@@ -23213,31 +23220,37 @@ const LG_GAMES = [
     pose(r, t) { if (r.flick) { const d = t - r.flick; return { anim: 'shovel', frame: d < 150 ? 2 : 3 }; } const d = r.hitT ? t - r.hitT : 1e9, nx = r.b.find(b => b > t), w = nx ? nx - t : 1e9; return { anim: 'pick', frame: d < 110 ? 2 : d < 260 ? 3 : w < 260 ? 1 : 0 }; },
   },
   // 2. Laying rock: tap to tip the barrow when its nose is over the chalk cross, then drag side to side to rake the
-  //    heap level. Measured: the tip's distance from the cross, how level the stones are when the time is up.
+  //    stones level between the two pegs (each pass of the rake over a stretch brings it towards the level the load
+  //    makes there, and pulls the spill outside the pegs back in). Measured: the tip's distance from the cross, how
+  //    level the bed is between the pegs when it is level enough or the time is up.
   {
-    start(r, t) { r.t0 = t + 500; r.v = 0.095 + lgRnd('v') * 0.03; r.mx = 170 + lgRnd('m') * 60; r.h = null; r.T = 3400; },
+    start(r, t) { r.t0 = t + 500; r.v = 0.095 + lgRnd('v') * 0.03; r.mx = 170 + lgRnd('m') * 60; r.h = null; r.T = 4000; },
     nose(r, t) { return 10 + Math.max(0, t - r.t0) * r.v + 44; },
     frame(r, t) {
       if (!r.h && this.nose(r, t) > 345) this.tip(r, t);
-      if (r.h && r.q === undefined) { const e = this.even(r); r.ev = e; if (e >= 0.92 || t - r.tipT > r.T) lgEnd(r, t, 100 * (0.35 * r.tipS + 0.65 * lgCl((e - 0.2) / 0.72, 0, 1))); }
+      if (r.h && r.q === undefined) { const e = this.even(r); r.ev = e; if (e >= 0.9 || t - r.tipT > r.T) lgEnd(r, t, 100 * (0.35 * r.tipS + 0.65 * lgCl((e - 0.15) / 0.7, 0, 1))); }
     },
+    inBed: (r, c) => Math.abs(c * 10 + 5 - r.mx) <= 60,
     tip(r, t) {
       const n = Math.min(345, this.nose(r, t)), err = Math.abs(n - r.mx);
       r.tipS = 1 - lgCl((err - 4) / 40, 0, 1); r.tipT = t; r.tx = n;
       r.h = []; for (let c = 0; c < 36; c++) { const x = c * 10 + 5; r.h.push(4 + 36 * Math.exp(-((x - n) ** 2) / 900) + 5 * lgRnd('b' + c)); }
-      r.ev0 = this.sd(r);
+      // the level this load makes between the pegs: the stones within reach of them, spread over the bed
+      let v = 0, nb = 0; for (let c = 0; c < 36; c++) { if (Math.abs(c * 10 + 5 - r.mx) <= 90) v += r.h[c] - 4; if (this.inBed(r, c)) nb++; }
+      r.L = lgCl(4 + v / nb, 6, 24);
+      r.ev0 = Math.max(1, this.sd(r));
       lgFx('chip', n, 160, 26, LGC.ROCK2, { spread: 2.6, v: 150 }); lgFx('dust', n, 168, 6, 'rgba(140,135,125,0.55)', { v: 40, g: -15, size: 5, life: 800 }); lgUi.shake = 4;
       lgRing(n, 176, lgCol(r.tipS * 100), 10);
     },
-    sd(r) { const b = r.h.slice(2, 34), m = b.reduce((a, v) => a + v, 0) / b.length; return Math.sqrt(b.reduce((a, v) => a + (v - m) ** 2, 0) / b.length); },
-    even(r) { return 1 - lgCl(this.sd(r) / Math.max(1, r.ev0), 0, 1); },
-    down(r, p, t) { if (!r.h && t >= r.t0) this.tip(r, t); else r.rk = p; },
+    sd(r) { let a = 0, n = 0; for (let c = 0; c < 36; c++) if (this.inBed(r, c)) { a += (r.h[c] - r.L) ** 2; n++; } return Math.sqrt(a / n); },
+    even(r) { return 1 - lgCl(this.sd(r) / r.ev0, 0, 1); },
+    down(r, p, t) { if (!r.h) { if (t >= r.t0) this.tip(r, t); } else r.rk = p; },
     move(r, p, t) {
       if (!r.h || !r.rk || r.q !== undefined) return;
-      const d = Math.abs(p.x - r.rk.x), k = Math.min(1, d / 12) * 0.5, H = r.h;
-      if (d > 0.5) {
-        for (let c = 1; c < 35; c++) { const x = c * 10 + 5; if (Math.abs(x - p.x) > 32) continue; const avg = (H[c - 1] + H[c + 1]) / 2, mv = (avg - H[c]) * k; H[c] += mv; H[c - 1] -= mv / 2; H[c + 1] -= mv / 2; }
-        r.rkT = t; if ((t | 0) % 3 === 0) lgFx('chip', p.x, 168, 1, LGC.ROCK2, { v: 60, spread: 3, life: 300, size: 2 });
+      const a = Math.min(r.rk.x, p.x), b = Math.max(r.rk.x, p.x), H = r.h;
+      if (b - a > 0.5) {
+        for (let c = 0; c < 36; c++) { const x = c * 10 + 5; if (x < a - 6 || x > b + 6) continue; H[c] += ((this.inBed(r, c) ? r.L : 4) - H[c]) * 0.3; }
+        r.rkT = t; lgFx('chip', p.x, 176 - H[lgCl(Math.round((p.x - 5) / 10), 0, 35)], 1, LGC.ROCK2, { v: 60, spread: 3, life: 300, size: 2 });
       }
       r.rk = p;
     },
@@ -23246,6 +23259,8 @@ const LG_GAMES = [
       lgGround(g, 112, LGC.EARTH, LGC.EARTH2);
       lgRect(g, 0, 176, LGC.W, 44, LGC.EARTH2);
       for (const [x, w] of [[30, 'b'], [330, 'c']]) lgMan(g, 'navvy_' + w, 'rake', x < 100 ? 'se' : 'sw', Math.floor(t / 300 + (x > 100 ? 1 : 0)) % 3, x, 200, 2);
+      for (const px of [r.mx - 62, r.mx + 62]) { lgRect(g, px - 2, 146, 4, 34, LGC.WOOD); lgRect(g, px - 2, 146, 4, 4, LGC.CHALK); }   // the pegs
+      if (r.h && r.q === undefined) lgLine(g, r.mx - 60, 178 - r.L, r.mx + 60, 178 - r.L, LGC.CHALK, 1, [3, 4]);   // the level to rake to
       if (r.h) { g.fillStyle = LGC.ROCK; g.beginPath(); g.moveTo(0, 178); for (let c = 0; c < 36; c++) g.lineTo(c * 10 + 5, 178 - r.h[c]); g.lineTo(360, 178); g.fill(); for (let c = 0; c < 36; c++) lgRect(g, c * 10 + 2 + (c * 7) % 5, 178 - r.h[c] + 3, 3, 2, LGC.ROCK2); }
       if (!r.h) {
         lgLine(g, r.mx - 9, 170, r.mx + 9, 184, LGC.CHALK, 3); lgLine(g, r.mx - 9, 184, r.mx + 9, 170, LGC.CHALK, 3);
@@ -23258,7 +23273,7 @@ const LG_GAMES = [
         if (r.q === undefined) { const a = Math.sin(t / 120) * 40; lgLine(g, 180 + a - 20, 60, 180 + a + 20, 60, LGC.CHALK, 3); }
       }
     },
-    hint(r) { return !r.h ? 'Tap to tip as the nose is over the cross' : 'Drag side to side to rake it level'; },
+    hint(r) { return !r.h ? 'Tap to tip as the nose is over the cross' : 'Drag side to side: rake it level between the pegs'; },
     pose(r, t) { if (!r.h) return { anim: 'barrow', frame: Math.floor(t / 150) % 4, held: { key: 'tool/barrow/<dir>/full', at: 'grip' } }; if (t - r.tipT < 500) return { anim: 'tip', frame: 1, held: { key: 'tool/barrow/<dir>/tipped', at: 'grip' } }; return { anim: 'rake', frame: r.rkT && t - r.rkT < 200 ? Math.floor(t / 90) % 3 : 0 }; },
   },
   // 3. Laying ties, with a partner: press and hold as his "Hup!" ring fills, keep your end level with his as you walk
@@ -23413,7 +23428,9 @@ function lgPoseAnim(St, k) {
   p.innerHTML = '<div id="lgHead"><div id="lgTitle"></div><div id="lgPips"></div><button id="lgOut">Step out</button></div><canvas id="lgCv"></canvas><div id="lgHint" role="status"></div>';
   document.body.appendChild(p); lgUi.panel = p; lgUi.cv = $('lgCv');
   j.addEventListener('click', () => { const k = +j.dataset.k; if (k >= 0) { lgUi.left = false; lpCloseCard(); send({ t: 'lpJoin', stage: k }); } });
-  $('lgOut').addEventListener('click', () => lgStepOut());
+  // Step out at a touch, even with the other thumb still holding the tie or the rail (a click would wait for both)
+  $('lgOut').addEventListener('pointerdown', e => { e.preventDefault(); if (!lgUi.left) lgStepOut(); });
+  $('lgOut').addEventListener('click', () => { if (!lgUi.left) lgStepOut(); });
   const pt = e => { const b = lgUi.box, R = lgUi.cv.getBoundingClientRect(); return b ? { x: (e.clientX - R.left - b.ox) / b.s, y: (e.clientY - R.top - b.oy) / b.s } : { x: 0, y: 0 }; };
   const call = (fn, e) => { const r = lgUi.r, G = LG_GAMES[lgUi.k]; if (!r || !G || !G[fn] || lgUi.frozen) return; G[fn](r, pt(e), lgT()); };
   lgUi.cv.addEventListener('pointerdown', e => { e.preventDefault(); try { lgUi.cv.setPointerCapture(e.pointerId); } catch (x) { /* (a synthetic pointer) */ } lgUi.ptr = e.pointerId; call('down', e); });

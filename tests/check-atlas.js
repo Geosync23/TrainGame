@@ -1,5 +1,6 @@
 // Check: the atlas (the integrator's; plans/d27-tech.md 7.4): every key the code asks for exists, and the budget.
-// - The budget: PIX_ATLAS (the generated block in index.html) at most 700 KB (the plan's target 600 is reported).
+// - The budget: PIX_ATLAS (the generated block in index.html, as it is written there: D32 packs its index, format
+//   v 2) at most 1,000 KB (the designer lifted the 700 KB budget on 2026-11-13).
 // - Static: every kind of goods (GOODS27) has goods/<kind> and its variants the code uses (FR_VARIANT, PIX_VARIANT), the
 //   held and truck frames where its verb needs them; the platform cart has its cells (CARGO27.CART_CELLS) in every
 //   direction; every shop body, house, the church, the school and the freight house have a lit night version with the
@@ -36,7 +37,10 @@ module.exports = async function checkAtlas() {
       for (const w of new Set(who)) for (const a of ['idle', 'walk']) for (const d of dirs) B(`ppl/${w}/${a}/${d}/0`);
       return { miss, bytes, frames: Object.keys(F).length, lit: lit.length };
     });
-    if (st.bytes > 700 * 1024) P(`the atlas is ${(st.bytes / 1024).toFixed(0)} KB, over the 700 KB budget`);
+    // D32: the block's size as written in the page (the index is packed; unpacked in memory it is larger).
+    st.bytes = await page.evaluate(async () => { const t = await (await fetch(location.pathname)).text(), a = t.indexOf('// ---- PIX_ATLAS begin'), b = t.indexOf('// ---- PIX_ATLAS end', a); return a >= 0 && b > a ? b - a : -1; });
+    if (st.bytes < 0) P('the atlas block was not found in the page');
+    if (st.bytes > 1000 * 1024) P(`the atlas is ${(st.bytes / 1024).toFixed(0)} KB, over the 1,000 KB budget`);
     for (const m of st.miss.slice(0, 20)) P('missing in the atlas: ' + m);
     if (st.miss.length > 20) P(`... and ${st.miss.length - 20} more missing`);
     // ---- In play ----
@@ -65,7 +69,7 @@ module.exports = async function checkAtlas() {
     }, saves);
     const keys = Object.keys(play.miss);
     for (const k of keys.slice(0, 20)) P(`drawn in play but not in the atlas: ${k} (${play.miss[k]} times)`);
-    console.log(`  atlas ${(st.bytes / 1024).toFixed(0)} KB (budget 700, target 600), ${st.frames} frames, ${st.lit} night bodies; ${play.n} saves of two days drawn at the default zoom and at scale 1, ${keys.length} keys missed`);
+    console.log(`  atlas ${(st.bytes / 1024).toFixed(0)} KB (budget 1,000), ${st.frames} frames, ${st.lit} night bodies; ${play.n} saves of two days drawn at the default zoom and at scale 1, ${keys.length} keys missed`);
     if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   return problems;

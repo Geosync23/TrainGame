@@ -574,3 +574,13 @@ Provisional choices:
 11. The economy is counts only (stock, open or shut, pay, mood); no prices.
 12. The far town is drawn and not simulated; the atlas budget rises to 850 KB at stage 3 only.
 13. Dev mode is a row in Settings (off by default), kept in the browser, not in the save; what it sets is in the save.
+
+## Lead's decisions on the designer's open points (2026-11-13)
+1. Levers while the player is away: the relief man who throws them 10 minutes late (`awLeverTick`) is confirmed; the lateness counts against the player.
+2. Longer day: the player keeps his real speed (pace and action times scaled by 1.5). Update the affected checks' expected times.
+3. No Sunday rest: the crew works every day, so a full crew takes two calendar weeks, as the designer said.
+4. Work train: as planned; engine first is an acceptable fallback if backing in is hard.
+5. The Town builder starts only after D31 is merged; it uses D31's real queue names.
+6. Camp rectangle: Foundation verifies and may move it.
+7. No schema bump: every new store is optional, so the schema stays 19 and check-save's fixtures are not re-recorded.
+8. Art direction for the wilds (designer): the same style as the station and town, extrapolated; visually dense and detailed but charming.

@@ -6014,93 +6014,129 @@ function lnNoise(seed, x, z, cell, c) {
 // - the near side (south, down the screen) is low or falls away (brush, boulders, deadfall, a river alongside, a
 //   rim), so it never hides the men; tall things there stand well back.
 // Beyond the belts, and beyond both ends of the strip, the country goes on for ever (drawn, never walked).
-// Art: a region's border modules are asked for by the keys of the two wilds artists, `wild/far/<region>/<name>/<n>`
-// and `wild/near/<region>/<name>/<n>` (n 1 to 3), landmarks `wild/mark/<name>`, ground `tile/wild/<region>/<n>`
-// (n 1 to 4); until those land each thing carries a stand-in from batch one (`alt`), which the renderer draws
-// when the atlas lacks the key. THE NAMES after the region are Foundation's guesses: when the artists' keys land, the
-// lead matches the rows of LINE.REGIONS to them (one table; nothing else changes).
-// A belt row: [name, off (u beyond the border), depth (u), n (things per 8u of line), h (height, u), stand-ins].
-LINE.BORDER = { N: [8.5, 11.5], S: [11, 14], END: 3.6, WILD_N: 3 };
-LINE.BLEND = 24;
-LINE.REGIONS = {
-  prairie: { name: 'Home prairie',
-    far: [['rise', 0, 3, 5, 1.3, ['nat/bush/1', 'nat/bush/2', 'nat/brush/1', 'nat/brush/2', 'nat/sage/3']], ['rank1', 3, 5, 1, 0, ['nat/mound/1', 'nat/mound/2', 'nat/mound/3']], ['oak', 6, 8, 1.5, 6, ['nat/oak/1', 'nat/oak/2']], ['rank2', 13, 10, 1, 0, ['nat/mound/1', 'nat/mound/3']]],
-    near: [['brush', 0, 3, 7, 1.4, ['nat/brush/1', 'nat/brush/2', 'nat/brush/3', 'nat/bush/1', 'nat/bush/2', 'nat/sage/3']], ['fence', 1.5, 1, 0.5, 1.5, ['nat/fence_x']], ['back', 10, 8, 1, 6, ['nat/oak/2', 'nat/cottonwood/3']]],
-    marks: [{ name: 'lone_cottonwood', m: 180, side: -1, off: 1.5, alt: 'nat/cottonwood/2' }] },
-  creek: { name: 'Creek bottoms', water: 'creek',
-    far: [['thicket', 0, 3, 6, 4, ['nat/willow/1', 'nat/willow/2', 'nat/brush/1', 'nat/bush/1']], ['rank1', 2.5, 7, 4, 8, ['nat/cottonwood/1', 'nat/cottonwood/2', 'nat/cottonwood/3', 'nat/willow/1']], ['rank2', 10, 8, 3, 8, ['nat/cottonwood/2', 'nat/cottonwood/1']]],
-    near: [['reeds', 0, 1.6, 6, 0.9, ['nat/cattails/1', 'nat/cattails/2', 'nat/bush/1']], ['back', 12, 8, 2, 6, ['nat/willow/2', 'nat/cottonwood/3']]],
-    marks: [{ name: 'beaver_dam', m: 470, side: 1, off: 3.5, alt: 'nat/log_z' }] },
-  hills: { name: 'The hills and the cut',
-    far: [['bluff', 0, 3, 3, 2.8, ['nat/outcrop/2', 'nat/outcrop/1', 'nat/boulder/3']], ['rank1', 2.5, 5, 1.2, 0, ['nat/mound/1', 'nat/mound/2', 'nat/mound/3']], ['rank2', 8, 9, 1.5, 0, ['nat/mound/3', 'nat/juniper/1', 'nat/oak/2']]],
-    near: [['slope', 0, 3.5, 6, 1, ['nat/bush/1', 'nat/boulder/4', 'nat/sage/1', 'nat/stones/2', 'nat/sage/2']], ['draw', 4, 2, 1.2, 1, ['line/cut_bank_s']], ['back', 11, 8, 1, 4, ['nat/juniper/1', 'nat/juniper/2']]],
-    marks: [] },
-  woods: { name: 'The big woods',
-    far: [['wall', 0, 4, 8, 6, ['nat/pine/1', 'nat/pine/2', 'nat/pine/3']], ['rank1', 4, 6, 7, 6, ['nat/pine/1', 'nat/pine/2']], ['rank2', 10, 9, 6, 6, ['nat/pine/1', 'nat/pine/2', 'nat/snag']]],
-    near: [['deadfall', 0, 3.5, 7, 0.9, ['nat/felled', 'nat/log_x', 'nat/stump/1', 'nat/stump/2', 'nat/brush_cut', 'nat/bush/2', 'nat/snag']], ['back', 9, 9, 5, 6, ['nat/pine/2', 'nat/pine/3']]],
-    marks: [{ name: 'giant_pine', m: 1150, side: -1, off: 1.5, alt: 'nat/pine/1' }, { name: 'trapper_cabin', m: 1270, side: -1, off: 4, alt: null }] },
-  rocks: { name: 'The rocks',
-    far: [['cliff', 0, 3, 3.5, 2.8, ['nat/outcrop/1', 'nat/outcrop/2']], ['rank1', 2.5, 5, 3, 3, ['nat/outcrop/1', 'nat/boulder/3', 'nat/juniper/1']], ['rank2', 8, 9, 2.5, 3, ['nat/outcrop/1', 'nat/pine/3', 'nat/mound/2']]],
-    near: [['boulders', 0, 4, 8, 1.5, ['nat/boulder/1', 'nat/boulder/2', 'nat/boulder/3', 'nat/boulder/4', 'nat/stones/1']], ['back', 10, 8, 1.5, 2.8, ['nat/outcrop/2']]],
-    marks: [{ name: 'balanced_rock', m: 1450, side: -1, off: 1.5, alt: 'nat/boulder/3' }] },
-  river: { name: 'The river run', water: 'river',
-    far: [['bluff', 0, 3, 4, 3, ['nat/outcrop/2', 'nat/brush/2', 'nat/oak/2']], ['rank1', 2.5, 6, 4, 6, ['nat/oak/1', 'nat/pine/2', 'nat/cottonwood/3']], ['rank2', 9, 8, 1, 0, ['nat/mound/1', 'nat/mound/2']], ['rank2t', 9, 9, 3, 6, ['nat/pine/1', 'nat/oak/1']]],
-    near: [['bar', 0, 1.6, 4, 0.5, ['nat/stones/1', 'nat/stones/3', 'nat/log_z', 'nat/cattails/2']]],
-    marks: [{ name: 'waterfall', m: 1700, side: -1, off: 3, alt: null }, { name: 'ferry_landing', m: 1850, side: 1, off: 1, alt: 'nat/log_x' }] },
-  canyon: { name: 'The canyon', water: 'rim',
-    far: [['wall', 0, 2.5, 5, 2.8, ['nat/outcrop/1']], ['rank1', 2, 4, 4, 2.8, ['nat/outcrop/1', 'nat/outcrop/2']], ['rank2', 5.5, 6, 3, 3, ['nat/outcrop/1', 'nat/pine/3', 'nat/juniper/1']], ['rank3', 11, 8, 2, 3, ['nat/outcrop/1', 'nat/mound/2']]],
-    near: [['rim', 0, 2, 6, 0.6, ['nat/boulder/4', 'nat/stones/2', 'nat/stones/1', 'nat/sage/2']]],
-    marks: [{ name: 'natural_arch', m: 2030, side: -1, off: 2, alt: 'nat/outcrop/1' }] },
-  pass: { name: 'The pass',
-    far: [['face', 0, 3, 4, 3, ['nat/outcrop/1', 'nat/boulder/3', 'nat/pine/3']], ['rank1', 2.5, 6, 4, 6, ['nat/pine/1', 'nat/outcrop/1', 'nat/pine/2']], ['rank2', 9, 8, 1.5, 0, ['nat/mound/3', 'nat/mound/1']], ['rank2t', 9, 9, 3, 6, ['nat/pine/1', 'nat/pine/2']]],
-    near: [['scree', 0, 3.5, 7, 1, ['nat/boulder/4', 'nat/stones/1', 'nat/stones/3', 'nat/boulder/2']], ['back', 11, 8, 3, 4, ['nat/pine/3']]],
-    marks: [{ name: 'summit_board', m: 2210, side: -1, off: -3, alt: 'line/mile_board' }] },
-  valley: { name: 'The far valley', water: 'stream',
-    far: [['fence', 0, 2.5, 3, 2, ['nat/fence_x', 'nat/bush/1', 'nat/haystack', 'nat/bush/2']], ['rank1', 3, 6, 1.5, 6, ['nat/oak/1', 'nat/oak/2', 'nat/haystack']], ['rank2', 10, 8, 1, 0, ['nat/mound/2', 'nat/mound/1']]],
-    near: [['reeds', 0, 1.6, 5, 0.9, ['nat/cattails/1', 'nat/bush/1', 'nat/flowers/1']], ['back', 12, 8, 1, 6, ['nat/oak/2']]],
-    marks: [{ name: 'water_tower', m: 2500, side: -1, off: 6, alt: null }] },
+// Art: the two wilds artists' modules and pieces (LINE.WILD below), landmarks `wild/mark/<name>`, wildlife
+// `wild/life/...`, ground `tile/wild/<region>/<n>` and the blend tiles between neighbours.
+LINE.BORDER = { N: 9.5, S: 11, PAD_N: 1, PAD_S: 0.4, END: 3.6 };   // the far wall's front line and the near side's edge (u from the line); how far short of each a walker stops
+LINE.BLEND = 12;                             // a region's ground gives way to the next one's over this many u before the next begins
+// The wild country as the two wilds artists drew it (plans/pixel/d32/far/README.md and near/README.md; the Wilds
+// builder, 2026-11-13). Both borders are STRAIGHT lines along the track:
+// - the far side: modules 16u long standing side by side in rows. Row 0 is rank 1, the tall border, its front line at
+//   z -BORDER.N; row 1 is rank 2, 14u behind; rows 2, 3, .. are rank 3, 30u behind and every 20u further north, for
+//   ever (so the top of any screen is covered). Each row's grid is shifted along x (OFF, then OFF3 a row) so the seams
+//   never line up. The last two modules before a region's end are the artist's `to_<next>` pair.
+// - the near side: three bands measured from z BORDER.S: edge (0 to 10u beyond it, pieces 8u long), mid (10 to 34u,
+//   16u pieces), far (34 to 58u, 16u pieces); the region's own ground goes on beyond. The last 16u before a region's
+//   end is the artist's blend piece in each band. Some edge slots hold a landmark piece instead (EDGE_MARKS).
+// A region begins on a multiple of 16u (RUNS: the plan's metres moved to the nearest one).
+LINE.WILD = {
+  ORDER: ['prairie', 'creek', 'hills', 'woods', 'rocks', 'river', 'canyon', 'pass', 'valley'],
+  BACK: [0, 14, 30], REPEAT: 20, OFF: [0, 5, 9], OFF3: 7, VARS: [4, 3, 3],
+  NEAR: { edge: [0, 8, 4], mid: [10, 16, 3], far: [34, 16, 2] }, NEAR_END: 58,
+  // edge pieces that are landmarks, by the slot's x (u): the beaver dam, the ferry landing, the canyon's shelf (in, 1,
+  // 2, 1, 2, out: the rim comes in to 5u from the line), the mill
+  EDGE_MARKS: { 672: 'beaver_dam', 2640: 'ferry_landing', 2896: 'canyon_shelf/in', 2904: 'canyon_shelf/1', 2912: 'canyon_shelf/2', 2920: 'canyon_shelf/1', 2928: 'canyon_shelf/2', 2936: 'canyon_shelf/out', 3432: 'mill' },
+  SHELF: [2896, 2944, 5],                    // the shelf's stretch (u) and the near border there (the pieces reach 6u north of the edge)
+  ROCKCUT: [2112, 2152, 3],                  // the rock cut blasted through a spur in the rocks: five 8u pieces, its faces 3u each side of the line
 };
+LINE.RUNS = LINE.WILD.ORDER.map((k, i) => { const seg = LINE.SEGS.find(q => q[3] === k && q[0] > 0); return { k, x0: i ? Math.round(seg[0] * LINE.M / 16) * 16 : -Infinity }; });
+// Landmarks that stand alone (the edge pieces above are the others). side 'n': at the far wall's foot, baked over the
+// wall; 's': beyond the near edge, baked over the near bands; 'c': in the corridor, a sorted thing. z is in line units.
+LINE.MARKS = [
+  { name: 'cottonwood', m: 180, z: -10.4, side: 'n' }, { name: 'grave', m: 236, z: -9.3, side: 'n' },
+  { name: 'wagon_wreck', m: 122, z: 11 + 13, side: 's' }, { name: 'far_cabin', m: 268, z: 11 + 25, side: 's', smoke: true },
+  { name: 'giant_pine', m: 1150, z: -10.6, side: 'n' }, { name: 'trapper_cabin', m: 1270, z: -11.8, side: 'n' },
+  { name: 'balanced_rock', m: 1420, z: -10.8, side: 'n' },
+  { name: 'waterfall', m: 1700, z: -13, side: 'n', water: true },
+  { name: 'arch', m: 1990, z: -11.6, side: 'n' },
+  { name: 'summit_board', m: 2210, z: -6.6, side: 'c' },
+  { name: 'water_tower', m: 2492, z: 11 + 48, side: 's' }, { name: 'far_town', m: 2514, z: 11 + 57, side: 's' },
+].map(q => Object.assign(q, { key: 'wild/mark/' + q.name, x: Math.round(q.m * LINE.M * 10) / 10 }));
+// The regions: the name, the landmarks (for the layout's export and the checks) and the wildlife of each.
+LINE.REGIONS = {
+  prairie: { name: 'Home prairie', marks: ['cottonwood', 'grave', 'wagon_wreck', 'far_cabin'], life: ['prairie dogs', 'buffalo', 'hawk'] },
+  creek: { name: 'Creek bottoms', water: 'creek', marks: ['beaver_dam'], life: ['ducks', 'deer'] },
+  hills: { name: 'The hills and the cut', marks: [], life: ['fox', 'prairie dogs', 'hawk'] },
+  woods: { name: 'The big woods', marks: ['giant_pine', 'trapper_cabin'], life: ['deer', 'buck'] },
+  rocks: { name: 'The rocks', marks: ['balanced_rock', 'rockcut'], life: ['fox', 'hawk'] },
+  river: { name: 'The river run', water: 'river', marks: ['waterfall', 'ferry_landing'], life: ['ducks', 'hawk'] },
+  canyon: { name: 'The canyon', water: 'rim', marks: ['arch', 'canyon_shelf'], life: ['hawk'] },
+  pass: { name: 'The pass', marks: ['summit_board'], life: ['hawk'] },
+  valley: { name: 'The far valley', water: 'stream', marks: ['mill', 'water_tower', 'far_town'], life: ['fox', 'ducks'] },
+};
+// At the strip's two ends a wood closes in on both sides (batch one's trees, inside the straight borders).
+const LN_END_BELT = [[0, 4, 8, 6, ['nat/pine/1', 'nat/pine/2', 'nat/pine/3']], [4, 6, 7, 6, ['nat/pine/1', 'nat/pine/2']], [10, 9, 6, 6, ['nat/pine/1', 'nat/pine/2', 'nat/snag']]];
 const LN_REGION_OF = { junction: 'prairie', far: 'valley' };
 function lnRegionAt(m) { if (m < 0) return 'prairie'; const s = lnSegAt(m); return s[3] || LN_REGION_OF[s[2]] || 'prairie'; }
-// The region at the 1u cell (i, j): the next one's cells mixed in over LINE.BLEND u at each change (hash-dithered).
+// The wild country's region at x (u): the index in LINE.RUNS.
+function lnRunIx(x) { const R = LINE.RUNS; let k = 0; while (k < R.length - 1 && x >= R[k + 1].x0) k++; return k; }
+// The region at the 1u cell (i, j): the next one's cells mixed in over the LINE.BLEND u before it begins (hash-dithered).
 function lnRegionCell(seed, i, j) {
-  const M = LINE.M, x = i + 0.5, m = x / M, r = lnRegionAt(m), h = lnHash(seed, i, j, 1), half = LINE.BLEND / 2;
-  if (m < 0 || m >= LINE.LEN_M) return r;
-  const s = lnSegAt(m), d0 = (m - s[0]) * M, d1 = (s[1] - m) * M;
-  if (d0 < half && s[0] > 0 && h < 0.5 - d0 / LINE.BLEND) return lnRegionAt(s[0] - 0.01);
-  if (d1 < half && s[1] < LINE.LEN_M && h < 0.5 - d1 / LINE.BLEND) return lnRegionAt(s[1] + 0.01);
-  return r;
+  const R = LINE.RUNS, x = i + 0.5, k = lnRunIx(x);
+  if (k < R.length - 1) { const d = R[k + 1].x0 - x; if (d < LINE.BLEND && lnHash(seed, i, j, 1) < 1 - d / LINE.BLEND) return R[k + 1].k; }
+  return R[k].k;
 }
-// The border on a side (-1 north, the far side; 1 south, the near side) at x: d, how far from the line it starts
-// (wandering within LINE.BORDER.N or .S), and whether this is one of the strip's ends, where both borders close in to
-// a cutting the width of the roadbed.
+// Variant n of nv for slot n of a row (c names the row): never the same twice running when there are three or more
+// (even slots take a hash; an odd slot takes one that differs from both its neighbours).
+function lnVar(seed, n, c, nv) {
+  const h = m => Math.floor(lnHash(seed, m, c, 77) * nv);
+  if (nv < 3 || !(n & 1)) return h(n);
+  const a = h(n - 1), b = h(n + 1), free = []; for (let v = 0; v < nv; v++) if (v !== a && v !== b) free.push(v);
+  return free[Math.floor(lnHash(seed, n, c, 78) * free.length)];
+}
+// The far side's module n of row `row` (0 rank 1, 1 rank 2, 2 and up rank 3's rows): { key, x, z } (its anchor: the
+// front-left corner). The row's region boundaries are the runs' starts moved to its own grid.
+function lnWildFar(seed, row, n) {
+  const W = LINE.WILD, R = LINE.RUNS, rank = Math.min(row, 2), off = row < 2 ? W.OFF[row] : (W.OFF[2] + W.OFF3 * (row - 2)) % 16, x = off + 16 * n;
+  const z = -(LINE.BORDER.N + W.BACK[rank] + (row > 2 ? W.REPEAT * (row - 2) : 0)), gb = b => off + 16 * Math.round((b - off) / 16);
+  let k = 0; while (k < R.length - 1 && x >= gb(R[k + 1].x0)) k++;
+  const base = 'wild/far/' + R[k].k + '/r' + (rank + 1) + '/', d = k < R.length - 1 ? gb(R[k + 1].x0) - x : 0;
+  return { key: d === 16 ? base + 'to_' + R[k + 1].k + '/2' : d === 32 ? base + 'to_' + R[k + 1].k + '/1' : base + (1 + lnVar(seed, n, 100 + row, W.VARS[rank])), x, z };
+}
+// The near side's piece in slot n of a band ('edge' 8u slots, 'mid' and 'far' 16u): { key, x } (anchored at x on the
+// near edge, z BORDER.S), or null where the 16u blend piece of the slot before covers this one.
+function lnWildNear(seed, band, n) {
+  const W = LINE.WILD, R = LINE.RUNS, [, len, nv] = W.NEAR[band], x = n * len, k = lnRunIx(x);
+  if (k < R.length - 1 && R[k + 1].x0 - x <= 16) return R[k + 1].x0 - x === 16 ? { key: 'wild/near/' + R[k].k + '_to_' + R[k + 1].k + '/' + band, x } : null;
+  if (band === 'edge' && W.EDGE_MARKS[x]) return { key: 'wild/mark/' + W.EDGE_MARKS[x], x, mark: W.EDGE_MARKS[x] };
+  return { key: 'wild/near/' + R[k].k + '/' + band + '/' + (1 + lnVar(seed, n, band === 'edge' ? 90 : band === 'mid' ? 91 : 92, nv)), x };
+}
+// The border on a side (-1 north, the far side; 1 south, the near side) at x: d, where it lies (u from the line: the
+// far wall's front line, the near side's edge; straight, as the art is), pad, how far short of it a walker stops (the
+// wall's foot is ragged), and whether this is one of the strip's ends, where both borders close in to a cutting the
+// width of the roadbed. Narrow places: the canyon's shelf (the rim comes in on the near side) and the rock cut (its
+// faces close on both sides).
 function lnBorder(seed, x, side) {
-  const s = side < 0 ? 0 : 1, B = LINE.BORDER, R = s ? B.S : B.N;
-  let d = R[0] + lnNoise(seed, x, s * 977, 38, 20 + s) * (R[1] - R[0]), end = false;
+  const B = LINE.BORDER, W = LINE.WILD;
+  let d = side < 0 ? B.N : B.S, pad = side < 0 ? B.PAD_N : B.PAD_S, end = false, narrow = false;
+  if (side > 0 && x >= W.SHELF[0] && x < W.SHELF[1]) { d = W.SHELF[2]; narrow = true; }
+  if (x >= W.ROCKCUT[0] && x < W.ROCKCUT[1]) { d = W.ROCKCUT[2]; pad = 0.3; narrow = true; }
   const pin = Math.min(B.END + Math.max(0, x + 10) * 0.5, B.END + Math.max(0, LINE.LEN + 130 - x) * 0.5);
-  if (pin < d) { d = pin; end = true; }
-  return { d, end };
+  if (pin < d) { d = pin; pad = 0.4; end = true; }
+  return { d, pad, end, narrow };
 }
 // Can a person stand at the line's point (x, z)? Inside both borders, between the strip's ends, and not in water
 // (the creek is crossed on the trestle's deck once the bridge is built that far: f2 is the bed's front in metres;
 // leave it out for "no bridge yet").
 function lnWalkable(seed, x, z, f2) {
   if (x < LINE.X0 || x > LINE.X1) return false;
-  if (Math.abs(z) >= lnBorder(seed, x, z < 0 ? -1 : 1).d - 0.4) return false;
+  const B = lnBorder(seed, x, z < 0 ? -1 : 1);
+  if (Math.abs(z) >= B.d - B.pad) return false;
   if (lnWaterAt(seed, x, z)) return Math.abs(z) < 2.6 && f2 !== undefined && x / LINE.M < f2;
   return true;
 }
-// Water (2 water, 1 its bank, 0 dry): the creek crosses the line under the bridge (10 m wide) and, in the creek
-// bottoms west of it, winds alongside just beyond the near border; the river runs alongside the river run and lies
-// far below the canyon's rim; a mill stream follows the far valley. All of it beyond the near border, but the crossing.
+// Water (2 water, 1 its bank, 0 dry). lnCreekAt: the creek crossing the line under the bridge (10 m wide), the only
+// water drawn as tiles. lnWaterAt adds where the near side's art holds water beyond the near edge (the creek winding
+// alongside, the river, the canyon's river below the rim, the mill stream): roughly, for the scatter and the checks.
+function lnCreekAt(seed, x, z) {
+  const cx = 544 * LINE.M + (lnNoise(seed, 0, z, 14, 7) - 0.5) * 5 * Math.min(1, Math.abs(z) / 12), dc = Math.abs(x - cx);
+  return dc < 7.15 ? 2 : dc < 9.2 ? 1 : 0;
+}
 function lnWaterAt(seed, x, z) {
-  const M = LINE.M, cx = 544 * M + (lnNoise(seed, 0, z, 14, 7) - 0.5) * 5 * Math.min(1, Math.abs(z) / 12), dc = Math.abs(x - cx);
-  if (dc < 7.15) return 2;
-  if (dc < 9.2) return 1;
-  if (z <= 0) return 0;
+  const M = LINE.M, c = lnCreekAt(seed, x, z);
+  if (c || z <= 0) return c;
   const m = x / M, band = (m0, m1, off, w0, w1, c) => {
     if (m <= m0 - 20 || m >= m1 + 20) return 0;
-    const fade = Math.min(1, (m - m0 + 20) / 40, (m1 + 20 - m) / 40), z0 = lnBorder(seed, x, 1).d + off + (1 - fade) * 60, w = w0 + lnNoise(seed, x, 0, 50, c) * (w1 - w0);
+    const fade = Math.min(1, (m - m0 + 20) / 40, (m1 + 20 - m) / 40), z0 = LINE.BORDER.S + off + (1 - fade) * 60, w = w0 + lnNoise(seed, x, 0, 50, c) * (w1 - w0);
     return z > z0 + 1.6 && z < z0 + w ? 2 : z > z0 && z < z0 + w + 1.6 ? 1 : 0;
   };
   return band(330, 536, 1.2, 5, 8, 8) || band(1580, 1940, 1.2, 16, 24, 9) || band(1985, 2085, 9, 9, 12, 10) || band(2340, 2600, 1.2, 3.5, 5, 11);
@@ -6147,9 +6183,18 @@ function lnTile(seed, i, j) {
     default: return p > 0.78 ? 'tile/drygrass/' + v(2) : 'tile/prairie/' + v(4);
   }
 }
-// The wilds artists' ground for the cell, asked for first where the plain region ground lies (null on water, the
-// roadbed's stretch is the renderer's): `tile/wild/<region>/<1..4>`.
-function lnTileWild(seed, i, j) { return lnWaterAt(seed, i + 0.5, j + 0.5) ? null : 'tile/wild/' + lnRegionCell(seed, i, j) + '/' + (1 + Math.floor(lnHash(seed, i, j, 2) * 4)); }
+// The wilds artists' ground for the cell (null on the creek's crossing; the roadbed's stretch is the renderer's):
+// `tile/wild/<region>/<1..4>` by a hash of the cell, and over the LINE.BLEND u before the next region begins the
+// blend tiles `tile/wild/blend/<a>-<b>/<1..4>` (20 to 80% of b), the share rising with a little jitter by cell.
+function lnTileWild(seed, i, j) {
+  const x = i + 0.5, R = LINE.RUNS, k = lnRunIx(x), v = 1 + Math.floor(lnHash(seed, i, j, 2) * 4);
+  if (lnCreekAt(seed, x, j + 0.5)) return null;
+  if (k < R.length - 1) {
+    const d = R[k + 1].x0 - x;
+    if (d < LINE.BLEND) { const q = Math.max(0, Math.min(5, Math.floor((1 - d / LINE.BLEND) * 5 + (lnHash(seed, i, j, 1) - 0.5) * 1.6 + 0.5))); if (q) return q > 4 ? 'tile/wild/' + R[k + 1].k + '/' + v : 'tile/wild/blend/' + R[k].k + '-' + R[k + 1].k + '/' + q; }
+  }
+  return 'tile/wild/' + R[k].k + '/' + v;
+}
 // The standing things in the 8u cell (ci, cj): [{ key, alt?, x, z, row, h, edge?, far?, mark? }] (h: its height in u,
 // for the painter's order; alt: the stand-in when the atlas lacks key). The country is thick with them (the designer:
 // "visually dense and detailed but charming"): grass tufts, flowers, stones, bushes, stumps, the odd skull or prairie
@@ -6165,9 +6210,10 @@ function lnScatter(seed, ci, cj) {
     const n = slot; slot += 2;
     const x = x0 + R(n) * 8, z = z0 + R(n + 1) * 8, az = Math.abs(z);
     if (lnWaterAt(seed, x, z) || (x < 62 * M && x > -2 && az < 6)) return;
-    const far = az >= Bc.d - 0.8;
-    if (far && h >= 1 && az < Bc.d + (side < 0 ? 20 : 9)) return;   // the belts have their own; small things carry on through them
-    if (far && side > 0 && (k === 'canyon' || k === 'pass' || k === 'hills') && az < Bc.d + 10) return;   // nothing stands on the drop
+    if (z < 0.6 - LINE.BORDER.N) return;   // the far wall and its ranks are the artist's modules: nothing of ours stands there
+    const far = z > LINE.BORDER.S - 0.5, Bx = lnBorder(seed, x, side);
+    if (far && z < LINE.BORDER.S + LINE.WILD.NEAR_END + (k === 'canyon' || k === 'pass' ? 16 : 3)) return;   // nor on the near side's three bands
+    if (az >= Bx.d - (Bx.narrow ? 0.4 : 0.9) && !far) return;   // nor in the borders' feet, on the shelf's drop or in the rock cut's faces
     out.push({ key, x, z, row: az <= LINE.ROW, h, far });
   };
   // n things on average: the whole part each, the rest by chance
@@ -6204,24 +6250,50 @@ function lnScatter(seed, ci, cj) {
     if (k === 'valley' && open && x0 < LINE.LEN + 80) many(0.12, r => (r < 0.5 ? 'nat/haystack' : r < 0.75 ? 'nat/fence_x' : 'nat/fence_z'), 2);
     if (open) { many(0.06, pick('nat/mound/', 3), 0); many(0.08, pick('nat/oak/', 2), 6); }
   }
-  // The border belt through this column: generated by column and side (its own hash slots), kept by the cell each
-  // thing falls in. At the strip's ends a wood closes in on both sides.
-  const spec = Bc.end ? LINE.REGIONS.woods.far : LINE.REGIONS[k][side < 0 ? 'far' : 'near'], H = n => lnHash(seed, ci, side, 60 + n), W = side < 0 ? 'far' : 'near';
-  let bs = 0;
-  for (const [name, off, depth, n, h, alts] of spec) {
-    const c = Math.floor(n) + (H(bs) < n - Math.floor(n) ? 1 : 0); bs++;
-    for (let i = 0; i < c; i++, bs += 3) {
-      const x = x0 + H(bs) * 8, z = side * (lnBorder(seed, x, side).d + 0.6 + off + H(bs + 1) * depth), r = H(bs + 2);
-      if (Math.floor(z / 8) !== cj || lnWaterAt(seed, x, z)) continue;
-      out.push({ key: `wild/${W}/${Bc.end ? 'woods' : k}/${name}/${1 + Math.floor(r * LINE.BORDER.WILD_N)}`, alt: alts[Math.floor(r * alts.length)], x, z, row: false, h, edge: true, far: true });
+  // At the strip's two ends a wood closes in on both sides: by column and side (its own hash slots), kept by the
+  // cell each tree falls in, inside the straight borders (beyond them the artists' art stands).
+  if (Bc.end) {
+    const H = n => lnHash(seed, ci, side, 60 + n);
+    let bs = 0;
+    for (const [off, depth, n, h, alts] of LN_END_BELT) {
+      const c = Math.floor(n) + (H(bs) < n - Math.floor(n) ? 1 : 0); bs++;
+      for (let i = 0; i < c; i++, bs += 3) {
+        const x = x0 + H(bs) * 8, z = side * (lnBorder(seed, x, side).d + 0.6 + off + H(bs + 1) * depth), r = H(bs + 2);
+        if (Math.floor(z / 8) !== cj || lnWaterAt(seed, x, z) || z < 0.4 - LINE.BORDER.N || z > LINE.BORDER.S - 0.4) continue;
+        out.push({ key: alts[Math.floor(r * alts.length)], x, z, row: false, h, edge: true, far: true });
+      }
     }
   }
-  // Landmarks, at their fixed places.
-  for (const reg of Object.values(LINE.REGIONS)) for (const q of reg.marks) {
-    const x = q.m * M;
-    if (Math.floor(x / 8) !== ci) continue;
-    const z = q.side * (lnBorder(seed, x, q.side).d + q.off);
-    if (Math.floor(z / 8) === cj) out.push({ key: 'wild/mark/' + q.name, alt: q.alt, x, z, row: false, h: 6, edge: true, far: q.off > 0, mark: q.name });
+  return out;
+}
+// Wildlife, sparingly: the beasts of the 48u cell c along the line, by the seed (plans/d32-journey.md). All of it
+// stands outside the ground a man can walk: at the far wall's foot (z beyond the walk's limit), on the near side's
+// bands, on the water. [{ kind, x, z, y, dir, ph }] (ph: 0 to 1, where in its cycle it starts). Ducks carry `water`
+// (the band whose water they swim on): the renderer puts them on a wet spot of the piece there.
+function lnLife(seed, c) {
+  const out = [], x0 = c * 48, r = lnHash(seed, c, 3, 90), H = n => lnHash(seed, c, 5, 91 + n), B = LINE.BORDER, W = LINE.WILD, R = LINE.RUNS;
+  const k = R[lnRunIx(x0 + 24)].k, foot = -(B.N - 0.25), DIRS = ['se', 'sw', 'nw', 'ne'];
+  if (x0 < 96 || x0 + 48 > LINE.LEN - 30 || lnRunIx(x0 - 20) !== lnRunIx(x0 + 68)) return out;
+  if ((x0 + 48 > W.ROCKCUT[0] && x0 < W.ROCKCUT[1]) || Math.abs(x0 + 24 - 544 * LINE.M) < 40) return out;
+  const at = (kind, x, z, o) => { if (!LINE.MARKS.some(q => Math.abs(q.x - x) < 14 && Math.abs(q.z - z) < 8)) out.push(Object.assign({ kind, x: Math.round(x * 10) / 10, z, y: 0, dir: DIRS[Math.floor(H(out.length + 20) * 3)], ph: H(out.length + 30) }, o)); };
+  const x = x0 + 8 + H(1) * 32;
+  if (k === 'prairie') {
+    if (r < 0.34) { at('prairie_dog', x, foot + 0.1); at('prairie_dog', x + 1.6, foot - 0.15); }
+    else if (r < 0.52) { at('buffalo', x, B.S + 41, { dir: 'se' }); at('buffalo', x + 5, B.S + 39, { dir: 'sw', walk: true }); at('buffalo', x - 4, B.S + 44, { dir: 'nw' }); }
+  } else if (k === 'creek') {
+    if (r < 0.4) { at('duck', x, 0, { water: 'edge', y: -0.55 }); at('duck_hen', x + 1.5, 0, { water: 'edge', y: -0.55 }); }
+    else if (r < 0.6) at('deer', x, foot);
+  } else if (k === 'hills') {
+    if (r < 0.25) at('fox', x, foot + 0.05);
+    else if (r < 0.45) at('prairie_dog', x, foot + 0.1);
+  } else if (k === 'woods') {
+    if (r < 0.45) { at('deer', x, foot); if (r < 0.2) at('buck', x + 2.4, foot - 0.1); }
+  } else if (k === 'rocks') {
+    if (r < 0.25) at('fox', x, foot + 0.05);
+  } else if (k === 'river') {
+    if (r < 0.5) { at('duck', x, 0, { water: 'mid', y: -1.0 }); at('duck_hen', x + 1.5, 0, { water: 'mid', y: -1.0 }); if (r < 0.2) at('duck', x + 3.4, 0, { water: 'mid', y: -1.0 }); }
+  } else if (k === 'valley') {
+    if (r < 0.3) at('fox', x, foot + 0.05);
   }
   return out;
 }
@@ -6567,8 +6639,8 @@ function lnLayoutExport() {
     workTrain: { track: 't2', stands: cars, steps: { x: r3(cars[4].x0 + 0.7), z: -2.6 }, visits: PROTO_SCHEDULE_WORK, stock: { crewcar: PROTO_STOCK.crewcar, gondola: PROTO_STOCK.gondola } },
     line: { len_m: LINE.LEN_M, len_u: r3(LINE.LEN), x0: LINE.X0, x1: LINE.X1, row: LINE.ROW, border: LINE.BORDER, blend: LINE.BLEND, segs: LINE.SEGS, cut: LINE.CUT, stages: LINE.STAGES, gap: LINE.GAP, rail_m: LINE.RAIL_M, tie_m: LINE.TIE_M,
       gauge_half_u: 1.025, tie_half_u: 1.85, gang: { apart_m: 1.2, z: 2.2 }, dump_z: 6,
-      regions: Object.fromEntries(Object.entries(LINE.REGIONS).map(([k, R]) => [k, { name: R.name, water: R.water || null, far: R.far.map(q => ({ key: `wild/far/${k}/${q[0]}/<1..${LINE.BORDER.WILD_N}>`, off: q[1], depth: q[2], per8u: q[3], h: q[4], standins: q[5] })),
-        near: R.near.map(q => ({ key: `wild/near/${k}/${q[0]}/<1..${LINE.BORDER.WILD_N}>`, off: q[1], depth: q[2], per8u: q[3], h: q[4], standins: q[5] })), marks: R.marks.map(q => ({ key: 'wild/mark/' + q.name, m: q.m, side: q.side, off: q.off })), ground: `tile/wild/${k}/<1..4>` }])) } };
+      wild: LINE.WILD, runs: LINE.RUNS.map(q => ({ region: q.k, from_u: Number.isFinite(q.x0) ? q.x0 : null })), marks: LINE.MARKS.map(q => ({ key: q.key, x: q.x, z: q.z, side: q.side })),
+      regions: Object.fromEntries(Object.entries(LINE.REGIONS).map(([k, R]) => [k, { name: R.name, water: R.water || null, marks: R.marks, life: R.life, far: `wild/far/${k}/r<1..3>/<n>`, near: `wild/near/${k}/<edge|mid|far>/<n>`, ground: `tile/wild/${k}/<1..4>` }])) } };
 }
 // ---- Saving ----
 function lnCheckSaveShape(st) {
@@ -6585,7 +6657,7 @@ function lnCheckSaveShape(st) {
   if (!Array.isArray(L.log) || L.log.some(q => !q || !int(q.day) || !num(q.m))) bad('the line\'s log');
   if (L.view !== 'station' && L.view !== 'line') bad('the line\'s view');
 }
-const LN_TEST = { LINE, PROTO_SCHEDULE_WORK, lnKindAt, lnKindCell, lnRegionAt, lnRegionCell, lnBorder, lnWalkable, lnTileWild, lnLayoutExport, lnWaterAt, lnTile, lnScatter, lnCost, lnHash, lnWork, lnOpenWork, lnLimit, lnSpot, lnTrain, lnHours, lnNewStore, lnNewDay, lnOn, lnFronts, lnDayOf, lnSetView, lnSkipTo,
+const LN_TEST = { LINE, PROTO_SCHEDULE_WORK, lnKindAt, lnKindCell, lnRegionAt, lnRegionCell, lnBorder, lnWalkable, lnTileWild, lnRunIx, lnWildFar, lnWildNear, lnLife, lnCreekAt, lnVar, lnLayoutExport, lnWaterAt, lnTile, lnScatter, lnCost, lnHash, lnWork, lnOpenWork, lnLimit, lnSpot, lnTrain, lnHours, lnNewStore, lnNewDay, lnOn, lnFronts, lnDayOf, lnSetView, lnSkipTo,
   wtTick, wtDrawList, wtPhaseAt, wtLineX, wtStationX, awLeverTick, awRefuse, awSummaryLine, dvCmd, dvNewStore, clockRate, playerK, lnCheckSaveShape, LN_PACE,
   get cw() { return { cwTick, cwNewDay, cwDrawList, cpItems, cwGang, cwBoost, cwSimDays, hcCount, hcRoll, hcTick }; },
   get lp() { return { lpTick, lpCmd, lpTap, lpPose, lpHud }; }, get hw() { return { hwTick, hwDrawList, tnTick, tnShop, tnHome, tnRoomOpen }; } };
@@ -6689,19 +6761,26 @@ function cwNewDay(S, day) {
 // fire and kettle, the water barrel, the tool row) on the near side behind the ties' front. None stands at the creek.
 function cwGeo(S) {
   const f = S.ln.f, M = LINE.M, C0 = CW.CREEK[0], C1 = CW.CREEK[1];
-  const at = (fm, back, hop, w0, w1) => { let x = Math.floor((fm - back) / hop) * hop * M; if (x + w1 > C0 - 4 && x - w0 < C1 + 4) x = C0 - 4 - w1; return cwR3(x); };
+  // (D32 wilds: the piles and the dinner spot also keep off the narrow places, the canyon's shelf and the rock cut, on the open ground before them)
+  const at = (fm, back, hop, w0, w1) => { let x = Math.floor((fm - back) / hop) * hop * M; if (x + w1 > C0 - 4 && x - w0 < C1 + 4) x = C0 - 4 - w1; for (const Q of [LINE.WILD.SHELF, LINE.WILD.ROCKCUT]) if (x + w1 > Q[0] - 2 && x - w0 < Q[1] + 2) x = Q[0] - 2 - w1; return cwR3(x); };
   return { heap: at(f[2], 3, 6, 3.5, 3.5), ties: at(f[3], 1.5, 4, 9.5, 9), rails: at(f[4], 6, 8, 17, 7.5), camp: at(f[3], 2, 8, 26.5, 12) };
 }
 // At the creek the corridor narrows to the trestle's deck: z is held inside a funnel there.
 function cwFz(x, z) {
   const C = CW.CREEK, d = x < C[0] ? C[0] - x : x > C[1] ? x - C[1] : 0;
-  if (d > 4) return z;
+  if (d > 4) {
+    // (D32 wilds) the same at the rock cut (its faces close on both sides) and on the canyon's shelf (the near side only)
+    const W = LINE.WILD, R = W.ROCKCUT, H = W.SHELF, dr = x < R[0] ? R[0] - x : x > R[1] ? x - R[1] : 0, dh = x < H[0] ? H[0] - x : x > H[1] ? x - H[1] : 0;
+    if (dr < 4) { const lim = R[2] - 0.45 + dr * 0.9; return z > lim ? lim : z < -lim ? -lim : z; }
+    if (dh < 4) { const lim = H[2] - 0.55 + dh * 0.9; return z > lim ? lim : z; }
+    return z;
+  }
   const lim = 2.1 + d * 0.9;
   return z > lim ? lim : z < -lim ? -lim : z;
 }
 // Can a man stand at (x, z)? lnWalkable, asked only where it could say no (near a border, the creek or an end).
 function cwOk(S, x, z) {
-  if (x >= 0 && x <= LINE.LEN + 100 && z > -8 && z < 8 && (x < CW.CREEK[0] - 1.6 || x > CW.CREEK[1] + 1.6)) return true;
+  if (x >= 0 && x <= LINE.LEN + 100 && z > -8 && z < 8 && (x < CW.CREEK[0] - 1.6 || x > CW.CREEK[1] + 1.6) && (x < LINE.WILD.ROCKCUT[0] || x > LINE.WILD.ROCKCUT[1]) && (x < LINE.WILD.SHELF[0] || x > LINE.WILD.SHELF[1])) return true;
   return lnWalkable(S.seed, x, z, S.ln.f[1]);
 }
 // A standing place made safe: inside the funnel, and moved back west until a man can stand there.
@@ -25482,6 +25561,7 @@ function pixFrame(alpha, dt) {
 const lnViewOn = () => !!(S && S.ln && S.ln.view === 'line' && protoWorld(S.track));
 PIX.lnChunks = new Map(); PIX.lnChunkS = null; PIX.lnLook = null; PIX.lnLookS = null; PIX.LN_MAX = 96; PIX.lnScat = new Map(); PIX.lnPrev = null;
 PIX.lnStats = { built: 0, rebuilt: 0, ms: 0, worst: 0, missing: 0, stale: 0, items: 0 };
+PIX.LN_WATER_S = 0.45; PIX.lnT = 0; PIX.lnSpots = new Map(); PIX.lnWaterPix = new Map();
 // The second of the day a frame is drawn at (between the tick before and this one).
 function pixLnSod(alpha) { return rrSod(S.time) - (speed > 0 ? (1 - alpha) * CFG.TICK_GAME_S : 0); }
 // What the view follows: at the station the player; on the line the player there (Play), else the look point.
@@ -25532,12 +25612,13 @@ function pixLnChunkBuild(ci, cj, F) {
   cv.width = cv.height = N;
   const g = cv.getContext('2d', { alpha: false }), sheet = si => PIXA.imgs[si];
   g.imageSmoothingEnabled = false;
-  g.fillStyle = PIX.COL.grass[0]; g.fillRect(0, 0, N, N);
+  g.fillStyle = PIX.lnBg || PIX.COL.grass[0]; g.fillRect(0, 0, N, N);   // (never seen; PIX.lnBg: a check's marker colour)
+  const jN = Math.floor(-LINE.BORDER.N - 3);   // north of this the far wall's modules cover everything
   const put = (key, wx, wz, wy) => { const f = pixF(key); if (!f) return false; const p = pixProject(wx, wy || 0, wz); g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], Math.round(p.x) - l - f[5], Math.round(p.y) - t - f[6], f[3], f[4]); return true; };
   const i0 = Math.floor(sp.w0) - 1, i1 = Math.ceil(sp.w1) + 1, j0 = Math.floor(sp.v0) - 1, j1 = Math.ceil(sp.v1) + 1;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
-    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1) continue;
+    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || j < jN) continue;
     let key = lnTile(seed, i, j), road = false;
     if (sp.bed && j >= -LINE.ROW && j < LINE.ROW && i >= 0) {
       const m = (i + 0.5) / M, wet = /^tile\/(water|river|bank|riverbank)\//.test(key), v = 1 + ((i * 7 + j * 3) & 1);
@@ -25579,20 +25660,92 @@ function pixLnChunkBuild(ci, cj, F) {
       g.putImageData(img, 0, 0);
     }
   }
-  // Baked: everything beyond the corridor and the small things inside it, back to front. A sprite reaches into a chunk
-  // from up to 90 px to each side and 96 px below.
+  // Baked, back to front: the far side's ranks and the landmarks at the wall's foot, the small things in the
+  // corridor, the near side's bands and landmarks, the small things beyond them.
+  pixLnFarDraw(g, l, t, N);
+  pixLnScatterBake(g, l, t, N, F, false);
+  cv.wet = pixLnNearDraw(g, l, t, N, 0);
+  pixLnScatterBake(g, l, t, N, F, true);
+  return cv;
+}
+// A sprite into a chunk's canvas at a point of the line: false when it lies wholly outside.
+function pixLnPut(g, l, t, N, key, wx, wy, wz) {
+  const f = pixF(key); if (!f) return false;
+  const p = pixProject(wx, wy, wz), dx = Math.round(p.x) - l - f[5], dy = Math.round(p.y) - t - f[6];
+  if (dx >= N || dy >= N || dx + f[3] <= 0 || dy + f[4] <= 0) return false;
+  g.drawImage(PIXA.imgs[f[0]], f[1], f[2], f[3], f[4], dx, dy, f[3], f[4]);
+  return true;
+}
+// The far side in a chunk: the rows of modules whose pictures reach it, the furthest row first (rank 3's rows go on
+// north for ever, so the top of the screen is always covered), then the landmarks that stand at the wall's foot.
+function pixLnFarDraw(g, l, t, N) {
+  const W = LINE.WILD, OX = PIX_PROJ.OX, OY = PIX_PROJ.OY, seed = S.seed, u0 = (l - OX) / 8, u1 = (l + N - 1 - OX) / 8;
+  // a row's front line crosses the chunk's columns between y = OY + 4 u0 + 8 z and OY + 4 u1 + 8 z (+64 across a
+  // module); its pictures reach up to 600 px above the line and 90 px below it
+  const rowZ = r => -(LINE.BORDER.N + W.BACK[Math.min(r, 2)] + (r > 2 ? W.REPEAT * (r - 2) : 0));
+  if (OY + 4 * u1 + 8 * rowZ(0) + 160 < t) return;   // the chunk lies wholly south of the wall
+  let rMax = 2; while (rMax < 400 && OY + 4 * u1 + 8 * rowZ(rMax + 1) + 160 >= t) rMax++;
+  for (let r = rMax; r >= 0; r--) {
+    const z = rowZ(r);
+    if (OY + 4 * u0 + 8 * z - 600 > t + N) continue;
+    const off = r < 2 ? W.OFF[r] : (W.OFF[2] + W.OFF3 * (r - 2)) % 16, n0 = Math.floor((u0 + z - off) / 16), n1 = Math.floor((u1 + z - off) / 16);
+    for (let n = n0; n <= n1; n++) { const q = lnWildFar(seed, r, n); pixLnPut(g, l, t, N, q.key, q.x, 0, q.z); }
+  }
+  for (const q of LINE.MARKS) if (q.side === 'n') pixLnPut(g, l, t, N, q.key, q.x, 0, q.z);
+}
+// The near side in a chunk: the edge, mid and far bands in that order (a band nearer the viewer wins), then the
+// landmarks standing on them. wf: the water's frame (1 or 2: the pieces' water of that frame is drawn over them, for
+// the overlays). True when something drawn holds water.
+function pixLnNearDraw(g, l, t, N, wf) {
+  const W = LINE.WILD, OX = PIX_PROJ.OX, OY = PIX_PROJ.OY, seed = S.seed, Sz = LINE.BORDER.S, u0 = (l - OX) / 8, u1 = (l + N - 1 - OX) / 8;
+  if (OY + 4 * u0 + 8 * (Sz - 7) - 40 > t + N) return false;   // the chunk lies wholly north of the near edge (the shelf reaches 6u north of it)
+  let wet = false;
+  for (const band of ['edge', 'mid', 'far']) {
+    const [z0, len] = W.NEAR[band], n0 = Math.floor((u0 + Sz + z0 - 7) / len) - 1, n1 = Math.floor((u1 + Sz + z0 + 24) / len);
+    for (let n = n0; n <= n1; n++) {
+      const q = lnWildNear(seed, band, n);
+      if (!q || !pixLnPut(g, l, t, N, q.key, q.x, 0, Sz) || !pixF(q.key + '/water/0')) continue;
+      wet = true;
+      if (wf) pixLnPut(g, l, t, N, q.key + '/water/' + wf, q.x, 0, Sz);
+    }
+  }
+  for (const q of LINE.MARKS) if (q.side === 's') pixLnPut(g, l, t, N, q.key, q.x, 0, q.z);
+  return wet;
+}
+// The scattered things baked into a chunk: the small things in the corridor and the woods at the strip's ends
+// (south false), or the things beyond the near side's bands (south true). A sprite reaches into a chunk from up to
+// 90 px to each side and 96 px below.
+function pixLnScatterBake(g, l, t, N, F, south) {
+  const M = LINE.M, Sz = LINE.BORDER.S - 0.5;
   const ex = [[l - 90, t - 4], [l + N + 90, t - 4], [l - 90, t + N + 96], [l + N + 90, t + N + 96]].map(([a, b]) => pixUnproject(a, b, 0));
-  const a0 = Math.floor(Math.min(...ex.map(q => q.x)) / 8), a1 = Math.floor(Math.max(...ex.map(q => q.x)) / 8), b0 = Math.floor(Math.min(...ex.map(q => q.z)) / 8), b1 = Math.floor(Math.max(...ex.map(q => q.z)) / 8);
+  const a0 = Math.floor(Math.min(...ex.map(q => q.x)) / 8), a1 = Math.floor(Math.max(...ex.map(q => q.x)) / 8);
+  let b0 = Math.floor(Math.min(...ex.map(q => q.z)) / 8), b1 = Math.floor(Math.max(...ex.map(q => q.z)) / 8);
+  if (south) b0 = Math.max(b0, Math.floor(Sz / 8)); else { b0 = Math.max(b0, Math.floor(-LINE.BORDER.N / 8)); b1 = Math.min(b1, Math.floor(Sz / 8)); }
   const bake = [];
   for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) for (const q of pixLnScatter(a, b)) {
-    if (!pixLnBaked(q) || (q.row && q.x / M < F[0])) continue;   // (the clearers take the small things on the right of way too)
+    if (!pixLnBaked(q) || (q.z > Sz) !== south || (q.row && q.x / M < F[0])) continue;   // (the clearers take the small things on the right of way too)
     const p = pixProject(q.x, 0, q.z), sx = p.x - l, sy = p.y - t;
     if (sx < -90 || sx > N + 90 || sy < -4 || sy > N + 96) continue;
     bake.push(q);
   }
   bake.sort((p, q) => (p.x + p.z) - (q.x + q.z) || p.x - q.x);
-  for (const q of bake) if (!put(q.key, q.x, q.z, 0) && q.alt) put(q.alt, q.x, q.z, 0);   // the wilds artists' key, or its stand-in
-  return cv;
+  for (const q of bake) pixLnPut(g, l, t, N, pixKey(q.key, q.alt) || q.key, q.x, 0, q.z);
+}
+// The moving water of a chunk: for each of the water's frames 1 and 2, a see-through picture of only the pixels that
+// differ from the baked chunk (frame 0), found by drawing the near side with each frame and comparing. Drawn over the
+// chunk each frame, so whatever stands in front of the water (a tree of the next band, a landmark) stays in front.
+function pixLnOverlays(ci, cj) {
+  const N = PIX.CH, l = ci * N, t = cj * N, F = pixLnFronts();
+  const mk = wf => { const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false; pixLnNearDraw(g, l, t, N, wf); pixLnScatterBake(g, l, t, N, F, true); return [c, g]; };
+  const A = mk(0)[1].getImageData(0, 0, N, N).data, out = [];
+  for (const wf of [1, 2]) {
+    const [c, g] = mk(wf), img = g.getImageData(0, 0, N, N), d = img.data;
+    let any = false;
+    for (let o = 0; o < d.length; o += 4) { if (d[o] === A[o] && d[o + 1] === A[o + 1] && d[o + 2] === A[o + 2] && d[o + 3] === A[o + 3]) d[o + 3] = 0; else any = true; }
+    if (any) g.putImageData(img, 0, 0);
+    out.push(any ? c : null);
+  }
+  return out;
 }
 // Draws the line's ground under the view from its chunk cache: every missing one at once (no blank ground is ever
 // shown), one stale one (its fronts have moved) a frame, the ring round the view in idle time.
@@ -25600,11 +25753,12 @@ function pixLnGroundDraw(g, all) {
   if (!PIXA.ready) return;
   const N = pixChunkSize(), C = PIX.lnChunks, St = PIX.lnStats;
   if (PIX.CH !== N) { PIX.CH = N; PIX.chunks.clear(); PIX.aheadWant = null; }   // (the station's chunks are of the other size)
-  if (PIX.lnChunkN !== N || PIX.lnChunkS !== S.seed) { C.clear(); PIX.lnScat.clear(); PIX.lnChunkS = S.seed; PIX.lnChunkN = N; PIX.lnWant = null; }
+  if (PIX.lnChunkN !== N || PIX.lnChunkS !== S.seed) { C.clear(); PIX.lnScat.clear(); PIX.lnSpots.clear(); PIX.lnChunkS = S.seed; PIX.lnChunkN = N; PIX.lnWant = null; }
   const F = pixLnFronts(), c0 = Math.floor(PIX.vx / N), c1 = Math.floor((PIX.vx + PIX.nw) / N), r0 = Math.floor(PIX.vy / N), r1 = Math.floor((PIX.vy + PIX.nh) / N);
   const t0 = performance.now(), stamp = St.frame = (St.frame || 0) + 1;
   let made = 0, missing = 0, stale = 0, redone = 0;
-  const make = (ci, cj, key) => { const a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a; C.set(ci + ',' + cj, { cv, used: stamp, key }); St.built++; St.ms = ms; St.worst = Math.max(St.worst, ms); };
+  const make = (ci, cj, key) => { const a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a, old = C.get(ci + ',' + cj); C.set(ci + ',' + cj, { cv, used: stamp, key, wet: cv.wet, ov: old ? old.ov : undefined }); St.built++; St.ms = ms; St.worst = Math.max(St.worst, ms); };
+  const wf = Math.floor((PIX.lnT || 0) / PIX.LN_WATER_S) % 3, ovWant = [];   // the water's frame: a calm rate
   for (let cj = r0; cj <= r1; cj++) for (let ci = c0; ci <= c1; ci++) {
     const k = ci + ',' + cj, key = pixLnChunkKey(pixLnChunkSpan(ci, cj, N), F);
     let E = C.get(k);
@@ -25613,7 +25767,9 @@ function pixLnGroundDraw(g, all) {
     E.used = stamp;
     g.drawImage(E.cv, ci * N - PIX.vx, cj * N - PIX.vy);
     PIX.stats.draws++;
+    if (E.wet) { if (!E.ov) ovWant.push([ci, cj]); else if (wf && E.ov[wf - 1]) { g.drawImage(E.ov[wf - 1], ci * N - PIX.vx, cj * N - PIX.vy); PIX.stats.draws++; } }
   }
+  PIX.lnOvWant = ovWant; St.wet = ovWant.length;
   St.missing = missing; St.stale = stale; St.inFrame = made + redone;
   // The ring round the view, made ahead in idle time (twice as far on the side the view moves to).
   const mv = PIX.camMove || [0, 0], R = PIX.CH_AHEAD, sx = Math.sign(mv[0]), sy = Math.sign(mv[1]);
@@ -25626,7 +25782,7 @@ function pixLnGroundDraw(g, all) {
   }
   want.sort((p, q) => p[2] - q[2]);
   PIX.lnWant = want;
-  if (want.length && !PIX.lnAheadPending) pixLnChunkAhead();
+  if ((want.length || ovWant.length) && !PIX.lnAheadPending) pixLnChunkAhead();
   const max = Math.max(PIX.LN_MAX * (256 / N) * (256 / N), (a1 - a0 + 1) * (b1 - b0 + 1) + 8);
   if (C.size > max) [...C.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, C.size - max).forEach(([k]) => C.delete(k));
 }
@@ -25634,17 +25790,84 @@ function pixLnChunkAhead() {
   PIX.lnAheadPending = true;
   const run = dl => {
     PIX.lnAheadPending = false;
-    const w = PIX.lnWant, St = PIX.lnStats;
-    if (!w || !w.length || !PIXA.ready || !pixOn() || !lnViewOn() || PIX.lnChunkN !== PIX.CH) return;
+    const w = PIX.lnWant, St = PIX.lnStats, ow = PIX.lnOvWant;
+    if (((!w || !w.length) && (!ow || !ow.length)) || !PIXA.ready || !pixOn() || !lnViewOn() || PIX.lnChunkN !== PIX.CH) return;
     if (dl && !dl.didTimeout && dl.timeRemaining() < Math.min(6, St.ms + 1)) { pixLnChunkAhead(); return; }
+    if (ow && ow.length) {   // the moving water of a chunk in view first (it is seen), then the ring
+      const [ci, cj] = ow.shift(), E = PIX.lnChunks.get(ci + ',' + cj);
+      if (E && E.wet && !E.ov) { const a = performance.now(); E.ov = pixLnOverlays(ci, cj); St.ovMs = performance.now() - a; St.ov = (St.ov || 0) + 1; }
+      return;
+    }
     const [ci, cj] = w.shift(), k = ci + ',' + cj;
     if (PIX.lnChunks.has(k)) return;
     const F = pixLnFronts(), a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a;
-    PIX.lnChunks.set(k, { cv, used: (St.frame || 0) - 1, key: pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), F) });
+    PIX.lnChunks.set(k, { cv, used: (St.frame || 0) - 1, key: pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), F), wet: cv.wet });
     St.built++; St.ahead = (St.ahead || 0) + 1; St.ms = ms; St.worst = Math.max(St.worst, ms);
   };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 120 });
   else setTimeout(run, 0);
+}
+// Is the point (x, y, z) on the water of the near side's piece there (band 'edge' or 'mid')? Read from the piece's
+// first water frame (its pixels are kept once per piece).
+function pixLnOnWater(band, x, y, z) {
+  const len = LINE.WILD.NEAR[band][1];
+  for (const n of [Math.floor(x / len), Math.floor(x / len) - 1]) {
+    const q = lnWildNear(S.seed, band, n), key = q && q.key + '/water/0', f = key && pixF(key);
+    if (!f) continue;
+    let d = PIX.lnWaterPix.get(key);
+    if (!d) { const c = document.createElement('canvas'); c.width = f[3]; c.height = f[4]; const g = c.getContext('2d'); g.drawImage(PIXA.imgs[f[0]], f[1], f[2], f[3], f[4], 0, 0, f[3], f[4]); d = g.getImageData(0, 0, f[3], f[4]).data; if (PIX.lnWaterPix.size > 40) PIX.lnWaterPix.clear(); PIX.lnWaterPix.set(key, d); }
+    const p = pixProject(x, y, z), a = pixProject(q.x, 0, LINE.BORDER.S), px = Math.round(p.x - a.x) + f[5], py = Math.round(p.y - a.y) + f[6];
+    const on = (ax, ay) => ax >= 0 && ay >= 0 && ax < f[3] && ay < f[4] && d[(ay * f[3] + ax) * 4 + 3] > 0;
+    if (on(px, py) && on(px - 5, py) && on(px + 5, py) && on(px, py - 3) && on(px, py + 3)) return true;
+  }
+  return false;
+}
+// The wildlife of a cell as it is drawn: lnLife's beasts, the ducks moved onto a wet spot of their piece (or left
+// out when the cell's water has none).
+function pixLnLifeOf(c) {
+  let v = PIX.lnSpots.get(c);
+  if (v) return v;
+  v = [];
+  for (const q of lnLife(S.seed, c)) {
+    if (!q.water) { v.push(q); continue; }
+    const z0 = LINE.BORDER.S + (q.water === 'edge' ? 2 : 11), dz = q.water === 'edge' ? 7 : 12;
+    for (let k = 0; k < 14; k++) { const x = q.x + (lnHash(S.seed, c, k, 95) - 0.5) * 16, z = z0 + lnHash(S.seed, c, k, 96) * dz; if (pixLnOnWater(q.water, x, q.y, z) && !v.some(o => Math.hypot(o.x - x, o.z - z) < 1.2)) { v.push(Object.assign({}, q, { x, z })); break; } }
+  }
+  if (PIX.lnSpots.size > 400) PIX.lnSpots.clear();
+  PIX.lnSpots.set(c, v);
+  return v;
+}
+// What lives and moves beyond the borders, drawn each frame over the ground and under everything in the corridor:
+// the mill's wheel, the waterfall, the far cabin's smoke, the beasts, the hawk's shadow crossing. T: real seconds.
+function pixLnLive(g, bx0, bx1) {
+  const T = PIX.lnT, B = LINE.BORDER, fr = (n, per, ph) => Math.floor(T / per + (ph || 0) * n) % n;
+  const put = (key, x, y, z) => pixSprite(g, key, x, y, z, null);
+  for (const [xs, name] of Object.entries(LINE.WILD.EDGE_MARKS)) if (name === 'mill' && +xs > bx0 - 30 && +xs < bx1 + 30) put('wild/mark/mill/anim/' + fr(4, 0.22), +xs, 0, B.S);
+  for (const q of LINE.MARKS) {
+    if (q.x < bx0 - 30 || q.x > bx1 + 30) continue;
+    if (q.water) put(q.key + '/water/' + fr(3, PIX.LN_WATER_S), q.x, 0, q.z);
+    if (q.smoke) { const c = (pixX(q.key) || {}).chimney; if (c) put('wild/life/smoke/' + fr(4, 0.4), q.x + c[0], c[2], q.z + c[1]); }
+  }
+  for (let c = Math.floor((bx0 - 8) / 48); c <= Math.floor((bx1 + 8) / 48); c++) for (const q of pixLnLifeOf(c)) {
+    const t = T + q.ph * 40;
+    if (q.kind === 'deer' || q.kind === 'buck') { const u = t % 13; put('wild/life/' + q.kind + (u < 9 ? '/graze/' : '/look/') + q.dir + '/' + (Math.floor(t / (u < 9 ? 0.8 : 1.3)) % 2), q.x, q.y, q.z); }
+    else if (q.kind === 'buffalo') {
+      if (q.walk) { const u = t % 48, go = u < 12 ? u / 12 : u < 24 ? 1 : u < 36 ? 1 - (u - 24) / 12 : 0, mv = (u < 12 || (u >= 24 && u < 36)); put('wild/life/buffalo/' + (mv ? 'walk/' + (u < 12 ? 'se' : 'nw') + '/' + (Math.floor(t / 0.45) % 4) : 'graze/' + (u < 24 ? 'se' : 'nw') + '/' + (Math.floor(t / 1.1) % 2)), q.x + go * 3, q.y, q.z); }
+      else put('wild/life/buffalo/graze/' + q.dir + '/' + (Math.floor(t / 1.1) % 2), q.x, q.y, q.z);
+    } else if (q.kind === 'fox') {
+      const u = t % 20, go = u < 6 ? u / 6 : u < 10 ? 1 : u < 16 ? 1 - (u - 10) / 6 : 0, mv = u < 6 || (u >= 10 && u < 16), d = u < 10 ? 'se' : 'nw';
+      put('wild/life/fox/' + (mv ? 'trot/' + d + '/' + (Math.floor(t / 0.14) % 4) : 'sit/' + d + '/' + (Math.floor(t / 1.5) % 2)), q.x + go * 5, q.y, q.z);
+    } else if (q.kind === 'prairie_dog') { const u = Math.floor((t % 9) / 0.4); put('wild/life/prairie_dog/' + ([0, 1, 2, 2, 3, 2, 3, 2, 2, 1][u] || 0), q.x, q.y, q.z); }
+    else if (q.kind === 'duck' || q.kind === 'duck_hen') put('wild/life/' + q.kind + '/' + q.dir + '/' + (Math.floor(t / 0.7) % 2), q.x, q.y, q.z);
+  }
+  // The hawk: every 50 seconds its shadow slides across the ground from the far side to the near, over open country.
+  const u = T % 50, mid = (bx0 + bx1) / 2, k = LINE.RUNS[lnRunIx(mid)].k;
+  PIX.lnHawk = null;
+  if (u < 11 && k !== 'woods' && k !== 'creek' && k !== 'valley') {
+    const a = u / 11, x = mid - 34 + a * 60, z = -30 + a * 62;
+    put('wild/life/hawk/shadow/' + (Math.floor(T / 0.3) % 3), x, 0, z);
+    PIX.lnHawk = [x, z];
+  }
 }
 // A vehicle of the work train as a sorted item (wtDrawList's shape), with the station's vehicle sprites; a car the
 // atlas lacks falls back to the nearest it has, then to a plain box.
@@ -25720,13 +25943,26 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
     if (x / M >= F[1]) out.push(pixItem(x - 4, x + 4, -3, 3, 0, 0.75, g => { pixSprite(g, 'line/rise/' + end, x, 0, 0); }, 'lnRise' + k));
     else for (const [sd, z] of [['n', -4], ['s', 4]]) out.push(pixItem(x - 4, x + 4, z - 1, z + 1, 0, 1, g => { const key = 'line/cut_bank_' + sd + (end === 1 ? '_up' : end === 3 ? '_down' : ''); pixSprite(g, pixKey(key, 'line/cut_bank_' + sd), x, 0, z); }, 'lnBank' + sd + k));
   }
+  // The rock cut blasted through a spur (the rocks): its two faces stand from the start (the spur's flanks), the low
+  // rise between them until the diggers are through. Five 8u pieces; the faces' boxes are the artist's.
+  { const RC = LINE.WILD.ROCKCUT, n = (RC[1] - RC[0]) / 8;
+    for (let k = 0; k < n; k++) {
+      const x = RC[0] + 8 * k + 4, sfx = k === 0 ? '_up' : k === n - 1 ? '_down' : '';
+      if (!inX(x)) continue;
+      for (const sd of ['n', 's']) { const key = pixKey('wild/mark/rockcut_' + sd + sfx, 'wild/mark/rockcut_' + sd), b = (pixX(key) || {}).box || (sd === 'n' ? [-4, -7, 4, -3, 3.4] : [-4, 3, 4, 6, 1.1]); out.push(pixItem(x + b[0], x + b[2], b[1], b[3], 0, b[4], g => { pixSprite(g, key, x, 0, 0); }, 'lnRock' + sd + k)); }
+      if (x / M >= F[1]) out.push(pixItem(x - 4, x + 4, -3, 3, 0, 0.75, g => { pixSprite(g, 'line/rise/' + (k === 0 ? 1 : k === n - 1 ? 3 : 2), x, 0, 0); }, 'lnSpur' + k));
+    } }
+  // The summit board at the pass (the artist's box).
+  for (const q of LINE.MARKS) if (q.side === 'c' && inX(q.x)) { const b = (pixX(q.key) || {}).box || [-2, -0.2, 3.4, 1.5, 3.4]; out.push(pixItem(q.x + b[0], q.x + b[2], q.z + b[1], q.z + b[3], 0, b[4], g => { pixSprite(g, q.key, q.x, 0, q.z, { k: 'ls', key: q.key, x: q.x, z: q.z, mark: q.name }); }, 'lnMark' + q.name)); }
   // The work train and the supplies beside its cars (the piles shrink as the day uses them).
   const T = lnTrain(S, sod);
   if (T.at === 'line') {
     for (const v of wtDrawList(S, 'line', sod)) if (inX(v.x)) out.push(pixLnVehItem(v, { k: 'wt', car: v.k }));
     if (T.ph === 'stand' && T.dump) {
       const lvl = k => { const s = L.sup[k], c = LINE.SUP[k].cap; return s <= 0 ? 0 : Math.max(1, Math.min(3, Math.ceil(3 * s / (c / 2)))); }, D = T.dump, z = D.z;
-      const pile = (id, key, x, zz, h, half) => { if (inX(x)) out.push(pixLnProp(id, key, x, zz, h, half, { k: 'sup', id })); };
+      // (where the corridor is narrow, the shelf and the rock cut, the piles lie on the open ground just before it)
+      const off = x => { for (const Q of [LINE.WILD.SHELF, LINE.WILD.ROCKCUT]) if (x > Q[0] - 2 && x < Q[1] + 2) return Q[0] - 3 - (Q[1] - x) * 0.3; return x; };
+      const pile = (id, key, x0, zz, h, half) => { const x = off(x0); if (inX(x)) out.push(pixLnProp(id, key, x, zz, h, half, { k: 'sup', id })); };
       if (lvl('rails')) pile('supRails', 'line/rail_stack/' + lvl('rails'), T.cars[1].x0 + 5, z + 1.5, 0.6, 0.6);
       if (lvl('ties')) { pile('supTies1', 'line/tie_pile/' + lvl('ties'), T.cars[1].x0 + 2, z - 1, 1, 1); if (lvl('ties') > 1) pile('supTies2', 'line/tie_pile/' + (lvl('ties') - 1), T.cars[1].x0 + 6, z - 1, 1, 1); }
       if (lvl('rock')) { pile('supRock1', 'line/rock_heap/' + lvl('rock'), T.cars[2].x0 + 3, z, 1, 1); if (lvl('rock') > 1) pile('supRock2', 'line/rock_heap/' + (lvl('rock') - 1), T.cars[2].x0 + 7, z + 0.5, 1, 1); }
@@ -25781,10 +26017,15 @@ function pixLnFrame(alpha, dt, t0) {
   g.fillStyle = PIX.lnBg || PIX.COL.grass[1]; g.fillRect(0, 0, nw, nh);   // (never seen: the ground covers the view; PIX.lnBg: a check's marker colour)
   PIX.stats.fills = 0; PIX.stats.draws = 0; PIX.drawn = []; PIX.curId = null; PIX.ditherIds = null;
   const tg = performance.now();
+  PIX.lnT += Math.min(0.1, Math.max(0, dt || 0));   // real seconds: the water, the beasts and the smoke keep their calm pace at any game speed
   pixLnGroundDraw(g, PIX.warm);
   PIX.groundT0 = performance.now() - tg;
+  const tl = performance.now(), bxs = cs.map(c => c.x);
+  pixLnLive(g, Math.min(...bxs), Math.max(...bxs));
+  PIX.liveT0 = performance.now() - tl;
   for (const it of list) { PIX.curId = it.id || null; it.draw(g); }
   PIX.curId = null;
+  if (PIX.lnHawk) pixSprite(g, 'wild/life/hawk/fly/' + (Math.floor(PIX.lnT / 0.3) % 3), PIX.lnHawk[0], 12, PIX.lnHawk[1], null);
   const t4 = performance.now();
   PIX.seeThrough = []; PIX.lastSee = null; PIX.lastSeeSig = ''; PIX.order = list.map(it => it.id || null);
   pixNight(g, nw, nh);
@@ -26055,7 +26296,7 @@ window.__railhead = {
   // D27: each builder's hooks, filled in its own section (PB_TEST, FR_TEST, TF_TEST, LES_TEST), and the foundation's.
   pb: PB_TEST, fr: FR_TEST, tf: TF_TEST, les: LES_TEST,
   ln: LN_TEST, dv: { get ui() { return dvUi; }, on: dvOn, setPref: dvSetPref, rows: dvRows, addRow: dvAddRow, open: dvOpen, close: dvClose, statusText: dvStatusText },   // D32
-  lnView: { baked: pixLnBaked, bg: c => { PIX.lnBg = c || null; }, on: lnViewOn, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
+  lnView: { baked: pixLnBaked, bg: c => { PIX.lnBg = c || null; PIX.lnChunks.clear(); }, on: lnViewOn, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
   d27: { PROTO, PROTO_STOCK, PROTO_LEVELS, PROTO_DOCK, PROTO_DOCK_LEVEL, PROTO_DECKS, PROTO_LEVERS, TOWN27, SHOPS27, STORE27_OUT, GOODS27, SHOP_GOODS27, CARGO27, TOOL_KINDS,
     d27On, walkDeckY, walkLevelAt, walkBridgeAt, walkStep, storeCellAt, storeCellOf, itemAudit, cargo27Where, cargo27Key, protoCreekAt, protoDebugEvening, rngFor, playerModeTick,
     flags: () => ({ ...WORLDS.proto.d27 }), protoStow, migrate18to19: proto18to19 },

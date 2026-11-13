@@ -239,7 +239,7 @@ def pine(x, z, y, h, seed, ramp='needle', lod=1.0, slim=1.0, dead=True, dark=0.0
             zz = Z + H * rnd.uniform(0.22, 0.32)
             N.limb(X, Y, zz, X + math.cos(a) * 2.2, Y + math.sin(a) * 2.2, zz + 1.4, 0.3, 0.18, 'bark', o)
     th = _th(dark)
-    tiers = max(4, int(h * 1.3 * lod))
+    tiers = max(5, int(h * 1.3 * max(lod, 0.8)))     # far pines keep their tiers (no lollipops)
     cmax = 2.7 if lod >= 1 else 3.2
     for t in range(tiers):
         f = t / (tiers - 1)
@@ -264,13 +264,13 @@ def spruce(x, z, y, h, seed, ramp='pine', lod=1.0, dark=0.0):
     H = h * UY
     s = h / 6.0
     E.cyl_z(X, Y, Z, Z + H * 0.4, 0.7 * s + 0.3, 'bark', oid=o, th=(0.45, 0.2, -0.15))
-    tiers = max(4, int(7 * lod))
+    tiers = 7                     # far spruces keep every tier, a little fuller, so they never read as stacked discs
     for t in range(tiers):
         f = t / (tiers - 1)
         zz = Z + H * (0.12 + 0.8 * f)
         rad = (2.6 - 2.1 * f) * s + 0.4
         E.sphere(X + rnd.uniform(-0.3, 0.3), Y + rnd.uniform(-0.3, 0.3), zz, rad, ramp, oid=o,
-                 th=_th(dark), noise=0.5, seed=seed * 5 + t, sz=0.55)
+                 th=_th(dark), noise=0.5, seed=seed * 5 + t, sz=0.55 if lod >= 1 else 0.75)
     E.sphere(X, Y, Z + H * 0.97, 0.45 * s + 0.35, ramp, oid=o, th=(0.75, 0.38, -0.12), sz=1.6)
     return o
 

@@ -86,7 +86,7 @@ def canyon(X, Y, s):
     """The canyon floor: red sand and slickrock, desert scrub specks, pale chips."""
     n = _n(X, Y, s + 560); m = _n(X, Y, s + 561, 1.0)
     rr = np.full(X.shape, R('redrock'))
-    ii = _sel(m < 35, _sel(n < 40, 0, 1), _sel(n < 30, 1, 2))
+    ii = _sel(m < 35, _sel(n < 20, 0, 1), _sel(n < 15, 2, 1))
     slick = (np.abs(np.mod(X * 0.6 + Y * 0.5 + s * 1.7, 2.6) - 1.3) < 0.12) & (m < 60)
     ii = _sel(slick, 3, ii)
     scrub = _n(X, Y, s + 562, 0.5) < (4, 7, 3, 5)[s]
@@ -101,8 +101,8 @@ def pass_(X, Y, s):
     n = _n(X, Y, s + 570); m = _n(X, Y, s + 571, 1.0)
     grit = m < (55, 40, 65, 50)[s]
     rr = _sel(grit, R('granite'), R('grass'))
-    ii = _sel(grit, _sel(n < 35, 1, 2), _sel(n < 40, 2, 3))
-    peb = _n(X, Y, s + 572, 0.5) < 10
+    ii = _sel(grit, _sel(n < 25, 1, 2), _sel(n < 30, 1, 2))
+    peb = _n(X, Y, s + 572, 0.5) < 5
     rr = _sel(peb, R('granite'), rr); ii = _sel(peb, _sel(_n(X, Y, s + 573) < 50, 0, 3), ii)
     if s == 3:
         snow = _n(X, Y, 574, 1.0) < 30

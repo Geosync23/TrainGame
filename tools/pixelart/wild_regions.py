@@ -69,6 +69,23 @@ def rock_tex(ramp='rock', band=1.1, streak=0, seed=0):
     return t
 
 
+def granite_tex(ramp='granite', seed=0):
+    """A granite face: no bedding, but long vertical joints and gullies (darker), sheeting ledges here and there
+    (a lit top, a dark underside), lichen specks."""
+    def t(ctx, u, z, y, gx, gz, idx):
+        ii = idx.copy()
+        jn = ctx.vn(u, z + 0.25 * y, 1.0, 1.0, 131 + seed)
+        joint = np.abs(jn - 0.5) < 0.035
+        ii = np.where(joint, idx + 1, ii)
+        sh = np.mod(y / 5.5 + ctx.vn(u, z, 4.0, 3.0, 133 + seed) * 1.6, 1.0)
+        place = ctx.vn(u, z, 2.0, 2.0, 135 + seed) > 0.55
+        ii = np.where(place & (sh < 0.06), idx - 1, np.where(place & (sh < 0.14), idx + 1, ii))
+        h = ctx.pxhash(u, z, y, 137 + seed, 0.25)
+        ii = np.where(h < 4, ii + 1, np.where(h > 97, ii - 1, ii))
+        return np.full(u.shape, R(ramp)), np.clip(ii, 0, 4)
+    return t
+
+
 def slope_mix(flat, steep, lo=1.0, hi=1.8, cap=None):
     """Flat ground on gentle slopes, rock on steep ones (a little dither between); cap(y, ...) an optional third
     texture (snow) on gentle slopes above a height."""
@@ -127,11 +144,15 @@ def ground_y(ctx, hf, u, z):
     return float(hf(np.array([u]), np.array([z]))[0])
 
 
-def trees(ctx, side, hf, cell, cz, z0, z1, salt, prob, make, mask=None, rad=1.0, jit=0.8):
+def trees(ctx, side, hf, cell, cz, z0, z1, salt, prob, make, mask=None, rad=1.0, jit=0.8, zp=1.0):
     """Scatter: for every chosen cell call make(x, z, y, rnd). rad: the thing's half width (u, on the screen's
-    columns): a thing from the variant's own cells must stay inside the strip (0 .. W), or the edge would cut it."""
+    columns): a thing from the variant's own cells must stay inside the strip (0 .. W), or the edge would cut it.
+    zp: the share of the join zone's cells that keep their thing. Whatever stands in the join zone is the same at
+    every seam of the rank, so big things there are thinned (zp < 1) where they are few enough to be recognised."""
     for (u, z, r, zone) in ctx.cells(cell, cz, z0, z1, salt, prob, side, jit):
         if not zone and (u - rad < 0 or u + rad > ctx.W):
+            continue
+        if zone and r(8) >= zp:
             continue
         if any(abs(u - bu) < bw and bz0 >= z >= bz1 for (bu, bw, bz0, bz1) in getattr(ctx, 'clear', ())):
             continue
@@ -216,11 +237,11 @@ def _prairie(rank):
         if rank == 1:
             trees(ctx, side, hf, 1.0, 1.0, -0.2, -3.0, 20, 0.35, tuft, rad=0.4)
             trees(ctx, side, hf, 2.0, 1.4, -0.4, -4.0, 21, 0.22, brush, rad=1.0)
-            trees(ctx, side, hf, 4.0, 2.4, -2.5, -D, 22, 0.75, oak, grove, rad=RO)
+            trees(ctx, side, hf, 4.0, 2.4, -2.5, -D, 22, 0.75, oak, grove, rad=RO, zp=0.3)
             trees(ctx, side, hf, 2.0, 2.0, -1.0, -D, 23, 0.08, brush, rad=1.0)
             trees(ctx, side, hf, 4.0, 2.0, -0.5, -D, 24, 0.04, stone, rad=0.7)
         else:
-            trees(ctx, side, hf, 4.0, 2.2, -2.0, -D, 30 + rank, 0.8, oak, grove, rad=RO)
+            trees(ctx, side, hf, 4.0, 2.2, -2.0, -D, 30 + rank, 0.8, oak, grove, rad=RO, zp=0.3)
             trees(ctx, side, hf, 2.0, 1.5, -1.0, -D, 32 + rank, 0.08, brush, rad=1.0)
     return hf, tex, things
 
@@ -234,10 +255,10 @@ def _creek(rank):
     H = {1: 1.4, 2: 3.0, 3: 7.0}[rank]
     def hf(ctx, u, z):
         b = H * rise(z, -1.0, -12.0)
-        if rank == 3:
-            b = b + 3.0 * terrace(np.maximum(ctx.vn(u, z, 4.0, 4.0, 41) - 0.3, 0) * 3.0, 1.2) * rise(z, -4, -12)
+        if rank == 3:     # a low wooded bluff behind the bottoms, its shoulders rounded
+            b = b + 2.5 * ctx.vn(u, z, 8.0, 4.0, 41) * rise(z, -4, -12)
         return b + (ctx.vn(u, z, 4.0, 3.0, 42 + rank) - 0.5) * 0.8 * rise(z, -1.0, -3.0)
-    tex = ground_tex('creek') if rank < 3 else slope_mix(ground_tex('creek'), rock_tex('rock', 0.9), 1.2, 2.0)
+    tex = ground_tex('creek') if rank < 3 else slope_mix(ground_tex('creek'), rock_tex('rock', 0.9), 1.6, 2.4)
     lod = LOD[rank]
     def things(ctx, side, hf):
         def willow(x, z, y, r):
@@ -263,8 +284,9 @@ def _creek(rank):
             trees(ctx, side, hf, 4.0, 2.4, -2.0, -D, 56, 0.9, cotton, rad=RC)
             trees(ctx, side, hf, 2.0, 2.0, -2.0, -D, 57, 0.5, willow, rad=RW)
         else:
-            trees(ctx, side, hf, 4.0, 2.5, -2.0, -D, 58, 0.55, cotton, lambda u, z, r: ctx_grove(ctx, u, z, 0.35),
+            trees(ctx, side, hf, 4.0, 2.5, -2.0, -D, 58, 0.8, cotton, lambda u, z, r: ctx_grove(ctx, u, z, 0.25),
                   rad=RC)
+            trees(ctx, side, hf, 2.0, 2.0, -2.0, -D, 60, 0.45, willow, rad=RW)
             trees(ctx, side, hf, 2.0, 2.0, -2.0, -D, 59, 0.3, bush, rad=1.2)
     return hf, tex, things
 
@@ -282,7 +304,7 @@ def _hills(rank):
         zc = -1.5 - 5.0 * n1                          # each bluff's foot wanders in and out
         bluff = H * (0.55 + 0.6 * n2) * rise(z, zc, zc - 4.5 - 3.0 * n2)
         bluff = bluff + (ctx.vn(u, z, 4.0, 4.0, 66 + rank) - 0.5) * 1.4 * rise(z, -1.5, -4.0)
-        mask = K.smooth((ctx.vn(u, z, 4.0, 2.0, 67 + rank) - 0.55) / 0.12)     # rock ledges only here and there
+        mask = K.smooth((ctx.vn(u, z, 4.0, 2.0, 67 + rank) - 0.6) / 0.12)     # rock ledges only here and there
         h = bluff * (1 - mask) + terrace(bluff, 2.0, 0.8) * mask
         return h + (ctx.vn(u, z, 2.0, 1.5, 65) - 0.5) * 0.3
     tex = slope_mix(ground_tex('hills'), rock_tex('rock', 0.7, seed=3), 1.15, 1.9)
@@ -303,7 +325,7 @@ def _hills(rank):
             trees(ctx, side, hf, 2.0, 1.5, -0.3, -3.0, 72, 0.3, tuft, rad=0.9)
         trees(ctx, side, hf, 2.0, 1.8, -1.5, -D, 73 + rank, 0.4, juniper, gentle, rad=rad_spruce(3.6))
         trees(ctx, side, hf, 4.0, 3.0, -1.5, -D, 80 + rank, 0.25, oak,
-              lambda u, z, r: gentle(u, z, r) and ctx_grove(ctx, u, z, 0.55, 402), rad=rad_broad(4.6))
+              lambda u, z, r: gentle(u, z, r) and ctx_grove(ctx, u, z, 0.55, 402), rad=rad_broad(4.6), zp=0.4)
         trees(ctx, side, hf, 2.0, 1.5, -1.5, -D, 76 + rank, 0.25, tuft, gentle, rad=0.9)
     return hf, tex, things
 
@@ -390,8 +412,10 @@ def _river(rank):
     def hf(ctx, u, z):
         n = ctx.vn(u, z, 4.0, 3.0, 121 + rank)
         b = H * rise(z, -1.5 - n, -10.0) * (0.8 + 0.35 * ctx.vn(u, z, 8.0, 6.0, 123))
-        ledge = terrace(b, 3.0, 0.82)
-        return 0.5 * b + 0.5 * ledge + 0.6 * rise(z, 0.0, -1.5)
+        wob = (ctx.vn(u, z, 2.0, 1.5, 124) - 0.5) * 2.4
+        ledge = terrace(b + wob, 3.0, 0.82) - wob
+        m = K.smooth((ctx.vn(u, z, 4.0, 3.0, 125) - 0.4) / 0.2)       # rock ledges only in places
+        return b + 0.4 * m * (ledge - b) + 0.6 * rise(z, 0.0, -1.5)
     tex = slope_mix(under_canopy(ground_tex('river'), 1), rock_tex('rock', 0.9, seed=7), 1.6, 2.4)
     lod = LOD[rank]
     def things(ctx, side, hf):
@@ -465,8 +489,8 @@ def _pass(rank):
         face = face + (ctx.vn(u, z, 1.0, 1.0, 165 + rank) - 0.5) * 1.6 * rise(z, -2.0, -5.0)
         face = 0.85 * face + 0.15 * terrace(face, 3.0, 0.7)
         return np.maximum(scree * rise(z, 0.3, -0.8), face)
-    snow = snow_cap({1: 12.0, 2: 15.0, 3: 17.0}[rank], gmax=1.5)
-    tex = slope_mix(ground_tex('pass'), rock_tex('granite', 2.6, seed=11), 1.2, 2.0, cap=snow)
+    snow = snow_cap({1: 13.0, 2: 13.0, 3: 12.0}[rank], gmax={1: 1.5, 2: 2.0, 3: 2.6}[rank])
+    tex = slope_mix(ground_tex('pass'), granite_tex(seed=11), 1.2, 2.0, cap=snow)
     lod = LOD[rank]
     def things(ctx, side, hf):
         def spruce(x, z, y, r):
@@ -526,13 +550,13 @@ def _valley(rank):
             E.cyl_z(x * 4, z * 4, y * K.UY, (y + 1.4) * K.UY, 3.6, 'straw', oid=o, th=(0.6, 0.3, -0.1))
             E.sphere(x * 4, z * 4, (y + 1.4) * K.UY, 3.6, 'straw', oid=o, th=(0.75, 0.35, -0.1), noise=0.4,
                      seed=seed_of(r) % 97, sz=0.9)
-        orchard = lambda u, z, r: ctx_grove(ctx, u, z, 0.6, 187)
-        open_ = lambda u, z, r: not ctx_grove(ctx, u, z, 0.55, 187)
+        orchard = lambda u, z, r: ctx_grove(ctx, u, z, 0.66, 187)
+        open_ = lambda u, z, r: not ctx_grove(ctx, u, z, 0.6, 187)
         D = DEPTH[rank] + 1
         trees(ctx, side, hf, 2.0, 2.0, -2.5, -D, 191 + rank, 0.95, fruit, orchard, rad=rad_broad(2.9, 0.75),
               jit=0.15)
         trees(ctx, side, hf, 4.0, 4.0, -2.0, -D, 194 + rank, 0.22 if rank == 1 else 0.12, shade_tree, open_,
-              rad=rad_broad(6.2))
+              rad=rad_broad(6.2), zp=0.3)
         trees(ctx, side, hf, 4.0, 3.0, -3.0, -D, 197 + rank, 0.12, stack, open_, rad=1.2)
     return hf, tex, things
 
@@ -646,7 +670,8 @@ def module(region, rank, var, W=16.0, to=None, t0=0.0, t1=0.0):
             return (1 - t) * A.hf(ctx, u, z) + t * Bs.hf(ctx, u, z)
         def tex(u, z, y, gx, gz, idx):
             t = ctx.t(u)
-            p = (ctx.vn(u, z, 2.0, 1.5, 311) * 0.6 + ctx.pxhash(u, z, y, 312, 0.25) / 100.0 * 0.4)
+            p = (ctx.vn(u, z, 2.0, 1.5, 311) * 0.6 + ctx.vn(u, z, 1.0, 1.0, 313) * 0.28 +
+                 ctx.pxhash(u, z, y, 312, 0.25) / 100.0 * 0.12)
             ra, ia = A.tex(ctx, u, z, y, gx, gz, idx)
             rb, ib = Bs.tex(ctx, u, z, y, gx, gz, idx)
             m = p < t

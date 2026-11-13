@@ -291,7 +291,7 @@ module.exports = async function checkD32World() {
     await page.tap('#devBtn');
     await page.waitForTimeout(200);
     const rows = await page.evaluate(() => [...document.querySelectorAll('#devRows .dvRow')].map(q => q.dataset.row + (q.classList.contains('grey') ? ':grey' : '')));
-    for (const id of ['crew', 'punch:grey', 'load:grey', 'deliver:grey', 'ride:grey', 'look:grey', 'skip', 'status']) if (!rows.includes(id)) P(`the dev panel has no row ${id} (rows: ${rows.join(' ')})`);
+    for (const id of ['crew', 'punch', 'load', 'deliver', 'ride:grey', 'look:grey', 'skip', 'status']) if (!rows.includes(id)) P(`the dev panel has no row ${id} (rows: ${rows.join(' ')})`);   // (stage 2: the hire rows are live)
     await page.tap('#devRows button[data-dv="crew:30"]');
     await page.evaluate(() => window.__railhead.step(2));
     await page.waitForTimeout(500);

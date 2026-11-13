@@ -24,3 +24,8 @@ Small bugs and ideas found outside the current task. Each entry: date, what, whe
 - (2026-11-13, D31 builder) With `?d31=0` (and before D31) a tap within 30 px of the platform cart still goes to the D25 `carryTap`, which answers "Platform cart left at its spot" although handling is on; D31's taps bypass it. carryTap could be skipped whenever handling is on.
 - (2026-11-13, D31 builder) The helper arrow of the Unloading lesson's step 2 ("Cart: take it") keeps pointing at the cart while the player unloads by taps without it; the step only passes on a later step's event. The step could pass when a good is tapped.
 - (2026-11-13, D31 builder) Goods in a boxcar with its door shut are still in the renderer's pick list (a tap beside one, on the car's wall, picks the good; D31's taps ignore it unless it can be moved). They could be left out of the list while the door is shut.
+
+- D32 (found by Crew, 2026-11-13): the work train's own dump (rails, ties, rock, kegs beside its cars at z 6) is drawn on water when the train stands on the creek trestle, and its crew car's steps are then over the creek too (Crew boards the men from the deck beside the car). Foundation's `lnTrain` could keep the train off the bridge or move the dump.
+- D32 (Crew): the day's summary takes the head count at the moment the summary opens (`hcCount` in the prototype day), not the 22:00 count kept in `S.ln.hc`; if the day is ended before the crew is back it reports them out.
+- D32 (Crew): the rail men pass through the work train's cars and the player; they do not yet step round either.
+- D32 (Crew): the sheriff (Tom Dade) is outdoors at 22:00 in an unplayed day, so the head count reports him out every night; the Town builder may want him home by then.

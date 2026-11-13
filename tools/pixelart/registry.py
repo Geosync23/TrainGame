@@ -41,6 +41,8 @@ OWNERS = {
                      'nat/aspen', 'nat/snag', 'nat/bones', 'nat/burrow', 'nat/bush',
                      'veh/crewcar', 'veh/gondola', 'veh/flat_rails', 'veh/flat_ties'),   # D32: the line and the country
     'sprites_camp': ('camp/',),                   # D32: the crew's camp
+    # D32 the journey (Artist 3): the wild country's near side, the landmarks, the wildlife
+    'sprites_wild_near': ('wild/near/', 'wild/mark/', 'wild/life/'),
 }
 
 

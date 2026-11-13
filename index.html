@@ -21441,7 +21441,7 @@ function dvAddRow(id, label, onTap, state) { dvUi.extra = dvUi.extra.filter(r =>
 function dvRows() {
   const D = (S && S.dv) || dvNewStore(), L = S && S.ln, rows = [];
   const hiredLanded = typeof HW !== 'undefined';   // Town's constants: its part has landed
-  rows.push({ id: 'crew', label: 'Rail crew', kind: 'pick', values: LINE.CREW, value: D.crew, set: v => send({ t: 'dvSet', k: 'crew', v }), note: 'from 05:00 tomorrow' });
+  rows.push({ id: 'crew', label: 'Rail crew', kind: 'pick', values: LINE.CREW, value: D.crew, set: v => send({ t: 'dvSet', k: 'crew', v }), note: 'from the next 05:00' });
   rows.push({ id: 'punch', label: 'Ticket punchers', kind: 'pick', values: [0, 1, 2, 3], value: D.punch, set: v => send({ t: 'dvSet', k: 'punch', v }), grey: !hiredLanded, note: hiredLanded ? '' : 'not built yet' });
   rows.push({ id: 'load', label: 'Cargo loaders', kind: 'pick', values: [0, 1, 2, 3, 4], value: D.load, set: v => send({ t: 'dvSet', k: 'load', v }), grey: !hiredLanded, note: hiredLanded ? '' : 'not built yet' });
   rows.push({ id: 'deliver', label: 'Delivery men', kind: 'pick', values: [0, 1, 2], value: D.deliver, set: v => send({ t: 'dvSet', k: 'deliver', v }), grey: !hiredLanded, note: hiredLanded ? '' : 'not built yet' });

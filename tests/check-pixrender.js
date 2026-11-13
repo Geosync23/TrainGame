@@ -372,7 +372,9 @@ module.exports = async function checkPixRender() {
           const rec = [];
           for (let t0 = performance.now(); performance.now() - t0 < 1600;) { const ts = await raf(); const v = X.view; rec.push({ t: ts, x: v.camX, y: v.camY, s: v.scale, dpr: v.dpr }); }   // (the frame's own time, as the game's loop has it)
           R.send({ t: 'walkDir', a: null }); X.setSpeed(0);
-          const r = rec.slice(8), n = r.length - 1, T = r[n].t - r[0].t, vx = (r[n].x - r[0].x) / T, vy = (r[n].y - r[0].y) / T, s = r[0].s;
+          // D32 (the slower clock): the first tick of the walk comes after up to 12 frames (it was 8),
+          // so the first 14 frames are left out (was 8).
+          const r = rec.slice(14), n = r.length - 1, T = r[n].t - r[0].t, vx = (r[n].x - r[0].x) / T, vy = (r[n].y - r[0].y) / T, s = r[0].s;
           let worst = 0, stalls = 0, maxCss = 0;
           for (let i = 1; i <= n; i++) {
             const dt = r[i].t - r[i - 1].t, dx = r[i].x - r[i - 1].x, dy = r[i].y - r[i - 1].y;

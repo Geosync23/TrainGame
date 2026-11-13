@@ -34,6 +34,13 @@ OWNERS = {
                      'building.', 'platform.', 'walkway.', 'goods.', 'handcart.', 'prop.', 'tree.', 'ground.', 'street.'),
     'sprites_nature': ('nat/',),           # D27 nature (A3)
     'sprites_ground': ('tile/', 'dock/'),  # D27 ground tiles and the cargo platform's pieces (A3)
+    'sprites_navvy': ('ppl/navvy_', 'tool/'),     # D32: the rail crew and their tools (the D32 artist)
+    'sprites_line': ('line/', 'tile/ln_', 'tile/prairie', 'tile/woodfloor', 'tile/rockground', 'tile/hill_',
+                     'tile/field', 'tile/river', 'tile/trail', 'tile/creekbed', 'nat/pine', 'nat/oak', 'nat/stump',
+                     'nat/felled', 'nat/brush', 'nat/mound', 'nat/fence_', 'nat/haystack', 'nat/stones', 'nat/fern',
+                     'nat/aspen', 'nat/snag', 'nat/bones', 'nat/burrow', 'nat/bush',
+                     'veh/crewcar', 'veh/gondola', 'veh/flat_rails', 'veh/flat_ties'),   # D32: the line and the country
+    'sprites_camp': ('camp/',),                   # D32: the crew's camp
 }
 
 

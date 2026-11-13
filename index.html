@@ -23221,14 +23221,14 @@ function pdHud() {
   pdBoardHud();
   const job = pdJobNow(), lesHold = pdLesHud(pdUi.board || pdUi.sum), cards = pdUi.board || pdUi.sum || lesHold;
   if (document.body.classList.contains('pdcard') !== cards) document.body.classList.toggle('pdcard', cards);   // the carry readout steps aside for a card
-  pdNextHud(job, nextJobOn() && !ui.sendMode);
+  pdNextHud(job, nextJobOn() && !ui.sendMode && !(D33.on && S.player.away));   // (D33: out on the line, the station's next job is not his to do: the line's bar is up instead)
   pdGuideHud(cards);
   const lr = $('setLesRow'), lon = pdLesOn(S);
   if (lr.hidden !== !lon) lr.hidden = !lon;
   // Messages (toast) go under the top rows (the clock, the Next job line, the guide's slip), never over a button.
   const tb = Math.round(Math.max(...['topleft', 'nextJob', 'pdGuide', 'tutTask', 'pdLesson'].map(id => $(id)).filter(e => e.id !== 'pdLesson' || !e.classList.contains('hold')).filter(e => !e.hidden && e.getClientRects().length).map(e => e.getBoundingClientRect().bottom)) + 8);
   if (pdUi.layout !== String(tb) || $('toast').style.top !== tb + 'px') { pdUi.layout = String(tb); $('toast').style.top = tb + 'px'; }   // D27: again after a load (tgSlideHide clears it)
-  const hide = cards || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || !!S.player.ride || !curPoses;
+  const hide = cards || ui.panelTrain !== null || carUi.stock !== null || bigPanelOpen() || !!S.player.ride || !curPoses || !!(D33.on && S.player.away);   // (D33: out on the line, the station's job buttons are not his)
   const taken = pdActsHud(hide);
   pdGuideDraw(hide ? null : pdHintTarget(), taken);
 }

@@ -431,6 +431,114 @@ def country(A):
     save(c, 'prairie-long.png', 2)
 
 
+# ------------------------------------------------------------------------------------------------ the train and camp
+def night(c, keep_cols):
+    """A stand-in night tint: everything darkened and cooled except the given lamp-lit colours."""
+    keep = np.zeros(c.shape[:2], bool)
+    for col in keep_cols:
+        keep |= np.all(c[..., :3] == col, axis=-1)
+    out = c.copy()
+    f = np.array([0.32, 0.36, 0.55])
+    out[..., :3] = np.where(keep[..., None], c[..., :3], (c[..., :3] * f).astype(np.uint8))
+    return out
+
+
+def train(A):
+    """The work train standing at the railhead at noon: engine, flatcars of rails and ties, the gondola of rock, the
+    supply boxcar and the crew car, the men eating beside it; then the camp by day and by night (a stand-in night
+    tint; the lit tent parts keep their glow, and the fire)."""
+    W, Hh = 560, 300
+    c = canvas(W, Hh)
+    ox, oy = 60, 50
+    roadbed(A, c, ox, oy, [99] * 6, -10, 60, base_prairie, zr=26, j0=-14)
+    it = []
+    # cars west to east: crew car, boxcar, gondola, flat (ties), flat (rails), engine heading e
+    x = 4.0
+    cars = [('veh/crewcar/e', None, 11.5), ('veh/boxcar/e', None, 10), ('veh/gondola/e', 'veh/gondola_load/3', 10),
+            ('veh/flatcar/e', 'veh/flat_ties/2', 10), ('veh/flatcar/e', 'veh/flat_rails/1', 10),
+            ('veh/loco_freight/e/0', None, 18)]
+    for key, load, ln in cars:
+        xc = x + ln / 2
+        it.append((key, xc, 0.0, 0.0))
+        if load:
+            it.append((load, xc + 0.001, 0.0, 0.001))
+        x += ln + 0.4
+    who = ('navvy_a', 'navvy_b', 'navvy_c')
+    for k in range(9):
+        anim = ('eat', 'sit', 'eat', 'drink', 'eat', 'idle')[k % 6]
+        n = {'eat': 2, 'sit': 1, 'drink': 2, 'idle': 2}[anim]
+        it.append((f'ppl/{who[k % 3]}/{anim}/{("sw", "se", "sw")[k % 3]}/{k % n}', 6 + k * 2.6, 3.8 + (k % 2) * 1.2, 0))
+    it += [('line/tie_pile/3', 30, 5.5, 0), ('line/rail_stack/3', 46, 6.5, 0), ('line/keg', 20.5, 4.4, 0),
+           ('line/keg', 21.2, 5.2, 0), ('line/rock_heap/3', 38, -5.5, 0), ('camp/barrel', 2.5, 3.4, 0),
+           ('tool/shovel/ground', 15, 6.6, 0), ('tool/pick/ground', 26, 7.4, 0)]
+    items_draw(A, c, ox, oy, it)
+    label(c, 'the work train at the railhead, noon', 4, 4)
+    save(c, 'worktrain.png', 3)
+    # the cars and loads one by one
+    c = canvas(560, 200)
+    xs = 0
+    for k, (key, load) in enumerate((('veh/crewcar/e', None), ('veh/gondola/e', None), ('veh/gondola/e', 'veh/gondola_load/1'),
+                                     ('veh/gondola/e', 'veh/gondola_load/2'), ('veh/gondola/e', 'veh/gondola_load/3'),
+                                     ('veh/flatcar/e', 'veh/flat_rails/1'), ('veh/flatcar/e', 'veh/flat_rails/2'),
+                                     ('veh/flatcar/e', 'veh/flat_rails/3'), ('veh/flatcar/e', 'veh/flat_ties/1'),
+                                     ('veh/flatcar/e', 'veh/flat_ties/2'), ('veh/flatcar/e', 'veh/flat_ties/3'))):
+        px, py = 50 + (k % 4) * 130, 50 + (k // 4) * 60
+        A.draw(c, key, px, py)
+        if load:
+            A.draw(c, load, px, py)
+    A.draw(c, 'veh/crewcar_in/e/floor', 450, 150)
+    A.draw(c, 'veh/crewcar_in/bench', 450 + 0, 150 - 13 - 4)
+    A.draw(c, 'ppl/navvy_a/sit/se/0', 446, 150 - 13 - 4 - 4)
+    A.draw(c, 'veh/crewcar_in/e/sill', 450, 150)
+    save(c, 'worktrain-cars.png', 3)
+    # the camp
+    for nightly in (False, True):
+        W, Hh = 420, 250
+        c = canvas(W, Hh)
+        ox, oy = 200, 120
+        ground(A, c, ox, oy, -20, 30, -30, 30, lambda i, j: f'tile/dirt/{1 + int(hsh(i, j) * 3)}' if abs(i) + abs(j - 4) < 12 and hsh(i, j, 2) > 0.3 else base_prairie(i, j))
+        it = []
+        sfx = '_lit' if nightly else ''
+        for k in range(4):
+            xt, zt = -10 + k * 6, -6
+            for p in ('back', 'front', 'roof'):
+                if k == 3:
+                    continue        # one tent opened up (drawn first, below): the cots and sleepers inside
+                it.append((f'camp/tent/{p}{sfx}', xt, zt, {'back': 0.0, 'front': 0.01, 'roof': 0.02}[p]))
+        # inside the open tent
+        for n, (cx, cz) in enumerate(((7.0, -7.8), (9.2, -7.8), (7.0, -4.6), (9.2, -4.6))):
+            it.append(('camp/cot_z' if n < 0 else 'camp/cot_z', cx, cz, 0.05))
+            if nightly:
+                it.append((f'ppl/{("navvy_a", "navvy_b", "navvy_c")[n % 3]}/lie/sw/0', cx, cz, 0.06))
+        for p in ('back', 'front', 'roof'):
+            it.append((f'camp/cooktent/{p}{sfx}', -12, 6, {'back': 0.0, 'front': 0.01, 'roof': 0.02}[p]))
+        it += [('camp/table', -3, 6, 0), ('camp/bench', -3, 4.9, 0), ('camp/bench', -3, 7.1, 0),
+               ('camp/fire' if nightly else 'camp/fire_out', 6, 7, 0), ('camp/kettle', 7.2, 7.8, 0),
+               ('camp/toolrack', 13, 2, 0), ('camp/barrel', 10, 6, 0), ('camp/washline', 4, 13, 0)]
+        if 'camp/fire' in [t[0] for t in it]:
+            it = [(k + '/0' if k == 'camp/fire' else k, a, b, d) for k, a, b, d in it]
+        who = ('navvy_a', 'navvy_b', 'navvy_c')
+        if not nightly:
+            for k in range(4):
+                it.append((f'ppl/{who[k % 3]}/eat/{("ne", "sw")[k % 2]}/{k % 2}', -4.5 + k * 1.0, 4.4 + (k % 2) * 3.2, 0))
+            it.append(('ppl/navvy_c/walk/se/1', 12, 9, 0)); it.append(('ppl/navvy_b/shoulder/se/2', 10, 11, 0))
+        else:
+            for k in range(3):
+                it.append((f'ppl/{who[k]}/sit/{("ne", "sw", "se")[k]}/0', 4.0 + k * 1.6, 9.0 - k * 0.6, 0))
+        px, py = proj(8, -6)
+        A.draw(c, f'camp/tent/back{sfx}', ox + px, oy + py)
+        items_draw(A, c, ox, oy, it)
+        if nightly:
+            import engine as E
+            import pal_d32  # noqa: F401
+            import sprites_camp as SC
+            cols = [E.hx(h) for h in SC.GLOW.values()] + [tuple(E.PAL[E.RID['fire'], i]) for i in range(4)]
+            c = night(c, cols)
+        label(c, 'the camp at night (stand-in tint)' if nightly else 'the camp by day: tents, the cook tent, '
+              'one tent opened to show the cots', 4, 4, PAPER if nightly else INK)
+        save(c, 'camp-night.png' if nightly else 'camp-day.png', 3)
+
+
 def main():
     what = sys.argv[1] if len(sys.argv) > 1 else 'all'
     A = Atlas()

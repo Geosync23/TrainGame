@@ -190,6 +190,71 @@ def register_country(reg):
             dict(anchor='as line/trestle_deck', note='the first pair of stringers only (extra)'))
 
 
+def _diff(full, base):
+    """The pixels of `full` that differ from `base` (same canvas, same anchor): a load drawn with the car as its
+    occluder, so the car's near side still hides the load's lower part when the load is drawn over the car."""
+    (fi, fa), (bi, ba) = full, base
+    W = max(fi.shape[1] + 2 * abs(fa[0] - ba[0]), bi.shape[1]) + 40
+    Hh = max(fi.shape[0], bi.shape[0]) + 80
+    ox, oy = W // 2, Hh // 2
+    def place(img, an):
+        c = np.zeros((Hh, W, 4), np.uint8)
+        c[oy - an[1]:oy - an[1] + img.shape[0], ox - an[0]:ox - an[0] + img.shape[1]] = img
+        return c
+    F, Bc = place(fi, fa), place(bi, ba)
+    keep = (F[..., 3] > 0) & ((Bc[..., 3] == 0) | np.any(F[..., :3] != Bc[..., :3], axis=-1))
+    out = np.zeros_like(F)
+    out[keep] = F[keep]
+    import harness as Hh_
+    return Hh_.crop(out, (ox, oy))
+
+
+def register_train(reg):
+    import sprites_trains as STR
+    import stock27 as ST
+    import worktrain_d32 as WT
+    g = 'worktrain'
+    car = STR._render(WT.crewcar, 0, ST.BOX_LEN + 1.5)
+    for h in ('e', 'w'):
+        reg.add(f'veh/crewcar/{h}', g, [car],
+                dict(length=11.5, anchor=STR.ANCHOR, note='the crew car: an old boxcar with windows, a door each '
+                     'side, end platforms with steps and railings, a stovepipe; the same picture both ways'))
+    gon = STR._render(WT.gondola, 0, ST.BOX_LEN)
+    for h in ('e', 'w'):
+        reg.add(f'veh/gondola/{h}', g, [gon],
+                dict(length=10.0, anchor=STR.ANCHOR, note='the gondola: a flatcar with board sides and drop ends '
+                     '(deck 1.9u, sides 1.15u above it); empty', extra=dict(len=10.0, w=4.0, deck=1.9)))
+    flat = STR._render(ST.flatcar, 0, ST.BOX_LEN)
+    for lv in (1, 2, 3):
+        full = STR._render(lambda lv=lv: (WT.gondola(), WT.gondola_rock(lv)), 0, ST.BOX_LEN)
+        reg.add(f'veh/gondola_load/{lv}', g, [_diff(full, gon)],
+                dict(anchor='the car\'s anchor: draw right after veh/gondola/<e|w> at the same point',
+                     note='broken rock in the gondola: ' + ('a low layer', 'half full', 'heaped full')[lv - 1]))
+        full = STR._render(lambda lv=lv: (ST.flatcar(), WT.flat_rails(lv)), 0, ST.BOX_LEN)
+        reg.add(f'veh/flat_rails/{lv}', g, [_diff(full, flat)],
+                dict(anchor='the car\'s anchor: draw right after veh/flatcar/<e|w> at the same point',
+                     note='rails on the flatcar: ' + ('a few', 'half a load', 'a full load')[lv - 1]))
+        full = STR._render(lambda lv=lv: (ST.flatcar(), WT.flat_ties(lv)), 0, ST.BOX_LEN)
+        reg.add(f'veh/flat_ties/{lv}', g, [_diff(full, flat)],
+                dict(anchor='the car\'s anchor: draw right after veh/flatcar/<e|w> at the same point',
+                     note='ties across the flatcar in cribbed layers: ' + ('one layer', 'three', 'five')[lv - 1]))
+    floor = STR._render(WT.crewcar_floor, 0, ST.BOX_LEN + 1.5)
+    sill = STR._render(WT.crewcar_sill, 0, ST.BOX_LEN + 1.5, shadows=False)
+    for h in ('e', 'w'):
+        reg.add(f'veh/crewcar_in/{h}/floor', g, [floor],
+                dict(anchor=STR.PART, note='the crew car cut away: running gear, floor, end platforms, the far wall '
+                     'with its windows from inside, the west wall, the stove. Draw first, then benches and riders, '
+                     'then the sill', extra=dict(box=[-4.8, -2.0, 4.8, 2.0, ST.B_EAVES])))
+        reg.add(f'veh/crewcar_in/{h}/sill', g, [sill],
+                dict(anchor=STR.PART, note='the near wall and the east wall cut to 0.5u above the floor',
+                     extra=dict(box=[-4.8, 1.88, 4.8, 2.0, ST.FLOOR + 0.5])))
+    reg.add('veh/crewcar_in/bench', g, [STR._render(WT.crewcar_bench, 0, 4, shadows=False)],
+            dict(anchor=STR.INSIDE, note='a plank bench along x, 4u, seat 0.5u above the floor: benches at z -1.2 '
+                 'and 1.2 inside the car; the riders sit on it (navvy sit frames, drawn 0.5u up)',
+                 extra=dict(box=[-2.0, -0.25, 2.0, 0.25, 0.5])))
+
+
 def register(reg):
     register_track(reg)
     register_country(reg)
+    register_train(reg)

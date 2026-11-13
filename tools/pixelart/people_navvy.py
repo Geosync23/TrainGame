@@ -437,18 +437,19 @@ def lie_frames(who):
     import engine as E
     sp = PE.SPECS[who][1]
     hair = sp['hair'][0]
+    blanket = {'navvy_a': 'slate', 'navvy_b': 'umber', 'navvy_c': 'brick'}[who]
     skin = sp['skin']
     out = []
     for d, yaw in (('se', 0.0), ('sw', -math.pi / 2)):
         def draw():
             y0 = 0.55
-            B(-0.9, -0.45, y0, 0.95, 0.42, y0 + 0.32, 'slate', shades=(1, 2, 3))      # the body under the blanket
-            B(-0.2, -0.38, y0 + 0.3, 0.6, 0.36, y0 + 0.42, 'slate', shades=(1, 2, 3))  # the hip
-            B(0.95, -0.3, y0, 1.15, 0.3, y0 + 0.36, 'slate', shades=(1, 2, 3))         # the feet
+            B(-0.9, -0.45, y0, 0.95, 0.42, y0 + 0.32, blanket, shades=(1, 2, 3))      # the body under the blanket
+            B(-0.2, -0.38, y0 + 0.3, 0.6, 0.36, y0 + 0.42, blanket, shades=(1, 2, 3))  # the hip
+            B(0.95, -0.3, y0, 1.15, 0.3, y0 + 0.36, blanket, shades=(1, 2, 3))         # the feet
             B(-1.15, -0.4, y0, -0.9, 0.4, y0 + 0.18, 'umber', shades=(1, 2, 3))        # the rolled coat
             B(-1.2, -0.26, y0 + 0.16, -0.82, 0.26, y0 + 0.5, skin, shades=(0, 0, 1))  # the face
             B(-1.26, -0.28, y0 + 0.3, -1.0, 0.28, y0 + 0.56, hair, shades=(1, 1, 2))  # the hair
-            B(-0.92, -0.42, y0 + 0.32, -0.75, 0.44, y0 + 0.36, 'slate', shades=(0, 1, 2))  # the blanket's edge
+            B(-0.92, -0.42, y0 + 0.32, -0.75, 0.44, y0 + 0.36, 'cream', shades=(1, 2, 3))  # the sheet's edge
         img, an = H.render(draw, yaw=yaw, shadows=False)
         out.append((d, img, an))
     return out

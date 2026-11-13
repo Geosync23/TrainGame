@@ -3949,6 +3949,7 @@ function rrWaveOffCmd(S, c, ev) {
   if (run.ph === 'in') return no(`${run.name} has not stopped ${rrAtTrack(run, false)} yet`);
   if (run.ph !== 'stand') return no(`${run.name} is already on its way`);
   if (protoWorld(S.track) && walkBridgeAt(S.track, S.player.x, S.player.z)) return no(`Come down from the footbridge to wave ${run.name} off`);
+  if (S.ln && wtBlocks(S, run.to)) return no(`The work train is moving on track 2: ${run.name} can leave in a few minutes`);   // D32 (nothing with the line off)
   if (!(rrEngineDist(S, tr) <= RR.REACH)) return no(`Walk up to ${run.name}'s engine to wave it off`);
   if (protoWorld(S.track)) {
     // D25 (provisional): not while travellers are still in line or boarding at platform 1 (P: ppReady), nor while goods
@@ -5960,10 +5961,10 @@ const LINE = (() => {
     AWAY_LEVER_S: 600,                           // the relief lever man throws a lever this long after it is needed
   };
 })();
-// Where things stand at the station (plan sections 2 and 4; station units). The muster and the plank walk are 4u west
+// Where things stand at the station (plan sections 2 and 4; station units). The muster (6 x 6u) and the plank walk are west
 // of the plan's figures: D29's one lever frame stands at x -37.5 to -31.5, where the plan had the muster's east end.
 // The camp's rectangle is the plan's (checked clear of buildings, the creek and the cart path in check-d32world).
-PROTO.MUSTER = { x0: -50, x1: -40, z0: -16, z1: -10 };
+PROTO.MUSTER = { x0: -46, x1: -40, z0: -16, z1: -10 };   // between the water tower (x -48) and the lever frame's stage (x -37.5)
 PROTO.PLANK = { x: -39.3, z0: -9.4, z1: -2.6, w: 1.6 };       // over track 1 (straight here, z -6) to the crew car's steps
 PROTO.CAMP = { x0: -88, x1: -48, z0: -58, z1: -30, gate: { x: -48, z: -34 } };
 // The work train's two new cars (the engine, the flatcar and the boxcar are today's).
@@ -6317,11 +6318,28 @@ function wtPhaseAt(L, sod) {
   if (sod < T.OFF) return 'sOut';
   if (sod < T.AWAY) return sod >= (tr.ta !== undefined ? tr.ta : T.OFF + (LINE.OUT_MIN + LINE.OUT_PER) * 60) ? 'stand' : 'out';
   if (sod < T.BACK) return 'back';
-  if (sod < T.EIN) return 'gap';
-  if (sod < T.EARR) return 'eIn';
-  if (sod < T.EDEP) return 'eStand';
-  if (sod < T.EOFF) return 'eOut';
+  const he = tr.he || 0, hw = he + (tr.hw || 0);   // the evening's waits for a clear road (wtTick)
+  if (sod < T.EIN + he) return 'gap';
+  if (sod < T.EARR + he) return 'eIn';
+  if (sod < T.EDEP + hw) return 'eStand';
+  if (sod < T.EOFF + hw) return 'eOut';
   return 'home';
+}
+// Is the road clear for the work train towards an end ('E' | 'W')? It is a scripted run the railroad's trains do not
+// see, so it keeps out of their way itself: not while a train from that end is coming in or due within half an hour,
+// nor while one for that end is on its way out. (In the timetable's own day the road is always clear at its times; a
+// late evening train makes it wait.) And the other way round, wtBlocks: a train for that end is not sent off while
+// the work train is moving on that side of the station (the wave-off is refused with the reason; a few minutes).
+function wtBlocks(S, end) { const ph = S.ln ? S.ln.tr.ph : 'home'; return end === 'E' ? ph === 'eIn' || ph === 'sOut' : ph === 'sIn' || ph === 'eOut'; }
+function wtRoadClear(S, end) {
+  const R = S.rr;
+  if (!R || !R.on || !Array.isArray(R.runs)) return true;
+  for (const run of R.runs) {
+    if (run.ph === 'in' && (run.from === end || run.through)) return false;
+    if (run.ph === 'out' && (run.to === end || run.through)) return false;   // (one still standing is not in the way; it is held while the work train moves: wtBlocks)
+    if (run.ph === 'due' && run.from === end && rrEnterAt(run) - S.time < 1800 && rrEnterAt(run) - S.time > -1200) return false;   // (one more than 20 minutes overdue is held up elsewhere)
+  }
+  return true;
 }
 const wtStandM = L => Math.max(LINE.TRAIN_LEN / LINE.M + 2, L.f[5] - LINE.ENGINE_BACK_M);
 // The engine's front on the line (m) at second-of-day sod while running out or back (a pure function of the phase's
@@ -6332,8 +6350,8 @@ function wtLineX(L, sod) {
     const x1 = tr.x1, slowM = LINE.SLOW_U / M, slowS = LINE.SLOW_U / LINE.SLOW_V * 60, left = tr.ta - sod;
     if (left <= 0) return x1;
     if (left <= slowS) { const p = left / slowS; return x1 - slowM * p * p; }                      // braking in
-    const p = (sod - T.OFF) / Math.max(1, tr.ta - slowS - T.OFF);
-    return x0 + (x1 - slowM - x0) * Math.max(0, Math.min(1, p));
+    const p = (sod - T.OFF) / Math.max(1, tr.ta - slowS - T.OFF), xs = Math.min(x0, x1 - slowM - 30);   // (from further back when the railhead is still near the junction)
+    return xs + (x1 - slowM - xs) * Math.max(0, Math.min(1, p));
   }
   if (tr.ph === 'back') { const p = Math.max(0, Math.min(1, (sod - T.AWAY) / (T.BACK - T.AWAY))); return tr.xb + (x0 - tr.xb) * p * p; }
   return tr.x;
@@ -6344,8 +6362,9 @@ function wtStationX(L, sod) {
   if (ph === 'sStand' || ph === 'eStand') return N.STAND;
   if (ph === 'sIn') { const p = u(T.IN, T.ARR); return N.FAR_W + (N.STAND - N.FAR_W) * (1 - (1 - p) * (1 - p)); }
   if (ph === 'sOut') { const p = u(T.DEP, T.OFF); return N.STAND + (N.FAR_E - N.STAND) * p * p; }
-  if (ph === 'eIn') { const p = u(T.EIN, T.EARR); return N.FAR_E + (N.STAND - N.FAR_E) * (1 - (1 - p) * (1 - p)); }
-  if (ph === 'eOut') { const p = u(T.EDEP, T.EOFF); return N.STAND + (N.FAR_W - N.STAND) * p * p; }
+  const he = L.tr.he || 0, hw = he + (L.tr.hw || 0);
+  if (ph === 'eIn') { const p = u(T.EIN + he, T.EARR + he); return N.FAR_E + (N.STAND - N.FAR_E) * (1 - (1 - p) * (1 - p)); }
+  if (ph === 'eOut') { const p = u(T.EDEP + hw, T.EOFF + hw); return N.STAND + (N.FAR_W - N.STAND) * p * p; }
   return null;
 }
 // The sim tick's line step (after tfTick): the 05:00 plan, the work train's phase and place, the supplies it brings.
@@ -6356,7 +6375,10 @@ function wtTick(S, ev) {
   const L = S.ln;
   lnWork.ev = ev;
   if (!L || (!L.run && L.tr.ph === 'home')) return;
-  const sod = rrSod(S.time), T = LINE.T, tr = L.tr, was = tr.ph, ph = wtPhaseAt(L, sod);
+  const sod = rrSod(S.time), T = LINE.T, tr = L.tr, was = tr.ph, tk = CFG.TICK_GAME_S;
+  if (was === 'gap' && sod >= T.EIN + (tr.he || 0) && (tr.he || 0) < 3 * 3600 && !wtRoadClear(S, 'E')) tr.he = (tr.he || 0) + tk;
+  if (was === 'eStand' && sod >= T.EDEP + (tr.he || 0) + (tr.hw || 0) && (tr.he || 0) + (tr.hw || 0) < 3 * 3600 && !wtRoadClear(S, 'W')) tr.hw = (tr.hw || 0) + tk;
+  const ph = wtPhaseAt(L, sod);
   if (ph !== was) {
     tr.ph = ph; tr.t = S.time;
     if (ph === 'out' || (ph === 'stand' && tr.x1 === undefined)) { tr.x1 = wtStandM(L); tr.ta = T.OFF + Math.round((LINE.OUT_MIN + LINE.OUT_PER * L.f[5] / LINE.LEN_M) * 60); }
@@ -6367,6 +6389,7 @@ function wtTick(S, ev) {
     }
     if (ph === 'back') tr.xb = tr.x;
     if (ph === 'gap' || ph === 'home') { tr.x = 0; delete tr.x1; delete tr.ta; delete tr.xb; delete tr.mv; }
+    if (ph === 'home') { delete tr.he; delete tr.hw; }
     ev.push({ t: 'wtPhase', ph, from: was });
   }
   if (tr.ph === 'out' || tr.ph === 'back') tr.x = Math.round(wtLineX(L, sod) * 1000) / 1000;
@@ -6579,7 +6602,7 @@ function cwBoost(S, stage, x, k, until) {}
 // The line only, on a bare state (the pace check): { days, done, f, log } when the last spike is in, or at maxDays.
 function cwSimDays(seed, crew, maxDays) {
   const S = { seed, time: 0, tick: 0, track: { world: 'proto' }, player: {}, dv: { ...dvNewStore(), crew } };
-  for (let i = 0; i < maxDays * 10800 && !(S.ln && S.ln.done >= 0); i++) { S.time += CFG.TICK_GAME_S; S.tick++; const ev = []; wtTick(S, ev); cwTick(S, ev); }
+  for (let i = 0; i < maxDays * 10800 - 1 && !(S.ln && S.ln.done >= 0); i++) { S.time += CFG.TICK_GAME_S; S.tick++; const ev = []; wtTick(S, ev); cwTick(S, ev); }
   return { days: S.ln.days, done: S.ln.done, f: S.ln.f.slice(), log: S.ln.log.slice(), sup: { ...S.ln.sup } };
 }
 // The head count (plan section 4): everyone the game simulates, at 22:00. Stand-in: the rail men by number only (home
@@ -7845,6 +7868,7 @@ function trainApproach(poses, x, z, view, allPoses, T) {
   }
   return best;
 }
+const PLAYER_SUB_U = 0.41;   // D32: the longest step checked at once (under a walk grid cell; the prototype's old pace was 0.4u a tick)
 function playerTick(S, ev, poseCache) {
   const P = S.player;
   if (P.act) {
@@ -7854,7 +7878,7 @@ function playerTick(S, ev, poseCache) {
   }
   if (P.mode !== 'to' && P.mode !== 'dir') return;
   const poses = [].concat(...S.trains.map(tr => poseCache[tr.id]));
-  const T = S.track, step = playerWalkSpeed(T, P.tool !== null && P.tool !== undefined) * DT_MIN;
+  const T = S.track, step = playerWalkSpeed(T, P.tool !== null && P.tool !== undefined) * DT_MIN, nSub = Math.max(1, Math.ceil(step / PLAYER_SUB_U - 1e-9));
   // Would a move from (x0, z0) to (x1, z1) run into a train, onto a hill, or (by direction) into a building or onto
   // track away from a crossing (D15)? A player already inside one may always move out. M0 walking stays on the flat ground (height 0).
   // D25: on a footbridge a train passes beneath; onto or off one only at a flight's foot (walkStep).
@@ -7866,11 +7890,15 @@ function playerTick(S, ev, poseCache) {
   if (P.mode === 'dir') {
     // Press and hold: direct steering. A blocked move slides along the wall (its x-only or z-only part).
     const ang = P.a / 256 * Math.PI * 2, dx = Math.cos(ang), dz = Math.sin(ang);
-    const nx = clampX(P.x + dx * step), nz = clampZ(P.z + dz * step);
-    for (const [x, z] of [[nx, nz], [nx, P.z], [P.x, nz]]) {
-      if ((x === P.x && z === P.z) || into(P.x, P.z, x, z, true)) continue;
-      P.x = x; P.z = z; P.f = Math.atan2(dx, dz);
-      break;
+    for (let k = 0; k < nSub; k++) {   // D32: in steps of at most PLAYER_SUB_U (one step as before at the old pace)
+      const nx = clampX(P.x + dx * step / nSub), nz = clampZ(P.z + dz * step / nSub);
+      let moved = false;
+      for (const [x, z] of [[nx, nz], [nx, P.z], [P.x, nz]]) {
+        if ((x === P.x && z === P.z) || into(P.x, P.z, x, z, true)) continue;
+        P.x = x; P.z = z; P.f = Math.atan2(dx, dz); moved = true;
+        break;
+      }
+      if (!moved) break;
     }
     return;
   }
@@ -7883,16 +7911,25 @@ function playerTick(S, ev, poseCache) {
   // moving into the way gives a new path round it. The walk ends at the target, or at the nearest spot
   // that can be reached (a train that stays in the way leaves the player standing beside it).
   const w = walkPoints(S, poses, step);
-  let x = P.x, z = P.z, left = step, end = true;
-  for (const [px, pz] of w.pts) {
-    const d = Math.hypot(px - x, pz - z);
-    if (d <= left) { x = px; z = pz; left -= d; continue; }
-    x += (px - x) / d * left; z += (pz - z) / d * left; end = false;
-    break;
+  // D32: the tick's walk is taken in nSub steps of at most PLAYER_SUB_U along the path, each checked as one tick's
+  // step was (at the old pace nSub is 1 and this is the walk as it always was): with the player's real speed under the
+  // slower clock a tick's walk is longer than a walk grid cell, and one check from end to end would jump a cell.
+  let x = P.x, z = P.z, end = true, blocked = false, pi = 0;
+  for (let k = 0; k < nSub && !blocked; k++) {
+    const sx = x, sz = z;
+    let left = step / nSub;
+    end = true;
+    while (pi < w.pts.length) {
+      const [px, pz] = w.pts[pi], d = Math.hypot(px - x, pz - z);
+      if (d <= left) { x = px; z = pz; left -= d; pi++; continue; }
+      x += (px - x) / d * left; z += (pz - z) / d * left; end = false;
+      break;
+    }
+    // The path keeps clear of trains and hills, so this only stops a step it should never take.
+    if ((x !== sx || z !== sz) && into(sx, sz, x, z, false)) { blocked = true; x = sx; z = sz; }
+    if (end) break;
   }
-  // The path keeps clear of trains and hills, so this only stops a step it should never take.
-  const blocked = (x !== P.x || z !== P.z) && into(P.x, P.z, x, z, false);
-  if (!blocked && (x !== P.x || z !== P.z)) { P.f = Math.atan2(x - P.x, z - P.z); P.x = x; P.z = z; }
+  if (x !== P.x || z !== P.z) { P.f = Math.atan2(x - P.x, z - P.z); P.x = x; P.z = z; }
   if ((end && w.done) || blocked) {
     P.mode = 'idle';
     // Only a walk that ends on its target counts as arriving, unless the player is within reach of

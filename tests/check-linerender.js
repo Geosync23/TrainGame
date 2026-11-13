@@ -35,6 +35,8 @@ module.exports = async function checkLineRender() {
       if (!stn.dev) P('no Dev button with ?dev=1');
       await page.screenshot({ path: screenshotPath(`d32-station-worktrain-${orient}`) });
       // ---- The view switch by touch ----
+      await page.evaluate(() => { const b = document.getElementById('pdLesson'); if (b && !b.hidden) document.getElementById('pdLesSkip').click(); });   // (the first lesson's card lies over the Dev button in landscape)
+      await frames(3);
       await page.tap('#devBtn');
       await frames(3);
       await page.tap('#devRows button[data-dv="look"]');

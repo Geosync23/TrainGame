@@ -72,7 +72,26 @@ const checks = {
   'the pixel frame-time budget (D27, R)': require('./check-pixperf'),
   'the atlas: every key the code asks for, the budget (D27, the integrator)': require('./check-atlas'),
   'the D27 day end to end (D27, the integrator)': require('./check-d27-day'),
+  // D32 (plans/d32-tech.md 11.5): Foundation's three checks, then one line per other owner's check. A check whose file
+  // has not landed yet is skipped with a note (d32Later), so each owner only adds its file.
+  'the D32 world (Foundation: the line\'s tables and country, regions and borders, clearances, the line off, saving, the clock, dev mode, three days, the pace, away)': require('./check-d32world'),
+  'the work train (D32, Foundation: out and back on time over three days, the station\'s trains untouched, a clear road, supplies, every day worked)': require('./check-worktrain'),
+  'the line drawn (D32, Foundation: nine places, three zooms, both orientations, no boundary of the world in view, chunks redrawn as a front passes, frame time)': require('./check-linerender'),
+  'the rail crew (D32, Crew)': d32Later('./check-crew'),
+  'the camp and the head count (D32, Crew)': d32Later('./check-camp'),
+  'riding out and walking the line (D32, Play)': d32Later('./check-lineplay'),
+  'the join-in games (D32, Play)': d32Later('./check-linegames'),
+  'the line\'s lessons (D32, Play)': d32Later('./check-linelessons'),
+  'the hired station workers (D32, Town)': d32Later('./check-hired'),
+  'the bigger town (D32, Town)': d32Later('./check-bigtown'),
+  'every building entered (D32, Town)': d32Later('./check-rooms'),
+  'the town\'s economy (D32, Town)': d32Later('./check-towneconomy'),
+  'three line days end to end (D32, the lead)': d32Later('./check-d32-day'),
 };
+function d32Later(file) {
+  if (require('fs').existsSync(require('path').join(__dirname, file + '.js'))) return require(file);
+  return async () => { console.log(`  (not landed yet: tests/${file.slice(2)}.js; skipped)`); return []; };
+}
 
 (async () => {
   let failed = 0;

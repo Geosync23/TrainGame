@@ -8,6 +8,8 @@
 //   crossing; on the line the engine behind the spiked front, moving up through the day.
 // - The station's day is untouched: every railroad train comes in and leaves at the very tick it does with the line
 //   off (so p1 and p4 are not delayed), and no railroad train is ever within 6u of the work train on the map.
+// - It waits for a clear road: it does not back in from the east while a railroad train for the east still stands or
+//   is on its way out (the bot's late evening trains show it), and its times shift by the wait.
 // - Supplies: topped up when the train reaches the railhead (the first day a starting stock), never above the cap.
 // - Every day is a working day (no day of rest): a week of the line alone has seven days' metres in its log.
 const { openGame } = require('./browser');
@@ -53,10 +55,10 @@ module.exports = async function checkWorkTrain() {
             if (en > S.ln.f[5] + 1e-6 || en < S.ln.f[5] - LINE.ENGINE_BACK_M - LINE.MOVE_UP_M - 2) B(`${clk()}: the engine stands at ${en.toFixed(1)} m, the spiked front is at ${S.ln.f[5].toFixed(1)}`);
             if (T.cars[4].x0 < 0) B('the work train hangs over the junction');
           }
-          if ((T.ph === 'out' || T.ph === 'back') && (T.x < -20 * LINE.M || T.x > S.ln.f[5] * LINE.M)) B(`${clk()}: the work train runs off the finished track (${(T.x / LINE.M).toFixed(1)} m)`);
+          if ((T.ph === 'out' || T.ph === 'back') && T.x > S.ln.f[5] * LINE.M) B(`${clk()}: the work train runs off the finished track (${(T.x / LINE.M).toFixed(1)} m)`);
           for (const k of Object.keys(S.ln.sup)) if (S.ln.sup[k] < 0 || S.ln.sup[k] > LINE.SUP[k].cap + 1e-9) B(`supply ${k} at ${S.ln.sup[k]}`);
         }
-        if (S.pd.ph === 'summary' && S.pd.day >= 2) break;
+        if (dayOf() >= 2 && (S.time + 5 * 3600) % 86400 >= 20 * 3600) break;   // three days, to 20:00 on the third
       }
       out.end = { day: S.pd.day, ph: S.pd.ph, f: S.ln ? S.ln.f.slice() : null, log: S.ln ? S.ln.log : null, lnDays: S.ln ? S.ln.days : 0 };
       return out;
@@ -71,15 +73,24 @@ module.exports = async function checkWorkTrain() {
     if (JSON.stringify(off.sum.map(s => [s.day, s.late, s.trains])) !== JSON.stringify(on.sum.map(s => [s.day, s.late, s.trains]))) P('the days\' summaries differ with the line on');
     // the first day's phases, in full (the day opens at 06:00 with the train standing)
     const d0 = on.wt.filter(l => l.startsWith('0 ')).map(l => l.slice(2));
-    for (const [i, w] of ['06:20 sOut', '06:25 out', '06:45 stand'].entries()) if (d0[i] !== w) P(`day 1: the work train's phase ${i + 1} is "${d0[i]}", expected "${w}"`);
+    for (const [i, w] of ['06:00 sStand', '06:20 sOut', '06:25 out', '06:45 stand'].entries()) if (d0[i] !== w) P(`day 1: the work train's phase ${i + 1} is "${d0[i]}", expected "${w}"`);
     // every phase event is at its time, whichever day it falls on
     const T = { sIn: '05:40', sStand: '05:50', sOut: '06:20', out: '06:25', back: '18:20', gap: '19:00', eIn: '19:05', eStand: '19:15', eOut: '19:35', home: '19:45' };
-    for (const l of on.wt) { const [, t, ph] = l.split(' '); if (ph === 'stand') { if (!(t >= '06:45' && t <= '06:55')) P(`the work train reached the railhead at ${t}`); } else if (T[ph] !== t) P(`the work train's phase ${ph} came at ${t}, expected ${T[ph]}`); }
+    // (the evening's phases at their times or later by the wait for a clear road, in step with each other)
+    const mins = t => +t.slice(0, 2) * 60 + +t.slice(3), held = {};
+    for (const l of on.wt.slice(1)) {
+      const [d, t, ph] = l.split(' ');
+      if (ph === 'stand') { if (!(t >= '06:45' && t <= '06:55')) P(`the work train reached the railhead at ${t}`); }
+      else if (/^e(In|Stand|Out)$|^home$/.test(ph)) { const late = mins(t) - mins(T[ph]); if (late < 0 || late > 180 || (held[d] !== undefined && late < held[d])) P(`day ${d}: the work train's phase ${ph} came at ${t} (its time is ${T[ph]})`); held[d] = Math.max(held[d] || 0, late); }
+      else if (T[ph] !== t) P(`the work train's phase ${ph} came at ${t}, expected ${T[ph]}`);
+    }
+    console.log(`  the evening's wait for a clear road, by day: ${Object.entries(held).map(([d, v]) => `day ${+d + 1} ${v} min`).join(', ')}`);
     if (on.days.length !== 3) P(`the work train stood at the station at 06:00 on ${on.days.length} of 3 days`);
     on.days.forEach((d, i) => { if (i && !(d.f6 - on.days[i - 1].f6 > 120)) P(`day ${i}: only ${(d.f6 - on.days[i - 1].f6).toFixed(1)} m were spiked (was the evening lost at the jump to the next morning?)`); });
     if (on.end.lnDays !== 3) P(`the line counts ${on.end.lnDays} working days after three days`);
     if (on.sup.length !== 3) P(`the supplies were brought ${on.sup.length} times in three days`);
     on.sup.forEach((s, i) => { if (s.rock < 110 || s.ties < 360 || s.rails < 48 || s.kegs < 10) P(`day ${i + 1}: the dump after the train came: ${JSON.stringify(s)}`); });
+    if (on.sum.length < 2) P(`only ${on.sum.length} summaries in three days`);
     for (const s of on.sum) if (!s.hc || s.hc.total !== 30) P(`day ${s.day + 1}: the summary has no head count of 30: ${JSON.stringify(s.hc)}`);
     console.log(`  with the line on: ${on.rr.length} railroad train events, the same as with it off; nearest a railroad train came to the work train at the station: ${on.minGap > 1e8 ? 'never on the map together' : on.minGap.toFixed(1) + ' u'}`);
     console.log(`  spiked at 06:00 each day: ${on.days.map(d => d.f6.toFixed(0)).join(', ')} m; the days ended at ${on.sum.map(s => s.at).join(', ')}; summaries late trains ${on.sum.map(s => s.late).join(', ')}`);
@@ -87,6 +98,7 @@ module.exports = async function checkWorkTrain() {
     // A week of the line alone: every day worked.
     const wk = await page.evaluate(() => { const r = window.__railhead.ln.cw.cwSimDays(5, 30, 8); return { days: r.days, log: r.log }; });
     if (wk.days !== 8 || wk.log.length !== 7 || wk.log.some((q, i) => q.day !== i || !(q.m > 100))) P('a week of the line: ' + JSON.stringify(wk));
+    console.log(`  a week of the line alone (30 men): ${wk.log.map(q => q.m.toFixed(0)).join(', ')} m a day`);
     if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   return problems;

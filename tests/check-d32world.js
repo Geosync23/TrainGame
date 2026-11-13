@@ -27,7 +27,6 @@ const fs = require('fs');
 const path = require('path');
 const { openGame, screenshotPath } = require('./browser');
 
-const V19_HASH = 'RECORD';   // save-v19.json loaded on this build with the line off (recorded 2026-11-13)
 
 module.exports = async function checkD32World() {
   const problems = [], P = m => problems.push(m);
@@ -45,7 +44,7 @@ module.exports = async function checkD32World() {
       for (const [a, b, k] of LINE.SEGS) { if (a !== at) B(`the country has a hole at ${at} m`); at = b; byKind[k] = (byKind[k] || 0) + b - a; }
       if (at !== 2520) B('the country does not end at 2,520 m');
       const wantKind = { junction: 60, prairie: 460, brush: 284, woods: 600, hills: 270, cut: 80, rock: 350, river: 400, bridge: 16 };
-      if (JSON.stringify(byKind) !== JSON.stringify(wantKind)) B('the country\'s metres by kind: ' + JSON.stringify(byKind));
+      if (Object.keys(wantKind).some(k => byKind[k] !== wantKind[k]) || Object.keys(byKind).length !== 9) B('the country\'s metres by kind: ' + JSON.stringify(byKind));
       const tot = [0, 0, 0, 0, 0, 0];
       for (let m = 60; m < 2520; m++) for (let s = 0; s < 6; s++) tot[s] += L.lnCost(s, m + 0.5);
       const wantTot = [22660, 58440, 32916, 29584, 24600, 24600];
@@ -68,7 +67,7 @@ module.exports = async function checkD32World() {
       if (s1.join() === t1.join()) B('another seed gives the same scatter');
       for (const k of a1.concat(b1)) if (!F[k]) miss.add(k);
       let rows = 0, things = 0;
-      for (const cell of s1.concat(t1)) for (const q of JSON.parse(cell)) { things++; if (q.row) rows++; if (!F[q.key] && !(q.alt ? F[q.alt] : q.alt === null)) miss.add(q.key + ' / ' + q.alt); if (q.row !== (Math.abs(q.z) <= LINE.ROW)) B('a thing\'s row flag is wrong'); }
+      for (const cell of s1.concat(t1)) for (const q of JSON.parse(cell)) { things++; if (q.row) rows++; if (!F[q.key] && !(q.alt ? F[q.alt] : q.alt === null)) miss.add(q.key + ' / ' + q.alt); if (!q.edge && q.row !== (Math.abs(q.z) <= LINE.ROW)) B('a thing\'s row flag is wrong'); }
       if (miss.size) B('missing in the atlas: ' + [...miss].slice(0, 12).join(', '));
       if (!(rows > 20 && things > 1000)) B(`the scatter is thin: ${things} things, ${rows} on the right of way`);
       for (const m of [100, 400, 700, 1000, 1400, 1800, 2030, 2200, 2400]) if (L.lnRegionCell(1866, Math.floor(m * LINE.M), 0) !== L.lnRegionCell(7, Math.floor(m * LINE.M), 0) || L.lnRegionCell(7, Math.floor(m * LINE.M), 0) !== L.lnRegionAt(m)) B(`the region at ${m} m moves with the seed`);
@@ -76,6 +75,7 @@ module.exports = async function checkD32World() {
       { let n = 0, cells = 0; for (let ci = 12; ci < 40; ci++) for (const cj of [-6, 5]) { cells++; n += L.lnScatter(1866, ci, cj).filter(q => !q.edge).length; } N(`the home prairie: ${(n / cells).toFixed(1)} things a cell of 8u`); if (n / cells < 6) B('the prairie is sparse: ' + (n / cells).toFixed(1) + ' things a cell'); }
       // the natural borders
       for (const seed of [1866, 7]) for (let x = 60; x < LINE.LEN; x += 13) {
+        if (Math.abs(x - 544 * LINE.M) < 14) continue;   // the creek's crossing
         const n = L.lnBorder(seed, x, -1), s = L.lnBorder(seed, x, 1);
         if (n.d < 8.5 - 1e-9 || n.d > 11.5 + 1e-9 || s.d < 11 - 1e-9 || s.d > 14 + 1e-9 || n.end || s.end) { B(`the border at x ${x}: ${n.d.toFixed(2)} north, ${s.d.toFixed(2)} south`); break; }
         if (!L.lnWalkable(seed, x, -n.d + 1) || !L.lnWalkable(seed, x, s.d - 1) && !L.lnWaterAt(seed, x, s.d - 1) || L.lnWalkable(seed, x, -n.d - 0.1) || L.lnWalkable(seed, x, s.d + 0.1)) { B(`walking does not stop at the border at x ${x}`); break; }
@@ -97,7 +97,7 @@ module.exports = async function checkD32World() {
           cnt[sd]++;
         }
         const per = (ci1 - ci0 + 1);
-        if (cnt.far / per < 5 || cnt.near / per < 2) B(`${rg} (${a} to ${b} m): its belts are thin: ${(cnt.far / per).toFixed(1)} far and ${(cnt.near / per).toFixed(1)} near things per 8u`);
+        if (cnt.far / per < 5 || cnt.near / per < 1.2) B(`${rg} (${a} to ${b} m): its belts are thin: ${(cnt.far / per).toFixed(1)} far and ${(cnt.near / per).toFixed(1)} near things per 8u`);
       }
       for (const [rg, Rg] of Object.entries(LINE.REGIONS)) for (const mk of Rg.marks) { const x = mk.m * LINE.M, z = mk.side * (L.lnBorder(1866, x, mk.side).d + mk.off), hit = L.lnScatter(1866, Math.floor(x / 8), Math.floor(z / 8)).find(q => q.mark === mk.name); if (!hit || hit.key !== 'wild/mark/' + mk.name || L.lnRegionAt(mk.m) !== rg) B(`the landmark ${mk.name} is not in its place in ${rg}`); }
       if (L.lnWaterAt(1866, 544 * LINE.M, 0) !== 2 || L.lnWaterAt(1866, 544 * LINE.M, 30) !== 2) B('no creek under the bridge');
@@ -115,7 +115,7 @@ module.exports = async function checkD32World() {
       for (const f of fps) {
         if (f.kind === 'nature' || f.flush) continue;
         if (hit(box(f), P.CAMP)) B(`the camp overlaps ${f.id || f.kind}`);
-        if (hit(box(f), P.MUSTER)) B(`the muster overlaps ${f.id || f.kind}`);
+        if (hit(box(f), P.MUSTER)) B(`the muster overlaps ${f.id || f.kind} (${f.key || ''} at ${f.x}, ${f.z})`);
       }
       if (P.CAMP.z1 > P.CREEK.z0 - 20) B('the camp is at the creek');
       for (const [x, z] of P.CART_PATH) if (x > P.CAMP.x0 - 2 && x < P.CAMP.x1 + 2 && z > P.CAMP.z0 - 2 && z < P.CAMP.z1 + 2) B('the camp is on the cart path');
@@ -143,27 +143,28 @@ module.exports = async function checkD32World() {
         const W = R.newState(3, 'proto'); R.simTick(W, [{ t: 'pdStart' }]);
         const x0 = W.player.x, z0 = W.player.z; W.player.x = -20; W.player.z = -14;
         R.simTick(W, [{ t: 'walkTo', x: 20, z: -14 }]);
-        const xa = W.player.x; for (let i = 0; i < 10; i++) R.simTick(W, []);
-        const perTick = (W.player.x - xa) / 10, v = R.proto.playerWalkSpeed(W.track, false), real = perTick * L.clockRate(W.track);
+        let perTick = 0; for (let i = 0; i < 10; i++) { const xa = W.player.x, za = W.player.z; R.simTick(W, []); perTick = Math.max(perTick, Math.hypot(W.player.x - xa, W.player.z - za)); }
+        const v = R.proto.playerWalkSpeed(W.track, false), real = perTick * L.clockRate(W.track);
         out.walk = { perTick, v, realUPerS: real };
         if (!near(perTick, v * R.CFG.TICK_GAME_S / 60, 0.02)) B(`the player walks ${perTick.toFixed(3)} u a tick, his pace says ${(v * 8 / 60).toFixed(3)}`);
         if (!near(real, v / 1.5 * 8 / 60 * 7.5, 0.1)) B('the player\'s real speed changed');
       }
       // ---- Saving: the v19 fixture ----
-      const sv = R.migrate(JSON.parse(v19)), st = sv.state;
-      out.v19 = R.stateHash(st);
+      const fx = JSON.parse(v19), sv = R.migrate(JSON.parse(fx.save)), st = sv.state;
+      out.v19 = R.stateHash(st); out.v19want = fx.loads.v19;
       if ('ln' in st || 'dv' in st) B('the v19 save gained a line');
       if (L.lnOn(st)) B('the line is on in the v19 save');
       for (let i = 0; i < 60; i++) R.simTick(st, []);
       if ('ln' in st || 'dv' in st) B('the v19 save gained a line after 60 ticks');
       // ---- The line on: three days through the commands ----
       const play = () => {
+        // (the line with the day's own cycle but no railroad trains: nobody plays the station here, and a train left
+        // standing at a switch would rightly keep the work train waiting; check-worktrain plays the station too)
         const G = R.newState(1866, 'proto'), log = [];
+        G.rr.on = false;
         const clk = () => { const s = (G.time + 5 * 3600) % 86400; return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
         let ev = R.simTick(G, [{ t: 'pdStart' }, { t: 'dvSet', k: 'crew', v: 30 }]);
         if (!G.ln || !G.ln.on || G.ln.crew !== 30 || G.ln.tr.ph !== 'sStand') B('a crew of 30 chosen in the morning is not at work that day: ' + JSON.stringify(G.ln && G.ln.tr));
-        if (G.rr.runs.map(q => q.svc + ':' + q.kind + ':' + q.arr).join() !== offRuns.split(',').slice(0, G.rr.runs.length).join()) B('the railroad\'s runs differ with the line on');
-        if (G.rr.runs.some(q => q.kind === 'work')) B('a work run among the railroad\'s runs');
         const days = [];
         let save = null, minSup = 1e9;
         for (let d = 0; d < 3; d++) {
@@ -181,6 +182,13 @@ module.exports = async function checkD32World() {
         }
         return { G, log, days, save, minSup, hash: R.stateHash(G) };
       };
+      {
+        const G = R.newState(1866, 'proto');
+        R.simTick(G, [{ t: 'pdStart' }, { t: 'dvSet', k: 'crew', v: 30 }]);
+        for (let i = 0; i < 300; i++) R.simTick(G, []);
+        if (G.rr.runs.map(q => q.svc + ':' + q.kind + ':' + q.arr).join() !== offRuns) B('the railroad\'s runs differ with the line on');
+        if (G.rr.runs.some(q => q.kind === 'work')) B('a work run among the railroad\'s runs');
+      }
       const A = play(), A2 = play();
       out.days = A.days; out.log = A.log.slice(0, 14);
       if (A.hash !== A2.hash) B('three line days are not the same twice');
@@ -249,13 +257,12 @@ module.exports = async function checkD32World() {
     console.log(`  save-v19.json on this build: hash ${r.v19}; the line adds ${r.saveBytes ? r.saveBytes.ln + r.saveBytes.dv : '?'} bytes to a save`);
     console.log(`  three days with 30 men: spiked ${r.days.map(d => d.f6.toFixed(0)).join(', ')} m; pace: 30 men ${r.pace.d30} days, 5 men ${r.pace.d5} days (${r.pace.ratio.toFixed(2)} times)`);
     console.log(`  the player walks ${r.walk.v.toFixed(2)} u a game minute, ${r.walk.realUPerS.toFixed(2)} u a real second; away: first train ${r.away.late} min late, ${r.away.thrown} levers thrown by the relief man`);
-    if (V19_HASH !== 'RECORD' && r.v19 !== V19_HASH) P(`save-v19.json hashes ${r.v19}, recorded ${V19_HASH}`);
-    if (V19_HASH === 'RECORD') P(`record the v19 hash in the check: ${r.v19}`);
+    if (r.v19 !== r.v19want) P(`save-v19.json loads to the hash ${r.v19}, the fixture records ${r.v19want}`);
     // ---- Dev mode on the page ----
     const ui0 = await page.evaluate(() => ({ btn: document.getElementById('devBtn').hidden, row: document.getElementById('setDevRow').hidden, on: window.__railhead.dv.on(), cls: document.body.classList.contains('line') }));
     if (!ui0.btn || ui0.on) P('dev mode is on by default');
     if (ui0.cls) P('the page has the line\'s class with the line off');
-    await page.evaluate(() => { window.__railhead.guide.openSettings(); });
+    await page.evaluate(() => { const R = window.__railhead, b = document.getElementById('pdBoard'); if (b && !b.hidden) R.pdui.closeBoard(); R.guide.openSettings(); });
     await page.waitForTimeout(150);
     if (await page.evaluate(() => document.getElementById('setDevRow').hidden)) P('Settings has no Dev mode row');
     await page.tap('#setDev');

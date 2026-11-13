@@ -25668,6 +25668,16 @@ function pixLnChunkBuild(ci, cj, F) {
   pixLnScatterBake(g, l, t, N, F, true);
   return cv;
 }
+// The big sheets of the wild country are decoded by the browser when first drawn (tens of milliseconds each): the
+// sheets of the regions near the view are asked for ahead (Image.decode, off the frame), once each, so the first
+// chunk of a new region does not hitch.
+function pixLnWarmSheets() {
+  const D = PIX.lnDecoded || (PIX.lnDecoded = new Set()), xc = pixUnproject(PIX.vx + PIX.nw / 2, PIX.vy + PIX.nh / 2, 0).x;
+  for (const x of [xc, xc - 260, xc + 260]) {
+    const k = LINE.RUNS[lnRunIx(x)].k;
+    for (const key of ['wild/far/' + k + '/r1/1', 'wild/near/' + k + '/edge/1', 'tile/wild/' + k + '/1', 'wild/mark/arch', 'wild/life/smoke/0']) { const f = pixF(key); if (!f || D.has(f[0])) continue; D.add(f[0]); const im = PIXA.imgs[f[0]]; if (im && im.decode) im.decode().catch(() => {}); }
+  }
+}
 // A sprite into a chunk's canvas at a point of the line: false when it lies wholly outside.
 function pixLnPut(g, l, t, N, key, wx, wy, wz) {
   const f = pixF(key); if (!f) { if (PIX.lnTrack) PIX.lnTrack.add('MISSING ' + key); return false; }
@@ -25735,18 +25745,20 @@ function pixLnScatterBake(g, l, t, N, F, south) {
 // The moving water of a chunk: for each of the water's frames 1 and 2, a see-through picture of only the pixels that
 // differ from the baked chunk (frame 0), found by drawing the near side with each frame and comparing. Drawn over the
 // chunk each frame, so whatever stands in front of the water (a tree of the next band, a landmark) stays in front.
-function pixLnOverlays(ci, cj) {
-  const N = PIX.CH, l = ci * N, t = cj * N, F = pixLnFronts();
-  const mk = wf => { const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false; pixLnNearDraw(g, l, t, N, wf); pixLnScatterBake(g, l, t, N, F, true); return [c, g]; };
-  const A = mk(0)[1].getImageData(0, 0, N, N).data, out = [];
-  for (const wf of [1, 2]) {
-    const [c, g] = mk(wf), img = g.getImageData(0, 0, N, N), d = img.data;
-    let any = false;
-    for (let o = 0; o < d.length; o += 4) { if (d[o] === A[o] && d[o + 1] === A[o + 1] && d[o + 2] === A[o + 2] && d[o + 3] === A[o + 3]) d[o + 3] = 0; else any = true; }
-    if (any) g.putImageData(img, 0, 0);
-    out.push(any ? c : null);
-  }
-  return out;
+function pixLnOverlays(E, ci, cj) {   // one step a call (frame 0 to compare with, then frames 1 and 2), so no idle slice is long; true when done
+  const N = PIX.CH, l = ci * N, t = cj * N, F = pixLnFronts(), W = E.ovW || (E.ovW = { out: [] }), wf = W.out.length + (W.A ? 1 : 0);
+  const c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false;
+  pixLnNearDraw(g, l, t, N, wf); pixLnScatterBake(g, l, t, N, F, true);
+  const img = g.getImageData(0, 0, N, N), d = img.data, A = W.A;
+  if (!A) { W.A = d; return false; }
+  let any = false;
+  for (let o = 0; o < d.length; o += 4) { if (d[o] === A[o] && d[o + 1] === A[o + 1] && d[o + 2] === A[o + 2] && d[o + 3] === A[o + 3]) d[o + 3] = 0; else any = true; }
+  if (any) g.putImageData(img, 0, 0);
+  W.out.push(any ? c : null);
+  if (W.out.length < 2) return false;
+  E.ov = W.out; E.ovW = null;
+  return true;
 }
 // Draws the line's ground under the view from its chunk cache: every missing one at once (no blank ground is ever
 // shown), one stale one (its fronts have moved) a frame, the ring round the view in idle time.
@@ -25757,6 +25769,7 @@ function pixLnGroundDraw(g, all) {
   if (PIX.lnChunkN !== N || PIX.lnChunkS !== S.seed) { C.clear(); PIX.lnScat.clear(); PIX.lnSpots.clear(); PIX.lnChunkS = S.seed; PIX.lnChunkN = N; PIX.lnWant = null; }
   const F = pixLnFronts(), c0 = Math.floor(PIX.vx / N), c1 = Math.floor((PIX.vx + PIX.nw) / N), r0 = Math.floor(PIX.vy / N), r1 = Math.floor((PIX.vy + PIX.nh) / N);
   const t0 = performance.now(), stamp = St.frame = (St.frame || 0) + 1;
+  if (stamp % 30 === 1) pixLnWarmSheets();
   let made = 0, missing = 0, stale = 0, redone = 0;
   const make = (ci, cj, key) => { const a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a, old = C.get(ci + ',' + cj); C.set(ci + ',' + cj, { cv, used: stamp, key, wet: cv.wet, ov: old ? old.ov : undefined }); St.built++; St.ms = ms; St.worst = Math.max(St.worst, ms); };
   const wf = Math.floor((PIX.lnT || 0) / PIX.LN_WATER_S) % 3, ovWant = [];   // the water's frame: a calm rate
@@ -25795,8 +25808,8 @@ function pixLnChunkAhead() {
     if (((!w || !w.length) && (!ow || !ow.length)) || !PIXA.ready || !pixOn() || !lnViewOn() || PIX.lnChunkN !== PIX.CH) return;
     if (dl && !dl.didTimeout && dl.timeRemaining() < Math.min(6, St.ms + 1)) { pixLnChunkAhead(); return; }
     if (ow && ow.length) {   // the moving water of a chunk in view first (it is seen), then the ring
-      const [ci, cj] = ow.shift(), E = PIX.lnChunks.get(ci + ',' + cj);
-      if (E && E.wet && !E.ov) { const a = performance.now(); E.ov = pixLnOverlays(ci, cj); St.ovMs = performance.now() - a; St.ov = (St.ov || 0) + 1; }
+      const [ci, cj] = ow[0], E = PIX.lnChunks.get(ci + ',' + cj);
+      if (E && E.wet && !E.ov) { const a = performance.now(); if (pixLnOverlays(E, ci, cj)) { ow.shift(); St.ov = (St.ov || 0) + 1; } St.ovMs = performance.now() - a; } else ow.shift();
       return;
     }
     const [ci, cj] = w.shift(), k = ci + ',' + cj;

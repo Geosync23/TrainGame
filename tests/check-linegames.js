@@ -22,7 +22,8 @@ module.exports = async function checkLineGames() {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const cdp = await page.context().newCDPSession(page);
       const frames = n => page.evaluate(n => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
-      const skipLesson = () => page.evaluate(() => { const b = document.getElementById('pdLesson'); if (b && !b.hidden) document.getElementById('pdLesSkip').click(); const c = document.getElementById('pdSum'); if (c && !c.hidden) c.hidden = true; });
+      // the line's lessons put by (check-linelessons' part): Skip on each card up, the skip done by a tick, until none is up
+      const skipLesson = async () => { for (let i = 0; i < 8; i++) { const up = await page.evaluate(() => { const b = document.getElementById('pdLesson'); if (b && !b.hidden) { document.getElementById('pdLesSkip').click(); window.__railhead.step(1); return true; } return false; }); if (!up) return; await frames(2); } };
       // ---- To the line: day 3 of a crew of 30, 09:00, and every tick recorded for the replay ----
       const start = await page.evaluate(() => {
         const R = window.__railhead, S = () => R.state, sod = () => (S().time + 5 * 3600) % 86400;
@@ -42,7 +43,12 @@ module.exports = async function checkLineGames() {
       const toScr = (x, y) => page.evaluate(([x, y]) => (0, eval)('lgToScreen')(x, y), [x, y]);
       const touch = async (type, x, y) => {
         if (type === 'touchEnd') { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [] }); return; }
+        if (type === 'touchStart') {   // (a lesson card that came up meanwhile is put by first: the touch is for the game)
+          const les = await page.evaluate(() => { const b = document.getElementById('pdLesson'); return b && !b.hidden ? b.dataset.les + ':' + b.dataset.step : ''; });
+          if (les) { if (process.env.LG_DEBUG) console.log('  a lesson card was up: ' + les); await skipLesson(); }
+        }
         const p = await toScr(x, y);
+        if (!p || !(await page.evaluate(() => !document.getElementById('lgPanel').hidden))) throw new Error('a touch for the game with the game panel hidden');
         await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ x: p.x, y: p.y, id: 1, radiusX: 4, radiusY: 4, force: 1 }] });
       };
       // at the game's time t: set the clock, then the touch, then a frame
@@ -157,7 +163,7 @@ module.exports = async function checkLineGames() {
           shotWanted = lv === 'good' ? k : -1;
           await play[k](r, lv);
           const f = await finish();
-          if (f.q === null) P(`${NAMES[k]} (${lv}): the round did not end`);
+          if (f.q === null) { P(`${NAMES[k]} (${lv}): the round did not end`); await page.screenshot({ path: screenshotPath(`linegames-fail-${orient}`) }); }
           else {
             if (WORD(f.q) !== lv) P(`${NAMES[k]} played ${lv} gave q ${f.q} (${WORD(f.q)})`);
             if (!f.taken) P(`${NAMES[k]} (${lv}): the sim did not take the round's result`);
@@ -189,7 +195,10 @@ module.exports = async function checkLineGames() {
           const hold = await toScr(290, 172), ob = await page.evaluate(() => { const o = document.getElementById('lgOut').getBoundingClientRect(); return { x: o.left + o.width / 2, y: o.top + o.height / 2 }; });
           await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: hold.x, y: hold.y, id: 1 }, { x: ob.x, y: ob.y, id: 2 }] });
           await frames(1);
-          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x: hold.x, y: hold.y, id: 1 }] });
+          const still = await page.evaluate(() => !!(0, eval)('lgUi').r && (0, eval)('lgUi').ptr !== null);
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x: ob.x, y: ob.y, id: 2 }] });   // (the second thumb lifts; Chromium's touch emulation releases the points a touchEnd lists)
+          if (!still) P('the first thumb did not still hold the tie as the second tapped Step out');
+          if (!(await page.evaluate(() => (0, eval)('lgUi').left))) P('lifting the second thumb from Step out did not step out');
           await frames(1);
           await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
           await frames(2);
@@ -201,7 +210,9 @@ module.exports = async function checkLineGames() {
           await page.screenshot({ path: screenshotPath(`linegames-stepout-${orient}`) });
           continue;
         }
-        await page.tap('#lgOut'); await frames(2);
+        const why = await page.evaluate(() => { const g = (0, eval), u = g('lgUi'), S = window.__railhead.state; return document.getElementById('lgPanel').hidden ? JSON.stringify({ left: u.left, j: S.lp.j, les: !document.getElementById('pdLesson').hidden && document.getElementById('pdLesson').dataset.les, set: g('setUi').open, dev: !document.getElementById('devPanel').hidden, view: S.ln.view }) : ''; });
+        if (why) { P(`after the rounds of gang ${k} the game panel is not up: ${why}`); await page.screenshot({ path: screenshotPath(`linegames-fail-${orient}`) }); break; }
+        await page.tap('#lgOut', { timeout: 5000 }).catch(async e => { P('Step out could not be tapped: ' + await page.evaluate(() => { const g = (0, eval), u = g('lgUi'), S = window.__railhead.state, p = document.getElementById('lgPanel'); return JSON.stringify({ hidden: p.hidden, rect: p.getBoundingClientRect(), left: u.left, j: S.lp.j, les: !document.getElementById('pdLesson').hidden && document.getElementById('pdLesson').className, set: g('setUi').open, view: S.ln.view, line: document.body.classList.contains('line'), disp: getComputedStyle(p).display }); })); }); await frames(2);
         await page.evaluate(() => window.__railhead.step(1));
         if ((await sim()).j) P(`Step out did not end his work with gang ${k}: ` + JSON.stringify(await page.evaluate(() => { const o = document.getElementById('lgOut').getBoundingClientRect(); return [o.left, o.top, o.width, document.elementFromPoint(o.left + o.width / 2, o.top + o.height / 2).id]; })));
       }

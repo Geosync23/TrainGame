@@ -7704,7 +7704,7 @@ const LG_HOW = [
     'Tap on your beat'],
 ];
 const LG_LESSONS = [
-  { id: 'lnRide', title: 'Out on the line', pic: ['ppl/navvy_b/pick/se/1', 'ppl/navvy_a/idle/se/0'], need: null,
+  { id: 'lnRide', title: 'Out on the line', pic: ['ppl/navvy_b/pick/se/1', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lpOnLine',
     steps: [
       lgLesStep('This is the railhead. Six gangs work up the line, one behind the other: the clearers cut the brush, the diggers dig the bed, the rock gang spreads the stones, then come the ties, the rails and the spikes. Tap the ground to walk up to a gang.',
@@ -7712,14 +7712,14 @@ const LG_LESSONS = [
       lgLesStep('Beside a gang a Join button comes up: work with them, or just watch. The men work on without you either way.',
         'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
     ] },
-  ...LG_HOW.map(([id, title, pic, how, short], k) => ({ id, title, pic, need: null,
+  ...LG_HOW.map(([id, title, pic, how, short], k) => ({ id, title, pic, need: null, line: true,
     trigger: (S, e) => lgIs(e, 'lgJoined', k),
     steps: [
       lgLesStep(how, short, (S, e) => lgIs(e, 'lgDid', k) || lgIs(e, 'lgLeft', k)),
       lgLesStep('Each go is marked good, fair or poor. Work well and the men near you work faster too: a glow at their feet. Step out whenever you like.',
         'Keep at it, or Step out', lgDid3(k)),
     ] })),
-  { id: 'lnLeave', title: 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null,
+  { id: 'lnLeave', title: 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lgLeft' && (e.why === 'out' || e.why === 'walked'),
     steps: [
       lgLesStep('You stepped out: your tool is back on the rack and the gang works on without you. Nothing is left half done.',
@@ -7727,7 +7727,7 @@ const LG_LESSONS = [
       lgLesStep('Walk up to any gang to join it again, or watch the work as long as you like.',
         'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
     ] },
-  { id: 'lnHome', title: 'Coming home', pic: ['veh/crewcar/e', 'ppl/navvy_c/walk/se/0'], need: null,
+  { id: 'lnHome', title: 'Coming home', pic: ['veh/crewcar/e', 'ppl/navvy_c/walk/se/0'], need: null, line: true,
     tick: S => !!S.lp && S.lp.ph === 'line' && !!S.ln && S.ln.tr.ph === 'stand' && rrSod(S.time) >= LINE.T.WORK1,
     steps: [
       lgLesStep('Six o\'clock: the men pack up and walk to the crew car. Tap "Ride home" in the bar to go with them (the train leaves at 18:20), or "Back now" to be at the station at once.',
@@ -13895,7 +13895,7 @@ const PD_LESSONS = [
 PD_LESSONS.push(...LG_LESSONS);   // D32 (Play): the line's lessons (section "on the line (D32)")
 const pdLesson = id => PD_LESSONS.find(L => L.id === id) || null;
 // A lesson may run: lessons on, and the D27 part it teaches on.
-const pdLesCan = (S, L) => pdLesOn(S) && (!L.need || d27On(S.track, L.need));
+const pdLesCan = (S, L) => pdLesOn(S) && (!L.need || d27On(S.track, L.need)) && !L.line === !(S.player && S.player.away);   // D32 (Play): the station's lessons wait while he is on the line, the line's (line: true) are only for there
 // The lessons open now, in PD_LESSON_IDS order: [{ L, step }].
 function pdLesOpen(S) {
   const les = (S.pd && S.pd.les) || {};
@@ -23428,8 +23428,11 @@ function lgPoseAnim(St, k) {
   p.innerHTML = '<div id="lgHead"><div id="lgTitle"></div><div id="lgPips"></div><button id="lgOut">Step out</button></div><canvas id="lgCv"></canvas><div id="lgHint" role="status"></div>';
   document.body.appendChild(p); lgUi.panel = p; lgUi.cv = $('lgCv');
   j.addEventListener('click', () => { const k = +j.dataset.k; if (k >= 0) { lgUi.left = false; lpCloseCard(); send({ t: 'lpJoin', stage: k }); } });
-  // Step out at a touch, even with the other thumb still holding the tie or the rail (a click would wait for both)
-  $('lgOut').addEventListener('pointerdown', e => { e.preventDefault(); if (!lgUi.left) lgStepOut(); });
+  // Step out as the thumb lifts from it, even with the other thumb still holding the tie or the rail (the click of a
+  // two-finger touch can be lost); on the lift, not the press, so the tap's click cannot fall through to what was under
+  // the panel.
+  $('lgOut').addEventListener('pointerdown', e => { lgUi.outPtr = e.pointerId; });
+  $('lgOut').addEventListener('pointerup', e => { if (lgUi.outPtr === e.pointerId && !lgUi.left) lgStepOut(); lgUi.outPtr = null; });
   $('lgOut').addEventListener('click', () => { if (!lgUi.left) lgStepOut(); });
   const pt = e => { const b = lgUi.box, R = lgUi.cv.getBoundingClientRect(); return b ? { x: (e.clientX - R.left - b.ox) / b.s, y: (e.clientY - R.top - b.oy) / b.s } : { x: 0, y: 0 }; };
   const call = (fn, e) => { const r = lgUi.r, G = LG_GAMES[lgUi.k]; if (!r || !G || !G[fn] || lgUi.frozen) return; G[fn](r, pt(e), lgT()); };

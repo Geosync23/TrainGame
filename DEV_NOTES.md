@@ -1548,7 +1548,9 @@ join as built (the line's chunk standing on the station's own, one opaque layer,
 the station): **7.4 to 8.9** both ways, the 98th centile 10 to 18. The default zoom is unchanged (3.7 portrait, 4.4
 landscape). So that one case keeps its own budget in check-pixperf (10 ms average, 20 ms at the 98th centile) with the
 reason written there: the view now shows the world round the station instead of one flat fill. Nothing else moved.
-Walking from the platform to the men builds no chunk inside a frame (check-pixrender's walk cases and check-d33).
+Walking from the platform to the men builds no chunk inside a frame (check-pixrender's walk cases and check-d33). The
+camera crossing from the station into the line was measured on its own (a walk from the platform out past the yard
+limit at 4x throttling): the worst frame 10.9 ms portrait, 11.1 landscape, no hitch at the join.
 
 ### Provisional choices for the designer
 
@@ -1556,7 +1558,8 @@ Walking from the platform to the men builds no chunk inside a frame (check-pixre
   The line's first metres (its own x 0 to about 10) lie under the yard's own track, so the roadbed is drawn from the
   map's edge east.
 - The main line to the east turns away north-east into a wood and is lost under the trees. The alternative was to let
-  the new line branch off instead; the main line turns because the new line is the one the player walks.
+  the new line branch off instead; the main line turns because the new line is the one the player walks.  No points
+  are drawn at the junction yet (no art for them, and no train of the sim uses it): the two tracks simply part.
 - The starting fronts (a screen into construction) and the smaller gaps between them.
 - The men's hours twenty minutes later (up 05:25) and the work train at 05:50 / 06:00 / 06:22.
 - A crew set in dev mode takes effect at once at any hour (the alternative was to send the train out again).

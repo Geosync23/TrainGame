@@ -130,8 +130,8 @@ module.exports = async function checkLineLessons() {
       // join the spikers: their lesson's first card holds the game; the panel waits
       await page.evaluate(() => { const R = window.__railhead, S = R.state, g = (0, eval); for (let n = 0; n < 4 && g('lgNearStage')(S) !== 5; n++) { const sp = g('lgSpot')(S, 5, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 500 && S.lp.tx !== undefined; i++) R.step(1); } });
       await frames(4);
-      const jb = await page.evaluate(() => !document.getElementById('lgJoin').hidden);
-      if (!jb) { P('no Join button beside the spikers'); continue; }
+      const jb = await page.evaluate(() => ({ shown: !document.getElementById('lgJoin').hidden, near: (0, eval)('lgNearStage')(window.__railhead.state), lp: window.__railhead.state.lp, f: window.__railhead.state.ln.f, hours: (0, eval)('lnHours')(window.__railhead.state) }));
+      if (!jb.shown) { P('no Join button beside the spikers: ' + JSON.stringify(jb)); continue; }
       await page.tap('#lgJoin');
       await page.evaluate(() => window.__railhead.step(1)); await frames(4);
       c = await card();

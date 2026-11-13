@@ -8165,7 +8165,13 @@ function lpNext(B, x, z, tx, tz) {
     const len = Math.hypot(E - x, sa * zz - z) + Math.abs(sa - sb) * zz + Math.hypot(tx - E, tz - sb * zz);
     if (!best || len < best.len) best = { len, c1: [E, sa * zz], c2: [E, sb * zz] };
   }
-  return lpSegHits(B, x, z, best.c2[0], best.c2[1]) ? best.c1 : best.c2;
+  const to = lpSegHits(B, x, z, best.c2[0], best.c2[1]) ? best.c1 : best.c2;
+  // D33 (a stall found in check-linelessons): standing exactly on the corner he is making for, with the way on still
+  // through the box, he was sent to where he already stood and never moved. Then he goes on round: the end's other
+  // corner, else the box's other end.
+  if (Math.hypot(to[0] - x, to[1] - z) > 0.05) return to;
+  for (const q of [best.c2, best.c1, [2 * B.x0 - to[0] - 0.6, to[1]], [2 * B.x1 - to[0] + 0.6, to[1]]]) if (Math.hypot(q[0] - x, q[1] - z) > 0.05) return q;
+  return [tx, tz];
 }
 // A point inside the train's box moved out to the nearer side he can stand on (unchanged if it is clear).
 function lpOutOfBox(S, B, x, z) {

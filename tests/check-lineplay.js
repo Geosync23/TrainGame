@@ -112,7 +112,8 @@ module.exports = async function checkLinePlay() {
       const beside = await page.evaluate(() => { const R = window.__railhead, S = R.state, T = R.ln.lnTrain(S); return { d: Math.hypot(S.lp.x - T.steps.x, S.lp.z - T.steps.z), ok: R.ln.lnWalkable(S.seed, S.lp.x, S.lp.z, S.ln.f[1]) }; });
       if (beside.d > 1.5 || !beside.ok) P('he did not step down beside the crew car: ' + JSON.stringify(beside));
       await shot('stepped-down');
-      // ---- On the line: the camera, walking by touch ----
+      // ---- On the line: the camera, walking by touch (the line's first lesson put aside: check-linelessons') ----
+      await skipLesson(); await frames(2);
       const centre = () => page.evaluate(() => { const R = window.__railhead, S = R.state, p = R.pix.pixToScreen(S.lp.x, 0, S.lp.z), k = R.pix.PIX.scale / R.pix.PIX.dpr; return { dx: (p.x - innerWidth / 2) / k, dy: (p.y - innerHeight / 2) / k, ox: R.camera.ox, oz: R.camera.oz }; });
       let c = await centre();
       if (Math.abs(c.dx) > 1.01 || Math.abs(c.dy) > 1.01) P(`the view is not centred on him: ${c.dx.toFixed(2)}, ${c.dy.toFixed(2)} native px`);

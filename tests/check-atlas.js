@@ -71,7 +71,7 @@ module.exports = async function checkAtlas() {
     }, saves);
     const keys = Object.keys(play.miss);
     for (const k of keys.slice(0, 20)) P(`drawn in play but not in the atlas: ${k} (${play.miss[k]} times)`);
-    console.log(`  atlas ${(st.bytes / 1024).toFixed(0)} KB (budget 1,000), ${st.frames} frames, ${st.lit} night bodies; ${play.n} saves of two days drawn at the default zoom and at scale 1, ${keys.length} keys missed`);
+    console.log(`  atlas ${(st.bytes / 1024).toFixed(0)} KB (budget 4,500), ${st.frames} frames, ${st.lit} night bodies; ${play.n} saves of two days drawn at the default zoom and at scale 1, ${keys.length} keys missed`);
     if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   return problems;

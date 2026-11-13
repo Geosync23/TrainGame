@@ -25719,9 +25719,22 @@ function pixLnNearDraw(g, l, t, N, wf) {
       wet = true;
       if (wf) pixLnPut(g, l, t, N, q.key + '/water/' + wf, q.x, 0, Sz);
     }
+    if (band === 'edge') pixLnCreekJoin(g, l, t, N, u0, u1);
   }
   for (const q of LINE.MARKS) if (q.side === 's') pixLnPut(g, l, t, N, q.key, q.x, 0, q.z);
   return wet;
+}
+// Where the creek crosses the line (under the trestle) its tiles end at the near edge, a bank's width short of the
+// creek the near side's art draws alongside: the crossing's water is carried on south over the edge piece, cell by
+// cell down each column, until it meets the art's own water, so the two join.
+function pixLnCreekJoin(g, l, t, N, u0, u1) {
+  const seed = S.seed, cx = 544 * LINE.M, j0 = Math.floor(LINE.BORDER.S);
+  if (u1 < cx - 11 - (j0 + 8) || u0 > cx + 12 - j0) return;
+  for (let i = Math.floor(cx - 10); i <= Math.floor(cx + 10); i++) for (let j = j0; j < j0 + 8; j++) {
+    if (!lnCreekAt(seed, i + 0.5, j + 0.5)) continue;
+    if (pixLnOnWater('edge', i + 0.5, 0, j + 0.5)) break;
+    pixLnPut(g, l, t, N, lnTile(seed, i, j), i, 0, j);
+  }
 }
 // The scattered things baked into a chunk: the small things in the corridor and the woods at the strip's ends
 // (south false), or the things beyond the near side's bands (south true). A sprite reaches into a chunk from up to

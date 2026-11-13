@@ -273,6 +273,22 @@
   #fcardShow { background: var(--edge); color: var(--paper); }
   @media (orientation: landscape) and (max-height: 500px) { #fcard { top: calc(env(safe-area-inset-top) + 66px); width: 420px; left: auto; transform: none; right: calc(env(safe-area-inset-right) + 164px); } }
   #setBtn svg { width: 24px; height: 24px; display: block; }
+  /* D32: dev mode (the button under the top right corner's buttons, its panel) and the line's plain bar; with the
+     line in view (body.line) the station's HUD is hidden but for the clock, the speed buttons, Settings and Dev. */
+  #devBtn { right: calc(env(safe-area-inset-right) + 8px); top: calc(env(safe-area-inset-top) + 124px); min-width: 56px; height: 44px; font-size: 14px; z-index: 3; border-left: 6px solid #a03a2a; }
+  #devPanel { z-index: 6; overflow-y: auto; }
+  #devRows { display: grid; gap: 6px; }
+  .dvRow { min-height: 44px; font-size: 14px; } .dvRow.grey { opacity: .5; }
+  .dvPick { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; } .dvPick button { min-width: 38px; height: 40px; padding: 0 4px; font-size: 14px; }
+  .dvPick button[aria-pressed="true"] { background: var(--edge); color: var(--paper); }
+  .dvBtn { height: 44px; font-size: 15px; }
+  .dvStatus { white-space: pre-line; font-size: 12.5px; line-height: 1.3; color: var(--ink); font-variant-numeric: tabular-nums; }
+  #lnBar { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 10px); width: min(96vw, 430px); box-sizing: border-box; z-index: 3; background: var(--paper);
+    border: 2px solid var(--edge); border-radius: 10px; padding: 6px 8px; display: grid; gap: 6px; }
+  #lnBar[hidden] { display: none; }
+  #lnBarText { font-size: 14px; color: var(--ink); text-align: center; }
+  #lnBar .row { display: flex; gap: 6px; } #lnBar .grow { flex: 1; } #lnBar button { height: 44px; font-size: 14px; padding: 0 8px; }
+  body.line .hud:not(#lnBar):not(#devBtn):not(#devPanel):not(#toast):not(#topleft):not(#tutTask):not(#settings):not(#pdSum):not(#pdBoard):not(#fcard):not(.lnHud) { display: none !important; }
   /* D24 (UI): Check tickets over a passenger car and Send off over the engine of the railroad's standing trains, near
      the player (two short lines, so neighbouring cars' buttons fit side by side); the train panel's railroad part. */
   .rrBtn { left: 0; top: 0; z-index: 1; width: 92px; padding: 2px 6px; font-size: 14px; line-height: 1.1; white-space: normal; border-left-width: 6px; }
@@ -437,8 +453,17 @@
   <div class="row"><span class="grow">First-time cards: the game pauses to explain something the first time it happens.</span><button id="setCards" aria-pressed="true">On</button></div>
   <div class="row"><span class="grow">Train messages: a short note when a train is due, comes in, is ready or leaves. Refusals always show.</span><button id="setTrainMsgs" aria-pressed="true">On</button></div>
   <div class="row" id="setLesRow" hidden><span class="grow">Lessons: the six short lessons (switches, tickets, unloading, loading, delivery, pickup) come again, each at its moment.</span><button id="setLessons">Replay</button></div>
+  <div class="row" id="setDevRow" hidden><span class="grow">Dev mode: a test panel for line building (the rail crew, hired workers, the line).</span><button id="setDev" aria-pressed="false">Off</button></div>
   <div class="row" id="setResetRow"><span class="grow">Start over: delete this saved game and begin a new one.</span><button id="setReset">Start over</button></div>
   <div class="row" id="setResetAsk" hidden><span class="grow"><b>This deletes your saved game. Start over?</b></span><button id="setResetYes">Start over</button><button id="setResetNo">Cancel</button></div>
+</div>
+<button id="devBtn" class="hud" aria-pressed="false" hidden>Dev</button>
+<div id="devPanel" class="hud bigPanel" hidden>
+  <div class="row"><h2 class="grow">Dev mode</h2><button id="devClose" aria-label="Close">X</button></div>
+  <div id="devRows"></div>
+</div>
+<div id="lnBar" class="hud" hidden><div id="lnBarText" role="status"></div>
+  <div class="row"><button id="lnBarW" aria-label="Look further back along the line">&lt; West</button><button id="lnBarHead">Railhead</button><button id="lnBarE" aria-label="Look further along the line">East &gt;</button><button id="lnBarBack" class="grow">Back to the station</button></div>
 </div>
 <div id="fcard" class="hud" role="dialog" aria-labelledby="fcardTitle" hidden>
   <h2 id="fcardTitle"></h2>
@@ -1459,7 +1484,8 @@ const protoWorld = T => worldId(T) === 'proto';
 const worldParked = (T, what) => !!(WORLDS[worldId(T)].parked || {})[what];
 const worldOf = T => WORLDS[worldId(T)];
 // The player's walking speed in the world of track T (u per game minute); tool: pushing the hand truck or handcart.
-function playerWalkSpeed(T, tool) { const p = WORLDS[worldId(T)].pace; return tool ? (p ? p.tool : CFG.TOOL_WALK) : (p ? p.walk : CFG.WALK); }
+// D32: times playerK (the prototype's PROTO.PLAYER_K, 1.5: his real speed under the slower clock; 1 elsewhere).
+function playerWalkSpeed(T, tool) { const p = WORLDS[worldId(T)].pace; return (tool ? (p ? p.tool : CFG.TOOL_WALK) : (p ? p.walk : CFG.WALK)) * playerK(T); }
 // The world in use by the code that reads plain layout tables (buildings, bays, tool spots, map bounds,
 // crowd area). Set from a track at every entry point (newState, simTick, walkGrid, buildWorld, each frame),
 // so it always matches the state being worked on. Cheap when nothing changes.
@@ -1770,6 +1796,7 @@ function applyCommand(S, c, ev) {
   if (tr && /^(trainRun|trainStop|trainSendTo)$/.test(c.t) && ttRunOf(S, tr.id)) { ev.push({ t: 'noRoute', tr: tr.id, why: `${tr.name} is running to the timetable: take it off the timetable first.` }); return; }
   // Riding a train (section "passengers", riding): no walking or using things until the player steps off.
   if (P.ride && RIDE.BLOCKED.test(c.t)) { if (!(c.t === 'walkDir' && c.a === null)) rideRefuse(ev, rideBlockedWhy(S, c)); return; }
+  if (P.away && awRefuse(S, c, ev)) return;   // D32: out on the line, the station player takes no commands (section "the line (D32)")
   switch (c.t) {
     case 'walkTo':
       // Targets beyond the map edge are pulled back onto the map, so the walk can end.
@@ -1829,6 +1856,8 @@ function applyCommand(S, c, ev) {
     case 'frDoor': case 'frTake': case 'frPut': case 'frCart': case 'frDeliver': case 'frPickup': frCmd(S, c, ev); break;   // D27 (F): freight handling (section "freight handling (D27)")
     case 'pgDeliver': pgDeliverCmd(S, c, ev); break;    // D25: hand the goods for a shop in at its door (section "prototype goods")
     case 'pdStart': case 'pdEndDay': case 'pdNextDay': case 'pdLesson': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day; D27: the lessons' Show me, Skip and replay (section "prototype day")
+    case 'dvSet': case 'dvSkip': dvCmd(S, c, ev); break;   // D32 (Foundation): dev mode's choices (section "the line (D32)")
+    case 'lpRide': case 'lpBack': case 'lpWalk': case 'lpJoin': case 'lpLeave': case 'lgDone': lpCmd(S, c, ev); break;   // D32 (Play): on the line
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
     case 'stepOff': rideStepOffCmd(S, ev); break;
@@ -4316,7 +4345,7 @@ function cargoWhere(S, w) {
     case 'STOCKPILE': return cargoInt(w.jobId) && w.jobId >= 0 ? { kind: 'STOCKPILE', jobId: w.jobId } : 'no such job';
     case 'BUSINESS': return cargoInt(w.businessId) && w.businessId >= 0 ? { kind: 'BUSINESS', businessId: w.businessId } : 'no such business';
     // D27 (foundation): the prototype's handling places (cargo27Where).
-    case 'CELL': case 'CART': case 'TRUCK': case 'HAND': case 'SHOP': return cargo27Where(S, w);
+    case 'CELL': case 'CART': case 'TRUCK': case 'HAND': case 'SHOP': case 'CREW': return cargo27Where(S, w);
   }
   return 'unknown kind of place';
 }
@@ -4328,6 +4357,7 @@ const CARGO27 = { LAYERS: { CELL: 5, CART: 3, CAR: 3 }, CART_CELLS: 20, CART_ROW
 function cargo27Where(S, w) {
   const lay = (v, max) => v === undefined ? 0 : cargoInt(v) && v >= 0 && v < max ? v : -1, int = cargoInt;
   switch (w.kind) {
+    case 'CREW': return (int(w.who) && w.who >= 0) || typeof w.who === 'string' ? { kind: 'CREW', who: w.who } : 'no such worker';   // D32: carried by a hired worker (one good each)
     case 'CELL': {
       const B = PROTO.STORE[w.block], L = lay(w.layer, CARGO27.LAYERS.CELL);
       if (!B) return 'no such storage block';
@@ -4360,6 +4390,7 @@ function cargo27Where(S, w) {
 function cargo27Key(w) {
   if (!w) return null;
   switch (w.kind) {
+    case 'CREW': return 'W:' + w.who;   // D32: in a hired worker's hands (unused until stage 2)
     case 'CELL': return 'L:' + w.block + ':' + w.c + ':' + w.r + ':' + w.layer;
     case 'CART': return 'K:' + w.tool + ':' + w.cell + ':' + w.layer;
     case 'TRUCK': return 'T:' + w.tool + ':' + w.slot;
@@ -5836,6 +5867,577 @@ function tfDebugScenario(S) {
 }
 const TF_TEST = { TF, TF_AGENTS, TF_ROUTINES, get TOWN_GRAPH() { return TOWN_GRAPH; }, tfSt, tfPlanDay, tfPlans, tfErrandAt, tfMeetDone, tfDay, tfNow, tfDoorOf, tfPose, tfTick, tfDrawList, tfAt, townPath, tfCheckSaveShape, tfDebugScenario, townGraphBuild };
 
+// ==== Section: hired workers (D32) ====
+// Owner: Town, stage 2 (plans/d32-tech.md 7.3: ticket punchers, cargo loaders, delivery men). Prefixes hw, HW; store
+// S.hw. UNTIL TOWN LANDS these are Foundation's empty stand-ins: nobody is hired, whatever dev mode asks for.
+function hwTick(S, ev) {}
+function hwDrawList(S) { return []; }                        // the townsfolk's draw shape
+function hwCheckSaveShape(st) { if (st.hw !== undefined && (!st.hw || typeof st.hw !== 'object')) throw new Error('damaged save: hired workers'); }
+
+// ==== Section: the bigger town (D32) ====
+// Owner: Town, stage 3 (plans/d32-tech.md section 8: homes, roles, rooms, the simple economy). Prefixes tn, TN; store
+// S.tn. UNTIL TOWN LANDS these are Foundation's empty stand-ins.
+function tnTick(S, ev) {}
+function tnShop(S, id) { return null; }                      // { stock, open, custom }
+function tnHome(S, who) { return null; }                     // { pay, mood }
+function tnRoomOpen() { return null; }                       // the building open to view, or null
+function tnCheckSaveShape(st) { if (st.tn !== undefined && (!st.tn || typeof st.tn !== 'object')) throw new Error('damaged save: the bigger town'); }
+
+// ==== Section: the line (D32) ====
+// Owner: Foundation (plans/d32-tech.md sections 1, 2, 5, 6 and 11.3). Line building: a second place inside the
+// prototype's one game, the country the new line is built through. Pure simulation: no page, no drawing.
+// It is OFF unless turned on through dev mode (the command dvSet; the panel is "dev mode (D32)" in "HUD and panels"): a
+// new game has no S.dv, S.ln or S.cw at all, so with the line off no D32 code changes a tick or a hash.
+//
+// The line has its own frame: x along the line from the junction (1 m = PROTO.M u, as everywhere), z across (the track
+// at z = 0), y = 0 everywhere (hills, the rise and the cut are drawn only). No track graph: the line's track is six
+// numbers, the fronts (S.ln.f, metres from the junction): cleared, bed dug, rock laid, ties laid, rails laid, spiked.
+// The country (LINE.SEGS) is the same in every game; the seed only moves the scatter. Nothing of it is stored.
+//
+// S.dv = { crew, punch, load, deliver }   what dev mode asked for (the sizes take effect at the next 05:00, lnNewDay)
+// S.ln = { on, crew, run, day, f[6], wu[6], sup { rock, ties, rails, kegs }, tr { ph, t, x, .. }, days, log, view, done }
+//   on    the line is being built (a crew above 0 and not finished)      crew  the crew size in force today
+//   run   the work train runs today (set at 05:00)                       day   the last line day planned (from 05:00)
+//   f     the fronts (m, kept to 0.001)    wu   work in hand at each front (less than a millimetre's worth)
+//   sup   the railhead dump                tr   the work train (wtTick)   days, log  working days, metres spiked a day
+//   view  'station' or 'line'              done the line day the last spike went in, or -1
+//   f5    the spiked front at 05:00 (for the log); aw, awStats, hc: the relief lever man's notes, the last head count
+// Interfaces for the other owners (plan 11.4): lnOn, lnWork, lnFronts, lnOpenWork, lnSpot, lnTrain, lnHours, lnSetView,
+// lnViewOn, wtDrawList, dvCmd, dvAddRow. Their stand-ins (Crew cw/cp/hc, Play lp/lg, Town hw/tn) are in the sections
+// around this one; each owner fills its own.
+const LINE = (() => {
+  const M = PROTO.M, H = (h, m) => h * 3600 + (m || 0) * 60;
+  return {
+    M, LEN_M: 2520, LEN: 2520 * M, START_M: 60,
+    X0: -20, X1: 3740, HALF_W: 32, ROW: 5,       // the walkable corridor (u); the right of way's half width (u)
+    // The country, the same in every game (plan 1.3): [from m, to m, kind].
+    SEGS: [[0, 60, 'junction'], [60, 300, 'prairie'], [300, 536, 'brush'], [536, 552, 'bridge'], [552, 600, 'brush'], [600, 900, 'woods'], [900, 1040, 'hills'],
+      [1040, 1120, 'cut'], [1120, 1250, 'hills'], [1250, 1600, 'rock'], [1600, 2000, 'river'], [2000, 2300, 'woods'], [2300, 2520, 'prairie']],
+    STAGES: ['clear', 'bed', 'rock', 'ties', 'rails', 'spike'],
+    STAGE_NAMES: ['Clearing', 'Digging the bed', 'Laying rock', 'Laying ties', 'Laying rails', 'Spiking'],
+    // wu (one minute of one fresh man) per metre, by country and stage (plan 3.2). WU_K scales the whole table.
+    COST: { junction: [0, 0, 0, 0, 0, 0], prairie: [2, 14, 14, 12, 10, 10], brush: [10, 15, 14, 12, 10, 10], woods: [26, 20, 14, 12, 10, 10], hills: [4, 26, 14, 12, 10, 10],
+      cut: [4, 70, 14, 12, 10, 10], rock: [2, 40, 8, 12, 10, 10], river: [3, 16, 16, 12, 10, 10], bridge: [0, 170, 0, 16, 10, 10] },
+    WU_K: 1.0,
+    GAP: [0, 6, 6, 4, 9.1, 9.1],                 // a front stays this far (m) behind the one ahead of it
+    CLEAR_AHEAD: 60,                             // the clearers go no further than this ahead of the diggers (m)
+    RAIL_M: 9.1, TIE_M: 0.6,
+    // Supplies (plan section 2): what the train brings each morning, the dump's cap, used per metre, by which stage.
+    SUP: { rock: { carry: 110, cap: 220, per: 0.5, stage: 2 }, ties: { carry: 360, cap: 720, per: 1 / 0.6, stage: 3 },
+      rails: { carry: 48, cap: 96, per: 2 / 9.1, stage: 4 }, kegs: { carry: 10, cap: 20, per: 4 / 0.6 / 150, stage: 5 } },
+    // The day (seconds of the day). The crew works every day (the lead's decision 3: no Sunday rest).
+    T: { PLAN: H(5), IN: H(5, 40), ARR: H(5, 50), DEP: H(6, 20), OFF: H(6, 25), WORK0: H(7), MEAL0: H(12), MEAL1: H(13), WORK1: H(18), AWAY: H(18, 20),
+      BACK: H(19), EIN: H(19, 5), EARR: H(19, 15), EDEP: H(19, 35), EOFF: H(19, 45), COUNT: H(22) },
+    OUT_MIN: 20, OUT_PER: 10,                    // the run out from 06:25: 20 game minutes plus 10 x (spiked / 2,520)
+    SLOW_U: 120, SLOW_V: 12.8,                   // the last 120u at 12.8u a minute
+    ENGINE_BACK_M: 8,                            // the engine stands this far behind the spiked front
+    MOVE_UP_M: 30,                               // and moves up when the front is this far ahead of where it should stand
+    // The work train: engine first (east), then the flatcar of rails and ties, the gondola of rock, the supply boxcar
+    // and the crew car: 61u. At the station it stands on track 2 with the engine's front at STN.STAND.
+    CONSIST: [['loco', 18], ['flatcar', 10], ['gondola', 10], ['boxcar', 10], ['crewcar', 13]], TRAIN_LEN: 61,
+    STN: { STAND: 21, FAR_W: -165, FAR_E: 226, Z: 0 },
+    STUB_WU: 0.8,                                // the stand-in crew: wu a man a working minute (50 minutes' work in the hour)
+    CREW: [0, 5, 10, 15, 20, 25, 30], HIRE: { punch: 3, load: 4, deliver: 2 },
+    AWAY_LEVER_S: 600,                           // the relief lever man throws a lever this long after it is needed
+  };
+})();
+// Where things stand at the station (plan sections 2 and 4; station units). The muster and the plank walk are 4u west
+// of the plan's figures: D29's one lever frame stands at x -37.5 to -31.5, where the plan had the muster's east end.
+// The camp's rectangle is the plan's (checked clear of buildings, the creek and the cart path in check-d32world).
+PROTO.MUSTER = { x0: -50, x1: -40, z0: -16, z1: -10 };
+PROTO.PLANK = { x: -39.3, z0: -9.4, z1: -2.6, w: 1.6 };       // over track 1 (straight here, z -6) to the crew car's steps
+PROTO.CAMP = { x0: -88, x1: -48, z0: -58, z1: -30, gate: { x: -48, z: -34 } };
+// The work train's two new cars (the engine, the flatcar and the boxcar are today's).
+PROTO_STOCK.crewcar = { k: 'crewcar', len: 13.0, mass: 0.5, wid: 4.0, h: 5.3, floor: 1.6 };
+PROTO_STOCK.gondola = { k: 'gondola', len: 10.0, mass: 0.5, wid: 4.0, h: 3.0, floor: 1.6 };
+// The work train's two visits to the station (plan section 2), for the board and the layout export. They are NOT runs
+// of the railroad's trains (S.rr.runs): the work train is a scripted run on track 2 (wtTick), the plan's fallback, so
+// no D24 train, block, lever or board row changes. See DEV_NOTES "D32".
+const PROTO_SCHEDULE_WORK = [
+  { id: 'w1', kind: 'work', from: 'W', to: 'E', track: 't2', arr: LINE.T.ARR, dep: LINE.T.DEP },
+  { id: 'w2', kind: 'work', from: 'E', to: 'W', track: 't2', arr: LINE.T.EARR, dep: LINE.T.EDEP },
+];
+function lnKindAt(m) { for (const s of LINE.SEGS) if (m < s[1]) return s[2]; return 'far'; }
+function lnSegAt(m) { for (const s of LINE.SEGS) if (m < s[1]) return s; return [LINE.LEN_M, Infinity, 'far']; }
+function lnCost(stage, m) { const c = LINE.COST[lnKindAt(m)]; return c ? c[stage] * LINE.WU_K : 0; }
+// A whole-number hash of (seed, a, b, c) to 0..1, for the country: never the game's running random stream, so drawing
+// and looking never disturb the sim.
+function lnHash(seed, a, b, c) {
+  let h = Math.imul(seed | 0, 0x9e3779b1) ^ Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul((c | 0) + 1, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+// Smooth noise 0..1 over cells of `cell` u (for patches, the creek's and the river's wander).
+function lnNoise(seed, x, z, cell, c) {
+  const fx = x / cell, fz = z / cell, i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j, s = t => t * t * (3 - 2 * t);
+  const a = lnHash(seed, i, j, c), b = lnHash(seed, i + 1, j, c), d = lnHash(seed, i, j + 1, c), e = lnHash(seed, i + 1, j + 1, c);
+  return a + (b - a) * s(u) + (d - a) * s(v) + (a - b - d + e) * s(u) * s(v);
+}
+// Water: the creek crosses the line under the bridge (10 m wide, wandering a little away from the line); the river
+// runs alongside from 1,600 to 2,000 m, 40 to 70u south of the line (outside the corridor). 2 water, 1 its bank, 0 dry.
+function lnWaterAt(seed, x, z) {
+  const M = LINE.M, cx = 544 * M + (lnNoise(seed, 0, z, 14, 7) - 0.5) * 5 * Math.min(1, Math.abs(z) / 12), dc = Math.abs(x - cx);
+  if (dc < 7.15) return 2;
+  if (dc < 9.2) return 1;
+  if (x > 1570 * M && x < 2030 * M) {
+    const fade = Math.min(1, (x - 1570 * M) / 60, (2030 * M - x) / 60), zc = 56 + (lnNoise(seed, x, 0, 40, 8) - 0.5) * 16 + (1 - fade) * 60, dr = Math.abs(z - zc);
+    if (dr < 7) return 2;
+    if (dr < 9) return 1;
+  }
+  return 0;
+}
+// The kind of country at the 1u cell (i, j), with soft borders 12u wide between kinds (hash-dithered).
+function lnKindCell(seed, i, j) {
+  const M = LINE.M, x = i + 0.5, m = x / M, s = lnSegAt(m);
+  if (s[2] === 'far') return 'prairie';
+  if (s[2] === 'bridge') return lnKindAt(535);            // the banks either side of the creek are brush
+  const d0 = (m - s[0]) * M, d1 = (s[1] - m) * M, h = lnHash(seed, i, j, 1);
+  if (d0 < 6 && s[0] > 0 && h < 0.5 - d0 / 12) { const k = lnKindAt(s[0] - 0.01); return k === 'bridge' ? s[2] : k; }
+  if (d1 < 6 && s[1] < LINE.LEN_M && h < 0.5 - d1 / 12) { const k = lnKindAt(s[1] + 0.01); return k === 'bridge' ? s[2] : k; }
+  return s[2];
+}
+// The ground tile key (plan section 10) for the 1u cell (i, j): by kind, water and banks for the creek and the river.
+function lnTile(seed, i, j) {
+  const x = i + 0.5, z = j + 0.5, w = lnWaterAt(seed, x, z), v = n => 1 + Math.floor(lnHash(seed, i, j, 2) * n);
+  if (w === 2) return x > 1500 * LINE.M ? 'tile/river/' + ((i + j) & 1) : 'tile/water/' + ((i + j) & 1);
+  if (w === 1) {
+    const wet = (dx, dz) => lnWaterAt(seed, x + dx, z + dz) === 2, n = wet(0, -1), s = wet(0, 1), e = wet(1, 0), wv = wet(-1, 0);
+    const side = n ? 'n' : s ? 's' : e ? 'e' : wv ? 'w' : wet(1, -1) ? 'ne' : wet(-1, -1) ? 'nw' : wet(1, 1) ? 'se' : wet(-1, 1) ? 'sw' : '';
+    return side ? (x > 1500 * LINE.M ? 'tile/riverbank/' : 'tile/bank/') + side : 'tile/sand/' + v(2);
+  }
+  const k = lnKindCell(seed, i, j), p = lnNoise(seed, x, z, 9, 3) + (lnHash(seed, i, j, 6) - 0.5) * 0.14;   // patches, with ragged edges
+  switch (k) {
+    case 'woods': return p > 0.72 ? 'tile/prairie/' + v(2) : 'tile/woodfloor/' + v(3);
+    case 'hills': case 'cut': { const g = lnNoise(seed, x + 3, z - 3, 14, 4) - lnNoise(seed, x - 3, z + 3, 14, 4); return g > 0.05 ? 'tile/hill_lit/' + v(2) : g < -0.05 ? 'tile/hill_shade/' + v(2) : 'tile/prairie/' + v(4); }
+    case 'rock': return p > 0.7 ? 'tile/gravel/' + v(2) : p < 0.2 ? 'tile/drygrass/' + v(2) : 'tile/rockground/' + v(3);
+    case 'brush': return p > 0.6 ? 'tile/drygrass/' + v(2) : p < 0.18 ? 'tile/sand/' + v(2) : 'tile/prairie/' + v(4);
+    case 'river': return p > 0.75 ? 'tile/grass/' + v(4) : 'tile/prairie/' + v(4);
+    default: {
+      // prairie; by the far town its fields (blocks 24 x 16u beyond 12u from the line)
+      if (x > 2300 * LINE.M && Math.abs(z) > 12 && lnHash(seed, Math.floor(x / 24), Math.floor(z / 16), 5) < 0.45) return 'tile/field/' + (1 + (Math.floor(x / 24) & 1));
+      return p > 0.78 ? 'tile/drygrass/' + v(2) : 'tile/prairie/' + v(4);
+    }
+  }
+}
+// The standing things in the 8u cell (ci, cj): [{ key, x, z, row, h }] (h: its height in u, for the painter's order).
+// row: inside the right of way (z within LINE.ROW of the line): the brush and trees the clearers remove. In the woods
+// a tree stands on the right of way about every 6 m. Beyond the corridor (|z| above LINE.HALF_W) the things are baked
+// into the ground by the renderer, and there the hills carry mounds.
+function lnScatter(seed, ci, cj) {
+  const out = [], M = LINE.M, x0 = ci * 8, z0 = cj * 8, R = n => lnHash(seed, ci, cj, 10 + n);
+  if (x0 > LINE.LEN + 8) return out;   // the far town's ground (stage 3)
+  const put = (key, n, h, far) => {
+    const x = x0 + 0.5 + R(n) * 7, z = z0 + 0.5 + R(n + 1) * 7;
+    if (lnWaterAt(seed, x, z) || (x < 62 * M && Math.abs(z) < 6)) return;
+    if (far && Math.abs(z) <= LINE.HALF_W + 10) return;
+    out.push({ key, x, z, row: Math.abs(z) <= LINE.ROW, h });
+  };
+  const k = lnKindCell(seed, ci * 8 + 4, cj * 8 + 4), pick = (n, m) => 1 + Math.floor(R(n) * m), inRow = Math.abs(z0 + 4) <= LINE.ROW + 3;
+  if (k === 'woods') {
+    if (R(0) < 0.8) put(R(2) < 0.7 ? 'nat/pine/' + pick(3, 3) : 'nat/oak/' + pick(3, 2), 4, 6);
+    if (R(1) < 0.45) put(R(6) < 0.6 ? 'nat/pine/' + pick(7, 3) : 'nat/brush/' + pick(7, 3), 8, 5);
+    if (R(20) < 0.15) put(R(21) < 0.5 ? 'nat/log_x' : 'nat/stump/' + pick(22, 2), 23, 0.6);
+  } else if (k === 'brush') {
+    if (R(0) < 0.75) put(R(2) < 0.5 ? 'nat/sage/' + pick(3, 4) : 'nat/brush/' + pick(3, 3), 4, 1.4);
+    if (R(1) < 0.6) put(R(6) < 0.5 ? 'nat/rabbitbrush/' + pick(7, 2) : 'nat/brush/' + pick(7, 3), 8, 1.4);
+    if (R(20) < 0.3) put('nat/sage/' + pick(22, 4), 23, 1.2);
+    if (R(24) < 0.05 && !inRow) put('nat/juniper/' + pick(25, 2), 26, 4);
+  } else if (k === 'rock') {
+    if (R(0) < 0.5) put('nat/boulder/' + pick(3, 4), 4, 1.5);
+    if (R(1) < 0.12 && !inRow) put('nat/outcrop/' + pick(7, 2), 8, 2.8);
+    if (R(20) < 0.2) put('nat/sage/' + pick(22, 4), 23, 1.2);
+    if (R(24) < 0.06 && !inRow) put('nat/juniper/' + pick(25, 2), 26, 4);
+  } else if (k === 'hills' || k === 'cut') {
+    if (R(0) < 0.3) put('nat/grass/' + pick(3, 6) + '/0', 4, 0.8);
+    if (R(1) < 0.12) put('nat/sage/' + pick(7, 4), 8, 1.2);
+    if (R(20) < 0.07 && !inRow) put(R(21) < 0.5 ? 'nat/juniper/' + pick(22, 2) : 'nat/boulder/' + pick(22, 4), 23, 3);
+    if (R(27) < 0.3) put('nat/mound/' + pick(28, 3), 29, 0, true);
+  } else if (k === 'river') {
+    if (R(0) < 0.3) put('nat/grass/' + pick(3, 6) + '/0', 4, 0.8);
+    if (R(1) < 0.18 && !inRow) put(R(6) < 0.5 ? 'nat/cottonwood/' + pick(7, 3) : 'nat/willow/' + pick(7, 2), 8, 8);
+    if (R(20) < 0.15) put('nat/flowers/' + pick(22, 3), 23, 0.5);
+  } else {   // prairie, the junction
+    if (R(0) < 0.35) put('nat/grass/' + pick(3, 6) + '/0', 4, 0.8);
+    if (R(1) < 0.16) put('nat/flowers/' + pick(7, 3), 8, 0.5);
+    if (R(20) < 0.05) put('nat/sage/' + pick(22, 4), 23, 1.2);
+    if (x0 > 2300 * M && R(24) < 0.08 && !inRow) put(R(25) < 0.5 ? 'nat/haystack' : R(25) < 0.75 ? 'nat/fence_x' : 'nat/fence_z', 26, 2);
+  }
+  return out;
+}
+// ---- The store ----
+function lnNewStore() {
+  const f0 = LINE.START_M;
+  return { on: false, crew: 0, run: false, day: -1, f: [f0, f0, f0, f0, f0, f0], wu: [0, 0, 0, 0, 0, 0], sup: { rock: 0, ties: 0, rails: 0, kegs: 0 },
+    tr: { ph: 'home', t: 0, x: 0 }, days: 0, log: [], view: 'station', done: -1 };
+}
+const dvNewStore = () => ({ crew: 0, punch: 0, load: 0, deliver: 0 });
+const lnOn = S => !!(S && S.ln && S.ln.on);
+const lnFronts = S => (S && S.ln ? S.ln.f.slice() : [0, 0, 0, 0, 0, 0].map(() => LINE.START_M));
+const lnDayOf = S => Math.floor(S.time / 86400);              // the line's day turns at 05:00 (the game's hour 0)
+// How far a stage's front may go now (m): the gap behind the front ahead (closed once that front is at the end), the
+// clearers no further than CLEAR_AHEAD beyond the diggers, never past the end.
+function lnLimit(S, stage) {
+  const f = S.ln.f, E = LINE.LEN_M;
+  if (stage === 0) return Math.min(E, f[1] + LINE.CLEAR_AHEAD);
+  return f[stage - 1] >= E ? E : Math.max(f[stage], f[stage - 1] - LINE.GAP[stage]);
+}
+const lnSupOf = stage => Object.keys(LINE.SUP).find(k => LINE.SUP[k].stage === stage) || null;
+const lnSupPer = (stage, m) => { const k = lnSupOf(stage); return k && !(k === 'rock' && lnKindAt(m) === 'bridge') ? LINE.SUP[k].per : 0; };
+// The work open to a stage now, in wu: from its front to its limit, or as far as its supplies reach (0 if out).
+function lnOpenWork(S, stage) {
+  if (!lnOn(S)) return 0;
+  const L = S.ln, lim = lnLimit(S, stage), k = lnSupOf(stage);
+  let m = L.f[stage], wu = -L.wu[stage], sup = k ? L.sup[k] : Infinity;
+  while (m < lim - 1e-9) {
+    const seg = lnSegAt(m), per = lnSupPer(stage, m), d = Math.min(lim, seg[1]) - m;
+    if (per > 0) { const can = sup / per; if (can < d) { wu += can * lnCost(stage, m); break; } sup -= d * per; }
+    wu += d * lnCost(stage, m); m += d;
+  }
+  return Math.max(0, wu);
+}
+// The only way a front moves: spends wu at the stage's front (at lnCost there), stops at the gap behind the front
+// ahead, at the supplies and at the end, takes the supplies, and returns the wu it could not use. Events (into this
+// tick's list, lnWork.ev): lnMetre { stage, m } (the last whole metre passed in this call), lnDone at the last spike.
+function lnWork(S, stage, wu) {
+  if (!lnOn(S) || !(wu > 0) || !(stage >= 0 && stage < 6)) return wu > 0 ? wu : 0;
+  const L = S.ln, k = lnSupOf(stage), ev = lnWork.ev, f0 = L.f[stage];
+  let have = L.wu[stage] + wu, f = f0;
+  for (let guard = 0; guard < 40; guard++) {
+    const lim = lnLimit(S, stage);
+    if (f >= lim - 1e-9) break;
+    const seg = lnSegAt(f), c = lnCost(stage, f), per = lnSupPer(stage, f);
+    let d = Math.min(lim, seg[1]) - f;
+    if (per > 0) d = Math.min(d, L.sup[k] / per);
+    if (c > 0) d = Math.min(d, have / c);
+    d = Math.floor(d * 1000 + 1e-6) / 1000;                 // whole millimetres; the rest stays in hand
+    if (!(d > 0)) break;
+    have -= d * c; f = Math.round((f + d) * 1000) / 1000;
+    if (per > 0) L.sup[k] = Math.max(0, L.sup[k] - d * per);
+    L.f[stage] = f;
+  }
+  // What is left: in hand if the front can still move (less than a millimetre's worth), else handed back.
+  const lim = lnLimit(S, stage), per = lnSupPer(stage, f), stuck = f >= lim - 1e-9 || (per > 0 && L.sup[k] < per * 0.001);
+  let back = 0;
+  if (stuck) { back = have; have = 0; }
+  L.wu[stage] = Math.max(0, have);
+  if (ev && Math.floor(f) > Math.floor(f0)) ev.push({ t: 'lnMetre', stage, m: Math.floor(f) });
+  if (stage === 5 && f >= LINE.LEN_M && L.done < 0) { L.done = L.day; L.on = false; if (ev) ev.push({ t: 'lnDone', day: L.day }); }
+  return back;
+}
+lnWork.ev = null;   // this tick's events (set by wtTick each tick, so callers need not pass them)
+// The place of slot j of a stage's gang, in line units: 1.2 m apart behind the front, on alternating sides.
+function lnSpot(S, stage, slot) {
+  const f = S && S.ln ? S.ln.f[stage] : LINE.START_M;
+  return { x: (f - 1.2 * slot) * LINE.M, z: slot % 2 ? 2.2 : -2.2, f: Math.PI / 2 };
+}
+// The hours for now: work (07:00 to 12:00 and 13:00 to 18:00, with the train standing at the railhead), the meal
+// (12:00 to 13:00), packing up (18:00 to 18:20), and whether today is a working day (every day while the train runs).
+function lnHours(S) {
+  const L = S && S.ln, T = LINE.T, sod = rrSod(S.time), there = !!L && L.run && L.tr.ph === 'stand';
+  return { work: there && ((sod >= T.WORK0 && sod < T.MEAL0) || (sod >= T.MEAL1 && sod < T.WORK1)), meal: there && sod >= T.MEAL0 && sod < T.MEAL1,
+    pack: there && sod >= T.WORK1 && sod < T.AWAY, workday: !!L && L.run };
+}
+// 05:00: the day's plan. The crew size asked for comes into force, the work train is put on (or not), yesterday's
+// metres go into the log, and the crew's day is planned (cwNewDay).
+function lnNewDay(S, day, ev) {
+  if (!S.ln) S.ln = lnNewStore();
+  const L = S.ln, D = S.dv || dvNewStore();
+  if (L.day >= 0 && L.run) { L.log.push({ day: L.day, m: Math.round((L.f[5] - (L.f5 === undefined ? L.f[5] : L.f5)) * 1000) / 1000 }); if (L.log.length > 30) L.log.shift(); }
+  L.day = day; L.crew = D.crew | 0;
+  L.on = L.crew > 0 && L.done < 0; L.run = L.on;
+  L.f5 = L.f[5];
+  if (L.on) L.days++;
+  L.tr = { ph: 'home', t: S.time, x: 0 };
+  delete L.awStats;
+  cwNewDay(S, day);
+  if (ev) ev.push({ t: 'lnDay', day, crew: L.crew, on: L.on });
+}
+function lnSetView(S, v) { if (!S.ln) S.ln = lnNewStore(); S.ln.view = v === 'line' ? 'line' : 'station'; }
+// ---- The work train (plan section 2) ----
+// A scripted run, not a D24 train. Its phase follows the clock: 'home' (away, west of the map) > 'sIn' (05:40, coming
+// in from the west on track 2) > 'sStand' (05:50 to 06:20 at the station, the men boarding) > 'sOut' (leaving east) >
+// 'out' (on the line, running to the railhead) > 'stand' (at the railhead through the working day, moving up behind
+// the spiked front) > 'back' (18:20) > 'gap' (between the two places) > 'eIn' (19:05, backing in from the east) >
+// 'eStand' (19:15 to 19:35) > 'eOut' (backing away west) > 'home'. S.ln.tr = { ph, t (when the phase began), x (the
+// engine's front on the line, m), x1 (where it is running to), ta (when it gets there, second of the day), xb (where
+// it left the railhead from), mv (moving up) }.
+function wtPhaseAt(L, sod) {
+  const T = LINE.T, tr = L.tr;
+  if (!L.run || sod < T.IN) return 'home';
+  if (sod < T.ARR) return 'sIn';
+  if (sod < T.DEP) return 'sStand';
+  if (sod < T.OFF) return 'sOut';
+  if (sod < T.AWAY) return sod >= (tr.ta !== undefined ? tr.ta : T.OFF + (LINE.OUT_MIN + LINE.OUT_PER) * 60) ? 'stand' : 'out';
+  if (sod < T.BACK) return 'back';
+  if (sod < T.EIN) return 'gap';
+  if (sod < T.EARR) return 'eIn';
+  if (sod < T.EDEP) return 'eStand';
+  if (sod < T.EOFF) return 'eOut';
+  return 'home';
+}
+const wtStandM = L => Math.max(LINE.TRAIN_LEN / LINE.M + 2, L.f[5] - LINE.ENGINE_BACK_M);
+// The engine's front on the line (m) at second-of-day sod while running out or back (a pure function of the phase's
+// stored ends, so it can be drawn between ticks).
+function wtLineX(L, sod) {
+  const tr = L.tr, T = LINE.T, M = LINE.M, x0 = -10;
+  if (tr.ph === 'out') {
+    const x1 = tr.x1, slowM = LINE.SLOW_U / M, slowS = LINE.SLOW_U / LINE.SLOW_V * 60, left = tr.ta - sod;
+    if (left <= 0) return x1;
+    if (left <= slowS) { const p = left / slowS; return x1 - slowM * p * p; }                      // braking in
+    const p = (sod - T.OFF) / Math.max(1, tr.ta - slowS - T.OFF);
+    return x0 + (x1 - slowM - x0) * Math.max(0, Math.min(1, p));
+  }
+  if (tr.ph === 'back') { const p = Math.max(0, Math.min(1, (sod - T.AWAY) / (T.BACK - T.AWAY))); return tr.xb + (x0 - tr.xb) * p * p; }
+  return tr.x;
+}
+// The engine's front at the station (x on track 2) at second-of-day sod, or null when it is not on the map.
+function wtStationX(L, sod) {
+  const T = LINE.T, N = LINE.STN, ph = L.tr.ph, u = (a, b) => Math.max(0, Math.min(1, (sod - a) / (b - a)));
+  if (ph === 'sStand' || ph === 'eStand') return N.STAND;
+  if (ph === 'sIn') { const p = u(T.IN, T.ARR); return N.FAR_W + (N.STAND - N.FAR_W) * (1 - (1 - p) * (1 - p)); }
+  if (ph === 'sOut') { const p = u(T.DEP, T.OFF); return N.STAND + (N.FAR_E - N.STAND) * p * p; }
+  if (ph === 'eIn') { const p = u(T.EIN, T.EARR); return N.FAR_E + (N.STAND - N.FAR_E) * (1 - (1 - p) * (1 - p)); }
+  if (ph === 'eOut') { const p = u(T.EDEP, T.EOFF); return N.STAND + (N.FAR_W - N.STAND) * p * p; }
+  return null;
+}
+// The sim tick's line step (after tfTick): the 05:00 plan, the work train's phase and place, the supplies it brings.
+function wtTick(S, ev) {
+  if (!S.dv && !S.ln) return;
+  const day = lnDayOf(S);
+  if (S.ln && S.ln.day >= 0 ? S.ln.day < day : !!(S.dv && S.dv.crew > 0)) lnNewDay(S, day, ev);
+  const L = S.ln;
+  lnWork.ev = ev;
+  if (!L || (!L.run && L.tr.ph === 'home')) return;
+  const sod = rrSod(S.time), T = LINE.T, tr = L.tr, was = tr.ph, ph = wtPhaseAt(L, sod);
+  if (ph !== was) {
+    tr.ph = ph; tr.t = S.time;
+    if (ph === 'out' || (ph === 'stand' && tr.x1 === undefined)) { tr.x1 = wtStandM(L); tr.ta = T.OFF + Math.round((LINE.OUT_MIN + LINE.OUT_PER * L.f[5] / LINE.LEN_M) * 60); }
+    if (ph === 'stand') {
+      tr.x = tr.x1;
+      // The day's supplies, off the cars (on the line's first day a starting stock too, so the dump opens full).
+      for (const k of Object.keys(LINE.SUP)) L.sup[k] = Math.min(LINE.SUP[k].cap, L.sup[k] + LINE.SUP[k].carry * (L.days === 1 ? 2 : 1));
+    }
+    if (ph === 'back') tr.xb = tr.x;
+    if (ph === 'gap' || ph === 'home') { tr.x = 0; delete tr.x1; delete tr.ta; delete tr.xb; delete tr.mv; }
+    ev.push({ t: 'wtPhase', ph, from: was });
+  }
+  if (tr.ph === 'out' || tr.ph === 'back') tr.x = Math.round(wtLineX(L, sod) * 1000) / 1000;
+  else if (tr.ph === 'stand') {
+    // Moving up behind the spiked front, a hop at a time (never while the men eat at the cars or pack up).
+    const want = wtStandM(L), H = lnHours(S);
+    if (!tr.mv && H.work && want - tr.x >= LINE.MOVE_UP_M) tr.mv = 1;
+    if (tr.mv) { tr.x = Math.min(want, Math.round((tr.x + LINE.SLOW_V / LINE.M * CFG.TICK_GAME_S / 60) * 1000) / 1000); if (tr.x >= want || !H.work) delete tr.mv; }
+  }
+}
+// The work train for the others: { ph, at ('station' | 'line' | 'away'), x (the engine's front: station units at the
+// station, line units on the line), moving, cars: [{ k, x0, x1, z, door: { x, z } }] (in that place's units, the
+// engine first), steps: the crew car's steps { x, z } (where the men climb in: its west end, on the platform side at
+// the station), dump: where the supplies lie on the line { x0, x1, z } }. sod: the second of the day to place it at
+// (drawing between ticks); the tick's by default.
+function lnTrain(S, sod) {
+  const L = S && S.ln;
+  if (!L) return { ph: 'home', at: 'away', x: 0, moving: false, cars: [], steps: null, dump: null };
+  const tr = L.tr, s = sod === undefined ? rrSod(S.time) : sod, sx = wtStationX(L, s);
+  const at = sx !== null ? 'station' : tr.ph === 'out' || tr.ph === 'stand' || tr.ph === 'back' ? 'line' : 'away';
+  const front = at === 'station' ? sx : at === 'line' ? (tr.ph === 'stand' ? tr.x : wtLineX(L, s)) * LINE.M : 0, cars = [];
+  let x = front;
+  if (at !== 'away') for (const [k, len] of LINE.CONSIST) { cars.push({ k, x0: x - len, x1: x, z: 0, door: { x: x - len / 2, z: 2.6 } }); x -= len; }
+  const cc = cars[cars.length - 1] || null;
+  return { ph: tr.ph, at, x: front, moving: at !== 'away' && !(tr.ph === 'sStand' || tr.ph === 'eStand' || (tr.ph === 'stand' && !tr.mv)), cars,
+    steps: cc ? { x: cc.x0 + 0.7, z: at === 'station' ? -2.6 : 2.6 } : null,
+    dump: at === 'line' && cars.length ? { x0: cars[3].x0, x1: cars[1].x1, z: 6 } : null };
+}
+// The work train's vehicles to draw in `place` ('station' or 'line'), as the station's train items: [{ id, k, x, z,
+// yaw, len, wid, h, key, moving }] (x, z: the footprint's centre; key: the atlas key, heading east). sod as lnTrain.
+function wtDrawList(S, place, sod) {
+  const t = lnTrain(S, sod);
+  if (t.at !== place) return [];
+  return t.cars.map((c, i) => {
+    const st = c.k === 'loco' ? PROTO_STOCK.loco : PROTO_STOCK.cars[c.k] || PROTO_STOCK[c.k], x = (c.x0 + c.x1) / 2;
+    return { id: 'wt' + i, k: c.k, x, z: c.z, yaw: 0, len: c.x1 - c.x0, wid: st.wid, h: st.h, key: c.k === 'loco' ? 'veh/loco_freight/e/' + (Math.floor(x / 1.1) & 1) : `veh/${c.k}/e`, moving: t.moving };
+  });
+}
+// ---- Away (plan 7.4) ----
+// While the player is on the line (S.player.away), a relief man at the frame throws what the trains need
+// (rrSwitchNeeds: for each switch the first need not passed yet), LINE.AWAY_LEVER_S after the train needs it, so each
+// train comes in about 10 minutes late, counted against the player as any lateness (the lead's decision 1).
+// S.ln.aw = { [switch id]: the time its need came up }, only while away; S.ln.awStats: the summary's figures.
+function awLeverTick(S, ev) {
+  const P = S.player, L = S.ln;
+  if (!L || !P.away) { if (L && L.aw) delete L.aw; return; }
+  if (S.tick % 8) return;                                   // about once a game minute
+  const A = L.aw || (L.aw = {}), first = {};
+  for (const n of rrSwitchNeeds(S)) if (!n.passed && !n.done && first[n.sw] === undefined) first[n.sw] = n;
+  for (const id of Object.keys(A)) if (!first[id]) delete A[id];
+  for (const [id, n] of Object.entries(first)) {
+    if (n.set || S.time < n.byTime - 60) { delete A[id]; continue; }
+    if (A[id] === undefined) A[id] = S.time;
+    if (S.time - A[id] < LINE.AWAY_LEVER_S) continue;
+    const W = S.track.switches[id], was = W.state;
+    throwSwitch(S, +id, ev);
+    if (W.state !== was) { delete A[id]; const st = L.awStats || (L.awStats = {}); st.levers = (st.levers || 0) + 1; }
+  }
+}
+// The station player's own commands are refused while he is away on the line (the line's, the dev panel's and the
+// day's commands pass).
+const AW_PASS = /^(lp|lg|dv|pd|tg)/;
+function awRefuse(S, c, ev) {
+  if (!S.player.away || AW_PASS.test(c.t)) return false;
+  if (!(c.t === 'walkDir' && c.a === null)) ev.push({ t: 'awRefused', cmd: c.t, why: 'You are out on the line. Go back to the station first.' });
+  return true;
+}
+// The summary's extra line: what happened at the station while the player was on the line (null when he was not).
+// The relief man's levers are Foundation's; late, missed and left are for Town's away rules (stage 2).
+function awSummaryLine(S) {
+  const A = S.ln && S.ln.awStats;
+  if (!A) return null;
+  const parts = [], n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
+  if (A.levers) parts.push(n(A.levers, 'lever thrown late by the relief man', 'levers thrown late by the relief man'));
+  if (A.late) parts.push(n(A.late, 'train late', 'trains late'));
+  if (A.missed) parts.push(n(A.missed, 'traveller missed', 'travellers missed'));
+  if (A.left) parts.push(n(A.left, 'good left aboard', 'goods left aboard'));
+  return parts.length ? 'While you were on the line: ' + parts.join(', ') + '.' : null;
+}
+// ---- Dev mode's commands (plan section 5) ----
+// { t: 'dvSet', k, v }: k 'crew' (0, 5 .. 30), 'punch' (0 to 3), 'load' (0 to 4), 'deliver' (0 to 2), 'view'
+// ('station' | 'line': look at the line without a player on it, until Play's riding out lands). Sizes take effect at
+// the next 05:00; the crew at once when the line is not on yet and the work train has not left (before 06:20).
+// { t: 'dvSkip' }: to 05:00 tomorrow (the night passes; the line's and the crew's ticks are played, the station's are
+// not), allowed only when no railroad train is on the map.
+function dvCmd(S, c, ev) {
+  if (!protoWorld(S.track)) return;
+  if (c.t === 'dvSkip') { dvSkipCmd(S, ev); return; }
+  if (c.t !== 'dvSet') return;
+  const D = S.dv || (S.dv = dvNewStore()), v = c.v;
+  if (c.k === 'view') { lnSetView(S, v); ev.push({ t: 'lnView', view: S.ln.view }); return; }
+  if (c.k === 'crew') { if (!LINE.CREW.includes(v)) return; D.crew = v; }
+  else if (LINE.HIRE[c.k] !== undefined) { if (!Number.isInteger(v) || v < 0 || v > LINE.HIRE[c.k]) return; D[c.k] = v; }
+  else return;
+  if (!S.ln) S.ln = lnNewStore();
+  if (c.k === 'crew' && v > 0 && !S.ln.on && S.ln.done < 0 && rrSod(S.time) < LINE.T.DEP && rrSod(S.time) >= LINE.T.PLAN) lnNewDay(S, lnDayOf(S), ev);
+  ev.push({ t: 'dvSet', k: c.k, v });
+}
+// Plays only the line (the work train, the crew, the head count) up to the time t, for a jump of the clock (the next
+// morning, dev mode's skip): the station's night is skipped as today, the line's evening is not lost.
+function lnSkipTo(S, t, ev) {
+  if (!S.ln || (!S.ln.run && !lnOn(S))) return;
+  const e2 = [];
+  while (S.time < t) { S.time += CFG.TICK_GAME_S; wtTick(S, e2); cwTick(S, e2); }
+  for (const e of e2) if (e.t === 'lnDone' || e.t === 'hcDone') ev.push(e);
+}
+function dvSkipCmd(S, ev) {
+  const D = S.pd;
+  if (!D || !D.on) return;
+  if (S.rr && S.rr.runs.some(r => r.ph === 'in' || r.ph === 'stand' || r.ph === 'out')) { ev.push({ t: 'dvRefused', why: 'A train is at the station or on its way: wait until it has gone.' }); return; }
+  if (S.player.away) { ev.push({ t: 'dvRefused', why: 'Go back to the station first.' }); return; }
+  const day = rrDayOf(S) + 1, t = day * 86400 + LINE.T.PLAN - CFG.DAY_START_S;
+  lnSkipTo(S, t - CFG.TICK_GAME_S, ev);
+  S.time = t - CFG.TICK_GAME_S;   // this tick's step 2 brings it to 05:00
+  D.day = day; D.ph = 'morning'; D.stats = pdNewStats(); D.sum = null;
+  Object.assign(S.player, { x: PROTO.PLAYER.x, z: PROTO.PLAYER.z, f: Math.PI, mode: 'idle', use: null, act: null });
+  pgNewDay(S, day, ev);
+  pdLesNewDay(S);
+  ev.push({ t: 'pdMorning', day, early: true });
+}
+// ---- The longer day (plan section 6) ----
+// The prototype's clock runs at WORLDS.proto.clock ticks a real second (5.0: a game minute is 1.5 real seconds, a day
+// 36 minutes; the other worlds keep CFG.TICKS_PER_REAL_S, 7.5). A tick is still 8 game seconds: the sim, the hashes
+// and the timetable do not change. The player keeps his real speed (the lead's decision 2): his walk and tool pace
+// times PROTO.PLAYER_K (1.5) a game minute (playerWalkSpeed) and his own action times divided by it (the handling
+// steps through frTimes' factor, the punch on board, a lever throw: lnPaceInit, in whole ticks as ever). The page's
+// ?clock=7.5 restores the old rate and ?pk=1 the old pace, for a comparison.
+WORLDS.proto.clock = 5.0;
+PROTO.PLAYER_K = 1.5;
+(() => {
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+  if (q && +q.get('clock') > 0) WORLDS.proto.clock = +q.get('clock');
+  if (q && +q.get('pk') > 0) PROTO.PLAYER_K = +q.get('pk');
+})();
+function clockRate(T) { const W = WORLDS[worldId(T)]; return (W && W.clock) || CFG.TICKS_PER_REAL_S; }
+const playerK = T => (protoWorld(T) ? PROTO.PLAYER_K : 1);
+// Called once when the page's code is loaded (section "sim tick"): the player's action times at his real speed.
+const LN_PACE = { done: false, throwS: CFG.THROW_S };
+function lnPaceInit() {
+  if (LN_PACE.done) return;
+  LN_PACE.done = true;
+  const K = PROTO.PLAYER_K, tick = CFG.TICK_GAME_S;
+  if (K === 1) return;
+  FR.TIME_K = FR.TIME_K / K; frTimes(FR.TIME_K, FR.PICK_MIN, FR.MIN_S);
+  PB.PUNCH_S = Math.max(tick, Math.round(PB.PUNCH_S / K / tick) * tick);
+  LN_PACE.throwS = Math.max(tick, Math.round(CFG.THROW_S / K / tick) * tick);
+}
+const lnThrowS = T => (protoWorld(T) ? LN_PACE.throwS : CFG.THROW_S);
+// ---- Saving ----
+function lnCheckSaveShape(st) {
+  const bad = why => { throw new Error('damaged save: ' + why); }, num = v => typeof v === 'number' && Number.isFinite(v), int = Number.isInteger;
+  if (st.dv !== undefined) { const D = st.dv; if (!D || !LINE.CREW.includes(D.crew) || ['punch', 'load', 'deliver'].some(k => !int(D[k]) || D[k] < 0 || D[k] > LINE.HIRE[k])) bad('dev mode'); }
+  if (st.player && st.player.away !== undefined && st.player.away !== 'line') bad('player away');
+  if (st.ln === undefined) return;
+  const L = st.ln;
+  if (!L || typeof L.on !== 'boolean' || !int(L.crew) || !int(L.day) || !int(L.days) || !int(L.done)) bad('the line');
+  if (!Array.isArray(L.f) || L.f.length !== 6 || L.f.some(v => !num(v) || v < LINE.START_M || v > LINE.LEN_M) || !Array.isArray(L.wu) || L.wu.length !== 6 || L.wu.some(v => !num(v) || v < 0)) bad('the line\'s fronts');
+  for (let k = 1; k < 6; k++) if (L.f[k] > L.f[k - 1] + 1e-6) bad('the line\'s fronts out of order');
+  if (!L.sup || Object.keys(LINE.SUP).some(k => !num(L.sup[k]) || L.sup[k] < 0)) bad('the line\'s supplies');
+  if (!L.tr || typeof L.tr.ph !== 'string' || !num(L.tr.x) || !num(L.tr.t)) bad('the work train');
+  if (!Array.isArray(L.log) || L.log.some(q => !q || !int(q.day) || !num(q.m))) bad('the line\'s log');
+  if (L.view !== 'station' && L.view !== 'line') bad('the line\'s view');
+}
+const LN_TEST = { LINE, PROTO_SCHEDULE_WORK, lnKindAt, lnKindCell, lnWaterAt, lnTile, lnScatter, lnCost, lnHash, lnWork, lnOpenWork, lnLimit, lnSpot, lnTrain, lnHours, lnNewStore, lnNewDay, lnOn, lnFronts, lnDayOf, lnSetView, lnSkipTo,
+  wtTick, wtDrawList, wtPhaseAt, wtLineX, wtStationX, awLeverTick, awRefuse, awSummaryLine, dvCmd, dvNewStore, clockRate, playerK, lnCheckSaveShape, LN_PACE,
+  get cw() { return { cwTick, cwNewDay, cwDrawList, cpItems, cwGang, cwBoost, cwSimDays, hcCount, hcRoll, hcTick }; },
+  get lp() { return { lpTick, lpCmd, lpTap, lpPose, lpHud }; }, get hw() { return { hwTick, hwDrawList, tnTick, tnShop, tnHome, tnRoomOpen }; } };
+
+// ==== Section: the crew (D32) ====
+// Owner: Crew (plans/d32-tech.md sections 3 and 4: the men, the foreman's shares, tiring, the meal, tools, the walk to
+// and from the train, the camp, the head count). Prefixes cw, CW, cp, hc; store S.cw.
+// UNTIL CREW LANDS these are Foundation's stand-ins: no men are simulated or drawn; cwTick spends LINE.STUB_WU (0.8)
+// wu a man a working minute, shared among the stages in proportion to the work open to each (plan 3.3 steps 1 and 2,
+// without whole men), so the line grows at the plan's rate (about 480 wu a man a day). Crew replaces every function
+// in this section; the signatures are plan 11.4's.
+function cwNewDay(S, day) {}
+function cwTick(S, ev) {
+  if (!S.ln || !S.ln.run) return;
+  if (rrSod(S.time) === LINE.T.COUNT) hcTick(S, ev);         // the head count at 22:00
+  if (!lnOn(S) || !lnHours(S).work) return;
+  const L = S.ln, open = [0, 1, 2, 3, 4, 5].map(k => lnOpenWork(S, k)), tot = open.reduce((a, b) => a + b, 0);
+  if (!(tot > 0)) return;
+  const wu = L.crew * LINE.STUB_WU * CFG.TICK_GAME_S / 60;
+  for (let k = 0; k < 6; k++) if (open[k] > 0) lnWork(S, k, wu * open[k] / tot);
+}
+function cwDrawList(S, place) { return []; }                 // [{ id, who, x, y, z, f, act, frame?, tool?, held? }] for 'station' or 'line'
+function cpItems(S) { return []; }                           // the camp: [{ id, key, x, y, z, box, fade? }]
+function cwGang(S, stage) { return []; }                     // [{ id, x, z, slot }]
+function cwBoost(S, stage, x, k, until) {}
+// The line only, on a bare state (the pace check): { days, done, f, log } when the last spike is in, or at maxDays.
+function cwSimDays(seed, crew, maxDays) {
+  const S = { seed, time: 0, tick: 0, track: { world: 'proto' }, player: {}, dv: { ...dvNewStore(), crew } };
+  for (let i = 0; i < maxDays * 10800 && !(S.ln && S.ln.done >= 0); i++) { S.time += CFG.TICK_GAME_S; S.tick++; const ev = []; wtTick(S, ev); cwTick(S, ev); }
+  return { days: S.ln.days, done: S.ln.done, f: S.ln.f.slice(), log: S.ln.log.slice(), sup: { ...S.ln.sup } };
+}
+// The head count (plan section 4): everyone the game simulates, at 22:00. Stand-in: the rail men by number only (home
+// once the work train has brought them back), plus whoever hcRoll lists (Town's, from stage 2: empty until then).
+function hcRoll(S) { return []; }                            // Town: [{ id, name, home, at }] for the townsfolk and hired workers
+function hcCount(S) {
+  const L = S.ln, n = L && L.run ? L.crew : 0, ph = L ? L.tr.ph : 'home', back = ph === 'home' || ph === 'eOut' || ph === 'eStand' || ph === 'sIn' || ph === 'sStand', roll = hcRoll(S) || [];
+  const out = roll.filter(p => p.at !== p.home).map(p => ({ id: p.id, name: p.name, where: p.at }));
+  if (!back) for (let i = 0; i < n; i++) out.push({ id: 'cw' + i, name: 'Rail man ' + (i + 1), where: 'the line' });
+  return { total: n + roll.length, home: n + roll.length - out.length, out };
+}
+function hcTick(S, ev) { const c = hcCount(S); S.ln.hc = { day: S.ln.day, total: c.total, home: c.home }; ev.push({ t: 'hcDone', total: c.total, home: c.home, out: c.out.length }); }
+function cwCheckSaveShape(st) { if (st.cw !== undefined && (!st.cw || typeof st.cw !== 'object')) throw new Error('damaged save: the crew'); }
+
+// ==== Section: on the line (D32) ====
+// Owner: Play (plans/d32-tech.md 1.6 and section 7: riding out and back, walking among the men, joining in, the
+// lessons). Prefixes lp, LP, lg, LG; store S.lp. UNTIL PLAY LANDS these are Foundation's empty stand-ins: there is no
+// player on the line (lpPose is null: the line's view looks where the dev panel's "Look at the line" puts it and a
+// drag moves it), and the commands lpRide, lpBack, lpWalk, lpJoin, lpLeave and lgDone do nothing.
+function lpTick(S, ev) {}
+function lpCmd(S, c, ev) {}
+function lpTap(x, z, hit) { return false; }                  // a tap at the line's point (x, z) while the line is in view; true if it took it
+function lpPose(S) { return null; }                          // { x, y, z, f, act, tool?, riding? } or null when not on the line
+function lpHud() { return null; }                            // the line's top bar and overlays (Play); null: Foundation's plain bar
+function lpCheckSaveShape(st) { if (st.lp !== undefined && (!st.lp || typeof st.lp !== 'object')) throw new Error('damaged save: on the line'); }
+
 // ==== Section: economy ====
 // Owner: M1 package 3 (builder C1). Cash, the Overland market, import orders by telegraph, contracts, the
 // credit line and the ledger (design-doc 10, 16, 19, 20, 21). Pure simulation: no three.js, no page elements.
@@ -7134,7 +7736,7 @@ function playerTick(S, ev, poseCache) {
       if (!reached) reached = Math.hypot(W.stand.x - P.x, W.stand.z - P.z) <= CFG.REACH || Math.hypot(far.x - P.x, far.z - P.z) <= CFG.REACH;
       if (reached) {
         P.f = Math.atan2(W.stand.x - P.x, W.stand.z - P.z);
-        P.act = { k: 'throw', sw: P.use.id, left: CFG.THROW_S };
+        P.act = { k: 'throw', sw: P.use.id, left: lnThrowS(S.track) };   // D32: CFG.THROW_S, at the player's real speed in the prototype
       }
     } else if (P.use && P.use.k === 'tr') {
       if (!reached) reached = trainApproach(poseCache[P.use.id], P.x, P.z).dist <= CFG.REACH;
@@ -11436,7 +12038,12 @@ function pdTick(S, ev) {
   pdLessonTick(S, ev);   // D27 (U): the lessons (block "Lessons (D27)" below; D27 lessons on)
   if ((D.ph === 'evening' || D.ph === 'day') && (sod >= PD.LATE_S || rrDayOf(S) > D.day)) pdSummary(S, ev);
 }
-function pdSummary(S, ev) { const D = S.pd; D.ph = 'summary'; D.sum = { day: D.day, ...D.stats }; ev.push({ t: 'pdSummary', sum: D.sum }); }
+function pdSummary(S, ev) {
+  const D = S.pd; D.ph = 'summary'; D.sum = { day: D.day, ...D.stats };
+  // D32: with the line on, the head count and what happened while the player was on the line (two lines on the summary).
+  if (S.ln && S.ln.run) { const c = hcCount(S), a = awSummaryLine(S); D.sum.hc = { total: c.total, home: c.home }; if (a) D.sum.away = a; }
+  ev.push({ t: 'pdSummary', sum: D.sum });
+}
 function pdCmd(S, c, ev) {
   const D = S.pd;
   if (!D || !D.on) return;
@@ -11445,6 +12052,7 @@ function pdCmd(S, c, ev) {
   else if (c.t === 'pdNextDay' && D.ph === 'summary') {
     // The next morning: the clock jumps to 06:00 the next day (the night passes), the figures start again.
     const day = rrDayOf(S) + 1;
+    lnSkipTo(S, day * 86400 + PD.OPEN_S - CFG.DAY_START_S - CFG.TICK_GAME_S, ev);   // D32: the line's evening and night are played, not skipped (nothing with the line off)
     S.time = day * 86400 + PD.OPEN_S - CFG.DAY_START_S - CFG.TICK_GAME_S;   // this tick's step 2 brings it to 06:00
     D.day = day; D.ph = 'morning'; D.stats = pdNewStats(); D.sum = null;
     Object.assign(S.player, { x: PROTO.PLAYER.x, z: PROTO.PLAYER.z, f: Math.PI, mode: 'idle', use: null, act: null });
@@ -12291,6 +12899,7 @@ function tutCheckSaveShape(st) {
 }
 
 // ==== Section: sim tick ====
+lnPaceInit();   // D32: the player's action times at his real speed under the slower clock (section "the line (D32)")
 // One fixed step of 8 game seconds, in the system order of section 19 (the parts built so far).
 function simTick(S, cmds) {
   const ev = [];
@@ -12313,8 +12922,14 @@ function simTick(S, cmds) {
   frTick(S, ev);                                        // 8. D27 (F): freight handling, storage, delivery and pickup (section "freight handling (D27)"; D27 handling on)
   townTick(S, ev);                                      // 8b. towns: businesses use goods each hour, offer contracts at 07:00
   tfTick(S, ev);                                        // 8b. D27 (W): the townsfolk (section "the town (D27)"; D27 town on)
+  wtTick(S, ev);                                        // 8c. D32 (Foundation): the line's day and the work train (section "the line (D32)"; nothing without S.dv)
+  cwTick(S, ev);                                        // 8c. D32 (Crew): the rail crew, and the head count at 22:00 (section "the crew (D32)")
+  awLeverTick(S, ev);                                   // 8c. D32 (Foundation): the relief lever man while the player is on the line
+  hwTick(S, ev);                                        // 8c. D32 (Town): the hired station workers (section "hired workers (D32)")
+  tnTick(S, ev);                                        // 8c. D32 (Town): the bigger town (section "the bigger town (D32)")
   paxTick(S, ev, poseCache);                            // 8. travellers: arriving, the ticket queue, boarding and stepping off (section "passengers")
   pbTick(S, ev, poseCache);                             // 8. D27 (P): tickets punched on board (section "tickets on board (D27)"; D27 board on)
+  lpTick(S, ev);                                        // 8. D32 (Play): the player on the line (section "on the line (D32)")
   tgTick(S, ev);                                        // 9. telegrams for this tick's events and new alerts (section "telegrams and alerts")
   tutTick(S, ev);                                       // 9b. the investor's tutorial: goals met, the next telegram (section "tutorial")
   pdTick(S, ev);                                        // 9c. D25: the prototype's day: morning, day, evening, summary (section "prototype day")
@@ -12644,6 +13259,7 @@ function checkSaveShape(st) {
   rrCheckSaveShape(st);
   pdCheckSaveShape(st);   // D25
   pbCheckSaveShape(st); frCheckSaveShape(st); tfCheckSaveShape(st);   // D27 (P, F, W: optional stores)
+  lnCheckSaveShape(st); cwCheckSaveShape(st); lpCheckSaveShape(st); hwCheckSaveShape(st); tnCheckSaveShape(st);   // D32 (optional stores: missing means the line is off)
 }
 function idbOpen() {
   return new Promise((res, rej) => {
@@ -16412,7 +17028,7 @@ function buildCrowd() {
 }
 function updateCrowd(dt) {
   if (!crowd.n) return;
-  const gameMin = dt * speed * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60; // scales with game speed, frozen when paused
+  const gameMin = dt * speed * clockRate(S.track) * CFG.TICK_GAME_S / 60; // scales with game speed, frozen when paused
   if (gameMin <= 0) return;
   const t1x = dt * speed; // animation clock: real seconds at 1x
   const poses = crowdTrainPoses(), step = CROWD.WALK * gameMin;
@@ -16492,7 +17108,7 @@ function paxDraw(alpha, dt) {
       const seat = p.s === 'aboard' ? cutawaySeat(seatOf.get(p.id)) : null;
       if (seat) {   // seated in the open combine: no walk, hips on the seat, facing the baggage end
         if (!w.g) w.g = gaitNew((w.ki || 0) * 1.37);
-        gaitStep(w.g, 0, t1x * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
+        gaitStep(w.g, 0, t1x * clockRate(S.track) * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
         w.t += t1x; w.x = seat.x; w.z = seat.z; w.yaw = seat.yaw; w.sit = seat.sit;
         w.y = seat.y - crowd.kits[w.d.kit].legPiv[1] * w.d.scale;
         crowdPose(w);
@@ -16506,7 +17122,7 @@ function paxDraw(alpha, dt) {
       const want = K2 ? (p.s === 'queue' ? Math.atan2(-K2.along[0], -K2.along[1]) : Math.atan2(K2.out[0], K2.out[1])) : p.f / 128 * Math.PI;
       w.yaw = lerpAngle(w.yaw, want, moved > 0.5 ? 1 : turn);
       if (!w.g) w.g = gaitNew((w.ki || 0) * 1.37);   // a jump (a step off a car) is not a stride
-      gaitStep(w.g, moved < 0.5 ? moved : 0, t1x * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
+      gaitStep(w.g, moved < 0.5 ? moved : 0, t1x * clockRate(S.track) * CFG.TICK_GAME_S / 60, t1x, crowd.kits[w.d.kit].legPiv[1] * w.d.scale);
       w.t += t1x; w.x = x; w.z = z; w.y = paxStandY(x, z);
       crowdPose(w);
     });
@@ -17513,6 +18129,7 @@ const $ = id => document.getElementById(id);
 let toastTimer = 0;
 function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
 function handleEvent(e) {
+  if (e.t === 'dvRefused' || e.t === 'awRefused') { toast(e.why); return; }   // D32
   if (pdUiOn() && pdEventFirst(e)) return;   // D25 (U): the prototype's switch and train names
   if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
@@ -18028,6 +18645,7 @@ function centreHud() {
 }
 function updateHud() {
   $('clock').textContent = clockText(S);
+  dvHud();   // D32: dev mode's button and panel, the line's page class and bar
   if (ui.panelTrain !== null) $('panelStatus').textContent = S.trains[ui.panelTrain].status;
   ttPanelUpdate();
   ttCardHud();
@@ -18214,7 +18832,7 @@ const inboxUi = { open: false, sig: '', expanded: null };
 const lookUi = { armed: false, open: false, pick: null, sig: '' };
 const OFFICE_TAB_NAMES = { contracts: 'Contracts', market: 'Market', ledger: 'Ledger', trains: 'Trains', timetable: 'Timetable' };
 const TG_SLIDE_MS = 4500;
-function bigPanelOpen() { return officeUi.open || inboxUi.open || (typeof wbUi !== 'undefined' && wbUi.open) || (typeof setUi !== 'undefined' && setUi.open); }
+function bigPanelOpen() { return officeUi.open || inboxUi.open || (typeof wbUi !== 'undefined' && wbUi.open) || (typeof setUi !== 'undefined' && setUi.open) || (typeof dvUi !== 'undefined' && dvUi.open); }
 function openOffice() {
   closePanel(); closeCarPanel(); closeTelPanel(); closeInbox(); closeLook(); closeWorkCard(); closeSettings();
   officeUi.open = true; officeUi.sig = ''; $('office').hidden = false; officeUpdate();
@@ -19197,6 +19815,8 @@ function settingsUpdate() {
   $('setCards').setAttribute('aria-pressed', String(k)); $('setCards').textContent = k ? 'On' : 'Off';
   const m = rrMsgOn();   // D24 (UI): the railroad's train messages
   $('setTrainMsgs').setAttribute('aria-pressed', String(m)); $('setTrainMsgs').textContent = m ? 'On' : 'Off';
+  const dv = typeof dvUi !== 'undefined' && dvUi.pref === 'on';   // D32: dev mode
+  $('setDev').setAttribute('aria-pressed', String(dv)); $('setDev').textContent = dv ? 'On' : 'Off';
 }
 $('setBtn').addEventListener('click', () => { if (setUi.open) closeSettings(); else openSettings(); });
 $('settingsClose').addEventListener('click', closeSettings);
@@ -20019,6 +20639,8 @@ function pdOpenSum() {
     ['Goods', h27 ? `${m.unloaded} unloaded, ${m.stored || 0} stored, ${m.loaded} loaded` : `${m.unloaded} unloaded, ${m.loaded} loaded, ${m.delivered} delivered`],
   ];
   if (h27) lines.push(['Town', `${m.delivered} delivered, ${m.picked || 0} picked up`]);
+  if (m.hc) lines.push(['Head count', `Counted home: ${m.hc.home} of ${m.hc.total}`]);   // D32: with the line on
+  if (m.away) lines.push(['The line', m.away]);
   const box = $('pdSumBody');
   box.textContent = '';
   for (const [k, v] of lines) { const r = document.createElement('div'); r.className = 'pdSumRow'; r.innerHTML = '<b></b><span></span>'; r.firstChild.textContent = k; r.lastChild.textContent = v; r.dataset.k = k.toLowerCase(); box.appendChild(r); }
@@ -20587,6 +21209,119 @@ Object.assign(CARDS, {
     place: () => null },
 });
 
+// ---- Dev mode (D32) ----
+// Owner: Foundation (plans/d32-tech.md section 5). A viewer's preference like the helper arrows: Settings, the row
+// "Dev mode" (kept in this browser under DV.PREF, not in the save), or ?dev=1 on the page. Off by default: the game
+// starts exactly as before. On: a "Dev" button opens the panel, whose choices go to the game as commands (dvSet,
+// dvSkip: section "the line (D32)"), so they are saved and replayable. Rows whose owner has not landed are greyed.
+// Play adds its two buttons with dvAddRow(id, label, onTap, state).
+const DV = { PREF: 'railhead-dev' };
+const dvUi = { open: false, pref: null, rows: [], extra: [], t: 0, sig: '' };
+(() => {
+  let p = null;
+  try { p = localStorage.getItem(DV.PREF); } catch (e) { /* no storage: off */ }
+  if (new URLSearchParams(location.search).get('dev') === '1') p = 'on';
+  dvUi.pref = p === 'on' ? 'on' : 'off';
+})();
+function dvOn() { return dvUi.pref === 'on' && !!S && protoWorld(S.track); }
+function dvSetPref(on) {
+  dvUi.pref = on ? 'on' : 'off';
+  try { localStorage.setItem(DV.PREF, dvUi.pref); } catch (e) { /* not kept */ }
+  if (!on) dvClose();
+  settingsUpdate(); dvHud();
+}
+// A row for another owner's button: id, the label, what a tap does, state() -> { disabled?, label?, hidden? }.
+function dvAddRow(id, label, onTap, state) { dvUi.extra = dvUi.extra.filter(r => r.id !== id).concat([{ id, label, onTap, state: state || null }]); dvUi.sig = ''; }
+// The panel's rows: { id, label, kind: 'pick' (choices: values, value, set) | 'btn' (onTap) | 'text', grey, note }.
+function dvRows() {
+  const D = (S && S.dv) || dvNewStore(), L = S && S.ln, rows = [];
+  const hiredLanded = typeof HW !== 'undefined';   // Town's constants: its part has landed
+  rows.push({ id: 'crew', label: 'Rail crew', kind: 'pick', values: LINE.CREW, value: D.crew, set: v => send({ t: 'dvSet', k: 'crew', v }), note: 'from 05:00 tomorrow' });
+  rows.push({ id: 'punch', label: 'Ticket punchers', kind: 'pick', values: [0, 1, 2, 3], value: D.punch, set: v => send({ t: 'dvSet', k: 'punch', v }), grey: !hiredLanded, note: hiredLanded ? '' : 'not built yet' });
+  rows.push({ id: 'load', label: 'Cargo loaders', kind: 'pick', values: [0, 1, 2, 3, 4], value: D.load, set: v => send({ t: 'dvSet', k: 'load', v }), grey: !hiredLanded, note: hiredLanded ? '' : 'not built yet' });
+  rows.push({ id: 'deliver', label: 'Delivery men', kind: 'pick', values: [0, 1, 2], value: D.deliver, set: v => send({ t: 'dvSet', k: 'deliver', v }), grey: !hiredLanded, note: hiredLanded ? '' : 'not built yet' });
+  const play = dvUi.extra.length > 0;
+  if (!play) {
+    rows.push({ id: 'ride', label: 'Ride out as a rail worker', kind: 'btn', grey: true, note: 'not built yet' });
+    rows.push({ id: 'look', label: lnViewOn() ? 'Back to the station' : 'Look at the line', kind: 'btn', grey: !L, onTap: () => { send({ t: 'dvSet', k: 'view', v: lnViewOn() ? 'station' : 'line' }); if (!lnViewOn()) PIX.lnLook = null; dvClose(); } });
+  }
+  for (const r of dvUi.extra) { const st = (r.state && r.state()) || {}; if (!st.hidden) rows.push({ id: r.id, label: st.label || r.label, kind: 'btn', grey: !!st.disabled, onTap: r.onTap }); }
+  rows.push({ id: 'skip', label: 'Skip to 05:00 tomorrow', kind: 'btn', onTap: () => { send({ t: 'dvSkip' }); dvClose(); if (speed === 0) setSpeed(lastSpeed || 1); } });
+  rows.push({ id: 'status', kind: 'text', text: dvStatusText() });
+  return rows;
+}
+function dvStatusText() {
+  const L = S && S.ln, D = S && S.dv;
+  if (!L) return 'The line is off. Choose a rail crew to start building it.';
+  const f = L.f, n = v => Math.floor(v).toLocaleString('en-US'), T = lnTrain(S), hc = hcCount(S);
+  const where = { home: 'away', sIn: 'coming in to the station', sStand: 'at the station, track 2', sOut: 'leaving the station', out: 'running out to the railhead', stand: 'at the railhead', back: 'running home', gap: 'running home',
+    eIn: 'backing in to the station', eStand: 'at the station, track 2', eOut: 'leaving the station' }[T.ph] || T.ph;
+  const lines = [
+    L.done >= 0 ? `The line is finished (${L.days} working days).` : `Day ${L.days} of the line. Crew today: ${L.crew}` + (D && D.crew !== L.crew ? ` (${D.crew} from 05:00)` : '') + '.',
+    `Spiked: ${n(f[5])} of ${n(LINE.LEN_M)} m.`,
+    `Fronts (m): cleared ${n(f[0])}, bed ${n(f[1])}, rock ${n(f[2])}, ties ${n(f[3])}, rails ${n(f[4])}, spiked ${n(f[5])}.`,
+    `Supplies at the railhead: rock ${Math.floor(L.sup.rock)}, ties ${Math.floor(L.sup.ties)}, rails ${Math.floor(L.sup.rails)}, kegs ${Math.floor(L.sup.kegs)}.`,
+    `Work train: ${where}.`,
+    `Men by stage: ${LINE.STAGES.map((s, k) => `${s} ${(pixCall('cwGang', S, k) || []).length}`).join(', ')}.`,
+    `Head count now: ${hc.home} of ${hc.total} home.` + (L.hc ? ` At 22:00 (day ${L.hc.day + 1}): ${L.hc.home} of ${L.hc.total}.` : ''),
+  ];
+  return lines.join('\n');
+}
+function dvOpen() {
+  closePanel(); closeCarPanel(); closeSettings(); closeLook();
+  dvUi.open = true; dvUi.sig = ''; $('devPanel').hidden = false; dvRender();
+}
+function dvClose() { dvUi.open = false; $('devPanel').hidden = true; $('devBtn').setAttribute('aria-pressed', 'false'); }
+function dvRender() {
+  const rows = dvRows(), sig = JSON.stringify(rows.map(r => [r.id, r.label, r.value, r.grey, r.note, r.text]));
+  if (sig === dvUi.sig) return;
+  dvUi.sig = sig;
+  const box = $('devRows');
+  box.textContent = '';
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'row dvRow' + (r.grey ? ' grey' : ''); row.dataset.row = r.id;
+    if (r.kind === 'text') { const pre = document.createElement('div'); pre.className = 'dvStatus'; pre.id = 'devStatus'; pre.textContent = r.text; row.appendChild(pre); }
+    else if (r.kind === 'btn') {
+      const b = document.createElement('button'); b.className = 'grow dvBtn'; b.textContent = r.label + (r.note ? ` (${r.note})` : ''); b.disabled = !!r.grey || !r.onTap; b.dataset.dv = r.id;
+      if (r.onTap) b.addEventListener('click', () => { r.onTap(); dvUi.sig = ''; });
+      row.appendChild(b);
+    } else {
+      const lab = document.createElement('span'); lab.className = 'grow'; lab.textContent = r.label + (r.note ? ` (${r.note})` : ''); row.appendChild(lab);
+      const pick = document.createElement('div'); pick.className = 'dvPick';
+      for (const v of r.values) {
+        const b = document.createElement('button'); b.textContent = String(v); b.setAttribute('aria-pressed', String(v === r.value)); b.disabled = !!r.grey; b.dataset.dv = r.id + ':' + v;
+        b.addEventListener('click', () => { r.set(v); dvUi.sig = ''; });
+        pick.appendChild(b);
+      }
+      row.appendChild(pick);
+    }
+    box.appendChild(row);
+  }
+}
+// Each frame: the Dev button (only with dev mode on), the panel's figures, the page's class and the line's plain bar.
+function dvHud() {
+  const on = dvOn(), line = on || (S && S.ln) ? lnViewOn() : false;
+  $('devBtn').hidden = !on;
+  $('setDevRow').hidden = !(S && protoWorld(S.track));
+  if (!on && dvUi.open) dvClose();
+  if (dvUi.open && performance.now() - dvUi.t > 400) { dvUi.t = performance.now(); dvRender(); }
+  if (document.body.classList.contains('line') !== line) document.body.classList.toggle('line', line);
+  const bar = $('lnBar'), own = line && !pixCall('lpHud');
+  bar.hidden = !own;
+  if (own) {
+    const L = S.ln, txt = `The line: ${Math.floor(L.f[5]).toLocaleString('en-US')} of ${LINE.LEN_M.toLocaleString('en-US')} m spiked` + (L.on ? `, day ${L.days}` : L.done >= 0 ? ', finished' : '');
+    if ($('lnBarText').textContent !== txt) $('lnBarText').textContent = txt;
+  }
+}
+$('devBtn').addEventListener('click', () => { if (dvUi.open) dvClose(); else { dvOpen(); $('devBtn').setAttribute('aria-pressed', 'true'); } });
+$('devClose').addEventListener('click', dvClose);
+$('setDev').addEventListener('click', () => dvSetPref(dvUi.pref !== 'on'));
+$('lnBarBack').addEventListener('click', () => send({ t: 'dvSet', k: 'view', v: 'station' }));
+$('lnBarW').addEventListener('click', () => { if (PIX.lnLook) pixLnLookAt(PIX.lnLook.x / LINE.M - 60, PIX.lnLook.z); });
+$('lnBarE').addEventListener('click', () => { if (PIX.lnLook) pixLnLookAt(PIX.lnLook.x / LINE.M + 60, PIX.lnLook.z); });
+$('lnBarHead').addEventListener('click', () => { if (S.ln) pixLnLookAt(pixLnHeadM(), 0); });
+
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
 const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ndc(px, py) { return new THREE.Vector2(px / window.innerWidth * 2 - 1, -(py / window.innerHeight) * 2 + 1); }
@@ -20625,6 +21360,7 @@ function pickAt(px, py) {
   return null;
 }
 function onTap(px, py) {
+  if (lnViewOn()) { const g = groundAt(px, py); if (g) pixCall('lpTap', g.x, g.z, pixPick(px, py)); return; }   // D32: the line is in view: Play's tap
   if (lookUi.open) { closeLook(); return; }          // Look (D1): a tap elsewhere closes the card
   if (lookUi.armed) { lookTap(px, py); return; }     // the one tap after Look: inspect what is there
   if (ttCardUi.pin) { ttCardUi.pin = null; ttCardUi.sig = ''; } // a tap anywhere puts away a card opened from a departure board
@@ -20913,6 +21649,12 @@ function holdRouteTo(g) {
 }
 // Called every frame: while a finger is held down, walk towards it.
 function updateHoldWalk() {
+  if (lnViewOn()) {   // D32: on the line a one-finger drag looks along it (the station's player takes no walking)
+    if (hold && !hold.on && performance.now() - hold.t0 > CFG.HOLD_MS) hold.on = true;
+    if (hold && hold.moved) { if (hold.lx !== undefined) pixPanBy(hold.x - hold.lx, hold.y - hold.ly); hold.lx = hold.x; hold.ly = hold.y; }
+    else if (hold) { hold.lx = hold.x; hold.ly = hold.y; }
+    return;
+  }
   if (hold && !hold.on && performance.now() - hold.t0 > CFG.HOLD_MS) hold.on = true;
   if (hold && hold.on) {
     view.ring.visible = false;
@@ -21629,7 +22371,8 @@ function pixCall(name, ...a) {
 function pixLists() {
   const arr = v => Array.isArray(v) ? v : [];
   return { pb: arr(pixCall('pbDrawList', S)), pbPose: pixCall('pbPlayerPose', S), cut: arr(pixCall('pbCutaway', S)).map(String), fr: arr(pixCall('frDrawList', S)),
-    frPose: pixCall('frPose', S), cart: pixCall('frCartPose', S), truck: pixCall('frTruckPose', S), tf: pixTfList(arr(pixCall('tfDrawList', S))) };
+    frPose: pixCall('frPose', S), cart: pixCall('frCartPose', S), truck: pixCall('frTruckPose', S),
+    tf: pixTfList(arr(pixCall('tfDrawList', S))).concat(arr(pixCall('cwDrawList', S, 'station')), arr(pixCall('hwDrawList', S))) };   // D32: the rail men and the hired workers at the station, in the townsfolk's shape
 }
 // ---- D29: smooth drawing between the sim's ticks ----
 // The designer (D29): handling "needs to be much smoother", punching "very hitchy when in the train". Measured: the
@@ -21644,6 +22387,7 @@ function pixLists() {
 // ends. Drawing only: the sim and its state are untouched. PIX.SMOOTH = false draws the ticks as before.
 PIX.SMOOTH = !D29_OFF; PIX.LERP_MAX = 3; PIX.prevL = null;
 function pixSnapPrev() {
+  pixLnSnapPrev();   // D32: the men on the line
   if (!PIX.SMOOTH || !pixOn()) { PIX.prevL = null; return; }
   const P = S.player;
   PIX.prevL = { S, tick: S.tick, L: pixLists(), x: P.x, z: P.z, py: typeof P.y === 'number' ? P.y : null };
@@ -22510,6 +23254,7 @@ function pixScene(alpha, Lgiven) {
       }
     });
   });
+  pixLnStationItems(out, alpha);   // D32: the work train on track 2, the plank walk, the camp (nothing with the line off)
   for (const q of PIX.smoke) {
     const y = (q.y0 || 3.7) + q.age * 1.4, x = q.x + q.age * 0.6, z = q.z - q.age * 0.3, fr = Math.min(3, Math.floor(q.age / PIX.PUFF_LIFE * 4));
     out.push(pixItem(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y, y + 0.3, g => { if (!pixSprite(g, `fx/smoke/${fr}`, x, y, z)) { const p = pixProject(x, y, z); g.fillStyle = '#e6e3da'; g.fillRect(Math.round(p.x) - PIX.vx - 1, Math.round(p.y) - PIX.vy - 1, 2 + fr, 2 + fr); } }));
@@ -23015,6 +23760,7 @@ function pixFrame(alpha, dt) {
   PIX.tgLast = PIX.tg;
   for (const q of PIX.smoke) q.age += PIX.dtg;
   PIX.smoke = PIX.smoke.filter(q => q.age < PIX.PUFF_LIFE);
+  if (lnViewOn()) { pixLnFrame(alpha, dt, t0); return; }   // D32: the line is in view (block "The line's view (D32)")
   // The camera (2026-11-11, the designer: "the camera needs to stay with our character centred as it moves"): the view
   // is locked on the player's drawn point (his feet, at his height on a bridge), rounded to whole native pixels the
   // same way his sprite is, so while he walks he stays on the same screen pixel and the world moves under him in whole
@@ -23134,6 +23880,315 @@ function pixFrame(alpha, dt) {
   PIX.stats.msAvg = H.reduce((a, b) => a + b, 0) / H.length; PIX.stats.msMax = Math.max(...H);
 }
 
+// ---- The line's view (D32) ----
+// Owner: Foundation (plans/d32-tech.md 1.5 and 11.3). The line is drawn by the same projection in its own frame (x
+// along the line, z across), when S.ln.view is 'line' (lnViewOn): pixFrame hands the frame to pixLnFrame.
+// - The ground: chunks as the station's, in a cache of their own (PIX.lnChunks; any chunk index, the country has no
+//   edge): the tiles of lnTile, the roadbed up to the fronts (cleared ground, the bed, rock, ties and rails per pixel,
+//   the trestle's deck over the creek), then everything beyond the corridor and every small thing baked in. A chunk
+//   remembers the fronts it was drawn for (cut to its own stretch, whole metres) and is drawn again when they have
+//   moved, at most one a frame.
+// - Standing things in the corridor, the work train, the supply piles, the men (Crew's cwDrawList) and the player
+//   (Play's lpPose) are sorted items through pixSort, culled to the view.
+// - The camera follows pixFocus(): the player on the line (lpPose), else a look point (PIX.lnLook, moved by a drag),
+//   which is all there is until Play lands.
+// At the station the work train (wtDrawList), the plank walk, the camp (cpItems) and the crew and hired workers
+// (cwDrawList, hwDrawList, with the townsfolk) are added to the station's scene: pixLnStationItems, pixLists.
+const lnViewOn = () => !!(S && S.ln && S.ln.view === 'line' && protoWorld(S.track));
+PIX.lnChunks = new Map(); PIX.lnChunkS = null; PIX.lnLook = null; PIX.lnLookS = null; PIX.LN_MAX = 96; PIX.lnScat = new Map(); PIX.lnPrev = null;
+PIX.lnStats = { built: 0, rebuilt: 0, ms: 0, worst: 0, missing: 0, stale: 0, items: 0 };
+// The second of the day a frame is drawn at (between the tick before and this one).
+function pixLnSod(alpha) { return rrSod(S.time) - (speed > 0 ? (1 - alpha) * CFG.TICK_GAME_S : 0); }
+// What the view follows: at the station the player; on the line the player there (Play), else the look point.
+function pixFocus() {
+  if (!lnViewOn()) return { x: S.player.x, y: 0, z: S.player.z, place: 'station', player: true };
+  const p = pixCall('lpPose', S);
+  if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) return { x: p.x, y: p.y || 0, z: p.z, place: 'line', player: true };
+  if (!PIX.lnLook || PIX.lnLookS !== S) { PIX.lnLookS = S; PIX.lnLook = { x: pixLnHeadM() * LINE.M, z: 0 }; }
+  return { x: PIX.lnLook.x, y: 0, z: PIX.lnLook.z, place: 'line', player: false };
+}
+// Where to look first (m): the work train's engine when it stands on the line, else the end of the finished track.
+function pixLnHeadM() { const L = S.ln; return L.tr.ph === 'stand' ? L.tr.x - 4 : L.f[5] - 4; }
+// Puts the line's look point at x metres from the junction (the dev panel, checks).
+function pixLnLookAt(m, z) { PIX.lnLookS = S; PIX.lnLook = { x: Math.max(LINE.X0, Math.min(LINE.X1, m * LINE.M)), z: z || 0 }; cam.ox = cam.oz = 0; }
+function pixLnScatter(ci, cj) {
+  const k = ci * 4096 + cj;
+  let v = PIX.lnScat.get(k);
+  if (!v) { if (PIX.lnScat.size > 6000) PIX.lnScat.clear(); v = lnScatter(S.seed, ci, cj); PIX.lnScat.set(k, v); }
+  return v;
+}
+// Is a scattered thing baked into the ground (true) or a sorted item (false)? Beyond the corridor everything is
+// baked; inside it the small things off the right of way (grass, flowers).
+const pixLnBaked = q => Math.abs(q.z) > LINE.HALF_W || (!q.row && q.h < 1);
+// The fronts as the ground draws them: whole metres, ties in whole ties, rails in whole 9.1 m lengths.
+function pixLnFronts() {
+  const f = S.ln.f, s = LINE.START_M;
+  return [Math.floor(f[0]), Math.floor(f[1]), Math.floor(f[2]), s + Math.floor((f[3] - s) / LINE.TIE_M + 1e-6) * LINE.TIE_M, s + Math.floor((f[4] - s) / LINE.RAIL_M + 1e-6) * LINE.RAIL_M, Math.floor(f[5])];
+}
+// A chunk's stretch of the line and whether the roadbed crosses it.
+function pixLnChunkSpan(ci, cj, N) {
+  const l = ci * N, t = cj * N, cs = [[l, t], [l + N, t], [l, t + N], [l + N, t + N]].map(([a, b]) => pixUnproject(a, b, 0));
+  const w0 = Math.min(...cs.map(q => q.x)), w1 = Math.max(...cs.map(q => q.x)), v0 = Math.min(...cs.map(q => q.z)), v1 = Math.max(...cs.map(q => q.z));
+  return { l, t, w0, w1, v0, v1, bed: v0 < LINE.ROW + 2 && v1 > -LINE.ROW - 2 && w1 > 0 && w0 < LINE.LEN + 2 };
+}
+function pixLnChunkKey(sp, F) {
+  if (!sp.bed) return '';
+  const a = Math.floor(sp.w0 / LINE.M) - 1, b = Math.ceil(sp.w1 / LINE.M) + 1;
+  return F.map((f, k) => (k === 3 ? Math.round(Math.max(a, Math.min(b, f)) * 10) : Math.floor(Math.max(a, Math.min(b, f))))).join(',');
+}
+// One chunk of the line's ground.
+function pixLnChunkBuild(ci, cj, F) {
+  const N = PIX.CH, sp = pixLnChunkSpan(ci, cj, N), { l, t } = sp, cv = document.createElement('canvas'), M = LINE.M, seed = S.seed;
+  cv.width = cv.height = N;
+  const g = cv.getContext('2d', { alpha: false }), sheet = si => PIXA.imgs[si];
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = PIX.COL.grass[0]; g.fillRect(0, 0, N, N);
+  const put = (key, wx, wz, wy) => { const f = pixF(key); if (!f) return false; const p = pixProject(wx, wy || 0, wz); g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], Math.round(p.x) - l - f[5], Math.round(p.y) - t - f[6], f[3], f[4]); return true; };
+  const i0 = Math.floor(sp.w0) - 1, i1 = Math.ceil(sp.w1) + 1, j0 = Math.floor(sp.v0) - 1, j1 = Math.ceil(sp.v1) + 1;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
+    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1) continue;
+    let key = lnTile(seed, i, j);
+    if (sp.bed && j >= -LINE.ROW && j < LINE.ROW && i >= 0) {
+      const m = (i + 0.5) / M, wet = /^tile\/(water|river)\//.test(key), v = 1 + ((i * 7 + j * 3) & 1), core = j >= -3 && j < 3;
+      if (m < LINE.LEN_M) {
+        if (wet) { if (core && m < F[1]) key = 'tile/crossing'; }                       // the trestle's deck over the creek
+        else if (core && m < F[2]) key = pixF('tile/ln_rock/' + v) ? 'tile/ln_rock/' + v : 'tile/ballast/' + v;
+        else if (core && m < F[1]) key = pixF('tile/ln_bed/' + v) ? 'tile/ln_bed/' + v : 'tile/dirt/' + v;
+        else if (m < F[0]) key = pixF('tile/ln_cleared/' + v) ? 'tile/ln_cleared/' + v : 'tile/dirt/' + v;
+      }
+    }
+    const f = pixF(key) || pixF('tile/grass/1');
+    if (f) g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], sx - f[5], sy - f[6], f[3], f[4]);
+  }
+  if (sp.bed) {
+    // The trestle's bents under the deck, once the bridge is built that far.
+    for (let x = 537 * M; x < 552 * M; x += 4) if (x / M < F[1] && lnWaterAt(seed, x, 0) && x > sp.w0 - 6 && x < sp.w1 + 6) put('line/trestle_bent', x, 0, 0);
+    // Ties and rails per pixel (as the station's track): ties below the ties' front, rails in whole lengths, rusty
+    // until they are spiked.
+    if (sp.v0 < 2 && sp.v1 > -2 && sp.w0 < F[3] * M + 1) {
+      const img = g.getImageData(0, 0, N, N), d = img.data, hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+      const tie = hex(PIX.COL.tie), tie2 = hex('#5e3c2a'), rail = hex(PIX.COL.rail), hi = hex(PIX.COL.railHi), rust = hex('#93592d'), rust2 = hex('#c9863b');
+      const G = PIX.GAUGE, TL = PIX.TIE[0], pitch = LINE.TIE_M * M, xt = F[3] * M, xr = F[4] * M, xs = F[5] * M;
+      for (let py = 0; py < N; py++) for (let px = 0; px < N; px++) {
+        const w = pixUnproject(l + px + 0.5, t + py + 0.5, 0), az = Math.abs(w.z);
+        if (az > TL || w.x < 0 || w.x >= xt) continue;
+        const o = (py * N + px) * 4, dr = az - G;
+        let c = null;
+        if (w.x < xr && Math.abs(dr) < 0.13) c = w.x < xs ? (dr < 0 ? hi : rail) : (dr < 0 ? rust2 : rust);
+        else if ((((w.x % pitch) + pitch) % pitch) < 0.32) c = pixHash(px + l, py + t) < 0.15 ? tie2 : tie;
+        if (c) { d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; }
+      }
+      g.putImageData(img, 0, 0);
+    }
+  }
+  // Baked: everything beyond the corridor and the small things inside it, back to front. A sprite reaches into a chunk
+  // from up to 90 px to each side and 96 px below.
+  const ex = [[l - 90, t], [l + N + 90, t], [l - 90, t + N + 96], [l + N + 90, t + N + 96]].map(([a, b]) => pixUnproject(a, b, 0));
+  const a0 = Math.floor(Math.min(...ex.map(q => q.x)) / 8), a1 = Math.floor(Math.max(...ex.map(q => q.x)) / 8), b0 = Math.floor(Math.min(...ex.map(q => q.z)) / 8), b1 = Math.floor(Math.max(...ex.map(q => q.z)) / 8);
+  const bake = [];
+  for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) for (const q of pixLnScatter(a, b)) {
+    if (!pixLnBaked(q)) continue;
+    const p = pixProject(q.x, 0, q.z), sx = p.x - l, sy = p.y - t;
+    if (sx < -90 || sx > N + 90 || sy < -4 || sy > N + 96) continue;
+    bake.push(q);
+  }
+  bake.sort((p, q) => (p.x + p.z) - (q.x + q.z) || p.x - q.x);
+  for (const q of bake) put(q.key, q.x, q.z, 0);
+  return cv;
+}
+// Draws the line's ground under the view from its chunk cache: the missing ones within the frame's budget (at least
+// one), one stale one (its fronts have moved) a frame, the ring round the view in idle time.
+function pixLnGroundDraw(g, all) {
+  if (!PIXA.ready) return;
+  const N = pixChunkSize(), C = PIX.lnChunks, St = PIX.lnStats;
+  if (PIX.CH !== N) { PIX.CH = N; PIX.chunks.clear(); PIX.aheadWant = null; }   // (the station's chunks are of the other size)
+  if (PIX.lnChunkN !== N || PIX.lnChunkS !== S.seed) { C.clear(); PIX.lnScat.clear(); PIX.lnChunkS = S.seed; PIX.lnChunkN = N; PIX.lnWant = null; }
+  const F = pixLnFronts(), c0 = Math.floor(PIX.vx / N), c1 = Math.floor((PIX.vx + PIX.nw) / N), r0 = Math.floor(PIX.vy / N), r1 = Math.floor((PIX.vy + PIX.nh) / N);
+  const t0 = performance.now(), stamp = St.frame = (St.frame || 0) + 1;
+  let made = 0, missing = 0, stale = 0, redone = 0;
+  const make = (ci, cj, key) => { const a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a; C.set(ci + ',' + cj, { cv, used: stamp, key }); St.built++; St.ms = ms; St.worst = Math.max(St.worst, ms); };
+  for (let cj = r0; cj <= r1; cj++) for (let ci = c0; ci <= c1; ci++) {
+    const k = ci + ',' + cj, key = pixLnChunkKey(pixLnChunkSpan(ci, cj, N), F);
+    let E = C.get(k);
+    if (!E) { if (all || !made || performance.now() - t0 < PIX.CH_MS) { make(ci, cj, key); made++; E = C.get(k); } else { missing++; continue; } }
+    else if (E.key !== key) { if (all || !redone) { make(ci, cj, key); redone++; St.rebuilt++; E = C.get(k); } else stale++; }
+    E.used = stamp;
+    g.drawImage(E.cv, ci * N - PIX.vx, cj * N - PIX.vy);
+    PIX.stats.draws++;
+  }
+  St.missing = missing; St.stale = stale; St.inFrame = made + redone;
+  // The ring round the view, made ahead in idle time (twice as far on the side the view moves to).
+  const mv = PIX.camMove || [0, 0], R = PIX.CH_AHEAD, sx = Math.sign(mv[0]), sy = Math.sign(mv[1]);
+  const a0 = Math.floor((PIX.vx - R * (sx < 0 ? 2 : 1)) / N), a1 = Math.floor((PIX.vx + PIX.nw + R * (sx > 0 ? 2 : 1)) / N), b0 = Math.floor((PIX.vy - R * (sy < 0 ? 2 : 1)) / N), b1 = Math.floor((PIX.vy + PIX.nh + R * (sy > 0 ? 2 : 1)) / N);
+  const want = [];
+  for (let cj = b0; cj <= b1; cj++) for (let ci = a0; ci <= a1; ci++) {
+    const E = C.get(ci + ',' + cj);
+    if (E) E.used = Math.max(E.used, stamp - 1);
+    else want.push([ci, cj, Math.hypot((ci + 0.5) * N - (PIX.vx + PIX.nw / 2 + mv[0] * 30), (cj + 0.5) * N - (PIX.vy + PIX.nh / 2 + mv[1] * 30))]);
+  }
+  want.sort((p, q) => p[2] - q[2]);
+  PIX.lnWant = want;
+  if (want.length && !PIX.lnAheadPending) pixLnChunkAhead();
+  const max = Math.max(PIX.LN_MAX * (256 / N) * (256 / N), (a1 - a0 + 1) * (b1 - b0 + 1) + 8);
+  if (C.size > max) [...C.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, C.size - max).forEach(([k]) => C.delete(k));
+}
+function pixLnChunkAhead() {
+  PIX.lnAheadPending = true;
+  const run = dl => {
+    PIX.lnAheadPending = false;
+    const w = PIX.lnWant, St = PIX.lnStats;
+    if (!w || !w.length || !PIXA.ready || !pixOn() || !lnViewOn() || PIX.lnChunkN !== PIX.CH) return;
+    if (dl && !dl.didTimeout && dl.timeRemaining() < Math.min(6, St.ms + 1)) { pixLnChunkAhead(); return; }
+    const [ci, cj] = w.shift(), k = ci + ',' + cj;
+    if (PIX.lnChunks.has(k)) return;
+    const F = pixLnFronts(), a = performance.now(), cv = pixLnChunkBuild(ci, cj, F), ms = performance.now() - a;
+    PIX.lnChunks.set(k, { cv, used: (St.frame || 0) - 1, key: pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), F) });
+    St.built++; St.ahead = (St.ahead || 0) + 1; St.ms = ms; St.worst = Math.max(St.worst, ms);
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 120 });
+  else setTimeout(run, 0);
+}
+// A vehicle of the work train as a sorted item (wtDrawList's shape), with the station's vehicle sprites; a car the
+// atlas lacks falls back to the nearest it has, then to a plain box.
+function pixLnVehItem(v, pick) {
+  const hx = v.len / 2, hz = v.wid / 2, C = PIX.COL;
+  const it = pixItem(v.x - hx, v.x + hx, v.z - hz, v.z + hz, 0, v.h, g => {
+    const p = pixProject(v.x, 0, v.z), key = pixKey(v.key, v.k === 'loco' && 'veh/loco/e/0', v.k === 'gondola' && 'veh/flatcar/e', v.k === 'crewcar' && 'veh/boxcar/e');
+    if (key && pixBlit(g, key, Math.round(p.x) - PIX.vx, Math.round(p.y) - PIX.vy, pick || null)) return;
+    pixBox(g, v.x, v.z, 0, v.len, v.wid, 0.3, v.h, v.k === 'loco' ? C.iron : C.ochre);
+    pixPickRect(it, pick || null);
+  }, v.id);
+  return it;
+}
+// A plain sprite standing at (x, z) as a sorted item.
+function pixLnProp(id, key, x, z, h, half, pick) {
+  const r = half || 0.4;
+  return pixItem(x - r, x + r, z - r, z + r, 0, Math.max(0.2, h || 1), g => { pixSprite(g, key, x, 0, z, pick || null); }, id);
+}
+// The station's part: the work train on track 2, the plank walk over track 1 and the camp (Crew's cpItems), added to
+// the station's scene (called from pixScene). Nothing when the line was never turned on.
+function pixLnStationItems(out, alpha) {
+  if (!S.ln) return;
+  for (const v of pixCall('wtDrawList', S, 'station', pixLnSod(alpha)) || []) out.push(pixLnVehItem(v, null));
+  if (S.ln.run) {
+    const K = PROTO.PLANK;
+    for (let z = K.z0; z < K.z1 - 0.01; z += 1) { const zz = Math.min(z, K.z1 - 1); out.decals.push({ draw: g => { pixSprite(g, 'tile/crossing', K.x - 0.8, 0.06, zz); pixSprite(g, 'tile/crossing', K.x + 0.2, 0.06, zz); } }); }
+  }
+  for (const q of pixCall('cpItems', S) || []) {
+    const b = q.box || [-1, -1, 1, 1, 2], y = q.y || 0;
+    const it = pixItem(q.x + b[0], q.x + b[2], q.z + b[1], q.z + b[3], y, y + Math.max(0.1, b[4]), g => { pixSprite(g, q.key, q.x, y, q.z, { k: 'cp', id: q.id }, q.fade ? { dither: true } : undefined); }, 'cp' + q.id);
+    (b[4] < 0.2 ? out.decals : out).push(it);
+  }
+}
+// The men's and the player's places of the tick before, to draw them between ticks (taken by pixSnapPrev's caller).
+function pixLnSnapPrev() {
+  if (!S || !S.ln || !lnViewOn()) { PIX.lnPrev = null; return; }
+  const m = new Map();
+  for (const q of pixCall('cwDrawList', S, 'line') || []) m.set(q.id, [q.x, q.z]);
+  const p = pixCall('lpPose', S); if (p) m.set('lp', [p.x, p.z]);
+  PIX.lnPrev = m;
+}
+// Everything that stands up on the line, within the view (x0..x1, z0..z1 in line units).
+function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
+  const out = [], L = S.ln, M = LINE.M, F = L.f, sod = pixLnSod(alpha), seed = S.seed;
+  const zc0 = Math.max(bz0, -LINE.HALF_W), zc1 = Math.min(bz1, LINE.HALF_W);
+  // Scatter in the corridor: on the right of way only above the cleared front (a felled tree leaves a stump beside it).
+  if (zc1 > zc0) for (let cj = Math.floor(zc0 / 8); cj <= Math.floor(zc1 / 8); cj++) for (let ci = Math.floor(bx0 / 8); ci <= Math.floor(bx1 / 8); ci++) {
+    const list = pixLnScatter(ci, cj);
+    for (let n = 0; n < list.length; n++) {
+      const q = list[n];
+      if (pixLnBaked(q)) continue;
+      const id = 'ls' + ci + '_' + cj + '_' + n;
+      if (q.row && q.x / M < F[0]) {
+        if (/^nat\/(pine|oak)/.test(q.key)) { const z = (q.z < 0 ? -1 : 1) * (LINE.ROW + 1.2 + (n & 1)); out.push(pixLnProp(id, 'nat/stump/' + (1 + (n & 1)), q.x, z, 0.5, 0.3)); }
+        continue;
+      }
+      out.push(pixLnProp(id, q.key, q.x, q.z, q.h, q.h > 3 ? 0.5 : 0.35, { k: 'ls', key: q.key, row: q.row, x: q.x, z: q.z }));
+    }
+  }
+  const inX = x => x > bx0 - 12 && x < bx1 + 12;
+  // The boards: the yard limit at the junction, a board every 500 m, the stake at the end of the line.
+  if (inX(2)) out.push(pixLnProp('lnYard', 'line/yard_limit', 2, -4.5, 2.4, 0.2));
+  for (let m = 500; m < LINE.LEN_M; m += 500) if (inX(m * M)) out.push(pixLnProp('lnMile' + m, 'line/mile_board', m * M, -5.5, 1.8, 0.2));
+  if (inX(LINE.LEN)) out.push(pixLnProp('lnEnd', 'line/end_stake', LINE.LEN + 1, 0, 1.6, 0.2));
+  // The surveyors' stakes ahead of the clearers, every 10 m each side.
+  for (let m = Math.ceil(F[0] / 10) * 10; m < Math.min(LINE.LEN_M, F[0] + 120); m += 10) if (inX(m * M)) for (const z of [-LINE.ROW, LINE.ROW]) out.push(pixLnProp('lnStake' + m + (z < 0 ? 'n' : 's'), 'line/stake', m * M, z, 1.2, 0.1));
+  // The cut: the low rise across the line until the diggers are through it, the banks they leave either side.
+  for (let m = 1040; m < 1120; m += 8 / M) {
+    const x = (m + 4 / M) * M, k = Math.round((m - 1040) * M / 8);
+    if (!inX(x)) continue;
+    if (m + 4 / M >= F[1]) out.push(pixItem(x - 4, x + 4, -5, 5, 0, 0.4, g => { pixSprite(g, 'line/rise/' + (1 + k % 3), x, 0, 0); }, 'lnRise' + k));
+    else for (const [sd, z] of [['n', -4.6], ['s', 4.6]]) out.push(pixItem(x - 4, x + 4, z - 1.25, z + 1.25, 0, 1, g => { pixSprite(g, 'line/cut_bank_' + sd, x, 0, z); }, 'lnBank' + sd + k));
+  }
+  // The work train and the supplies beside its cars (the piles shrink as the day uses them).
+  const T = lnTrain(S, sod);
+  if (T.at === 'line') {
+    for (const v of wtDrawList(S, 'line', sod)) if (inX(v.x)) out.push(pixLnVehItem(v, { k: 'wt', car: v.k }));
+    if (T.ph === 'stand' && T.dump) {
+      const lvl = k => { const s = L.sup[k], c = LINE.SUP[k].cap; return s <= 0 ? 0 : Math.max(1, Math.min(3, Math.ceil(3 * s / (c / 2)))); }, D = T.dump, z = D.z;
+      const pile = (id, key, x, zz, h, half) => { if (inX(x)) out.push(pixLnProp(id, key, x, zz, h, half, { k: 'sup', id })); };
+      if (lvl('rails')) pile('supRails', 'line/rail_stack/' + lvl('rails'), T.cars[1].x0 + 5, z + 1.5, 0.6, 0.6);
+      if (lvl('ties')) { pile('supTies1', 'line/tie_pile/' + lvl('ties'), T.cars[1].x0 + 2, z - 1, 1, 1); if (lvl('ties') > 1) pile('supTies2', 'line/tie_pile/' + (lvl('ties') - 1), T.cars[1].x0 + 6, z - 1, 1, 1); }
+      if (lvl('rock')) { pile('supRock1', 'line/rock_heap/' + lvl('rock'), T.cars[2].x0 + 3, z, 1, 1); if (lvl('rock') > 1) pile('supRock2', 'line/rock_heap/' + (lvl('rock') - 1), T.cars[2].x0 + 7, z + 0.5, 1, 1); }
+      for (let i = 0; i < Math.min(4, Math.ceil(L.sup.kegs / 5)); i++) pile('supKeg' + i, 'line/keg', T.cars[3].x0 + 2 + i * 1.1, z - 0.5 + (i & 1) * 0.9, 0.8, 0.3);
+    }
+  }
+  // The men (Crew) and the player (Play), between the tick before and this one.
+  const prev = PIX.lnPrev, at = (id, x, z) => { const p = prev && speed > 0 ? prev.get(id) : null; return p && Math.hypot(x - p[0], z - p[1]) < PIX.LERP_MAX ? [lerp(p[0], x, alpha), lerp(p[1], z, alpha)] : [x, z]; };
+  for (const q of pixCall('cwDrawList', S, 'line') || []) {
+    const [x, z] = at(q.id, q.x, q.z);
+    if (!inX(x)) continue;
+    const dir = pixDirOf(q.f), [anim, fr] = q.frame !== undefined && q.anim ? [q.anim, q.frame] : pixActAnim(q.act, q, (+q.id || 0) * 0.41);
+    out.push(pixPersonItem('cw' + q.id, q.who || 'worker', x, q.y || 0, z, dir, anim, fr, { k: 'cw', id: q.id, who: q.who }, false));
+  }
+  const p = pixCall('lpPose', S);
+  if (p && !p.riding) { const [x, z] = at('lp', p.x, p.z), [anim, fr] = pixActAnim(p.act, p, 0); out.push(pixPersonItem('lp', 'agent', x, p.y || 0, z, pixDirOf(p.f), anim, fr, { k: 'lp' }, false)); }
+  return out;
+}
+// One frame of the line's view (pixFrame has made the canvas, sized the buffer and set the animations' clock).
+function pixLnFrame(alpha, dt, t0) {
+  const nw = PIX.nw, nh = PIX.nh, vwF = PIX.vw, vhF = PIX.vh, g = PIX.bctx;
+  if (PIX.camS !== S) { PIX.camS = S; PIX.smoke = []; PIX.wy = {}; cam.ox = 0; cam.oz = 0; PIX.lnLook = null; }
+  PIX.cam = null; PIX.inCar = null;   // (back at the station the view snaps onto the player)
+  const pan = 12 * dt * 60;
+  if (keys.has('ArrowLeft')) pixPanBy(pan, 0); if (keys.has('ArrowRight')) pixPanBy(-pan, 0);
+  if (keys.has('ArrowUp')) pixPanBy(0, pan); if (keys.has('ArrowDown')) pixPanBy(0, -pan);
+  const F = pixFocus(), cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  if (!F.player) {   // no player on the line: a drag moves the look point itself
+    PIX.lnLook.x = cl(F.x + cam.ox, LINE.X0, LINE.X1); PIX.lnLook.z = cl(F.z + cam.oz, -LINE.HALF_W - 30, LINE.HALF_W + 30);
+    F.x = PIX.lnLook.x; F.z = PIX.lnLook.z; cam.ox = cam.oz = 0;
+  } else { cam.ox = cl(F.x + cam.ox, LINE.X0 - 20, LINE.X1 + 20) - F.x; cam.oz = cl(F.z + cam.oz, -LINE.HALF_W - 40, LINE.HALF_W + 40) - F.z; }
+  const q = pixProject(F.x + cam.ox, F.y, F.z + cam.oz), cx = Math.round(q.x) + 0.5 - vwF / 2, cy = Math.round(q.y) + 0.5 - vhF / 2;
+  PIX.camMove = PIX.camLast ? [cx - PIX.camLast[0], cy - PIX.camLast[1]] : [0, 0]; PIX.camLast = [cx, cy];
+  pixCamSet(cx, cy);
+  g.imageSmoothingEnabled = false;
+  if (view.ring) view.ring.visible = false;
+  PIX.locos = []; PIX.lineIds = new Set(); PIX.L = null; PIX.night = rrSod(S.time) > 19.5 * 3600 || rrSod(S.time) < 6.25 * 3600;
+  const t1 = performance.now();
+  // The view's box on the ground (line units), a little wider for tall things below the bottom edge.
+  const cs = [[PIX.vx - 16, PIX.vy - 8], [PIX.vx + nw + 16, PIX.vy - 8], [PIX.vx - 16, PIX.vy + nh + 96], [PIX.vx + nw + 16, PIX.vy + nh + 96]].map(([a, b]) => pixUnproject(a, b, 0));
+  const all = pixLnScene(alpha, Math.min(...cs.map(c => c.x)), Math.max(...cs.map(c => c.x)), Math.min(...cs.map(c => c.z)), Math.max(...cs.map(c => c.z)));
+  const vis = it => { const r = pixScreenRect(it); return r.r >= PIX.vx - 48 && r.l <= PIX.vx + nw + 48 && r.b >= PIX.vy - 8 && r.t <= PIX.vy + nh + 96; };
+  const t2 = performance.now(), list = pixSort(all.filter(vis)), t3 = performance.now();
+  g.fillStyle = PIX.COL.grass[1]; g.fillRect(0, 0, nw, nh);
+  PIX.stats.fills = 0; PIX.stats.draws = 0; PIX.drawn = []; PIX.curId = null; PIX.ditherIds = null;
+  const tg = performance.now();
+  pixLnGroundDraw(g, PIX.warm);
+  PIX.groundT0 = performance.now() - tg;
+  for (const it of list) { PIX.curId = it.id || null; it.draw(g); }
+  PIX.curId = null;
+  const t4 = performance.now();
+  PIX.seeThrough = []; PIX.lastSee = null; PIX.lastSeeSig = ''; PIX.order = list.map(it => it.id || null);
+  pixNight(g, nw, nh);
+  const ms = performance.now() - t0, H = PIX.msHist, t6 = performance.now();
+  const pf = PIX.prof || (PIX.prof = {}), ease = (k, v) => { pf[k] = pf[k] === undefined ? v : pf[k] * 0.9 + v * 0.1; };
+  ease('pre', t1 - t0); ease('scene', t2 - t1); ease('sort', t3 - t2); ease('draw', t4 - t3); ease('see', 0); ease('up', t6 - t4); ease('ground', PIX.groundT0 || 0);
+  H.push(ms); if (H.length > 120) H.shift();
+  PIX.stats.scene = all.length; PIX.stats.frames++; PIX.stats.items = list.length; PIX.stats.ms = ms; PIX.lnStats.items = list.length;
+  PIX.stats.msAvg = H.reduce((a, b) => a + b, 0) / H.length; PIX.stats.msMax = Math.max(...H);
+}
+
 // ==== Section: drawing each frame ====
 const lerp = (a, b, f) => a + (b - a) * f;
 function lerpAngle(a, b, f) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * f; }
@@ -23213,7 +24268,7 @@ function render(alpha, dt) {
   pl.rotation.y = lerpAngle(pl.rotation.y, P.f, 1 - Math.exp(-dt * 12));
   // The walk (GAIT, models section): stride from the distance drawn, so the feet do not slide. A jump (riding,
   // a load or a teleport in a check) is not a stride.
-  const g = u.gait, gp = u.pose, L = u.hipH, gameMin = dt * speed * CFG.TICKS_PER_REAL_S * CFG.TICK_GAME_S / 60;
+  const g = u.gait, gp = u.pose, L = u.hipH, gameMin = dt * speed * clockRate(S.track) * CFG.TICK_GAME_S / 60;
   const push = P.tool !== null && P.tool !== undefined;
   g.push = push;
   gaitStep(g, moved < 2 ? moved : 0, gameMin, dt * speed, L);
@@ -23256,7 +24311,7 @@ function frame(now) {
   const dt = Math.min((now - lastFrame) / 1000, 0.25); lastFrame = now;
   updateHoldWalk();
   if (speed > 0) {
-    acc += dt * speed * CFG.TICKS_PER_REAL_S;
+    acc += dt * speed * clockRate(S.track);   // D32: the world's clock (the prototype's 5 ticks a real second)
     let n = Math.floor(acc); acc -= n;
     if (DBG.on && speed > 4) debugRunTicks(n); // debug time warp (8x to 32x), time-boxed
     else { n = Math.min(n, 40); for (let i = 0; i < n && speed > 0; i++) doTick(i === n - 1); }   // a first-time card pauses at once (D22)
@@ -23392,6 +24447,8 @@ window.__railhead = {
   pp: { PP, ppSt, ppLineSpots, ppCarStatus, ppRunStatus, ppReady, ppOnArrive, ppOnDepart, ppDrawList, ppPlayerAct, ppPlan },   // D25: prototype passengers (P)
   // D27: each builder's hooks, filled in its own section (PB_TEST, FR_TEST, TF_TEST, LES_TEST), and the foundation's.
   pb: PB_TEST, fr: FR_TEST, tf: TF_TEST, les: LES_TEST,
+  ln: LN_TEST, dv: { get ui() { return dvUi; }, on: dvOn, setPref: dvSetPref, rows: dvRows, addRow: dvAddRow, open: dvOpen, close: dvClose, statusText: dvStatusText },   // D32
+  lnView: { on: lnViewOn, focus: pixFocus, lookAt: pixLnLookAt, fronts: pixLnFronts, get stats() { return { ...PIX.lnStats, chunks: PIX.lnChunks.size }; }, scene: pixLnScene, chunkKey: (ci, cj) => pixLnChunkKey(pixLnChunkSpan(ci, cj, PIX.CH), pixLnFronts()) },
   d27: { PROTO, PROTO_STOCK, PROTO_LEVELS, PROTO_DOCK, PROTO_DOCK_LEVEL, PROTO_DECKS, PROTO_LEVERS, TOWN27, SHOPS27, STORE27_OUT, GOODS27, SHOP_GOODS27, CARGO27, TOOL_KINDS,
     d27On, walkDeckY, walkLevelAt, walkBridgeAt, walkStep, storeCellAt, storeCellOf, itemAudit, cargo27Where, cargo27Key, protoCreekAt, protoDebugEvening, rngFor, playerModeTick,
     flags: () => ({ ...WORLDS.proto.d27 }), protoStow, migrate18to19: proto18to19 },

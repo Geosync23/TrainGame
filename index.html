@@ -8226,6 +8226,15 @@ function lpSetDown(S, ev, how) {
   lnSetView(S, 'line');
   ev.push({ t: 'lpOnLine', how: how || 'now' });
 }
+// D33: the work train left without him while he was walking to it. In the one world he is simply the station's man
+// again, standing where he is: nobody is spirited out to the railhead, and he can walk out along the line.
+function lpMissed(S, ev) {
+  const P = S.player;
+  Object.assign(P, { mode: 'idle', use: null });
+  delete P.away; delete P.lnGo; delete S.lp;
+  ev.push({ t: 'lpRefused', why: 'The work train has gone without you. You can walk out along the line, or wait for tomorrow.' });
+  ev.push({ t: 'lpHome', how: 'missed' });
+}
 // Back at the station at once: at the muster, the station in view.
 function lpHomeNow(S, ev) {
   const P = S.player;
@@ -8306,9 +8315,10 @@ function lpTick(S, ev) {
         Object.assign(P, { mode: 'idle', use: null });
         Object.assign(Q, { ph: 'board', pts: [[st.x, LP.PLANK_TOP], [st.x, st.z]] });
         ev.push({ t: 'lpBoarding' });
-      } else if (!(ph === 'sIn' || ph === 'sStand' || (ph === 'home' && L.run && sod < T.IN))) lpSetDown(S, ev, 'missed');   // the train has gone (or is not coming): there at once
+      } else if (!(ph === 'sIn' || ph === 'sStand' || (ph === 'home' && L.run && sod < T.IN))) { if (D33.on) lpMissed(S, ev); else lpSetDown(S, ev, 'missed'); }   // the train has gone (or is not coming)
       break;
     case 'board':
+      if (D33.on && ph !== 'sStand' && ph !== 'sIn') { lpMissed(S, ev); break; }   // (the train left while he was crossing the plank walk)
       if (ph !== 'sStand' || lpWalkPts(S, Q)) { delete Q.pts; Object.assign(Q, { ph: 'aboardS', dir: 'out' }); ev.push({ t: 'lpAboard' }); }
       break;
     case 'aboardS':
@@ -8597,7 +8607,9 @@ const LG_LESSONS = [
   { id: 'lnRide', title: 'Out on the line', pic: ['ppl/navvy_b/pick/se/1', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lpOnLine',
     steps: [
-      lgLesStep('This is the railhead. Six gangs work up the line, one behind the other: the clearers cut the brush, the diggers dig the bed, the rock gang spreads the stones, then come the ties, the rails and the spikes. Tap the ground to walk up to a gang.',
+      lgLesStep(D33.on
+        ? 'You are past the yard limit, out on the line. Six gangs work up it, one behind the other: the clearers cut the brush, the diggers dig the bed, the rock gang spreads the stones, then come the ties, the rails and the spikes. Tap the ground to walk up to a gang; tap back west of the board to be the station\'s man again.'
+        : 'This is the railhead. Six gangs work up the line, one behind the other: the clearers cut the brush, the diggers dig the bed, the rock gang spreads the stones, then come the ties, the rails and the spikes. Tap the ground to walk up to a gang.',
         'Walk up to a gang', (S, e) => e.t === 'lpArrived' || e.t === 'lgJoined'),
       lgLesStep('Beside a gang a Join button comes up: work with them, or just watch. The men work on without you either way.',
         'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
@@ -8620,9 +8632,11 @@ const LG_LESSONS = [
   { id: 'lnHome', title: 'Coming home', pic: ['veh/crewcar/e', 'ppl/navvy_c/walk/se/0'], need: null, line: true,
     tick: S => !!S.lp && S.lp.ph === 'line' && !!S.ln && S.ln.tr.ph === 'stand' && rrSod(S.time) >= LINE.T.WORK1,
     steps: [
-      lgLesStep('Six o\'clock: the men pack up and walk to the crew car. Tap "Ride home" in the bar to go with them (the train leaves at 18:20), or "Back now" to be at the station at once.',
+      lgLesStep(D33.on
+        ? 'Six o\'clock: the men pack up and walk to the crew car. Tap the crew car, or "Ride home" in the bar, to go with them (the train leaves at 18:20); or walk back down the line to the yard in your own time.'
+        : 'Six o\'clock: the men pack up and walk to the crew car. Tap "Ride home" in the bar to go with them (the train leaves at 18:20), or "Back now" to be at the station at once.',
         'Ride home with the men', (S, e) => e.t === 'lpToTrain' || e.t === 'lpAboard' || e.t === 'lpHome'),
-      lgLesStep('The work train takes you home: you step off at the station and walk back from the muster.',
+      lgLesStep(D33.on ? 'The work train takes you home: it runs down the line and backs in to the station, and you step off at the plank walk by the muster.' : 'The work train takes you home: you step off at the station and walk back from the muster.',
         'Ride home', (S, e) => e.t === 'lpHome'),
     ] },
 ];

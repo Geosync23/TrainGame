@@ -1,6 +1,15 @@
 # Handover (updated 2026-11-02 by the fourth lead session)
 
-## Latest (2026-11-12): D27 working day and D28 morning fixes, D29 review fixes and D30 smooth trains built
+## Latest (2026-11-13): D31 fixes and D32 line building, stages 1 and 2
+- D31 (play-test fixes) and D32 stage 1 (the line, crew, camp, riding out, dev mode, the slower clock) are merged, fully tested and published as version 10 of https://claude.ai/artifact/215immEY4Skh13fN9fN2db. Turn the line on from Settings > Dev (or `?dev=1`).
+- D32 stage 2 (the six join-in games, the line's lessons, hired station workers and the away rules) is merged at c5b8f07; the full test on it was running when this was written. Push only after it passes.
+- The wilds art: three artists' work is in commits ac16eb7 (batch one, merged), 563ab99 (near side, landmarks, wildlife) and 588190a (far side, ground). A builder is fitting 563ab99 and 588190a into the line's view (the art build is slow: see DEV_NOTES D32 once it lands). The game file will grow by several MB; the designer said that is fine.
+- Stage 3 (the bigger town: houses, roles, enterable buildings, the economy, the far town) is not started. Plan: plans/d32-tech.md section 8; the journey: plans/d32-journey.md.
+- Usage: the designer's cap is 80% of the allowance (overall and Fable), resetting Saturday 03:00 Eastern; the lead cannot read the meter and must ask. Programmers for hard pieces on Fable, the rest and art on Opus.
+- The machine restarted twice on 2026-11-13: helpers must commit often; after a restart, make a WIP commit in the helper's worktree and start a resume helper.
+- Provisional choices for the designer's review are in DEV_NOTES "D32" (each builder's part) and plans/d32-tech.md's last sections; a review survey page is still to be made.
+
+## Earlier (2026-11-12): D27 working day and D28 morning fixes, D29 review fixes and D30 smooth trains built
 - D29 (faster, smoother handling and punching; all switches in one lever frame beside track 1 off platform 1's west end, old layout `?levers=two`) and D30 (trains drawn as one block stepping along the rails, no judder; off with `?d30=0`, measuring tool tests/train-play.js) are merged. DEV_NOTES "D29" and "D30" have the details. Open D30 note: when the player rides a moving train his car can step a pixel against the camera; left as is because the camera is the designer's decision.
 - D27 (bigger trains with interiors, punching on board, step-by-step freight onto a cart, raised cargo platform, evening trip to town with keeper hand-ins and pickups, 19 townsfolk, six lessons, night lights) and D28 (smooth camera, platform planking, station set back, Start over) are merged, tested (full npm test passed) and published at https://claude.ai/artifact/215immEY4Skh13fN9fN2db.
 - Review page with every overnight provisional choice: https://claude.ai/artifact/EJsq45PwyyTbaFcyTFYD89 (answers/d27-review). Full list: plans/d27-choices.md. Tech plan: plans/d27-tech.md. DEV_NOTES "D27" covers each builder's part.

@@ -138,11 +138,11 @@ module.exports = async function checkSmooth() {
         await page.waitForTimeout(250);
         await page.screenshot({ path: require('./browser').screenshotPath(`d29-smooth-${name}-close-${orient}`) });
       };
-      let ok = await until('d27coach', (R, s) => { if (!s.pb.job && !s.player.in && !s._sent) { s._sent = 1; R.send({ t: 'pbPunch', stock: s.pax.list.find(p => p.s === 'sitting' && !p.punched && !p.through && p.to !== 'hub').stock }); } const J = s.pb.job; return !!(J && J.k === 'punch' && J.on && J.acc >= 0); });   // D32: a punch is one tick under the slower clock (the ticket held out, then punched), so there is no tick with it half done
+      let ok = await until('d27coach', (R, s) => { if (!s.pb.job && !s.player.in && !s._sent) { s._sent = 1; R.send({ t: 'pbPunch', stock: s.pax.list.find(p => p.s === 'sitting' && !p.punched && !p.through && p.to !== 'hub').stock }); } const J = s.pb.job; return !!(J && J.k === 'punch' && J.on && J.acc > 0); });
       await shot('coach-punch', ok);
       ok = await until(null, (R, s) => s.pb.tot.punched > 0, 50);
       await shot('coach-next', ok);
-      ok = await until('d27freight', (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; return !!(st && st.a === 'pick' && J.t0 >= 0 && s.time - J.t0 >= 0); }, 600);   // D32: a lift is one tick now (as above)
+      ok = await until('d27freight', (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; return !!(st && st.a === 'pick' && J.t0 >= 0 && s.time - J.t0 > 0); }, 600);
       await shot('freight-lift', ok);
       ok = await until(null, (R, s) => { const J = s.fr.job, st = J && J.steps[J.i]; const tg = R.fr.frTarget(s); return !!(st && (st.s === 'walk' || st.s === 'go') && tg && tg.a === 'put' && Math.hypot(tg.x - s.player.x, tg.z - s.player.z) < 5); }, 600);
       await shot('freight-carry', ok);

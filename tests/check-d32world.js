@@ -1,9 +1,13 @@
 // Check: the D32 world (plans/d32-tech.md 11.5, Foundation's): line building's base, with the line off and on.
-// - The line's tables: 2,520 m, the country in the plan's order (460 m prairie, 284 brush, 600 woods, 270 hills, 80 the
-//   cut, 350 rock, 400 river, 16 the bridge), the work model's totals (22,660 / 58,440 / 32,916 / 29,584 / 24,600 /
+// - The line's tables: 2,520 m, the plan's metres of each cost kind (460 m prairie, 284 brush, 600 woods, 270 hills, 80
+//   the cut, 350 rock, 400 river, 16 the bridge) laid over the nine regions of the journey (plans/d32-journey.md), the
+//   work model's totals (22,660 / 58,440 / 32,916 / 29,584 / 24,600 /
 //   24,600 wu by stage, 192,800 in all), the gaps, the supplies.
-// - The country: the same twice from a seed, another scatter from another seed, the kinds in the same place for both;
-//   every tile and every standing thing it asks for is in the atlas.
+// - The country: the same twice from a seed, another scatter from another seed, the regions in the same place for both;
+//   every tile and every standing thing it asks for is in the atlas (a wilds key by its stand-in); it is thick with
+//   small things; a natural border close along each side (far side 8.5 to 11.5u, near side 11 to 14u, closing to a
+//   cutting at both ends), each region's belts and landmarks in place, walking stopped by the border and by water
+//   (lnWalkable), the rivers and the creek beyond the near border.
 // - Clearances at the station: the camp clear of every building, the creek and the cart path; the muster clear of
 //   buildings and the lever frame; the standing work train (61u, crew car -40 to -27, engine 3 to 21) between the
 //   switches, clear of the cart crossing, under the footbridges.
@@ -49,27 +53,59 @@ module.exports = async function checkD32World() {
       if (!near(tot.reduce((a, b) => a + b, 0), 192800, 1e-6)) B('the whole line is ' + tot.reduce((a, b) => a + b, 0) + ' wu, not 192,800');
       if (JSON.stringify(LINE.GAP) !== '[0,6,6,4,9.1,9.1]') B('the gaps');
       if (LINE.SUP.rock.carry !== 110 || LINE.SUP.ties.carry !== 360 || LINE.SUP.rails.carry !== 48 || LINE.SUP.kegs.carry !== 10) B('the supplies carried');
-      if (L.lnKindAt(100) !== 'prairie' || L.lnKindAt(540) !== 'bridge' || L.lnKindAt(1100) !== 'cut' || L.lnKindAt(2519) !== 'prairie') B('lnKindAt');
+      if (L.lnKindAt(100) !== 'prairie' || L.lnKindAt(540) !== 'bridge' || L.lnKindAt(800) !== 'cut' || L.lnKindAt(2519) !== 'prairie') B('lnKindAt');
+      const regs = ['prairie', 'creek', 'hills', 'woods', 'rocks', 'river', 'canyon', 'pass', 'valley'], regM = {};
+      for (const [a, b, , rg] of LINE.SEGS) if (a >= 60) regM[rg] = (regM[rg] || 0) + b - a;
+      if (Object.keys(regM).join() !== regs.join() || Object.keys(LINE.REGIONS).join() !== regs.join()) B('the regions: ' + JSON.stringify(regM));
+      N('the regions (m): ' + regs.map(k => k + ' ' + regM[k]).join(', '));
+      if (L.lnRegionAt(-5) !== 'prairie' || L.lnRegionAt(2030) !== 'canyon' || L.lnRegionAt(2600) !== 'valley') B('lnRegionAt');
       // ---- The country ----
       const F = PIX_ATLAS.frames, miss = new Set();
-      const sample = seed => { const o = []; for (let i = 0; i < 3740; i += 7) for (const j of [-60, -31, -4, 0, 3, 30, 55]) o.push(L.lnTile(seed, i, j)); return o; };
-      const scat = seed => { const o = []; for (let ci = 0; ci < 460; ci += 3) for (let cj = -8; cj < 8; cj++) o.push(JSON.stringify(L.lnScatter(seed, ci, cj))); return o; };
+      const sample = seed => { const o = []; for (let i = -300; i < 4000; i += 7) for (const j of [-90, -60, -31, -13, -9, -4, 0, 3, 10, 13, 16, 22, 30, 55, 90]) o.push(L.lnTile(seed, i, j)); return o; };
+      const scat = seed => { const o = []; for (let ci = -30; ci < 500; ci += 3) for (let cj = -9; cj < 9; cj++) o.push(JSON.stringify(L.lnScatter(seed, ci, cj))); return o; };
       const a1 = sample(1866), a2 = sample(1866), b1 = sample(7), s1 = scat(1866), s2 = scat(1866), t1 = scat(7);
       if (a1.join() !== a2.join() || s1.join() !== s2.join()) B('the country is not the same twice from one seed');
       if (s1.join() === t1.join()) B('another seed gives the same scatter');
       for (const k of a1.concat(b1)) if (!F[k]) miss.add(k);
       let rows = 0, things = 0;
-      for (const cell of s1.concat(t1)) for (const q of JSON.parse(cell)) { things++; if (q.row) rows++; if (!F[q.key]) miss.add(q.key); if (q.row !== (Math.abs(q.z) <= LINE.ROW)) B('a thing\'s row flag is wrong'); }
+      for (const cell of s1.concat(t1)) for (const q of JSON.parse(cell)) { things++; if (q.row) rows++; if (!F[q.key] && !(q.alt ? F[q.alt] : q.alt === null)) miss.add(q.key + ' / ' + q.alt); if (q.row !== (Math.abs(q.z) <= LINE.ROW)) B('a thing\'s row flag is wrong'); }
       if (miss.size) B('missing in the atlas: ' + [...miss].slice(0, 12).join(', '));
       if (!(rows > 20 && things > 1000)) B(`the scatter is thin: ${things} things, ${rows} on the right of way`);
-      for (const m of [100, 400, 700, 1000, 1400, 1800, 2200, 2400]) if (L.lnKindCell(1866, Math.floor(m * LINE.M), 0) !== L.lnKindCell(7, Math.floor(m * LINE.M), 0)) B(`the kind at ${m} m moves with the seed`);
+      for (const m of [100, 400, 700, 1000, 1400, 1800, 2030, 2200, 2400]) if (L.lnRegionCell(1866, Math.floor(m * LINE.M), 0) !== L.lnRegionCell(7, Math.floor(m * LINE.M), 0) || L.lnRegionCell(7, Math.floor(m * LINE.M), 0) !== L.lnRegionAt(m)) B(`the region at ${m} m moves with the seed`);
+      // thick with small things: the open prairie has at least 6 a cell
+      { let n = 0, cells = 0; for (let ci = 12; ci < 40; ci++) for (const cj of [-6, 5]) { cells++; n += L.lnScatter(1866, ci, cj).filter(q => !q.edge).length; } N(`the home prairie: ${(n / cells).toFixed(1)} things a cell of 8u`); if (n / cells < 6) B('the prairie is sparse: ' + (n / cells).toFixed(1) + ' things a cell'); }
+      // the natural borders
+      for (const seed of [1866, 7]) for (let x = 60; x < LINE.LEN; x += 13) {
+        const n = L.lnBorder(seed, x, -1), s = L.lnBorder(seed, x, 1);
+        if (n.d < 8.5 - 1e-9 || n.d > 11.5 + 1e-9 || s.d < 11 - 1e-9 || s.d > 14 + 1e-9 || n.end || s.end) { B(`the border at x ${x}: ${n.d.toFixed(2)} north, ${s.d.toFixed(2)} south`); break; }
+        if (!L.lnWalkable(seed, x, -n.d + 1) || !L.lnWalkable(seed, x, s.d - 1) && !L.lnWaterAt(seed, x, s.d - 1) || L.lnWalkable(seed, x, -n.d - 0.1) || L.lnWalkable(seed, x, s.d + 0.1)) { B(`walking does not stop at the border at x ${x}`); break; }
+        for (let z = -n.d + 0.5; z < s.d - 0.5; z += 1) if (L.lnWaterAt(seed, x, z) && Math.abs(x - 544 * LINE.M) > 12) { B(`water inside the corridor at ${x}, ${z.toFixed(1)}`); x = 1e9; break; }
+      }
+      if (L.lnBorder(1866, -15, -1).d > 4 || L.lnBorder(1866, -15, 1).d > 4 || L.lnBorder(1866, LINE.X1 - 5, 1).d > 4 || !L.lnBorder(1866, -15, 1).end) B('the borders do not close in at the strip\'s ends');
+      if (L.lnWalkable(1866, LINE.X0 - 1, 0) || L.lnWalkable(1866, LINE.X1 + 1, 0) || !L.lnWalkable(1866, 100, 0)) B('walking at the strip\'s ends');
+      if (L.lnWalkable(1866, 544 * LINE.M, 0) || L.lnWalkable(1866, 544 * LINE.M, 0, 530) || !L.lnWalkable(1866, 544 * LINE.M, 0, 560) || L.lnWalkable(1866, 544 * LINE.M, 6, 560)) B('the creek is walked through, or the built trestle is not');
+      // each region's belts, both sides, by the wilds keys with stand-ins; its landmarks
+      for (const [a, b, , rg] of LINE.SEGS) {
+        if (a < 60 || b - a < 100) continue;
+        const ci0 = Math.floor((a + 30) * LINE.M / 8), ci1 = Math.floor((b - 30) * LINE.M / 8), cnt = { far: 0, near: 0 };
+        for (let ci = ci0; ci <= ci1; ci++) for (let cj = -5; cj <= 5; cj++) for (const q of L.lnScatter(1866, ci, cj)) {
+          if (!q.edge || q.mark) continue;
+          const sd = q.z < 0 ? 'far' : 'near', bd = L.lnBorder(1866, q.x, q.z < 0 ? -1 : 1).d;
+          if (q.key.indexOf(`wild/${sd}/`) !== 0) B(`a belt thing with the key ${q.key}`);
+          if (Math.abs(q.z) < bd) B(`a belt thing inside the corridor at ${q.x.toFixed(0)}, ${q.z.toFixed(1)}`);
+          if (sd === 'near' && q.h > 1.5 && Math.abs(q.z) < bd + 8) B(`a tall thing (${q.alt}, ${q.h} u) close on the near side at x ${q.x.toFixed(0)}`);
+          cnt[sd]++;
+        }
+        const per = (ci1 - ci0 + 1);
+        if (cnt.far / per < 5 || cnt.near / per < 2) B(`${rg} (${a} to ${b} m): its belts are thin: ${(cnt.far / per).toFixed(1)} far and ${(cnt.near / per).toFixed(1)} near things per 8u`);
+      }
+      for (const [rg, Rg] of Object.entries(LINE.REGIONS)) for (const mk of Rg.marks) { const x = mk.m * LINE.M, z = mk.side * (L.lnBorder(1866, x, mk.side).d + mk.off), hit = L.lnScatter(1866, Math.floor(x / 8), Math.floor(z / 8)).find(q => q.mark === mk.name); if (!hit || hit.key !== 'wild/mark/' + mk.name || L.lnRegionAt(mk.m) !== rg) B(`the landmark ${mk.name} is not in its place in ${rg}`); }
       if (L.lnWaterAt(1866, 544 * LINE.M, 0) !== 2 || L.lnWaterAt(1866, 544 * LINE.M, 30) !== 2) B('no creek under the bridge');
-      for (let x = 1600 * LINE.M; x < 2000 * LINE.M; x += 20) for (let z = -LINE.HALF_W; z <= LINE.HALF_W; z += 4) if (L.lnWaterAt(1866, x, z)) { B(`the river is inside the corridor at ${x.toFixed(0)}, ${z}`); x = 1e9; break; }
-      let riv = 0; for (let x = 1650 * LINE.M; x < 1950 * LINE.M; x += 20) for (let z = 36; z <= 75; z += 1) if (L.lnWaterAt(1866, x, z) === 2) { riv++; break; }
-      if (riv < 20) B('the river does not run alongside the line');
+      let riv = 0; for (let x = 1620 * LINE.M; x < 1900 * LINE.M; x += 20) { const d = L.lnBorder(1866, x, 1).d; for (let z = d; z <= d + 6; z += 0.5) if (L.lnWaterAt(1866, x, z) === 2) { riv++; break; } }
+      if (riv < 19) B('the river does not run close alongside the line in the river run');
       // trees on the right of way in the woods: about one per 6 m
-      let trees = 0; for (let ci = Math.ceil(620 * LINE.M / 8); ci < Math.floor(880 * LINE.M / 8); ci++) for (let cj = -1; cj <= 0; cj++) for (const q of L.lnScatter(1866, ci, cj)) if (q.row && /pine|oak/.test(q.key)) trees++;
-      N(`trees on the right of way, 620 to 880 m: ${trees} (one per ${(260 / trees).toFixed(1)} m)`);
+      let trees = 0; for (let ci = Math.ceil(1000 * LINE.M / 8); ci < Math.floor(1260 * LINE.M / 8); ci++) for (let cj = -1; cj <= 0; cj++) for (const q of L.lnScatter(1866, ci, cj)) if (q.row && /pine|oak/.test(q.key)) trees++;
+      N(`trees on the right of way in the big woods, 1,000 to 1,260 m: ${trees} (one per ${(260 / trees).toFixed(1)} m)`);
       if (!(trees >= 20 && trees <= 90)) B(`${trees} trees on 260 m of right of way in the woods`);
       // ---- Clearances ----
       const fps = R.buildings.footprints ? R.buildings.footprints() : [];

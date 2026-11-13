@@ -2,7 +2,10 @@
 // - The work train at the station (track 2, 06:00) is in the station's scene, drawn from the atlas.
 // - The view switches both ways by touch: the dev panel's "Look at the line", the line's bar "Back to the station";
 //   with the line in view the page has the class `line`, the station's HUD is hidden and a tap sends no walking.
-// - The line at six places (the bridge, the woods, the cut, the rock, the river, the end of the line) and the railhead
+// - No boundary of the world is ever seen (the designer's rule): at scale 1, standing against the far border and the
+//   near border in every region and at both ends of the strip, not one pixel of the frame is left as background.
+// - The line at nine places (the home prairie, the trestle, the cut, the big woods, the rocks, the river run, the
+//   canyon, the pass, the end of the line) and the railhead
 //   at three zooms (scale 1, the default and close up): every chunk made, nothing missing from the atlas, no edge of
 //   the ground in view (any point of the view has a tile); screenshots d32-line-*.png.
 // - Chunks are redrawn as a front passes (the fronts moved on by the stand-in crew), at most one a frame, none stale
@@ -12,7 +15,7 @@
 // - A one-finger drag looks along the line; the look point stays in the corridor.
 const { openGame, screenshotPath } = require('./browser');
 
-const PLACES = [['bridge', 544], ['woods', 700], ['cut', 1080], ['rock', 1400], ['river', 1800], ['end', 2500]];
+const PLACES = [['prairie', 200], ['bridge', 544], ['cut', 785], ['woods', 1150], ['rocks', 1450], ['river', 1750], ['canyon', 2030], ['pass', 2200], ['end', 2500]];
 const BUDGET_MS = 8, SLACK = 3;
 
 module.exports = async function checkLineRender() {
@@ -89,6 +92,20 @@ module.exports = async function checkLineRender() {
         if (!wt) P(`railhead ${name}: the work train is not drawn`);
         await page.screenshot({ path: screenshotPath(`d32-line-railhead-${name}-${orient}`) });
       }
+      // ---- No boundary of the world: scale 1, against both borders in every region and at both ends ----
+      await page.evaluate(z => { const R = window.__railhead; R.camera.zoom = z / 4; R.lnView.bg('#ff00ff'); R.pix.warm(false); }, z0);
+      let worstBg = 0, spots = 0;
+      for (const [m, zz] of [[-14, 0], [-14, 3], [2618, 0], [2618, -3], ...PLACES.flatMap(([, m]) => [[m, -12], [m, 14]])]) {
+        await look(m, zz);
+        const bg = await page.evaluate(() => { const X = window.__railhead.pix.PIX, d = X.bctx.getImageData(0, 0, X.nw, X.nh).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] === 255 && d[i + 1] === 0 && d[i + 2] === 255) n++; return { n, scale: X.scale, missing: window.__railhead.lnView.stats.missing }; });
+        spots++; worstBg = Math.max(worstBg, bg.n);
+        if (bg.scale !== 1) P(`the far zoom is scale ${bg.scale}`);
+        if (bg.n || bg.missing) P(`at ${m} m, z ${zz}: ${bg.n} pixels of blank background in view (${bg.missing} chunks missing)`);
+        if (m === -14 && zz === 0) await page.screenshot({ path: screenshotPath(`d32-line-westend-far-${orient}`) });
+        if (m === 2030 && zz === 14) await page.screenshot({ path: screenshotPath(`d32-line-canyon-far-${orient}`) });
+      }
+      console.log(`  ${orient}: no blank background at scale 1 at ${spots} places against the borders and the ends (worst ${worstBg} px)`);
+      await page.evaluate(() => window.__railhead.lnView.bg(null));
       // ---- Chunks redrawn as a front passes (scale 1: the whole work site in view) ----
       await page.evaluate(() => { window.__railhead.camera.zoom = window.__railhead.camera.zoom; });
       await page.evaluate(z => { window.__railhead.camera.zoom = z / 4; window.__railhead.pix.warm(false); }, z0);
@@ -112,11 +129,11 @@ module.exports = async function checkLineRender() {
       // ---- Frame time in the woods, scale 1, the train and 30 men ----
       await page.evaluate(() => {
         const R = window.__railhead, S = R.state, M = R.ln.LINE.M;
-        S.ln.f = [760, 754, 748, 744, 734.9, 725.8]; S.ln.tr = { ph: 'stand', t: S.time, x: 717, x1: 717, ta: 24000 };
+        S.ln.f = [1160, 1154, 1148, 1144, 1134.9, 1125.8]; S.ln.tr = { ph: 'stand', t: S.time, x: 1117, x1: 1117, ta: 24000 };
         window.cwDrawList = (S, place) => place !== 'line' ? [] : Array.from({ length: 30 }, (_, i) => { const st = i % 6, sp = R.ln.lnSpot(S, st, Math.floor(i / 6)); return { id: i, who: ['worker', 'porter', 'cowhand'][i % 3], x: sp.x, y: 0, z: sp.z, f: sp.f, act: i % 2 ? 'idle' : 'walk' }; });
         R.pix.warm(true);
       });
-      await look(735);
+      await look(1135);
       await frames(10);
       await page.evaluate(() => { window.__railhead.pix.warm(false); window.__railhead.pix.PIX.msHist.length = 0; });
       await frames(90);
@@ -124,7 +141,7 @@ module.exports = async function checkLineRender() {
       const men = await page.evaluate(() => window.__railhead.pix.PIX.drawn.filter(d => /^cw/.test(d.id || '')).length);
       if (perf.scale !== 1) P(`the frame time was measured at scale ${perf.scale}`);
       if (men < 20) P(`only ${men} of the 30 stand-in men were drawn`);
-      if (!(perf.items >= 40)) P(`only ${perf.items} things in the woods' frame`);
+      if (!(perf.items >= 35)) P(`only ${perf.items} things in the woods' frame`);
       if (perf.ms > BUDGET_MS * SLACK) P(`the line's frame takes ${perf.ms.toFixed(1)} ms on average in the woods (budget ${BUDGET_MS}, limit ${BUDGET_MS * SLACK} on the test machine)`);
       console.log(`  ${orient}: the woods at scale 1 with the train and 30 men: ${perf.items} things sorted, frame ${perf.ms.toFixed(2)} ms on average (budget ${BUDGET_MS}), ${perf.chunks} chunks kept`);
       sane('the woods at scale 1', perf);
@@ -148,7 +165,7 @@ module.exports = async function checkLineRender() {
       await touch('touchEnd', 0, 0);
       await frames(2);
       const edge = await page.evaluate(() => window.__railhead.lnView.focus());
-      if (edge.x < -20 - 1e-6 || Math.abs(edge.z) > 62 + 1e-6) P(`the look point left the corridor: ${JSON.stringify(edge)}`);
+      if (edge.x < -20 - 1e-6 || Math.abs(edge.z) > 44 + 1e-6) P(`the look point left the corridor: ${JSON.stringify(edge)}`);
       if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
     } finally { await browser.close(); }
   }

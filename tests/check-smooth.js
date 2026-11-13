@@ -63,7 +63,9 @@ async function checkTrains(problems, notes) {
     if (m.backSteps) P(`a car stepped backwards against its motion ${m.backSteps} times`);
     if (m.stepEvenMax > (speed > 1 ? 2.3 : 1.8)) P(`a car's steps were uneven: a drawn step against the exact motion since its last step differed by ${m.stepEvenMax} px (a step along the rails is 2.24 px)`);
     if (m.stillOver) P(`a car stood still on screen while the sim moved it more than ${TP.STILL_PX} px (${m.stillOver} frames, up to ${m.worstStillMs} ms)`);
-    if (m.straightPairs < (setup === 'curveW' ? 30 : 100)) P(`only ${m.straightPairs} frames of neighbouring cars on a straight`);
+    // (D33: curveE now stops as the train reaches the junction, where it is drawn curving away into the wood, so it
+    // has fewer frames on the straight east of the crossover)
+    if (m.straightPairs < (setup === 'curveW' || setup === 'curveE' ? 30 : 100)) P(`only ${m.straightPairs} frames of neighbouring cars on a straight`);
     if (m.straightGapChanges > Math.max(2, m.straightPairs * 0.01)) P(`on a straight the gap between neighbouring cars changed ${m.straightGapChanges} times in ${m.straightPairs} (up to ${m.straightGapMax} px)`);
     if (m.straightGapMax > 1.01 * Math.SQRT2 * 2) P(`on a straight the gap between neighbouring cars changed by ${m.straightGapMax} px in a frame`);
     if (m.railPhaseMax > 0.01 && setup !== 'curveW') P(`a car on track 1 sat ${m.railPhaseMax} px off its rails' pixel line (${m.railPhases})`);

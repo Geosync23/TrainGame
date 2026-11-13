@@ -25,7 +25,8 @@ function trainRecorder(setup, maxS) {
   const run = () => S.rr.runs.find(r => r.svc === 'p1' && r.day === 0);
   const trOf = () => { const r = run(); return r && r.slot !== null && r.slot !== undefined ? S.trains[r.slot] : null; };
   const setSw = () => { for (const n of rrSwitchNeeds(S)) { const W = S.track.switches.find(w => w.id === n.sw); if (W && !W.spring && !n.passed) W.state = n.want === 'reverse' ? 'R' : 'N'; } };
-  let last = null, lastTick = -1, phase = 'in', standT = null, done = false;
+  // (curveE is set going before the recording starts, so its run is already on its way out)
+  let last = null, lastTick = -1, phase = setup === 'curveE' ? 'out' : 'in', standT = null, done = false;
   const z1 = PROTO.P1.z1 - 2.2;
   return new Promise(res => {
     const step = (ts) => {
@@ -59,7 +60,10 @@ function trainRecorder(setup, maxS) {
       last = ts;
       const front = cp[0];
       if (setup === 'curveW' && front && front.x > -5) done = true;
-      if (phase === 'out' && front && front.x > (setup === 'curveE' ? 105 : 62)) done = true;
+      // (D33: east of the junction at x 96 the railroad's trains are drawn curving away into the wood, so the
+      // measurement of their drawn steps against the sim's own straight stops short of it)
+      const leadX = cp.length ? Math.max(...cp.map(q => q.x)) : null;
+      if (phase === 'out' && leadX !== null && leadX > (setup === 'curveE' ? 90 : 62)) done = true;
       if (phase === 'out' && !cp.length) done = true;
       if (done || performance.now() - t0 > maxS * 1000) res(rec); else requestAnimationFrame(step);
     };

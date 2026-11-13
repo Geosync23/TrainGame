@@ -25980,7 +25980,7 @@ function pixTrainDrawPoses(tr, ti, poses, alpha) {
   const at = (vi, f) => { const pa = prev ? prev[vi] : poses[vi], b = poses[vi]; return { x: lerp(pa.x, b.x, f), z: lerp(pa.z, b.z, f), yaw: lerpAngle(pa.yaw, b.yaw, f) }; };
   if (!smooth) {
     delete PIX.trSnap[tr.id];
-    return poses.map((b, vi) => { const q = at(vi, alpha), car = tr.consist[vi]; if (car && car.id !== undefined) delete PIX.carShift[String(car.id)]; return { ...q, hd: pixHeading(q.yaw), smooth: false }; });
+    return poses.map((b, vi) => { const q = at(vi, alpha), car = tr.consist[vi]; if (car && car.id !== undefined) delete PIX.carShift[String(car.id)]; let gone = false; if (pixLnOn() && q.x > D33.JX && Math.abs(q.z) < 0.5) { const w = pixBranchPose(q.x); q.x = w.x; q.z = w.z; q.yaw += w.turn; gone = w.z < -LINE.BORDER.N - 7; } return { ...q, hd: pixHeading(q.yaw), gone, smooth: false }; });
   }
   // the anchor: the vehicle heading e or w that lies straightest, kept until another lies straighter by PIX.TURN_DEG / 2
   // (so on a straight it is always one lying straight); with none, the one moving most across the screen this tick
@@ -26019,7 +26019,13 @@ function pixTrainDrawPoses(tr, ti, poses, alpha) {
   }
   return poses.map((b, vi) => {
     const pa = prev ? prev[vi] : b, car = tr.consist[vi], sid = car && car.id !== undefined ? String(car.id) : null;
-    const q = at(vi, fs ? fs[vi] : f), hd = pixHeadingHeld(sid, q.yaw), p = pixProject(q.x, 0, q.z);
+    const q = at(vi, fs ? fs[vi] : f);
+    // D33: east of the junction the railroad's trains are drawn along the main line's branch into the wood (the sim
+    // keeps them on the straight, where the new line's track now is); bent here, so each car is still put on whole
+    // pixels and steps as evenly as on the crossovers' curves. gone: under the trees, not drawn at all.
+    let gone = false;
+    if (pixLnOn() && q.x > D33.JX && Math.abs(q.z) < 0.5) { const w = pixBranchPose(q.x); q.x = w.x; q.z = w.z; q.yaw += w.turn; gone = w.z < -LINE.BORDER.N - 7; if (w.z < -5 && !gone) { const n = Math.floor((w.x - D33.LX) / 16); (PIX.woodVeh || (PIX.woodVeh = new Set())).add(n).add(n - 1).add(n + 1); } }
+    const hd = pixHeadingHeld(sid, q.yaw), p = pixProject(q.x, 0, q.z);
     // on the rails' 2:1 line only while it lies along them (within PIX.RAIL_DEG): on a curve the rails are not a 2:1
     // line, and a car kept on one would step across it now and then against its motion; there the nearest pixel
     let s = pixRailSnap(p.x, p.y, Math.abs(Math.sin(q.yaw)) < Math.sin(PIX.RAIL_DEG * Math.PI / 180) ? hd : '');
@@ -26030,7 +26036,7 @@ function pixTrainDrawPoses(tr, ti, poses, alpha) {
     if (sid) PIX.carLast.set(sid, { S, hd, s, p });
     const dpx = s[0] - p.x, dpy = s[1] - p.y, dx = (dpx / 8 + dpy / 4) / 2, dz = (dpy / 4 - dpx / 8) / 2;
     if (sid) PIX.carShift[sid] = [q.x + dx - lerp(pa.x, b.x, alpha), q.z + dz - lerp(pa.z, b.z, alpha)];
-    return { x: q.x + dx, z: q.z + dz, yaw: q.yaw, hd, vx: (b.x - pa.x) * k, vz: (b.z - pa.z) * k, smooth: true };
+    return { x: q.x + dx, z: q.z + dz, yaw: q.yaw, hd, gone, vx: (b.x - pa.x) * k, vz: (b.z - pa.z) * k, smooth: true };
   });
 }
 // D30: a good in (or on) a car, moved with the car onto its drawn pixel.
@@ -26365,12 +26371,6 @@ function pixScene(alpha, Lgiven) {
     const run = S.rr && typeof rrRunOf === 'function' ? rrRunOf(S, tr.id) : null, freight = run ? run.kind !== 'pax' : tr.consist.some(c => c.k === 'boxcar' || c.k === 'flatcar');
     const standing = !(Math.abs(tr.v || 0) > 1e-3);
     const drawPoses = pixTrainDrawPoses(tr, ti, poses, alpha);   // D30: blended, the heading held, on whole pixels along the rails
-    // D33: east of the junction the railroad's trains are drawn on the main line's branch into the wood (the sim has
-    // them on the straight, where the new line now is); under the trees they are not drawn at all.
-    if (pixLnOn()) for (const dp of drawPoses) if (dp.x > D33.JX && Math.abs(dp.z) < 0.5) {
-      const q = pixBranchPose(dp.x); dp.x = q.x; dp.z = q.z; dp.yaw += q.turn; dp.hd = pixHeading(dp.yaw); dp.gone = q.z < -LINE.BORDER.N - 7;
-      if (q.z < -5 && !dp.gone) { const n = Math.floor((q.x - D33.LX) / 16); (PIX.woodVeh || (PIX.woodVeh = new Set())).add(n).add(n - 1).add(n + 1); }
-    }
     poses.forEach((b, vi) => {
       const pa = prevPoses && prevPoses[ti] && prevPoses[ti].length === poses.length ? prevPoses[ti][vi] : b;
       const dp = drawPoses[vi], x = dp.x, z = dp.z, yaw = dp.yaw, k = b.k, car = tr.consist[vi];

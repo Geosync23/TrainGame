@@ -1371,6 +1371,31 @@ const TOWN27 = (() => {
   scatter(24, -92, 92, -60, 26, (x, z) => { if (clear(x, z, 0.5)) put('nat/flowers/' + (1 + Math.floor(R() * 3) % 3), x, z, 0.3, false, true); });
   return { lots, buildings, civic, houses, props, nature };
 })();
+// ---- D32 stage 3 (Town): the bigger town's new houses (plans/d32-tech.md 8.1; owner Town, section "the bigger town
+// (D32)"). A separate block of TOWN27 rows, so the D27 table above is untouched: ten more houses on 8u lots, three kinds
+// (tn: 'cabin' | 'frame' | 'two', the two-room house). Five between the D27 houses on the two back lanes (x -35 and
+// 35, doors on lanes W and E as theirs), five on a third lane west of the town (lane 'W2' at x -43, the houses at x
+// -51 facing it, north of the camp; joined to lane W at the alley z -73 and at its north end z -116). Each keeps a D27
+// design as its stand-in art (design, face) until the artist's bld/house_<tn> lands (the renderer asks for that key
+// first). Solid nature on the new lots and the third lane is taken away. ?tn=0 leaves the whole block out (the D27 town).
+const TN_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('tn') === '0';
+TOWN27.tnLanes = [];
+if (!TN_OFF) (() => {
+  const T = TOWN27, ROWS = [   // id, kind, x, z, lane (absent: the D27 lane on its side)
+    ['house9', 'cabin', -35, -50], ['house10', 'frame', 35, -50], ['house11', 'two', 35, -70], ['house12', 'cabin', 35, -90], ['house13', 'frame', 35, -112],
+    ['house14', 'cabin', -51, -66, 'W2'], ['house15', 'frame', -51, -78, 'W2'], ['house16', 'two', -51, -90, 'W2'], ['house17', 'cabin', -51, -102, 'W2'], ['house18', 'frame', -51, -114, 'W2'],
+  ];
+  const DESIGN = { cabin: 3, frame: 1, two: 2 };   // the stand-in art (the D27 house designs)
+  for (const [id, tn, x, z, lane] of ROWS) {
+    const e = x < 0;
+    T.houses.push({ id, kind: 'house', design: DESIGN[tn], tn, x, z, face: e ? 'e' : 'w', ext: e ? [-3.5, 4.15, -3.4, 4.25] : [-4.15, 3.5, -4.25, 3.4], h: 6, ...(lane ? { lane } : {}) });
+  }
+  // The third lane: its x, the doors' x, where it joins lane W (node id, z), its extent (for clearing nature).
+  T.tnLanes.push({ id: 'W2', x: -43, door: -46.2, joins: [['laneW_a2', -73], ['laneW_n', -116]], z0: -118, z1: -62 });
+  const keep = T.houses.filter(h => h.tn).map(h => [h.x - 5, h.x + 5, h.z - 5, h.z + 5])
+    .concat([[-45, -41, -118, -62], [-43, -27, -75, -71], [-43, -27, -118, -114]]);   // the lane and its two joins
+  T.nature = T.nature.filter(q => !q.solid || !keep.some(k => q.x > k[0] - q.r && q.x < k[1] + q.r && q.z > k[2] - q.r && q.z < k[3] + q.r));
+})();
 // The boardwalks in front of the lots are low decks (walkDeckY): 0.3u, the feed store's loading dock 1u.
 for (const b of TOWN27.buildings) PROTO_DECKS.push({ id: 'walk_' + b.shop, x0: b.walk.x0, x1: b.walk.x1, z0: b.walk.z0, z1: b.walk.z1, y: b.walk.y });
 // D27: the twelve shops of the main street (plans/d27-tech.md 2.4; the foundation's table, F and W read it). id, bld
@@ -5469,7 +5494,7 @@ function townGraphBuild() {
     // The back lane behind the row, the alleys to it, the houses on it.
     const lane = [[-33, node('lane' + side + '_s', sx * LX, -33, 'lane')], [-116, node('lane' + side + '_n', sx * LX, -116, 'lane')]];
     ALLEYS.forEach((z, i) => { lane.push([z, node('lane' + side + '_a' + i, sx * LX, z, 'lane')]); link('bw' + side + '_a' + i, 'lane' + side + '_a' + i); });
-    for (const h of TOWN27.houses.filter(q => Math.sign(q.x) === sx)) {
+    for (const h of TOWN27.houses.filter(q => Math.sign(q.x) === sx && !q.lane)) {   // (D32 Town: houses on a lane of their own below)
       lane.push([h.z, node('lane_' + h.id, sx * LX, h.z, 'lane')]);
       node('door_' + h.id, sx * HX, h.z, 'door', { bld: h.id, f: -face, sx: sx * 0.3 });
       link('lane_' + h.id, 'door_' + h.id);
@@ -5503,6 +5528,17 @@ function townGraphBuild() {
   link('wait1', 'door_station'); link('wait0', 'door_station');
   // The cowhands' way in: west of the town, past the station.
   node('edge_w', -88, -26, 'edge'); link('edge_w', 'sq_ww');
+  // D32 stage 3 (Town): a back lane of the bigger town's (TOWN27.tnLanes), its joins to lane W and its houses' doors.
+  for (const L of TOWN27.tnLanes) {
+    const lane = L.joins.map(([to, z], i) => { const id = 'lane' + L.id + '_j' + i; node(id, L.x, z, 'lane'); link(id, to); return [z, id]; });
+    for (const h of TOWN27.houses.filter(q => q.lane === L.id)) {
+      lane.push([h.z, node('lane_' + h.id, L.x, h.z, 'lane')]);
+      node('door_' + h.id, L.door, h.z, 'door', { bld: h.id, f: h.face === 'e' ? -Math.PI / 2 : Math.PI / 2, sx: h.face === 'e' ? -0.3 : 0.3 });
+      link('lane_' + h.id, 'door_' + h.id);
+    }
+    lane.sort((a, b) => b[0] - a[0]);
+    chain(lane.map(q => q[1]));
+  }
   // All shortest paths (Floyd), next hops for walking.
   const n = nodes.length, dist = new Float64Array(n * n).fill(Infinity), next = new Int16Array(n * n).fill(-1);
   for (let i = 0; i < n; i++) { dist[i * n + i] = 0; next[i * n + i] = i; }
@@ -5655,14 +5691,15 @@ const tfDist = (a, b) => TOWN_GRAPH.dist[a * TOWN_GRAPH.n + b];
 // The day's plans: [agent] = [{ pl (node), in (building id, 'away', or null: outdoors), act ('in' | 'idle' | 'bench' |
 // 'meet' | 'talk'), at (be there by, s of the day), leave (sets off), svc, side, with, back }]. Pure (seed, day); cached.
 const tfPlanCache = new Map();
-function tfPlans(seed, day) {
-  const key = seed + '/' + day;
+function tfPlans(seed, day, tnd = tnDayOf(null)) {   // (D32 Town: tnd, the bigger town's day: its routines and the economy's changes; null with ?tn=0)
+  const key = seed + '/' + day + (tnd ? '/' + tnd.key : '');
   if (tfPlanCache.has(key)) return tfPlanCache.get(key);
   const wd = ((day % 7) + 7) % 7, { stroll, benches } = tfSpots(), plans = [];
   TF_AGENTS.forEach((ag, i) => {
     const X = rngFor(seed, 'tf', day, i), R = () => rngNext(X), list = [];
     let base = null;
     const place = (name, r1) => {
+      if (tnd) { const q = tnPlace(ag, name, r1, tnd); if (q !== undefined) return q; }   // (D32 Town)
       if (name === 'porch') return { pl: tfDoorOf(ag.work), in: null, act: 'idle' };
       if (name === 'stroll') return { pl: stroll[Math.floor(r1 * stroll.length) % stroll.length], in: null, act: 'idle' };
       if (name === 'bench') return { pl: benches[Math.floor(r1 * benches.length) % benches.length], in: null, act: 'bench' };
@@ -5670,7 +5707,7 @@ function tfPlans(seed, day) {
       if (!b) return null;
       return { pl: tfDoorOf(b), in: b === 'edge' ? 'away' : b, act: 'in' };
     };
-    for (const r of TF_ROUTINES[ag.kind] || []) {
+    for (const r of (tnd ? tnRoutine(ag, wd, tnd) : TF_ROUTINES[ag.kind]) || []) {
       // four numbers per routine line whatever is taken, so one line's change does not move the others' draws
       const take = r.p === undefined || R() < r.p, j = Math.round((R() * 2 - 1) * TF.JITTER_S), j2 = Math.round((R() * 2 - 1) * TF.JITTER_S), r1 = R();
       if (!tfDayOk(r.days, wd) || !take) continue;
@@ -5761,8 +5798,8 @@ function tfSt(S) {
 }
 // A day's plan begins (05:00, or a save without S.tf, or the town switched on): every agent is put where his errand of
 // the moment has him, arrived (no walking replayed: cheap). Returns the plans.
-function tfPlanDay(S, day) {
-  const st = tfSt(S), plans = tfPlans(S.seed, day), now = day === tfDay(S) ? tfNow(S) : TF.PLAN_S;
+function tfPlanDay(S, day, tnd = tnDayOf(S)) {
+  const st = tfSt(S), plans = tfPlans(S.seed, day, tnd), now = day === tfDay(S) ? tfNow(S) : TF.PLAN_S;
   st.day = day;
   st.ag = plans.map(E => {
     let k = tfErrandAt(E, now);
@@ -5786,8 +5823,9 @@ function tfArrived(st, i, q) {
 // Step 8b of the sim tick (after townTick): the townsfolk walking their errands. Only with D27 town on.
 function tfTick(S, ev) {
   if (!protoWorld(S.track) || !d27On(S.track, 'town')) return;
-  const st = tfSt(S), day = tfDay(S);
-  const plans = st.day !== day || st.ag.length !== TF_AGENTS.length ? tfPlanDay(S, day) : tfPlans(S.seed, day);
+  tnRoll(S, ev);                                       // (D32 Town: the bigger town's morning, before the day's plans)
+  const st = tfSt(S), day = tfDay(S), tnd = tnDayOf(S);
+  const plans = st.day !== day || st.ag.length !== TF_AGENTS.length ? tfPlanDay(S, day, tnd) : tfPlans(S.seed, day, tnd);
   const now = tfNow(S), G = TOWN_GRAPH, n = G.n, dt = CFG.TICK_GAME_S, Pl = S.player;
   // A delivery handed in at a shop: its keeper, if in, steps out to his door.
   for (const e of ev) if ((e.t === 'pgDelivered' || e.t === 'frDelivered') && e.shop) {
@@ -5844,7 +5882,7 @@ function tfPose(S, i, plans) {
 // chance or waiting for the same train) face each other and talk.
 function tfDrawList(S) {
   if (!protoWorld(S.track) || !d27On(S.track, 'town') || !S.tf || S.tf.day < 0 || S.tf.ag.length !== TF_AGENTS.length) return [];
-  const plans = tfPlans(S.seed, S.tf.day), out = [];
+  const plans = tfPlans(S.seed, S.tf.day, tnDayOf(S)), out = [];
   for (let i = 0; i < TF_AGENTS.length; i++) {
     const p = tfPose(S, i, plans);
     if (p.hidden) continue;
@@ -6550,13 +6588,471 @@ function hwCheckSaveShape(st) {
 const HW_TEST = { HW, hwSync, hwPath, hwPlayerIds, hwRoll, hwSummaryLine, hwDrawList, hwPbList, hwCutaway, hwPixItems, hwOnTrain, hwTicketOf, hwCartGoods, hwHand, hwName, hwPost, hwAwayTick, hwCheckSaveShape };
 
 // ==== Section: the bigger town (D32) ====
-// Owner: Town, stage 3 (plans/d32-tech.md section 8: homes, roles, rooms, the simple economy). Prefixes tn, TN; store
-// S.tn. UNTIL TOWN LANDS these are Foundation's empty stand-ins.
-function tnTick(S, ev) {}
-function tnShop(S, id) { return null; }                      // { stock, open, custom }
-function tnHome(S, who) { return null; }                     // { pay, mood }
-function tnRoomOpen() { return null; }                       // the building open to view, or null
-function tnCheckSaveShape(st) { if (st.tn !== undefined && (!st.tn || typeof st.tn !== 'object')) throw new Error('damaged save: the bigger town'); }
+// Owner: Town, stage 3 (plans/d32-tech.md 8.1 and 8.4: homes, roles, a daily round, a simple economy you can see).
+// Prefixes tn, TN; store S.tn. The rooms (8.2, 8.3) are another builder's (Rooms: rm, RM, the room: fields, the walk
+// inside); people still go in at a building's door and are not drawn, as in D27. ?tn=0 parks all of this: the D27 town
+// of 19 people, no new houses, no economy (TN_OFF, "starting world layout").
+//
+// The people. TF_AGENTS (W's, "the town (D27)") gets 22 more (TN_PEOPLE: the keepers' families, clerks at the store,
+// the bank and the assay office, the smith's hand, the hotel's cook and maid, a stable boy and a livery hand, a barmaid,
+// a printer's devil, a carpenter, a bath woman, a feed hand, four more pupils), so 41 townsfolk; the hired station hands
+// (S.hw) lodge at the hotel. Everyone has { role (a few words for the Look card), home, work }: home a building id
+// (a house, a room over a shop, or 'edge' for the cowhands who ride in), work a building id (a shop, the church, the
+// school; a homemaker's is her home; the cowhands' the range, 'edge'). The new houses are TOWN27's block of rows
+// "D32 stage 3 (Town)" (ten, three kinds) with their lanes and doors in the town graph.
+// The round. With the town on, each person's day is planned from TN_ROUTINES by kind (W's tfPlans, which calls
+// tnRoutine and tnPlace): home, work, the noon meal (home or the hotel's table), an errand, the saloon or the porch in
+// the evening, home by 21:30; church on Sunday; the children to school. The economy changes the plans (below).
+// The rail men (Crew's S.cw): Saturday evening a third of the men in camp walk to the saloon and back (20:20 to about
+// 21:45); Sunday evening a quarter walk to the church for evening prayers (19:55 to about 21:45). The crew's line work is
+// untouched: only men sitting at the camp's fire are taken, and they are handed back walking to their cots (Crew's
+// 'toBed'). While out a man's st is 'town' (pl 0 indoors), which the crew's tick leaves alone.
+//
+// The economy (8.4; counts only, no prices). Settled each morning at 05:00 (tnRoll, called first thing in W's tfTick, so
+// the day's plans see it):
+// - Stock: each shop that takes goods by rail (TN.USE) has a stock 0 to TN.CAP. A good handed in at its door
+//   (frDelivered, pgDelivered; the hired delivery men's and the shop's own collection too) adds TN.UNIT (TN.BIG_UNIT for
+//   a plough, piano, furniture or stove). An open shop uses TN.USE a day (1 to 3). A new town starts with two days' use.
+// - Open or shut: a shop is open while its stock was above 0 at 05:00 or it has been at 0 for one day only ("empty
+//   shelves"); after a second morning at 0 it is shut. The hotel and the saloon also stay open on travellers' custom
+//   (any yesterday). The barber, the sheriff, the assay office, the church and the school have no stock: always open.
+//   So missed goods show as empty shelves two days later and a shut shop the day after.
+// - Pay: each household (the people of one home) gets TN.PAY coins a day for each earner whose workplace was open, and
+//   spends TN.UPKEEP: a purse of 0 to TN.PURSE_MAX. Mood: content, worried after TN.WORRIED days without pay,
+//   unhappy after TN.UNHAPPY.
+// - What it does to the round: the people of a shut shop do not go to work: its keeper stands at its door (so he is
+//   there for a delivery: W's tfAt), the others idle on their porches or at the saloon's door; an errand to a shut
+//   shop ends at its door; unhappy households' grown-ups stand about the depot square in the evening.
+// - Travellers' custom: each traveller who steps off a train (pbOff, ppOff) has a 1 in 3 chance (rngFor(seed, 'tn',
+//   'cust', run, id)) to walk to the hotel or the saloon (whichever is open) and stay an hour, 1 in 10 of the hotel's
+//   overnight (to 07:00): one custom each. Rail men at the saloon are custom too, and each hired hand lodging at the
+//   hotel is a night's custom.
+// - Signs: a "Closed" card at a shut shop's door (tnPixItems), the idle people, the unhappy on the square, the Look
+//   card of a person or a home (tnLook: role, home, work, purse, mood; a shop: stock, open, custom), the dev panel's
+//   town line (tnDevLine). The Rooms builder reads tnShop(S, id) { stock, open, custom } for the shelves indoors and
+//   tnHome(S, who) { pay, mood } for a home.
+// S.tn (optional: a save without it gets it at the next 05:00 plan; a new game at its first tick) = { day (the day it
+// was settled for), key (the day's plan key: shut shops and unhappy homes), shop: { [id]: { s (stock), z (mornings at
+// 0), o (open today, 1 | 0), c (custom today), cy (custom yesterday) } }, home: { [home]: { p (purse), u (days unpaid),
+// lp (earners paid yesterday) } }, vis: [visitors: { id, who, sh, st ('wait' | 'go' | 'in' | 'back'), t, at, go, seg,
+// s }], vn (the next visitor's id), cr: [rail men out: { id, to ('saloon' | 'church'), st ('go' | 'in' | 'back'), t }],
+// tot: { delivered, used, custom, paid } (since the town began) }. Nothing random but rngFor(seed, 'tn', ...).
+const TN = {
+  on: !TN_OFF,
+  CAP: 12, START_DAYS: 2,
+  USE: { store: 3, saloon: 3, hotel: 2, smithy: 2, livery: 2, newspaper: 2, bank: 1, undertaker: 1, feed: 1 },   // a day, while open
+  UNIT: 3, BIG_UNIT: 6, BIG: ['plough', 'piano', 'furniture', 'stove'],
+  CUSTOM_SHOPS: ['hotel', 'saloon'],
+  PURSE0: 8, PAY: 2, UPKEEP: 1, PURSE_MAX: 20, WORRIED: 2, UNHAPPY: 4,
+  CUSTOM_P: 1 / 3, NIGHT_P: 0.1, VIS_WAIT_S: 600, STAY_S: 3600, NIGHT_TO_S: 7 * 3600, VIS_MAX: 16,
+  CREW_SAT: 1 / 3, CREW_SUN: 1 / 4,
+  SAT_GO_S: 20 * 3600 + 1200, SAT_BACK_S: 21 * 3600 + 900,     // the saloon: leave the camp 20:20, leave the saloon 21:15
+  SUN_GO_S: 19 * 3600 + 3300, SUN_BACK_S: 21 * 3600,           // evening prayers: leave the camp 19:55, leave the church 21:00
+  MOODS: ['content', 'worried', 'unhappy'],
+};
+// The 22 new townsfolk (W's agent shape plus role): id, name, who (A1's people types), kind (the routine), role, home,
+// work. Names are the builder's (provisional).
+const TN_PEOPLE = [
+  ['martha', 'Martha Pratt', 'woman_bonnet', 'keeper', 'keeps the store with her husband', 'shop_store', 'shop_store'],
+  ['josie', 'Josie Turner', 'woman_shawl', 'homemaker', 'keeps house over the smithy', 'shop_smithy', 'shop_smithy'],
+  ['gus', 'Gus Lindqvist', 'worker', 'hand', 'the smith\'s hand', 'house9', 'shop_smithy'],
+  ['will', 'Will Abbott', 'man_bowler.b', 'clerk', 'clerk at the general store', 'house10', 'shop_store'],
+  ['mary', 'Mary Abbott', 'woman_bonnet.b', 'homemaker', 'keeps house', 'house10', 'house10'],
+  ['ada', 'Ada Abbott', 'child.b', 'pupil', 'pupil at the school', 'house10', 'school'],
+  ['edwin', 'Edwin Marsh', 'man_top', 'clerk', 'clerk at the bank', 'house11', 'shop_bank'],
+  ['lucy', 'Lucy Marsh', 'woman_shawl.b', 'homemaker', 'keeps house', 'house11', 'house11'],
+  ['jimmy', 'Jimmy Marsh', 'child', 'pupil', 'pupil at the school', 'house11', 'school'],
+  ['hattie', 'Hattie Bell', 'woman_shawl', 'cook', 'cook at the hotel', 'house12', 'shop_hotel'],
+  ['rosa', 'Rosa Diaz', 'woman_bonnet', 'hand', 'maid at the hotel', 'house3', 'shop_hotel'],
+  ['ana', 'Ana Diaz', 'child.b', 'pupil', 'pupil at the school', 'house3', 'school'],
+  ['billy', 'Billy Ortega', 'child', 'hand', 'stable boy at the livery', 'shop_livery', 'shop_livery'],
+  ['lottie', 'Lottie Shaw', 'woman_bonnet.b', 'barmaid', 'serves at the saloon', 'house13', 'shop_saloon'],
+  ['sam', 'Sam Ives', 'worker.b', 'hand', 'printer\'s devil at the newspaper', 'house14', 'shop_newspaper'],
+  ['pete', 'Pete Hensley', 'child', 'pupil', 'pupil at the school', 'house5', 'school'],
+  ['otis', 'Otis Fenn', 'worker', 'hand', 'carpenter for the undertaker', 'house15', 'shop_undertaker'],
+  ['ruth', 'Ruth Fenn', 'woman_shawl.b', 'hand', 'bath woman at the barber\'s', 'house15', 'shop_barber'],
+  ['dan', 'Dan Pike', 'worker.b', 'hand', 'hand at the feed store', 'house16', 'shop_feed'],
+  ['joe', 'Joe Haskins', 'man_bag', 'hand', 'hand at the livery', 'house17', 'shop_livery'],
+  ['ned', 'Ned Quinn', 'man_top.b', 'clerk', 'clerk at the assay office', 'house18', 'shop_assay'],
+  ['nora', 'Nora Quinn', 'woman_bonnet', 'homemaker', 'keeps house', 'house18', 'house18'],
+].map(([id, name, who, kind, role, home, work]) => ({ id, name, who, kind, role, home, work, tn: 1 }));
+// The roles of W's 19 (and what changes for them with the town on: the storekeeper's boy lives over the store with his
+// parents; the cowhands' work is the range).
+const TN_ROLES = { amos: 'storekeeper', nell: 'keeps the hotel', henry: 'banker', jake: 'blacksmith', luis: 'keeps the livery stable', walt: 'keeps the feed and seed store',
+  silas: 'keeps the saloon', ezra: 'printer and editor of the newspaper', pablo: 'barber', tom: 'sheriff', abel: 'undertaker', karl: 'assayer', elias: 'preacher',
+  clara: 'schoolteacher', ma: 'laundress at the hotel', tommy: 'pupil at the school', sarah: 'pupil at the school', red: 'cowhand from the range', dusty: 'cowhand from the range' };
+if (TN.on) {
+  for (const A of TF_AGENTS) A.role = TN_ROLES[A.id] || A.kind;
+  const tommy = TF_AGENTS.find(a => a.id === 'tommy');
+  if (tommy) tommy.home = 'shop_store';
+  for (const A of TF_AGENTS) if (A.kind === 'cowhand') A.work = 'edge';
+  TF_AGENTS.push(...TN_PEOPLE);
+}
+// The round by kind (W's routine lines: be there by 'from', then back at 'to'; p the chance; days). The places W's
+// tfPlans knows (home, work, porch, stroll, bench, a building) and tnPlace's: meal (the hotel's table or home),
+// errand (a shop by the draw), evening (the saloon or the porch at home), porchHome, saloonDoor, square, idleShut.
+const TN_SUN = [{ place: 'church', from: '10:00', days: 'sun', fixed: true }, { place: 'home', from: '11:45', days: 'sun' }, { place: 'bench', from: '14:00', to: '15:00', p: 0.5, days: 'sun' },
+  { place: 'stroll', from: '16:00', to: '16:40', p: 0.4, days: 'sun' }, { place: 'porchHome', from: '19:00', to: '20:00', p: 0.3, days: 'sun' }];
+const TN_ROUTINES = {
+  keeper: [{ place: 'home', from: '05:00' }, { place: 'porch', from: '07:05', to: '07:25', p: 0.6, days: 'six' }, { place: 'work', from: '07:30', days: 'six' },
+    { place: 'meal', from: '12:05', to: '12:45', p: 0.7, days: 'six' }, { place: 'errand', from: '15:30', to: '15:50', p: 0.4, days: 'six' }, { place: 'home', from: '18:00', days: 'six' },
+    { place: 'stroll', from: '18:10', to: '18:50', p: 0.4, days: 'six' }, { place: 'evening', from: '19:30', to: '21:10', p: 0.6, days: 'six' }, ...TN_SUN],
+  barkeep: [{ place: 'home', from: '05:00' }, { place: 'porch', from: '09:30', to: '09:50', p: 0.6, days: 'six' }, { place: 'errand', from: '10:20', to: '10:50', p: 0.5, days: 'six' },
+    { place: 'meal', from: '12:00', to: '12:40', p: 0.4, days: 'six' }, { place: 'work', from: '13:00', days: 'all' }, { place: 'porch', from: '17:00', to: '17:15', p: 0.5, days: 'all' }, ...TN_SUN.slice(0, 2)],
+  barmaid: [{ place: 'home', from: '05:00' }, { place: 'errand', from: '10:30', to: '11:00', p: 0.5, days: 'six' }, { place: 'meal', from: '12:10', to: '12:50', p: 0.3, days: 'six' },
+    { place: 'work', from: '16:00', days: 'six' }, { place: 'home', from: '21:15', days: 'six' }, ...TN_SUN],
+  clerk: [{ place: 'home', from: '05:00' }, { place: 'work', from: '09:00', days: 'six' }, { place: 'meal', from: '12:10', to: '13:00', p: 0.8, days: 'six' }, { place: 'home', from: '16:30', days: 'six' },
+    { place: 'errand', from: '16:45', to: '17:15', p: 0.5, days: 'six' }, { place: 'stroll', from: '17:30', to: '18:10', p: 0.4, days: 'six' }, { place: 'evening', from: '19:30', to: '21:10', p: 0.5, days: 'six' }, ...TN_SUN],
+  sheriff: [{ place: 'home', from: '05:00' }, { place: 'stroll', from: '07:00', to: '07:40', p: 0.8, days: 'six' }, { place: 'work', from: '08:00', days: 'six' }, { place: 'stroll', from: '11:15', to: '11:45', p: 0.7, days: 'six' },
+    { place: 'meal', from: '12:20', to: '13:00', p: 0.6, days: 'six' }, { place: 'stroll', from: '14:30', to: '15:00', p: 0.7, days: 'six' }, { place: 'stroll', from: '17:30', to: '18:00', p: 0.7, days: 'six' },
+    { place: 'saloon', from: '20:30', to: '21:15', p: 0.7, days: 'six' }, ...TN_SUN],
+  preacher: [{ place: 'home', from: '05:00' }, { place: 'work', from: '08:00', days: 'six' }, { place: 'meal', from: '12:00', to: '12:45', p: 0.6, days: 'six' }, { place: 'stroll', from: '15:00', to: '15:40', p: 0.7, days: 'six' },
+    { place: 'bench', from: '16:00', to: '16:45', p: 0.5, days: 'six' }, { place: 'home', from: '17:30', days: 'six' }, { place: 'porchHome', from: '19:00', to: '20:00', p: 0.4, days: 'six' },
+    { place: 'church', from: '09:30', days: 'sun', fixed: true }, { place: 'home', from: '12:00', days: 'sun' }, { place: 'bench', from: '15:00', to: '16:00', p: 0.6, days: 'sun' }],
+  teacher: [{ place: 'home', from: '05:00' }, { place: 'work', from: '07:45', days: 'wk', fixed: true }, { place: 'home', from: '15:30', days: 'wk' }, { place: 'errand', from: '16:00', to: '16:30', p: 0.5, days: 'wk' },
+    { place: 'bench', from: '17:00', to: '17:45', p: 0.4, days: 'wk' }, { place: 'store', from: '10:00', to: '10:40', p: 0.7, days: 'sat' }, { place: 'bench', from: '11:00', to: '11:45', p: 0.6, days: 'sat' },
+    { place: 'porchHome', from: '19:00', to: '20:00', p: 0.4, days: 'all' }, ...TN_SUN.slice(0, 4)],
+  pupil: [{ place: 'home', from: '05:00' }, { place: 'work', from: '08:00', days: 'wk', fixed: true }, { place: 'home', from: '15:05', days: 'wk' }, { place: 'stroll', from: '15:30', to: '16:40', p: 0.8, days: 'wk' },
+    { place: 'stroll', from: '10:00', to: '12:00', p: 0.8, days: 'sat' }, { place: 'porchHome', from: '18:30', to: '19:15', p: 0.4, days: 'all' }, ...TN_SUN.slice(0, 4)],
+  laundress: [{ place: 'home', from: '05:00' }, { place: 'work', from: '08:00', days: 'six' }, { place: 'home', from: '13:45', days: 'six' }, { place: 'store', from: '14:15', to: '14:45', p: 0.6, days: 'six' },
+    { place: 'stroll', from: '16:00', to: '16:30', p: 0.5, days: 'six' }, { place: 'porchHome', from: '19:00', to: '20:15', p: 0.4, days: 'six' }, ...TN_SUN],
+  cowhand: [{ place: 'home', from: '05:00' }, { place: 'livery', from: '18:50', to: '19:10', p: 0.5, days: 'six' }, { place: 'saloon', from: '19:30', to: '21:15', p: 0.5, days: 'wk' },
+    { place: 'saloon', from: '19:30', to: '21:20', p: 0.9, days: 'sat' }],
+  homemaker: [{ place: 'home', from: '05:00' }, { place: 'errand', from: '09:30', to: '10:15', p: 0.7, days: 'six' }, { place: 'porchHome', from: '11:00', to: '11:30', p: 0.4, days: 'all' },
+    { place: 'stroll', from: '14:30', to: '15:15', p: 0.4, days: 'six' }, { place: 'bench', from: '16:00', to: '16:45', p: 0.3, days: 'six' }, { place: 'porchHome', from: '19:00', to: '20:15', p: 0.4, days: 'six' }, ...TN_SUN],
+  hand: [{ place: 'home', from: '05:00' }, { place: 'work', from: '07:00', days: 'six' }, { place: 'meal', from: '12:00', to: '12:45', p: 0.6, days: 'six' }, { place: 'home', from: '17:30', days: 'six' },
+    { place: 'errand', from: '17:45', to: '18:15', p: 0.3, days: 'six' }, { place: 'evening', from: '19:30', to: '21:10', p: 0.45, days: 'six' }, ...TN_SUN],
+  cook: [{ place: 'home', from: '05:00' }, { place: 'work', from: '06:00', days: 'all' }, { place: 'church', from: '10:00', days: 'sun', fixed: true }, { place: 'work', from: '11:45', days: 'sun' },
+    { place: 'home', from: '19:30', days: 'all' }, { place: 'porchHome', from: '19:45', to: '20:30', p: 0.3, days: 'all' }],
+};
+const TN_ERRANDS = ['store', 'barber', 'bank', 'feed', 'newspaper', 'smithy'];
+const TN_SQUARE = ['sq_w', 'sq_e', 'sq_ww', 'sq_ee', 'street_s'];
+const tnShopOfBld = bld => { const q = SHOPS27.find(s => s.bld === bld); return q ? q.id : null; };
+// The households: [{ id (the home building), name, members (agent indexes), earners (indexes of those with a paying
+// workplace: a shop, the church, the school) }], from TF_AGENTS once.
+let TN_HH = null;
+function tnHouseholds() {
+  if (TN_HH) return TN_HH;
+  const by = {};
+  TF_AGENTS.forEach((A, i) => { if (!A.home || A.home === 'edge') return; (by[A.home] = by[A.home] || []).push(i); });
+  return (TN_HH = Object.keys(by).sort().map(id => {
+    const members = by[id], A0 = TF_AGENTS[members[0]], sur = A0.name.replace(/ \(.*\)$/, '').split(' ').slice(-1)[0];
+    const earners = members.filter(i => { const w = TF_AGENTS[i].work, k = TF_AGENTS[i].kind; if (k === 'homemaker' || k === 'pupil') return false; return w === 'church' || w === 'school' || !!tnShopOfBld(w); });
+    return { id, name: members.length > 1 ? `the ${sur}s` : A0.name.replace(/ \(.*\)$/, ''), members, earners };
+  }));
+}
+const tnHomeName = id => { const h = TOWN27.houses.find(q => q.id === id); if (h) return { cabin: 'a cabin', frame: 'a frame house', two: 'a two-room house' }[h.tn] || 'a house'; const s = SHOPS27.find(q => q.bld === id); return s ? `the rooms over the ${s.name.toLowerCase()}` : id === 'edge' ? 'a ranch out on the range' : id; };
+const tnPlaceName = id => { if (!id) return 'nowhere'; if (id === 'church') return 'the church'; if (id === 'school') return 'the school'; if (id === 'edge') return 'the range'; const s = SHOPS27.find(q => q.bld === id); return s ? 'the ' + s.name.toLowerCase() : tnHomeName(id); };
+// ---- The day's state for the plans (pure: from S.tn) ----
+const TN_BASE = { key: 'b', shut: new Set(), unhappy: new Set() };
+const tnDayCache = new Map();
+function tnDayOf(S) {
+  if (!TN.on) return null;
+  const key = S && S.tn && typeof S.tn.key === 'string' ? S.tn.key : 'b';
+  if (key === 'b') return TN_BASE;
+  if (tnDayCache.has(key)) return tnDayCache.get(key);
+  const m = /^s:([^;]*);u:(.*)$/.exec(key) || [, '', ''], d = { key, shut: new Set(m[1] ? m[1].split(',') : []), unhappy: new Set(m[2] ? m[2].split(',') : []) };
+  if (tnDayCache.size > 32) tnDayCache.clear();
+  tnDayCache.set(key, d);
+  return d;
+}
+function tnKeyOf(st) {
+  const shut = Object.keys(st.shop).filter(id => !st.shop[id].o).sort(), un = Object.keys(st.home).filter(h => st.home[h].u >= TN.UNHAPPY).sort();
+  return shut.length || un.length ? `s:${shut.join(',')};u:${un.join(',')}` : 'b';
+}
+const tnShutBld = (bld, tnd) => { const id = tnShopOfBld(bld); return !!(id && tnd && tnd.shut.has(id)); };
+// The routine for agent A today (W's tfPlans asks, with the town on): TN_ROUTINES by kind, with the economy's changes.
+function tnRoutine(A, wd, tnd) {
+  let R = TN_ROUTINES[A.kind] || TF_ROUTINES[A.kind] || [];
+  if (A.work && tnShutBld(A.work, tnd)) R = R.map(r => r.place === 'work' ? { ...r, place: A.shop ? 'porch' : 'idleShut' } : r);
+  if (tnd && tnd.unhappy.has(A.home) && A.kind !== 'pupil' && A.kind !== 'cowhand')
+    R = R.filter(r => !(r.to && tfH(r.from) >= 18 * 3600)).concat([{ place: 'square', from: '18:30', to: '20:45', days: 'six' }]);
+  return R;
+}
+// A place of the town's routines: { pl (node), in (building or null), act } or undefined (W's own places).
+function tnPlace(A, name, r1, tnd) {
+  const out = n => ({ pl: tfNode(n), in: null, act: 'idle' }), shopIn = id => tnd && tnd.shut.has(id) ? out('door_' + id) : { pl: tfNode('door_' + id), in: 'shop_' + id, act: 'in' };
+  switch (name) {
+    case 'porchHome': return A.home === 'edge' ? undefined : { pl: tfDoorOf(A.home), in: null, act: 'idle' };
+    case 'saloonDoor': return out('door_saloon');
+    case 'square': return out(TN_SQUARE[Math.floor(r1 * TN_SQUARE.length) % TN_SQUARE.length]);
+    case 'idleShut': return r1 < 0.5 && A.home !== 'edge' ? { pl: tfDoorOf(A.home), in: null, act: 'idle' } : out('door_saloon');
+    case 'meal': return r1 < 0.45 && !(tnd && tnd.shut.has('hotel')) ? shopIn('hotel') : { pl: tfDoorOf(A.home), in: A.home, act: 'in' };
+    case 'errand': return shopIn(TN_ERRANDS[Math.floor(r1 * TN_ERRANDS.length) % TN_ERRANDS.length]);
+    case 'evening': return r1 < 0.35 && !(tnd && tnd.shut.has('saloon')) ? shopIn('saloon') : A.home === 'edge' ? undefined : { pl: tfDoorOf(A.home), in: null, act: 'idle' };
+  }
+  if (SHOPS27.some(s => s.id === name)) return shopIn(name);
+  return undefined;
+}
+// ---- The store ----
+function tnNew(S) {
+  const shop = {}, home = {};
+  for (const id of Object.keys(TN.USE)) shop[id] = { s: TN.USE[id] * TN.START_DAYS, z: 0, o: 1, c: 0, cy: 0 };
+  for (const h of tnHouseholds()) home[h.id] = { p: TN.PURSE0, u: 0, lp: h.earners.length };
+  const st = { day: tfDay(S), key: 'b', shop, home, vis: [], vn: 0, cr: [], tot: { delivered: 0, used: 0, custom: 0, paid: 0 } };
+  st.key = tnKeyOf(st);
+  return st;
+}
+// Does workplace bld pay today (st's open flags): a shop with stock that is open, or one without stock, the church, the school.
+function tnPays(st, bld) {
+  if (bld === 'church' || bld === 'school') return true;
+  const id = tnShopOfBld(bld);
+  if (!id) return false;
+  const q = st.shop[id];
+  return !q || !!q.o;
+}
+// The morning's settling (tfTick calls it first, every tick: it only acts when the day has changed). A save without
+// S.tn gets it at its next 05:00 (or a new game at its first tick).
+function tnRoll(S, ev) {
+  if (!TN.on) return;
+  const day = tfDay(S);
+  if (!S.tn) {
+    if (S.tick > 2 && tfNow(S) - TF.PLAN_S >= CFG.TICK_GAME_S) return;
+    S.tn = tnNew(S);
+    return;
+  }
+  const st = S.tn;
+  if (st.day >= day) return;
+  for (let d = st.day + 1, n = 0; d <= day && n < 7; d++, n++) {
+    // the day that ended: pay by yesterday's open flags, then the shops' use, custom, and today's open flags
+    for (const h of tnHouseholds()) {
+      const q = st.home[h.id] || (st.home[h.id] = { p: TN.PURSE0, u: 0, lp: 0 }), paid = h.earners.filter(i => tnPays(st, TF_AGENTS[i].work)).length;
+      q.p = Math.max(0, Math.min(TN.PURSE_MAX, q.p + TN.PAY * paid - TN.UPKEEP));
+      q.u = paid ? 0 : q.u + 1; q.lp = paid;
+      if (paid) st.tot.paid++;
+    }
+    if (st.shop.hotel && S.hw && n === 0) st.shop.hotel.c += S.hw.men.length;   // the hired hands' night at the hotel
+    for (const id of Object.keys(st.shop)) {
+      const q = st.shop[id], use = TN.USE[id] || 0;
+      if (q.o) { const u = Math.min(q.s, use); q.s -= u; st.tot.used += u; }
+      q.cy = q.c; q.c = 0;
+      q.z = q.s > 0 ? 0 : q.z + 1;
+      q.o = q.z < 2 || (TN.CUSTOM_SHOPS.includes(id) && q.cy > 0) ? 1 : 0;
+    }
+  }
+  st.day = day;
+  st.key = tnKeyOf(st);
+  ev.push({ t: 'tnDay', day, key: st.key });
+}
+// Step 8c of the sim tick: deliveries, travellers' custom and their walks, the rail men in town.
+function tnTick(S, ev) {
+  if (!TN.on || !S.tn || !protoWorld(S.track) || !d27On(S.track, 'town')) return;
+  const st = S.tn;
+  for (const e of ev) {
+    if ((e.t === 'frDelivered' || e.t === 'pgDelivered') && e.shop && st.shop[e.shop]) {
+      const q = st.shop[e.shop], k = Number.isInteger(e.id) ? itemType(S, e.id) : null;
+      q.s = Math.min(TN.CAP, q.s + (TN.BIG.includes(k) ? TN.BIG_UNIT : TN.UNIT));
+      st.tot.delivered++;
+    } else if (e.t === 'pbOff' || e.t === 'ppOff') tnCustom(S, st, e, ev);
+  }
+  tnVisTick(S, st);
+  tnCrewTick(S, st, ev);
+}
+// A traveller stepping off: one in three walks into town (rngFor(seed, 'tn', 'cust', run, id)).
+function tnCustom(S, st, e, ev) {
+  const X = rngFor(S.seed, 'tn', 'cust', e.run, e.id), r = rngNext(X), r2 = rngNext(X), r3 = rngNext(X);
+  if (r >= TN.CUSTOM_P) return;
+  const open = TN.CUSTOM_SHOPS.filter(id => st.shop[id] && st.shop[id].o);
+  if (!open.length || st.vis.length >= TN.VIS_MAX) return;
+  const sh = open[Math.floor(r2 * open.length) % open.length], WHO = typeof PP !== 'undefined' ? PP.WHO : ['man_bag'];
+  st.shop[sh].c++; st.tot.custom++;
+  st.vis.push({ id: st.vn++, who: WHO[(e.id | 0) % WHO.length], sh, night: sh === 'hotel' && r3 < TN.NIGHT_P ? 1 : 0, st: 'wait', t: S.time + TN.VIS_WAIT_S, at: tfNode('sta_w'), go: -1, seg: -1, s: 0 });
+  ev.push({ t: 'tnCustom', shop: sh, run: e.run, id: e.id });
+}
+function tnVisTick(S, st) {
+  if (!st.vis.length) return;
+  const G = TOWN_GRAPH, dt = CFG.TICK_GAME_S;
+  const head = (v, to) => { v.go = to; v.seg = G.next[v.at * G.n + to]; v.s = 0; };
+  st.vis = st.vis.filter(v => {
+    if (v.st === 'wait') { if (S.time < v.t) return true; v.st = 'go'; head(v, tfNode('door_' + v.sh)); }
+    else if (v.st === 'in') { if (S.time < v.t) return true; v.st = 'back'; head(v, tfNode('sta_w')); }
+    v.s += TF.SPEED * dt;
+    while (v.seg >= 0 && v.s >= tfDist(v.at, v.seg)) {
+      v.s -= tfDist(v.at, v.seg); v.at = v.seg;
+      if (v.at === v.go) {
+        v.go = v.seg = -1; v.s = 0;
+        if (v.st === 'back') return false;   // back at the station: gone
+        v.st = 'in';
+        const sod = tfNow(S);   // (05:00 to 29:00)
+        v.t = v.night ? S.time + Math.max(TN.STAY_S, 24 * 3600 + TN.NIGHT_TO_S - sod) : S.time + TN.STAY_S;
+        break;
+      }
+      v.seg = G.next[v.at * G.n + v.go];
+    }
+    return true;
+  });
+}
+// The rail men's evenings in town (Saturday the saloon, Sunday evening prayers): Crew's men, walked by Crew's own
+// stepping (cwGo, cwStep) along the town graph from the camp's gate, then handed back to Crew walking to their cots.
+function tnCrewRoute(to) {
+  const g = PROTO.CAMP.gate, path = townPath('sq_ww', 'door_' + to) || [], G = TOWN_GRAPH;
+  return [[g.x, g.z], [g.x, -26]].concat(path.map(id => [G.nodes[G.idx[id]].x, G.nodes[G.idx[id]].z]));
+}
+function tnCrewTick(S, st, ev) {
+  const C = S.cw;
+  if (!C || !C.men.length) { st.cr = []; return; }
+  const sod = rrSod(S.time), day = tfDay(S), wd = ((day % 7) + 7) % 7, men = C.men, v = CW.WALK * CFG.TICK_GAME_S / 60;
+  const go = wd === 5 ? TN.SAT_GO_S : wd === 6 ? TN.SUN_GO_S : -1;
+  if (go >= 0 && sod >= go && sod < go + CFG.TICK_GAME_S) {
+    const to = wd === 5 ? 'saloon' : 'church', k = wd === 5 ? TN.CREW_SAT : TN.CREW_SUN, X = rngFor(S.seed, 'tn', 'crew', day);
+    const can = men.filter(m => m.pl === 1 && m.st === 'camp' && m.a !== 'toBed' && !st.cr.some(c => c.id === m.id)).map(m => ({ m, r: rngNext(X) })).sort((a, b) => a.r - b.r || a.m.id - b.m.id);
+    for (const { m } of can.slice(0, Math.ceil(men.length * k))) {
+      const R = tnCrewRoute(to), end = R.pop();
+      m.st = 'town'; m.a = to; m.w = 0; cwGo(m, end[0], end[1], R);
+      st.cr.push({ id: m.id, to, st: 'go', t: 0 });
+      ev.push({ t: 'tnCrewOut', id: m.id, to });
+    }
+  }
+  if (!st.cr.length) return;
+  const back = c => c.to === 'saloon' ? TN.SAT_BACK_S : TN.SUN_BACK_S;
+  st.cr = st.cr.filter(c => {
+    const m = men[c.id];
+    if (!m || m.st !== 'town') return false;
+    if (sod < 12 * 3600 && sod >= 4 * 3600) { const t = cwCot(m.id); Object.assign(m, { st: 'bed', pl: 0, a: '', x: t.x, z: t.z, mv: 0 }); delete m.rt; return false; }   // (a night passed in a jump)
+    if (c.st === 'go') {
+      if (cwStep(S, m, v, false)) {
+        c.st = 'in';
+        const open = c.to === 'church' || (st.shop.saloon && st.shop.saloon.o);
+        if (open) { m.pl = 0; if (c.to === 'saloon' && st.shop.saloon) { st.shop.saloon.c++; st.tot.custom++; } }
+        else { m.mv = 0; m.f = 0; }                     // a shut saloon: they stand at its door
+      }
+    } else if (c.st === 'in') {
+      if (sod >= back(c)) { const R = tnCrewRoute(c.to).reverse(), end = R.pop(); R.shift(); m.pl = 1; c.st = 'back'; cwGo(m, end[0], end[1], R); }
+    } else if (cwStep(S, m, v, false)) {
+      const t = cwCot(m.id);
+      m.st = 'camp'; m.a = 'toBed'; m.pl = 1; cwGo(m, t.x, t.z, cwBedRoute(m.id).slice(0, -1));
+      return false;
+    }
+    return true;
+  });
+}
+// ---- For the other owners ----
+// tnShop(S, id): a shop's { stock (0..12, null when it keeps none), open, custom (today) }, or null (not a shop, the town off).
+function tnShop(S, id) {
+  if (!TN.on || !SHOPS27.some(s => s.id === id)) return null;
+  const q = S && S.tn && S.tn.shop[id];
+  if (!q) return { stock: null, open: true, custom: 0 };
+  return { stock: q.s, open: !!q.o, custom: q.c };
+}
+// tnHome(S, who): a household's { pay (the purse, 0..20), mood (0 content, 1 worried, 2 unhappy) } by its home building
+// or a member's id ('amos' or 'tf_amos'); null when not a household.
+function tnHome(S, who) {
+  if (!TN.on) return null;
+  let id = who;
+  const A = TF_AGENTS.find(a => a.id === who || 'tf_' + a.id === who);
+  if (A) id = A.home;
+  const h = tnHouseholds().find(q => q.id === id);
+  if (!h) return null;
+  const q = S && S.tn && S.tn.home[id];
+  return { pay: q ? q.p : TN.PURSE0, mood: tnMood(q) };
+}
+const tnMood = q => !q ? 0 : q.u >= TN.UNHAPPY ? 2 : q.u >= TN.WORRIED ? 1 : 0;
+function tnRoomOpen() { return null; }   // (the Rooms builder's: the building open to view)
+// The visitors walking (outdoors) in the townsfolk's draw shape.
+function tnDrawList(S) {
+  const st = S && S.tn;
+  if (!TN.on || !st || !st.vis.length || !protoWorld(S.track) || !d27On(S.track, 'town')) return [];
+  const G = TOWN_GRAPH, out = [];
+  for (const v of st.vis) {
+    if (v.st !== 'go' && v.st !== 'back') continue;
+    const A = G.nodes[v.at], B = G.nodes[v.seg], t = Math.min(1, v.s / tfDist(v.at, v.seg)), x = A.x + (B.x - A.x) * t, z = A.z + (B.z - A.z) * t;
+    out.push({ id: 'tnv' + v.id, who: v.who, name: 'A traveller', x, y: walkDeckY(S.track, x, z), z, f: Math.atan2(B.x - A.x, B.z - A.z), act: 'walk' });
+  }
+  return out;
+}
+// The Look card of a person (a pick of the townsfolk's list: 'tf_<id>', a rail man 'cw<n>', a hired hand 'hw<n>', a
+// traveller 'tnv<n>') or a home or shop building: { title, lines } or null.
+function tnLook(S, pick) {
+  if (!TN.on || !pick) return null;
+  const purse = q => `Purse: ${q.pay} coin${q.pay === 1 ? '' : 's'} (of ${TN.PURSE_MAX})`, mood = q => `Mood: ${TN.MOODS[q.mood]}`;
+  if (pick.k === 'tf') {
+    const id = String(pick.id);
+    if (/^cw\d+$/.test(id)) { const m = S.cw && S.cw.men[+id.slice(2)]; return m ? { title: cwName(S, +id.slice(2)), lines: ['Role: rail worker', 'Home: a cot in the camp', 'Work: building the line'] } : null; }
+    if (/^hw\d+$/.test(id)) { const m = S.hw && S.hw.men.find(q => 'hw' + q.id === id); return m ? { title: hwName(S, m), lines: [`Role: hired ${{ punch: 'ticket puncher', load: 'cargo loader', deliver: 'delivery man' }[m.k]}`, 'Home: lodges at the hotel', 'Work: the station'] } : null; }
+    if (/^tnv\d+$/.test(id)) { const v = S.tn && S.tn.vis.find(q => 'tnv' + q.id === id); return v ? { title: 'A traveller', lines: [`Off the train, going to the ${v.sh}`, v.night ? 'Staying the night' : 'Staying an hour'] } : null; }
+    const A = TF_AGENTS.find(a => 'tf_' + a.id === id);
+    if (!A) return null;
+    const hh = tnHome(S, A.id), lines = [`Role: ${A.role || A.kind}`, `Home: ${tnHomeName(A.home)}`, `Work: ${A.work === A.home && A.kind === 'homemaker' ? 'at home' : tnPlaceName(A.work)}`];
+    if (hh) lines.push(`Household: ${tnHouseholds().find(q => q.id === A.home).name}`, purse(hh), mood(hh));
+    const sh = A.work && tnShopOfBld(A.work), q = sh && tnShop(S, sh);
+    if (q && q.stock !== null && !q.open) lines.push(`The ${SHOPS27.find(s => s.id === sh).name.toLowerCase()} is shut: no pay`);
+    return { title: A.name.replace(/ \(.*\)$/, ''), lines };
+  }
+  if (pick.k === 'bld') {
+    const h = tnHouseholds().find(q => q.id === pick.id), sh = tnShopOfBld(pick.id), q = sh ? tnShop(S, sh) : null;
+    if (!h && !q) return null;
+    const lines = [];
+    if (q) lines.push(q.stock === null ? 'Keeps no stock: always open' : `Stock: ${q.stock} of ${TN.CAP}` + (q.stock === 0 ? ' (empty shelves)' : ''), q.open ? 'Open' : 'Shut: nothing on the shelves', ...(TN.CUSTOM_SHOPS.includes(sh) ? [`Travellers today: ${q.custom}`] : []));
+    if (h) {
+      const hh = tnHome(S, h.id), rec = S.tn && S.tn.home[h.id];
+      lines.push(`Home of ${h.name}: ` + h.members.map(i => TF_AGENTS[i].name.replace(/ \(.*\)$/, '').split(' ')[0]).join(', '), purse(hh), mood(hh) + (rec && rec.u ? ` (${rec.u} day${rec.u === 1 ? '' : 's'} without pay)` : ''));
+    }
+    return { title: sh ? SHOPS27.find(s => s.id === sh).name : tnHomeName(pick.id).replace(/^a /, 'A '), lines };
+  }
+  return null;
+}
+// The dev panel's town line.
+function tnDevLine(S) {
+  const st = S && S.tn;
+  if (!TN.on) return 'Town: the D27 town (?tn=0).';
+  if (!st) return 'Town: settles at the next 05:00.';
+  const shops = Object.keys(st.shop), open = shops.filter(id => st.shop[id].o).length, H = tnHouseholds(), m = [0, 0, 0];
+  let paid = 0;
+  for (const h of H) { const q = st.home[h.id]; if (q && q.lp) paid++; m[tnMood(q)]++; }
+  const low = shops.filter(id => st.shop[id].s === 0).map(id => id).join(', ');
+  return `Town: ${open} of ${shops.length} shops open` + (low ? ` (empty: ${low})` : '') + `; ${paid} of ${H.length} households paid yesterday; mood ${m[0]} content, ${m[1]} worried, ${m[2]} unhappy; travellers today ${st.shop.hotel.c + st.shop.saloon.c}.`;
+}
+// A tap in the pixel view on a townsperson or a home (input): the Look card. True when taken.
+function tnTap(hit) {
+  if (!TN.on || !hit || !hit.exact || !S.tn) return false;
+  const pick = hit.k === 'tf' ? { k: 'tf', id: hit.id } : hit.k === 'bld' && (tnHouseholds().some(h => h.id === hit.id) || tnShopOfBld(hit.id)) ? { k: 'bld', id: hit.id } : null;
+  if (!pick || !tnLook(S, pick)) return false;
+  closeLook();
+  lookUi.pick = { k: 'tn', p: pick }; lookUi.open = true; lookUi.sig = ''; $('lookCard').hidden = false; lookUpdate();
+  return true;
+}
+// The renderer's items (pixScene): a "Closed" card on its post at each shut shop's door. The artist's ui/closed_card
+// when the atlas has it, else a paper card with the word in the pixel font. see: what stands in front turns see-through.
+function tnPixItems(S) {
+  const st = S && S.tn;
+  if (!TN.on || !st || !protoWorld(S.track)) return [];
+  const out = [];
+  for (const id of Object.keys(st.shop)) {
+    if (st.shop[id].o) continue;
+    const sh = SHOPS27.find(s => s.id === id), dx = sh.side === 'W' ? -0.5 : 0.5, x = sh.door.x + dx, z = sh.door.z + 0.9, y = sh.doorY || 0;
+    const it = pixItem(x - 0.3, x + 0.3, z - 0.1, z + 0.1, y, y + 1.4, g => {
+      if (pixSprite(g, 'ui/closed_card', x, y, z, { k: 'bld', id: sh.bld })) return;
+      const p = pixProject(x, y, z), C = PIX.COL, w = pixTextWidth('CLOSED'), px = Math.round(p.x - PIX.vx), py = Math.round(p.y - PIX.vy);
+      g.fillStyle = C.ink; g.fillRect(px, py - 9, 1, 9);                            // the post
+      g.fillRect(px - Math.ceil(w / 2) - 3, py - 20, w + 6, 11);
+      g.fillStyle = C.paper; g.fillRect(px - Math.ceil(w / 2) - 2, py - 19, w + 4, 9);
+      pixText(g, 'CLOSED', px - Math.ceil(w / 2), py - 17, C.red);
+    }, 'tncl_' + id);
+    it.see = true;
+    out.push(it);
+  }
+  return out;
+}
+// The house kinds' art (the renderer): bld/house_<tn>/<face>, bld/house_<tn>, else the D27 design (the stand-in).
+function tnHouseKey(at) {
+  const keys = at.tn ? [`bld/house_${at.tn}/${at.face}`, `bld/house_${at.tn}`] : [];
+  for (const k of keys) { const X = typeof pixX === 'function' ? pixX(k) : null; if (X && X.box) return k; }
+  return `bld/house/${at.design}/${at.face}`;
+}
+function tnCheckSaveShape(st) {
+  const T = st.tn, bad = () => { throw new Error('damaged save: the bigger town'); }, num = v => typeof v === 'number' && Number.isFinite(v);
+  if (T === undefined) return true;
+  if (!T || typeof T !== 'object' || !Number.isInteger(T.day) || typeof T.key !== 'string' || !T.shop || typeof T.shop !== 'object' || !T.home || typeof T.home !== 'object' || !Array.isArray(T.vis) || !Array.isArray(T.cr)) bad();
+  for (const q of Object.values(T.shop)) if (!q || !num(q.s) || q.s < 0 || q.s > TN.CAP || !Number.isInteger(q.z) || (q.o !== 0 && q.o !== 1) || !Number.isInteger(q.c)) bad();
+  for (const q of Object.values(T.home)) if (!q || !num(q.p) || q.p < 0 || q.p > TN.PURSE_MAX || !Number.isInteger(q.u)) bad();
+  for (const v of T.vis) if (!v || !Number.isInteger(v.at) || !Number.isInteger(v.go) || !num(v.s) || !['wait', 'go', 'in', 'back'].includes(v.st)) bad();
+  for (const c of T.cr) if (!c || !Number.isInteger(c.id) || !['go', 'in', 'back'].includes(c.st)) bad();
+  return true;
+}
+// The checks' hooks: tnFeed plays a list of events through the economy as if they came in a tick (a test's deliveries
+// and travellers).
+function tnFeed(S, events) { const ev = events.slice(); if (S.tn) { const n = ev.length; tnTick(S, ev); return ev.slice(n); } return []; }
+const TN_TEST = { TN, TN_PEOPLE, TN_ROUTINES, TN_ROLES, tnHouseholds, tnDayOf, tnKeyOf, tnRoutine, tnPlace, tnNew, tnRoll, tnTick, tnShop, tnHome, tnMood, tnLook, tnDevLine, tnDrawList, tnPixItems, tnHouseKey, tnCheckSaveShape, tnFeed, tnCrewRoute, tnHomeName };
 
 // ==== Section: the line (D32) ====
 // Owner: Foundation (plans/d32-tech.md sections 1, 2, 5, 6 and 11.3). Line building: a second place inside the
@@ -8081,7 +8577,7 @@ function hcRoll(S) {
   if (typeof TF_AGENTS !== 'undefined' && S.tf) TF_AGENTS.forEach((A, i) => { const a = live ? st.ag[i] : null; out.push({ id: 'tf_' + A.id, name: A.name, home: A.home, at: !a || a.in ? A.home : 'the town' }); });
   const C = S.cw, ph = S.ln ? S.ln.tr.ph : 'home', stn = ph === 'sStand' || ph === 'eStand';
   out.push(...hwRoll(S));   // D32 (Town): the hired station hands (home: the hotel)
-  if (C) for (const m of C.men) out.push({ id: 'cw' + m.id, name: cwName(S, m.id), home: 'the camp', at: m.pl === 2 ? `the line at ${Math.round(m.x / LINE.M)} m` : m.st === 'ride' && !stn ? 'aboard the work train' : 'the camp' });
+  if (C) for (const m of C.men) out.push({ id: 'cw' + m.id, name: cwName(S, m.id), home: 'the camp', at: m.st === 'town' ? 'the town' : m.pl === 2 ? `the line at ${Math.round(m.x / LINE.M)} m` : m.st === 'ride' && !stn ? 'aboard the work train' : 'the camp' });
   return out;
 }
 function hcCount(S) {
@@ -17579,7 +18075,7 @@ BLD_LAYOUTS.proto = [
   // The main street's twelve buildings (their fronts on the street), the church, the school, the houses.
   ...TOWN27.buildings.map(b => ({ id: b.id, kind: 'shop', shop: b.shop, x: b.x, z: b.z, yaw: b.yaw, face: b.face, ext: b.ext, h: b.h })),
   ...TOWN27.civic.map(b => ({ id: b.id, kind: b.kind, x: b.x, z: b.z, yaw: 0, ext: b.ext, h: b.h })),
-  ...TOWN27.houses.map(b => ({ id: b.id, kind: 'house27', design: b.design, face: b.face, x: b.x, z: b.z, yaw: 0, ext: b.ext, h: b.h })),
+  ...TOWN27.houses.map(b => ({ id: b.id, kind: 'house27', design: b.design, face: b.face, x: b.x, z: b.z, yaw: 0, ext: b.ext, h: b.h, ...(b.tn ? { tn: b.tn } : {}) })),   // (D32 Town: tn, the bigger town's house kinds)
   // Solid props and nature (trunks, boulders): small blocks on the walk grid.
   ...TOWN27.props.filter(q => q.solid).map((q, i) => ({ id: 'prop27_' + i, kind: 'prop27', key: q.k, x: q.x, z: q.z, yaw: 0, ext: [-q.r, q.r, -q.r, q.r], h: q.h })),
   ...TOWN27.nature.filter(q => q.solid).map((q, i) => ({ id: 'nat27_' + i, kind: 'nature', key: q.k, x: q.x, z: q.z, yaw: 0, ext: [-q.r, q.r, -q.r, q.r], h: 3 })),
@@ -21735,6 +22231,7 @@ function placeText(S, w) {
 }
 // The card for a Look pick, as plain data: { title, lines } (null when the thing is gone).
 function lookCardOf(S, pick) {
+  if (pick.k === 'tn') return tnLook(S, pick.p);   // D32 (Town): a townsperson or a home in the pixel view
   const I = S.items, label = id => { const wb = I.waybill[id], T = CARGO_TAGS[itemTag(wb)]; return `${tgGood(wb.commodity)} (${T ? T.letter : '?'})`; };
   if (pick.k === 'item') {
     const id = pick.id, wb = I.waybill[id];
@@ -23724,7 +24221,7 @@ function dvRows() {
 }
 function dvStatusText() {
   const L = S && S.ln, D = S && S.dv;
-  if (!L) return 'The line is off. Choose a rail crew to start building it.';
+  if (!L) return 'The line is off. Choose a rail crew to start building it.' + (TN.on ? '\n' + tnDevLine(S) : '');   // (D32 Town: the town line)
   const f = L.f, n = v => Math.floor(v).toLocaleString('en-US'), T = lnTrain(S), hc = hcCount(S);
   const where = { home: 'away', sIn: 'coming in to the station', sStand: 'at the station, track 2', sOut: 'leaving the station', out: 'running out to the railhead', stand: 'at the railhead', back: 'running home', gap: 'running home',
     eIn: 'backing in to the station', eStand: 'at the station, track 2', eOut: 'leaving the station' }[T.ph] || T.ph;
@@ -23736,6 +24233,7 @@ function dvStatusText() {
     `Work train: ${where}.`,
     `Men by stage: ${LINE.STAGES.map((s, k) => `${s} ${(pixCall('cwGang', S, k) || []).length}`).join(', ')}.`,
     `Head count now: ${hc.home} of ${hc.total} home.` + (L.hc ? ` At 22:00 (day ${L.hc.day + 1}): ${L.hc.home} of ${L.hc.total}.` : ''),
+    tnDevLine(S),   // D32 (Town): shops open, households paid, mood
   ];
   return lines.join('\n');
 }
@@ -24537,6 +25035,7 @@ function onTap(px, py) {
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner === 'rr' && pdTrainTap(hit)) return;   // D25 (U): punch, unload, send off
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner === 'rr') { rrTap(hit); return; }   // D24: the railroad's trains (UI)
   if (pdTap(px, py)) return;                         // D25 (U): the schedule board on platform 1 opens its card
+  if (pixOn() && tnTap(hit)) return;                 // D32 (Town): a townsperson or a home: the Look card (role, home, purse, mood)
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner) {
     // The Overland's set-out cars (and any cut of cars): walk to the car's door and see what is in it. The Overland itself: a message.
     if (S.trains[hit.id].owner === 'interchange' || S.trains[hit.id].owner === 'cut') send({ t: 'useCar', stock: hit.stock });
@@ -25535,7 +26034,7 @@ function pixLists() {
   const arr = v => Array.isArray(v) ? v : [];
   return { pb: arr(pixCall('pbDrawList', S)).concat(arr(pixCall('hwPbList', S))), pbPose: pixCall('pbPlayerPose', S), cut: arr(pixCall('pbCutaway', S)).concat(arr(pixCall('hwCutaway', S))).map(String), fr: arr(pixCall('frDrawList', S)),   // D32 (Town): the hired punchers (pb, cut)
     frPose: pixCall('frPose', S), cart: pixCall('frCartPose', S), truck: pixCall('frTruckPose', S),
-    tf: pixTfList(arr(pixCall('tfDrawList', S))).concat(arr(pixCall('cwDrawList', S, 'station')), arr(pixCall('hwDrawList', S))) };   // D32: the rail men and the hired workers at the station, in the townsfolk's shape
+    tf: pixTfList(arr(pixCall('tfDrawList', S)).concat(arr(pixCall('tnDrawList', S)))).concat(arr(pixCall('cwDrawList', S, 'station')), arr(pixCall('hwDrawList', S))) };   // (D32 Town: the travellers walking into town, tnDrawList)   // D32: the rail men and the hired workers at the station, in the townsfolk's shape
 }
 // ---- D29: smooth drawing between the sim's ticks ----
 // The designer (D29): handling "needs to be much smoother", punching "very hitchy when in the train". Measured: the
@@ -26266,7 +26765,7 @@ function pixScene(alpha, Lgiven) {
     const face = at.face || (Math.sin(f.yaw || 0) > 0.5 ? 'e' : 'w');
     const parts = f.kind === 'shop' ? ['walk', 'shadow', 'body', 'awning', 'sign', 'yard', 'pole/' + pixCycle(2, 2)].map(p => `bld/${f.id}/${face}/${p}`)
       : f.kind === 'church' || f.kind === 'school' ? [`bld/${f.kind}/shadow`, `bld/${f.kind}`]
-      : f.kind === 'house27' ? [`bld/house/${at.design}/${at.face}`]
+      : f.kind === 'house27' ? [tnHouseKey(at)]   // (D32 Town: the bigger town's kinds, bld/house_<tn>, when the art has them)
       : f.kind === 'storage' ? ['bld/freighthouse/body', 'bld/freighthouse/roof']
       : f.kind === 'station' ? [night && pixX('bld/station_lit') ? 'bld/station_lit' : 'bld/station']
       : f.kind === 'leverframe' ? [`bld/leverframe/${at.frame}`] : [];
@@ -26278,7 +26777,7 @@ function pixScene(alpha, Lgiven) {
       const y0 = flat ? 0 : f.kind === 'storage' ? (roof ? FH.roof + P27.DOCK_Y : P27.DOCK_Y) : fy;
       const it = pixItem(ax + b[0], ax + b[2], az + b[1], az + b[3], y0, Math.max(y0 + 0.1, b[4]), g => {
         // D27 integration (the follow-up art): at night the lit bodies (same size and anchor), so their windows glow.
-        const lk = night && !flat && !roof && /\/body$|^bld\/(church|school|house\/)/.test(key) && pixF(key + '_lit') ? key + '_lit' : key;
+        const lk = night && !flat && !roof && /\/body$|^bld\/(church|school|house\/|house_)/.test(key) && pixF(key + '_lit') ? key + '_lit' : key;
         if (pixSprite(g, lk, ax, fy, az, flat || roof ? null : pick, roof && underFH ? { dither: true } : undefined)) { if (f.kind === 'station') pixBoardOnStation(g, f); return; }
         if (/\/body$|^bld\/(station|church|school|house)/.test(key)) { pixBox(g, ax + (b[0] + b[2]) / 2, az + (b[1] + b[3]) / 2, 0, b[2] - b[0], b[3] - b[1], y0, b[4], C.wall); pixPickRect(it, pick); }
       });
@@ -26478,7 +26977,8 @@ function pixScene(alpha, Lgiven) {
       load.forEach(id => pixGoodsDraw(g, S, id, bx, by - 6 - 5 * S.items.where[id].slot, true, x, y + 0.8, z));
     }, 'tool' + T.id));
   }
-  for (const it of pixCall('hwPixItems', S) || []) out.push(it);   // D32 (Town): the delivery men's carts and the goods the hired men carry
+  for (const it of pixCall('hwPixItems', S) || []) out.push(it);
+  for (const it of pixCall('tnPixItems', S) || []) { out.push(it); if (it.see) PIX.lineIds.add(it.id); }   // D32 (Town): the Closed cards at shut shops   // D32 (Town): the delivery men's carts and the goods the hired men carry
   // The player (the station agent), unless riding inside a car (D24) or inside a car cut away (drawn with it).
   if (agent && !(inCar && PIX.cutIds.includes('tr' + inCar.tr.id + '/' + inCar.vi))) out.push(agent);
   // Travellers: P's D27 list outside the cars cut away (waiting on platform 1, on the benches, walking from town,
@@ -28045,7 +28545,7 @@ window.__railhead = {
     PP, PG, PD, pdCount, pdNewStore, ppLineSpots, ppCarStatus, pgToDeliver, rrThroughTick, PROTO_BRIDGES, PROTO_FB, protoBridgeYOf, walkBridgeY, walkBridgeAt, walkStep, walkPlan, walkPoints },
   pp: { PP, ppSt, ppLineSpots, ppCarStatus, ppRunStatus, ppReady, ppOnArrive, ppOnDepart, ppDrawList, ppPlayerAct, ppPlan },   // D25: prototype passengers (P)
   // D27: each builder's hooks, filled in its own section (PB_TEST, FR_TEST, TF_TEST, LES_TEST), and the foundation's.
-  pb: PB_TEST, fr: FR_TEST, tf: TF_TEST, les: LES_TEST,
+  pb: PB_TEST, fr: FR_TEST, tf: TF_TEST, les: LES_TEST, tn: TN_TEST,   // (tn: D32 Town, the bigger town)
   ln: LN_TEST, dv: { get ui() { return dvUi; }, on: dvOn, setPref: dvSetPref, rows: dvRows, addRow: dvAddRow, open: dvOpen, close: dvClose, statusText: dvStatusText },   // D32
   lnView: { track: on => { PIX.lnTrack = on ? new Set() : null; PIX.lnChunks.clear(); }, tracked: () => [...(PIX.lnTrack || [])], live: () => (PIX.lnLiveKeys || []).slice(), lifeOf: c => pixLnLifeOf(c), time: () => PIX.lnT,
     // how far (native px) a sprite anchored at z reaches up the screen past the near border's line (the men's side of it)

@@ -255,6 +255,19 @@ the notes name no alternative, the column says so.
 - The handover lists the D24 and D25 review pages (answers in `answers/d24-review`, `answers/d25-review`) as waiting
   on the designer; nothing records whether they were answered before D25 and D26 changed course.
 
+### The designer's own notes that may never have been acted on
+
+Found on 2026-11-14 when the survey answers were copied into `plans/answers/` and compared with design-doc section 0.
+Each should be put to the designer again rather than assumed.
+
+| Where the designer wrote it | Their words | What the records show |
+|---|---|---|
+| Line Building Questions, the last stage of laying | No choice made; note "Lwt me read what I wrorw" | D32 ended the stages at spikes, with no telegraph. The designer was not shown their original words or asked again |
+| Line Building Questions, while you are out with the crew | "Dev mode needs to let ypu hire them right away" | D33 makes a crew size set in dev mode take effect at once. Nothing says hired station workers can be hired at once in dev mode; check it |
+| Line Building Questions, the country along the line | "Variety from the start but everything else from the 1st option" | D32 records varied country with brush, a creek bridge and a low cut. Probably acted on, but easy to misread |
+| Station Rework | "yes but ground work for town stuff if needed we will do that in m2" | D24 says lay groundwork for the town where cheap; nothing records that it was done. Since overtaken by the bigger town |
+| The four review pages never answered (fix round, station rework, prototype, art round plan) | No answers saved | Their suggestions (far switch levers nearer, a bigger handcart, the handcart back in the shed each morning, contract offers sooner) were never ruled on; later feedback came in chat (D20, D26, D29) |
+
 ## 5. Open design questions
 
 Still open in design-doc section 23 (defaults hold until answered):

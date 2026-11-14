@@ -9721,7 +9721,8 @@ function lgWDone(S, Q, q, ev) { lnLimit.mine = true; try { lgWDone1(S, Q, q, ev)
 function lgWDone1(S, Q, q, ev) {
   const j = Q.j, k = j.k, unit = LGW.UNIT_M[k];
   if (!lnHours(S).work) return;
-  const ok = k === 2 ? j.ph === 'rake' : k === 3 || k === 4 ? j.ph === 'at' : j.ph === 'ready' && Q.tx === undefined;
+  const near = () => { const sp = lgWStart(S, j, cwGeo(S)).me; return Math.hypot(sp.x - Q.x, sp.z - Q.z) <= LG.BACK; };   // (shuffling up with the front, he is still at the work)
+  const ok = k === 2 ? j.ph === 'rake' : k === 3 || k === 4 ? j.ph === 'at' : j.ph === 'ready' && near();
   if (!ok) return;
   const L = S.ln, f0 = L.f[k], men = 1 + j.m.length;
   let wu, back;
@@ -25956,7 +25957,7 @@ const LGW_GAMES = [
       for (const px of [C - 1.6, C + 1.6]) { const p = lgWBuf(px, 0, 1.4); g.fillStyle = LGC.WOOD; g.fillRect(p.x, p.y - 7, 1, 7); g.fillStyle = LGC.CHALK; g.fillRect(p.x, p.y - 7, 1, 1); }   // the pegs
       for (let i = 0; i < 20; i++) { const x = r.x0 + i * 0.22, p = lgWBuf(x, 0, 1.4), h = Math.round(r.h[i] / 6); g.fillStyle = LGC.ROCK2; g.fillRect(p.x - 1, p.y - h, 2, h + 1); g.fillStyle = LGC.ROCK; g.fillRect(p.x - 1, p.y - h, 2, 1); }
       if (r.q === undefined) { const a = lgWBuf(C - 1.6, 0, 1.4), b = lgWBuf(C + 1.6, 0, 1.4), dy = Math.round(r.L / 6); lgWLine(g, a.x, a.y - dy, b.x, b.y - dy, LGC.CHALK, [1, 2]); }
-      const e = r.ev || 0, top = lgWBuf(C, 2.4, 1.4); lgWBox(g, top.x - 15, top.y, 30, 3, 'rgba(43,33,24,0.35)'); g.fillStyle = lgCol(e * 100); g.fillRect(top.x - 15, top.y, Math.round(30 * e), 3); lgWText(g, 'level', top.x, top.y - 8, LGC.PAPER);
+      const e = r.ev || 0, top = lgWBuf(C, 3.2, 1.4); lgWBox(g, top.x - 18, top.y, 36, 4, 'rgba(43,33,24,0.45)'); g.fillStyle = lgCol(e * 100); g.fillRect(top.x - 18, top.y, Math.round(36 * e), 4); lgWText(g, 'level', top.x, top.y - 8, LGC.PAPER, 1);
     },
     pips(r) { return r.kind === 'rake' ? [r.tipS * 100, (r.ev || 0) * 100] : []; },
     hint(r) { return r.kind === 'tip' ? 'Tap to tip as the nose is over the chalk cross' : 'Drag along the bed: rake it level between the pegs'; },
@@ -26147,7 +26148,7 @@ function lgWEvent(e) {
 // Each frame while he works in the world (lgFrame): the round, its result, the chip.
 function lgWFrame(Q, j, dt, hold, frozen) {
   const t = lgT(), k = j.k, G = LGW_GAMES[k], walking = Q.tx !== undefined;
-  if (lgW.k !== k) { lgW.k = k; lgW.r = null; lgW.res = []; lgW.fx = []; lgW.fell = []; }
+  if (lgW.k !== k) { lgW.k = k; lgW.r = null; lgW.res = []; lgW.fx = []; lgW.fell = []; lgW.msg = ''; }
   lgW.frozen = frozen;
   // the round follows the task's phase in the sim
   const ph = j.ph;

@@ -149,7 +149,7 @@ module.exports = async function checkD34() {
         },
       };
       // ---- Each stage ----
-      const order = [4, 3, 5, 1, 0, 2];
+      const order = orient === 'portrait' ? [0, 1, 2, 4, 3, 5] : [4, 3, 5, 1, 0, 2];   // (portrait: the clearers before the line reaches the creek, where nobody crosses before the trestle)
       let saved = null;
       for (const k of order) {
         await page.evaluate(() => { const R = window.__railhead, S = R.state, g = (0, eval); for (let i = 0; i < 12000 && !g('lnHours')(S).work; i++) R.step(1); });   // (after the meal, or the next morning)

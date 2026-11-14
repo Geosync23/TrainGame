@@ -49,9 +49,26 @@ def rows_for(items):
     return rows
 
 
+def far_sheet(out):
+    import far_d32 as FD
+    class _R:
+        def __init__(self):
+            self.items = []
+        def add(self, k, g, fr, m):
+            self.items.append(fr[0][0])
+    r = _R()
+    FD.register(r, 'far')
+    H = max(im.shape[0] for im in r.items)
+    row = np.concatenate([np.pad(im, ((H - im.shape[0], 0), (8, 8), (0, 0))) for im in r.items], 1)
+    sheet([row], scale=3).save(out)
+    print('wrote', out)
+
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else 'tools/pixelart/out/d32-bldparts.png'
     want = sys.argv[2:]
+    if want == ['far']:
+        return far_sheet(out)
     items = [(b[0], b[2], b[3], b[4], b[5], b[6], b[7]) for b in RB.all_buildings()]
     items += [(b[0], b[2], b[3], b[4], b[5], b[6], b[7]) for b in RB.new_houses()] if hasattr(RB, 'new_houses') else []
     items = [it for it in items if not want or any(w in it[0] for w in want)]

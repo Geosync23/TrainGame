@@ -284,6 +284,10 @@ def register(reg):
             reg.add(f'camp/{name}/{p}_lit', g, [lit(fr)],
                     dict(anchor=FOOT, note='at night, a lantern inside: the canvas glows warm (same size and anchor)',
                          extra=dict(box=box)))
+        # D32 stage 3 (Rooms asked for it): the floor alone, the same anchor; /back already holds it too
+        reg.add(f'camp/{name}/floor', g, [one(T.floor)],
+                dict(anchor=FOOT, note='the tent\'s floor alone (straw on earth): draw first when the tent opens',
+                     extra=dict(box=box)))
     S = (-10, -10, 12, 10)
     props = [('camp/cot', lambda: cot('x'), 'an army folding cot along x (2.3 x 0.8u, top 0.52u); the sleeper '
               '(ppl/navvy_*/lie/se) is drawn at its anchor'),

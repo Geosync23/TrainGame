@@ -409,3 +409,8 @@ def new_houses():
                 out.append((key, key, (lambda k=kind, v=v, f=f: HD.house(k, v, f)), None, new_house_spec(kind, v, f),
                             MID, True, None, HD.house_box(kind, f)))
     return out
+
+
+def register_far(reg, group):
+    import far_d32
+    far_d32.register(reg, group)

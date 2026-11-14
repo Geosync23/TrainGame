@@ -237,8 +237,9 @@ def paint_wall(face_lit, u, z, spec, wall):
                      shutters=None)
             cur = opt.get('curtain')
             if cur:
-                for c0 in (u0 - 0.9, u1 - 0.9):
-                    cm = rect(u, z, c0, c0 + 1.8, z0 - 0.4, z1 + 1.0)
+                cw = min(1.8, (u1 - u0) * 0.22 + 0.5)
+                for c0 in (u0 - 0.6, u1 + 0.6 - cw):
+                    cm = rect(u, z, c0, c0 + cw, z0 - 0.4, z1 + 1.0)
                     p.fill(cm, cur, np.where(np.mod(u - c0, 0.9) < 0.45, 1, 2) + lit)
                 p.fill(rect(u, z, u0 - 1.4, u1 + 1.4, z1 + 1.0, z1 + 1.5), 'wood', 3)
         elif k == 'door':
@@ -399,6 +400,8 @@ def _walls(spec, sp, o, tex_n, tex_w, X0, Y0, X1, Y1, zf, wh):
         box(X0, Y0, wh, X0 + TH, Y1, spec['wtop'], 'wood', tex=tex_t, oid=o, shades=(1, 1, 2))
     if spec.get('fix'):
         spec['fix'](spec)
+    if spec.get('outside'):          # things outside the far walls that the roof hid (the cabin's chimney)
+        spec['outside']()
 
 
 def floor_tex(kind, ramp, X, Y):

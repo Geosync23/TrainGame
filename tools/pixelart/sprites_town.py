@@ -76,6 +76,9 @@ def register(reg):
     import town27_reg
     town27_reg.register(reg)
     town27_reg.register_station(reg)
+    # ---------------- D32 stage 3: the buildings in parts, new houses, the far town (bldparts_reg.py) -------
+    import bldparts_reg
+    bldparts_reg.register(reg.reg)
     # ---------------- the D25 handcart (goods and tags moved to sprites_goods.py, A2, for D27) ----------------
     for d, f in CART_DIRS.items():
         F = TW.Frame(f)

@@ -313,3 +313,99 @@ def all_buildings():
     out.append(('bld/station', 'bld/station', S.station_all, lambda: (S.station_name(), S.station_letters()),
                 station_spec(), BIG, True, (lambda: S.station_all(True)), [-A, -B, A, B + 0.75, 8.0]))
     return out
+
+
+# ============================ the new houses (houses_d32.py) ============================
+
+NEW_NOTES = {}
+NEW_KEYS = {'cabin': 'bld/cabin', 'framehouse': 'bld/framehouse', 'house2': 'bld/house2'}
+DOOR_H_IN = 16.0
+
+
+def new_house_spec(kind, v, f):
+    import houses_d32 as HD
+    D = HD.DIMS[kind]
+    c = HD.VARIANTS[kind][v]
+    F = Frame(f)
+    A, B, wh = D['A'], D['B'], D['wh']
+    X0, Y0, X1, Y1 = F.rect_w(-A, -B, A, B)
+    zf = 0.3 * UY
+    s = dict(rect=(X0, Y0, X1, Y1), zf=zf, wh=wh, cut='wood', eave=wh, base='wood')
+    LN = X1 - X0
+    # where the house's own doors are on the west wall (u from its south end): the back door of an 'e' house, the
+    # front door of a 'w' house (local a is world -z for 'e', +z for 'w')
+    def wu(a):
+        y = -a if f == 'e' else a
+        return Y1 - y
+    def span(a0, a1):
+        return min(wu(a0), wu(a1)), max(wu(a0), wu(a1))
+    W = {'n': [], 'w': []}
+    if kind == 'cabin':
+        s.update(paper=(c['wall'], 1, 'logs'), dado=None)
+        s['outside'] = lambda: HD.cabin_chimney(v, f)
+        W['n'] = [('hearth', LN / 2 - 5.0, LN / 2 + 5.0, 12.0),
+                  ('picture', LN / 2 + 6.0, LN / 2 + 9.0, 9.0, 12.0, dict(scene='portrait', frame='wood'))]
+        if f == 'e':
+            W['w'] = [('window',) + span(-3.0, 0.0) + (6.0, 10.0, dict(panes=(1, 2), curtain='red'))]
+        else:
+            W['w'] = [('door',) + span(-2.2, 2.2) + (DOOR_H_IN - 1.0, dict(trim=c['trim'], panels=False)),
+                      ('window',) + span(4.4, 7.6) + (5.0, 10.0, dict(curtain='red')),
+                      ('window',) + span(-7.6, -4.4) + (5.0, 10.0, dict(curtain='red'))]
+        def fix(sp_):
+            pegs_n([X0 + LN / 2 - 2.0], Y0, zf + 13.4, ['gun'])
+            pegs_n([X0 + 2.0, X0 + 4.0], Y0, zf + 11.0, ['pan', 'herbs'])
+            pegs_w([Y1 - 2.0], X0, zf + 11.5, ['coat'])
+            shelf_on_w(Y0 + 2.0, Y0 + 8.0, X0, zf + 10.0, ['pots', 'jars'], seed=41, depth=1.4)
+        s['fix'] = fix
+    elif kind == 'framehouse':
+        s.update(paper=('cream', 1, 'sprig') if v == 0 else ('straw', 1, 'stripe'), motif='red' if v == 0 else 'brick',
+                 dado=(c['trim'] if c['trim'] != 'cream' else 'wood', 5.0))
+        W['n'] = [('window', 6.0, 10.0, 6.0, 12.0, dict(panes=(2, 2), curtain='cream')), ('clock', 15.0, 13.0),
+                  ('picture', 18.0, 22.0, 9.0, 13.0, dict(scene='land'))]
+        if f == 'e':
+            W['w'] = [('door',) + span(3.0, 7.0) + (DOOR_H_IN - 0.8, dict(trim=c['trim'])),
+                      ('window',) + span(-8.0, -4.4) + (6.0, 11.0, dict(curtain='red'))]
+        else:
+            W['w'] = [('door',) + span(-6.8, -2.6) + (DOOR_H_IN, dict(trim=c['trim'])),
+                      ('window',) + span(2.0, 6.0) + (5.5, 13.0, dict(curtain='red')),
+                      ('picture',) + span(-11.0, -9.0) + (9.0, 12.0, dict(scene='portrait'))]
+        def fix(sp_):
+            shelf_on_n(X0 + 1.5, X0 + 5.5, Y0, zf + 11.0, ['plates', 'jars'], seed=43, depth=1.2)
+            pegs_n([X0 + LN - 2.5], Y0, zf + 12.0, ['hat'])
+        s['fix'] = fix
+    else:
+        s.update(paper=('cream', 1, 'plaster'), dado=('wood', 4.6))
+        # the partition between the two rooms at local a = 0 (world z = 0), a doorway near the back
+        door_u = 2.0 if f == 'e' else LN - 6.0
+        s['parts'] = [(X0, -0.5, X1, 0.5, wh, [('opening', door_u, door_u + 4.0, 15.0),
+                                                ('picture', LN / 2 - 2.0, LN / 2 + 2.0, 9.0, 13.0, dict(scene='land'))])]
+        W['n'] = [('window', 6.0, 10.0, 6.0, 11.0, dict(panes=(2, 2), curtain='cream'))]
+        if f == 'e':
+            W['w'] = [('door',) + span(-2.0, 2.0) + (DOOR_H_IN - 0.8, dict(trim=c['trim'])),
+                      ('window',) + span(-11.0, -7.4) + (6.0, 11.0, dict(curtain='red')),
+                      ('window',) + span(7.4, 11.0) + (6.0, 11.0, dict(curtain='red'))]
+        else:
+            W['w'] = [('door',) + span(-11.6, -7.4) + (DOOR_H_IN - 0.6, dict(trim=c['trim'])),
+                      ('door',) + span(3.4, 7.6) + (DOOR_H_IN - 0.6, dict(trim=c['trim'])),
+                      ('window',) + span(-5.6, -2.0) + (5.5, 11.5, dict(curtain='red'))]
+        def fix(sp_):
+            shelf_on_n(X0 + 13.0, X0 + 18.0, Y0, zf + 11.0, ['pots', 'jars'], seed=47, depth=1.4)
+            pegs_n([X0 + 2.0, X0 + 3.8], Y0, zf + 12.0, ['pan', 'washboard'])
+            pegs_w([Y1 - 4.0], X0, zf + 12.0, ['coat'])
+        s['fix'] = fix
+    s['walls'] = W
+    return s
+
+
+def new_houses():
+    import houses_d32 as HD
+    out = []
+    for kind, base in NEW_KEYS.items():
+        for v in range(2):
+            for f in ('e', 'w'):
+                key = (base if v == 0 else base + '_b') + '/' + f
+                NEW_NOTES[key] = (f'{kind}, colour variant {v + 1}; '
+                                  + {'e': 'door to +x', 'w': 'door to -x, seen from behind'}[f])
+                out.append((key, key, (lambda k=kind, v=v, f=f: HD.house(k, v, f)), None, new_house_spec(kind, v, f),
+                            MID, True, None, HD.house_box(kind, f)))
+    return out

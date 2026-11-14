@@ -42,8 +42,9 @@ def rows_for(items):
         (wimg, wan), parts, stray = RB.make_parts(draw, after, spec, opts, lit, ld)
         print(key, 'stray', stray, {k: v[0].shape[:2] for k, v in parts.items()})
         sz = wimg.shape[:2]
+        night = ['floor', 'back_lit' if 'back_lit' in parts else 'back']
         tiles = [compose(parts, wan, sz, n) for n in (['floor', 'back', 'front', 'roof'], ['floor', 'back'], ['floor'],
-                                                       ['back'], ['front'], ['roof'], ['floor', 'back_lit'])]
+                                                       ['back'], ['front'], ['roof'], night)]
         rows.append(np.concatenate(tiles, 1))
     return rows
 

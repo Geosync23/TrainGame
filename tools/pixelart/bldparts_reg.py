@@ -17,7 +17,11 @@ NOTES = {
     'back_lit': 'the far walls at night (their windows and wall lamps lit); same anchor',
 }
 GROUPS = {'shop_w': 'd32_rooms_w', 'shop_e': 'd32_rooms_e', 'civic': 'd32_rooms_civic', 'house': 'd32_rooms_houses',
-          'new': 'd32_houses_new', 'far': 'd32_far'}
+          'new': 'd32_houses_new', 'far': 'd32_far', 'new_whole': 'd32_houses'}
+# D32 joined (the integrator): the new houses' whole sprites (and _lit) are on a small sheet of their own,
+# d32_houses, apart from their parts (d32_houses_new). The town view draws the whole houses every frame; drawn from
+# the big parts sheet they put the station's furthest zoom 10 ms over its frame-time budget (check-pixperf), from a
+# small sheet they cost nothing measurable. The parts are drawn only while a house is open.
 
 
 def _group(key):
@@ -71,10 +75,10 @@ def register(reg):
                         extra=dict(box=box, footprint=[8, 8], facing=B[-1],
                                    front={'e': '+x (door to the west back lane)', 'w': '-x (seen from behind)'}[B[-1]],
                                    floor_y=round(spec['zf'] / UY, 3), eave=round(spec['eave'] / UY, 3)))
-            reg.add(wkey, _group(B), fr, meta)
+            reg.add(wkey, GROUPS['new_whole'], fr, meta)
             if lit:
                 pair = TR.lit_pair(draw, after=after, **opts)
-                TR.add_lit(reg, wkey + '_lit', _group(B), fr, pair, dict(meta, note='the night version, same anchor'))
+                TR.add_lit(reg, wkey + '_lit', GROUPS['new_whole'], fr, pair, dict(meta, note='the night version, same anchor'))
             register_parts(reg, B, wkey, draw, after, spec, opts, lit, ld, box)
     if hasattr(RB, 'register_far'):
         RB.register_far(reg, GROUPS['far'])

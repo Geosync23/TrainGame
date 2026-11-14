@@ -431,7 +431,7 @@ The designer, after playing D20 and D21: "Why doesn't the game explain this? Stu
 
 ## Sections of index.html
 
-config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town: stand-ins), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`), drawing each frame, main loop, test hooks, start.
+config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town: stand-ins), rooms (D32 stage 3, Rooms: `RM`, `RM_KIND`, `rmRooms`, `rmCarve`, `rmPeople`), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), the far town (D32 stage 3, Rooms: `FT`, `ftTile`, `ftCmd`), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`; D32 stage 3: the blocks "Rooms (D32)" and "The far town" before the line's view), drawing each frame, main loop, test hooks, start.
 
 ## Draw calls
 
@@ -1583,6 +1583,119 @@ the join in the one world from nineteen places at the furthest zoom), check-smoo
 stops at the junction, where the trains are drawn curving away, and the recorder now knows its train is already on
 its way out), check-pixperf (the furthest-zoom station case's own budget), check-lineplay / check-linegames /
 check-linelessons (`?d33=0`, and they aim their walk again as the gangs move on).
+
+## D32 stage 3: rooms and the far town
+
+Built 2026-11-14 by the Rooms builder (plans/d32-tech.md 8.2, 8.3, 8.5), alongside the Town builder (homes, roles,
+routines, the economy: `tn`, `S.tn`). The designer's words: "Build out the town with all enterable buildings"; the roof
+and the front wall fade in place; "At the end is another town." The art contract for the artists is
+`plans/d32-rooms-art.md` (keys, frame sizes, anchors). Switches: **`?rooms=0`** parks the rooms (the buildings stay
+shut and the townsfolk vanish at their doors, as before), **`?fartown=0`** the far town. No save store: which building
+is open is view state; the townsfolk's two new fields live in W's `S.tf`; schema stays 19.
+
+### How the rooms work
+
+- **The table (section "rooms (D32)", prefixes `rm`, `RM`).** `rmRooms()` makes a room, once, for every row of
+  `BLD_LAYOUTS.proto` that has a door node on the town graph (`door_<shop>` or `door_<building id>`): its floor (the
+  footprint less walls of `RM.WALL` 0.35u), the floor's height, eaves, the door (the node outside, the doorway in the
+  wall `RM.DOOR_W` 1.5u wide, a point just inside), its furniture and its spots. A row may carry its own `room: { x0, x1,
+  z0, z1, door: { x, z }, furn: [{ key, x, z, f, use }] }`; a row without one is furnished by the recipe of its kind
+  (`RM_KIND` by shop id or building kind; any other kind as a home), so the Town builder's new houses become enterable
+  as soon as their door nodes are on the graph. 23 rooms today: the twelve shops, the church, the school, the eight
+  houses and the station's waiting room. Furniture sizes: `RM_FURN`. Spots carry a role (keeper, worker, teach,
+  pulpit, pupil, pew, cust, seat, stool, chair, bed, home, stand) and the way to them from the door.
+- **The walk grid** (`rmCarve`, one marked line in `walkGridBuild`): each floor opened, the doorway cut through the wall,
+  solid furniture shut again. `walkDeckY` gives the floor's height (`rmFloorAt`, one marked line); `walkInBuilding`
+  does not count a floor as inside the building.
+- **The townsfolk** (three marked hooks in W's `tfTick`): arrived at a door with a room he walks in (`ag.ti`), on to his
+  spot by its way; in time for his next errand elsewhere he walks back out (`ag.xo`, `rmHold`) and only then sets off;
+  an errand at the same door keeps him in. `rmPlace` gives each person indoors his spot by who he is: a shop's own man
+  at its keeper spot (upstairs, not drawn, at night when he lives over it; the barkeep's hours are his own), the
+  teacher, the preacher, the laundress at work, pupils at desks; at home a bed by night, the table or stove by day;
+  visitors the room's customer, seat, pew, stool or chair spots, then spare places, in the order they came.
+  `rmPeople(S)` lists everyone indoors in the townsfolk's draw shape plus `rm` (the building); it is added to the
+  renderer's townsfolk list (`pixLists`, marked), so the frames between ticks are smoothed as outdoors.
+- **Opening** (block "Rooms (D32)" in the pixel renderer, `rmViewTick`, view state only): the building the player stands
+  in, else the one whose doorway he is within `RM.NEAR` 1.2u of outside, else the one he tapped (`rmTap`, in `onTap`
+  just before the walk; until he walks 8u away or taps elsewhere); the camp's tents the same way (`rmTents`, door at the
+  +z end). One at a time. Its fade goes 0 to 1 over `RM.FADE_S` 0.25 real seconds and back.
+- **Drawing** (`rmBldItem`, `rmBldDraw`, as the cut-away coach): one sorted item per open building with the body's box:
+  the floor and the far walls' inner faces (`rmCanvases`, made once per sprite), then the furniture, the people and the
+  player sorted among themselves (`rmFinish`; a sitter after his seat when he faces the viewer), then the whole
+  building at 1 - fade (so it fades in place, softly, no patch), then a sill: the bottom `RM.SILL` 0.45u of the near
+  walls with a soft top edge. The west row's awning and sign and the east row's yard fade with it. A player standing
+  behind an open building (at an east-row door) shows through its far wall in D31's soft round patch. A shut building
+  is drawn exactly as before.
+- **Stand-ins until the art lands**: the far walls are plain boards with the sprite's near faces copied onto them,
+  darkened; the floor is drawn planks (earth in the smithy and the livery); furniture is plain boxes (`rmFurnStandIn`),
+  shelves and the feed store's sacks at four stock levels from `tnShop(S, id).stock` (full until Town lands it), the
+  livery's stalls with horses, a bed with a sleeper is a blanket's hump (no `lie` frames for townsfolk yet). Each part
+  drops in by key when the atlas has it (`<B>/floor`, `/back`, `/front`, `/roof`, `_lit`; `furn/<name>[/<level>]/<o>`).
+
+### The far town (section "the far town (D32)", prefixes `ft`, `FT`; drawing in the pixel renderer's far-town block)
+
+At the end of track (the line's x 3,600u, world 3,680u), north of the track: a platform (plank tiles) from 72u to 4u
+short of the end, the depot (`far/depot`, standing in `bld/station`), a water tank, the town's name board, a square, a
+main street of eight buildings running north (four a side on 12u lots: store, a second hotel, bank, a grain store;
+saloon, newspaper, sheriff, barber; today's shop bodies standing in for `far/hotel2` and `far/grainstore`), back lanes,
+two fenced fields with haystacks, a dozen townsfolk standing about. Flat things are baked into the line's chunks
+(`ftBake`, `ftTile`), standing things are sorted items (`ftItems`). The far wall's rows are left out over the town
+(`ftClear`: x within `FT.X0` to `FT.X1`, 150u either side of the end, south of `FT.ZN` -125u) and the ground drawn
+there instead; the rows north of it go on for ever, so no edge of the world shows (checked from seven places at the
+furthest zoom in both orientations). The two hazy landmarks south of the line (the old far-town blocks and water
+tower, Foundation's) are kept as outlying farms.
+
+**The last spike.** On `lnDone` a card ("The last spike is in! The line has reached Cedar Bluff ...", `ftEvent` in
+`handleEvent`), and that day, while the work train stands at the railhead (the platform), the townsfolk crowd the
+platform facing the train (`ftCheering`). The work train's morning run that day ended there; Foundation's rule then
+stops the work train from the next day (the line is done).
+
+**Dev mode:** a row "Lay the line to 40 m short of the far town" (command `{ t: 'ftJump' }`, `ftCmd`): the fronts
+moved up to 40 m short of the end (never back), the dump filled; refused while the work train is out.
+
+### Speed (check-pixperf and check-rooms, Chromium, phone size, 4x throttled, best of three windows; this machine is
+noisy, the same case varies by 2 ms from run to run)
+
+- Before (this branch's base): station at scale 1 8.28 ms portrait, 6.80 landscape; station default zoom 5.92 / 5.16;
+  street at dusk default 2.49 / 2.93, scale 1 4.76 / 7.31.
+- After (all buildings shut, as the check's scenes): station at scale 1 5.94 portrait, 8.87 landscape; station default
+  6.18 / 5.34; street at dusk default 4.07 / 3.44, scale 1 5.89 / 6.47. The shut case adds only a loop over the rooms
+  to see which is open and the list of people indoors (cached a tick); the differences are within the noise.
+- An open building (check-rooms, the hotel with its keeper, the laundress and furniture, the same view): 6.64 ms shut,
+  6.96 ms open at the default zoom. Its pictures are made once when it first opens (a few ms).
+
+### Provisional choices for the designer
+
+1. The fade: the whole building fades in place to nothing over 0.25 s, leaving a 0.45u sill with a soft top; the
+   back walls are cut at the eaves (a doll's house look). The other way: keep the far walls to their full height.
+2. A tap on a shut building opens it (and does not walk him); a tap on an open one walks him in. It stays open until he
+   walks 8u away or taps elsewhere.
+3. One building at a time: standing in one beats being at a door, which beats a tap.
+4. The station's waiting room is enterable (benches, the ticket counter, the stove); the freight house and the lever
+   frame are not.
+5. The furniture of each room (`RM_KIND`), the solid pieces the player walks round, the spare places to stand.
+6. Keepers who live over their shop go upstairs (not drawn) from 20:00 to 06:30; the barkeep's from 23:30 to 13:00.
+   At home people are in bed from 21:00 to 06:00, else at the table or the stove.
+7. Indoors the townsfolk walk at their outdoor pace; they start out in time for their next errand, so they still set
+   off on time.
+8. The tents open one at a time like buildings, but their walls do not stop walking (the camp is not on the walk grid;
+   tents come and go with the crew size).
+9. The far town's name (Cedar Bluff), its layout and buildings, the fields, the dozen townsfolk; the hazy south
+   landmarks kept as farms; the cheer is a card plus the town on the platform, and the work train does not run after
+   the line is done (Foundation's rule).
+10. Night: the open building's windows do not glow (its pictures are not the lit sprites' glow layer).
+
+### Checks
+
+`tests/check-rooms.js` (picked up by run-all.js now that the file exists): 23 rooms; walls shut but the doorway, floors
+open, every indoor way clear of solid furniture; each building opens by each trigger and not from 2.5u, one at a time;
+the fade by a real tap; the player walking in through the door (and round from behind); a whole day of the townsfolk:
+in to their spots and out again, nobody ever in a wall, indoors or out; the open store's drawing order (the keeper
+behind his counter, the player inside, nobody of a shut building drawn); the tents; `?rooms=0`; frame time open
+against shut; the far town drawn at the end of track, no background at the furthest zoom from seven places in both
+orientations, the dev jump, 30 men to the last spike, the card and the town on the platform. Screenshots
+`test-output/rooms-{store,school,saloon-evening,home-night,tent-night}-portrait.png`,
+`fartown-{end,far}-{portrait,landscape}.png`, `fartown-cheer-portrait.png`.
 
 ## Next
 

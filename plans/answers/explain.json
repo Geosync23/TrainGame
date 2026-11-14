@@ -1,0 +1,20 @@
+{
+  "answers": {
+    "q.card": {
+      "choice": "keep"
+    },
+    "q.explain": {
+      "choice": "firsttime"
+    },
+    "q.space": {
+      "choice": "split"
+    },
+    "q.top": {
+      "choice": "merge"
+    },
+    "q.warn": {
+      "choice": "yes"
+    }
+  },
+  "savedAt": 1793795746015
+}

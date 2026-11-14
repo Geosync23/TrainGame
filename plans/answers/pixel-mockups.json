@@ -1,0 +1,12 @@
+{
+  "answers": {
+    "q.like": {
+      "choice": "art"
+    },
+    "q.look": {
+      "choice": "pixart",
+      "note": "Hire an additional 2 workers. up to 7 active."
+    }
+  },
+  "savedAt": 1794340723425
+}

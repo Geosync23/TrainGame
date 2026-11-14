@@ -1,0 +1,21 @@
+{
+  "answers": {
+    "q.cargo": {
+      "choice": "keep"
+    },
+    "q.count": {
+      "choice": "mid"
+    },
+    "q.send": {
+      "choice": "you"
+    },
+    "q.shape": {
+      "choice": "hub",
+      "note": "yes but ground work for town stuff if needed we will do that in m2"
+    },
+    "q.tickets": {
+      "choice": "onboard"
+    }
+  },
+  "savedAt": 1793998264892
+}

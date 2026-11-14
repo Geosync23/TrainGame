@@ -1,0 +1,32 @@
+{
+  "answers": {
+    "approve": {
+      "choice": "yes"
+    },
+    "cross": {
+      "choice": "any"
+    },
+    "help": {
+      "choice": "no"
+    },
+    "hills": {
+      "choice": "no"
+    },
+    "pace": {
+      "choice": "5"
+    },
+    "platform": {
+      "choice": "20"
+    },
+    "review": {
+      "choice": "end"
+    },
+    "spikes": {
+      "choice": "4"
+    },
+    "taps": {
+      "choice": "one"
+    }
+  },
+  "savedAt": 1793554153872
+}

@@ -1,0 +1,17 @@
+{
+  "answers": {
+    "q.cap": {
+      "note": "Go up to 80% "
+    },
+    "q.go": {
+      "choice": "yes"
+    },
+    "q.meter": {
+      "note": "Still at 32"
+    },
+    "q.stages": {
+      "choice": "three"
+    }
+  },
+  "savedAt": 1794541611740
+}

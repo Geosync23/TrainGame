@@ -6624,7 +6624,7 @@ const HW_TEST = { HW, hwSync, hwPath, hwPlayerIds, hwRoll, hwSummaryLine, hwDraw
 //   there for a delivery: W's tfAt), the others idle on their porches or at the saloon's door; an errand to a shut
 //   shop ends at its door; unhappy households' grown-ups stand about the depot square in the evening.
 // - Travellers' custom: each traveller who steps off a train (pbOff, ppOff) has a 1 in 3 chance (rngFor(seed, 'tn',
-//   'cust', run, id)) to walk to the hotel or the saloon (whichever is open) and stay an hour, 1 in 10 of the hotel's
+//   'cust', run, id)) to walk to the hotel or the saloon (either: their custom keeps them open) and stay an hour, 1 in 10 of the hotel's
 //   overnight (to 07:00): one custom each. Rail men at the saloon are custom too, and each hired hand lodging at the
 //   hotel is a night's custom.
 // - Signs: a "Closed" card at a shut shop's door (tnPixItems), the idle people, the unhappy on the square, the Look
@@ -6726,7 +6726,7 @@ const TN_ROUTINES = {
     { place: 'home', from: '19:30', days: 'all' }, { place: 'porchHome', from: '19:45', to: '20:30', p: 0.3, days: 'all' }],
 };
 const TN_ERRANDS = ['store', 'barber', 'bank', 'feed', 'newspaper', 'smithy'];
-const TN_SQUARE = ['sq_w', 'sq_e', 'sq_ww', 'sq_ee', 'street_s'];
+const TN_SQUARE = ['sq_ww', 'sq_ee', 'bwW_s', 'bwE_s', 'street_s', 'sq_w', 'sq_e'];   // the depot square's ends and the street's foot (the middle is behind the station)
 const tnShopOfBld = bld => { const q = SHOPS27.find(s => s.bld === bld); return q ? q.id : null; };
 // The households: [{ id (the home building), name, members (agent indexes), earners (indexes of those with a paying
 // workplace: a shop, the church, the school) }], from TF_AGENTS once.
@@ -6852,7 +6852,7 @@ function tnTick(S, ev) {
 function tnCustom(S, st, e, ev) {
   const X = rngFor(S.seed, 'tn', 'cust', e.run, e.id), r = rngNext(X), r2 = rngNext(X), r3 = rngNext(X);
   if (r >= TN.CUSTOM_P) return;
-  const open = TN.CUSTOM_SHOPS.filter(id => st.shop[id] && st.shop[id].o);
+  const open = TN.CUSTOM_SHOPS.filter(id => st.shop[id]);   // (either, shut or not: their custom is what keeps them open)
   if (!open.length || st.vis.length >= TN.VIS_MAX) return;
   const sh = open[Math.floor(r2 * open.length) % open.length], WHO = typeof PP !== 'undefined' ? PP.WHO : ['man_bag'];
   st.shop[sh].c++; st.tot.custom++;
@@ -7014,7 +7014,7 @@ function tnTap(hit) {
   lookUi.pick = { k: 'tn', p: pick }; lookUi.open = true; lookUi.sig = ''; $('lookCard').hidden = false; lookUpdate();
   return true;
 }
-// The renderer's items (pixScene): a "Closed" card on its post at each shut shop's door. The artist's ui/closed_card
+// The renderer's items (pixScene): a "Closed" card on its post in the street at each shut shop's steps. The artist's ui/closed_card
 // when the atlas has it, else a paper card with the word in the pixel font. see: what stands in front turns see-through.
 function tnPixItems(S) {
   const st = S && S.tn;
@@ -7022,7 +7022,7 @@ function tnPixItems(S) {
   const out = [];
   for (const id of Object.keys(st.shop)) {
     if (st.shop[id].o) continue;
-    const sh = SHOPS27.find(s => s.id === id), dx = sh.side === 'W' ? -0.5 : 0.5, x = sh.door.x + dx, z = sh.door.z + 0.9, y = sh.doorY || 0;
+    const sh = SHOPS27.find(s => s.id === id), x = sh.door.x + (sh.side === 'W' ? 1.9 : -1.9), z = sh.door.z + 0.9, y = 0;   // (a board standing in the street at the boardwalk's steps)
     const it = pixItem(x - 0.3, x + 0.3, z - 0.1, z + 0.1, y, y + 1.4, g => {
       if (pixSprite(g, 'ui/closed_card', x, y, z, { k: 'bld', id: sh.bld })) return;
       const p = pixProject(x, y, z), C = PIX.COL, w = pixTextWidth('CLOSED'), px = Math.round(p.x - PIX.vx), py = Math.round(p.y - PIX.vy);

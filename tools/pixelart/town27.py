@@ -14,6 +14,7 @@ import math
 import numpy as np
 import pal27  # noqa: F401  (adds the D27 ramps to the engine)
 import night27  # noqa: F401  (adds the 'lamp' ramp: door lamps, lit at night)
+from ptag import tag  # D32: part tags (back, front, roof, floor) for buildings that open; no effect on the drawing
 import engine as E
 from engine import R, box, cyl_z, cyl_x, sphere, gable_x, gable_y, hash2, new_oid, disc_x, disc_y
 import town as TW
@@ -383,7 +384,9 @@ def body(kind):
     A = BODY_A
     if sp['front'] == 'gable':
         return livery_body(F, sp, o)
+    tag('walls')
     F.box(-A, bk, 0, A, FF_B, wh, sp['wall'], paint=_side_paint(kind), oid=o)
+    tag('roof')
     # the roof behind the false front
     if sp['roof'] == 'flat':
         def tar(lf, u, z, a, b, idx, lit):
@@ -412,7 +415,9 @@ def body(kind):
         endt = end_batten('x' if F.f in ('e', 'w') else 'y', 2.6, ramp=sp['wall']) if sp['tex'] != 'clap' else end_clap(2.0, ramp=sp['wall'])
         if sp['tex'] in ('brick', 'stone'):
             endt = None
+        tag('gable')
         F.roof_depth(bk - 1.4, FF_B, 0.0, hw, wh - 0.4, ridge, rr, wall=sp['wall'], oid=o, tex=rt, endtex=endt)
+        tag('roof')
         # stovepipe or chimney
         if kind in ('newspaper', 'barber', 'undertaker', 'saloon', 'hotel', 'store'):
             pa, pb = {'newspaper': (9.0, bk + 8.0), 'barber': (-8.0, bk + 6.0), 'undertaker': (10.0, bk + 10.0),
@@ -430,7 +435,8 @@ def body(kind):
             F.box(-14.0, bk + 6.0, wh, -10.0, bk + 10.0, ridge + 9.0, 'brick',
                   paint=lambda lf, u, z, a, b, idx, lit: (None, np.where(np.mod(z, 1.34) < 0.42, clampi(idx + 1), idx)), oid=o)
             F.box(-14.5, bk + 5.5, ridge + 9.0, -9.5, bk + 10.5, ridge + 10.0, 'iron', oid=o)
-    # the false front
+    # the false front (the street front: towards the viewer in the west row, away from it in the east row)
+    tag('front' if sp['row'] == 'w' else 'back')
     fo = new_oid(True)
     fh = sp['fh']
     fa = A + 1.0
@@ -482,6 +488,7 @@ def body(kind):
             for k in range(4):
                 hw_ = 9.0 - k * 2.4
                 F.box(-hw_, FF_B, fh + 1.6 + k * 1.2, hw_, LOT_B + 0.4, fh + 2.8 + k * 1.2, 'cream', shades=(0, 1, 2), oid=fo)
+    tag(None)
     return o
 
 
@@ -514,6 +521,7 @@ def livery_body(F, sp, o):
             p.fill(rect(a, z, -22.0, 22.0, 4.3 * UY + 1.0, 4.3 * UY + 1.8), 'iron', 3)   # the door track
             door_lamp(p, a, z, -6.5, zb=4.3 * UY - 6.4, dark=True)    # a lantern hung inside the barn door
         return p.rr, p.ii
+    tag('walls')
     F.box(-A, bk, 0, A, LOT_B, wh, 'wood', paint=walls, oid=o)
     hw = A + 2.0
     def gend(face, X, Y, Z, idx):
@@ -527,7 +535,9 @@ def livery_body(F, sp, o):
         trim = (np.abs(a) < 4.4) & (Z > wh + 2.2) & (Z < wh + 12.8) & ~loft
         rr = np.where(trim, R('cream'), rr); ii = np.where(trim, 2, ii)
         return rr, ii
+    tag('gable')
     F.roof_depth(bk - 1.6, LOT_B + 1.6, 0.0, hw, wh - 0.4, ridge, 'wood', wall='wood', oid=o, tex=plank_roof_tex(2.6), endtex=gend)
+    tag('roof')
     # hay hood: the roof's peak pushed out over the loft, with the hoist beam
     F.box(-1.0, LOT_B, ridge - 3.0, 1.0, LOT_B + 6.0, ridge - 1.6, 'wood', shades=(1, 2, 3), oid=o)
     X, Y = F.w(0.0, LOT_B + 5.4)
@@ -538,6 +548,7 @@ def livery_body(F, sp, o):
     F.box(-3.0, bc - 3.0, ridge - 2.0, 3.0, bc + 3.0, ridge + 4.0, 'wood',
           paint=lambda lf, u, z, a, b, idx, lit: (None, np.where(np.mod(z, 1.5) < 0.6, 4, 2 + lit)), oid=o)
     F.roof_depth(bc - 4.0, bc + 4.0, 0.0, 4.4, ridge + 3.6, ridge + 6.4, 'roof', oid=o, tex=shingle_tex())
+    tag(None)
     return o
 
 
@@ -919,7 +930,9 @@ def church():
                 p.fill(((np.abs(a - ac) < 2.2) & (z > 7.3) & (z < 19.7)) & ~g, 'green', 1 + lit)
                 p.fill(g, 'glass', 3)
         return p.rr, p.ii
+    tag('walls')
     F.box(-A, -B, 0, A, B - 6.0, wh, 'cream', paint=walls, oid=o, shades=(0, 0, 1))
+    tag('gable')
     F.roof_depth(-B - 1.4, B - 6.0, 0.0, A + 1.8, wh - 0.4, wh + 15.0, 'roof', wall='cream', oid=o, tex=shingle_tex(),
                  endtex=lambda f, X, Y, Z, i: (np.full(X.shape, R('cream')), np.where(np.mod(Z, 2.0) < 0.6, 1, 0)))
     # the tower
@@ -940,7 +953,9 @@ def church():
             g = (np.abs(b - tb - T) < 1.2) & (z > 24.0) & (z < 30.0)
             p.fill(g, 'glass', 3)
         return p.rr, p.ii
+    tag('walls')
     F.box(-T, tb - 2.0, 0, T, tb + 2 * T - 2.0, 7.4 * UY, 'cream', paint=tower, oid=o, shades=(0, 0, 1))
+    tag('roof')
     zb = 7.4 * UY
     F.box(-T - 0.8, tb - 2.8, zb, T + 0.8, tb + 2 * T - 1.2, zb + 1.0, 'green', shades=(0, 1, 2), oid=o)
     # the open belfry: four corner posts, louvers, the bell inside
@@ -957,9 +972,11 @@ def church():
     box(X - 0.25, Y - 0.25, 16.0 * UY - 2.0, X + 0.25, Y + 0.25, 16.0 * UY + 3.0, 'iron', shades=(1, 2, 3), oid=o)
     box(X - 1.2, Y - 0.25, 16.0 * UY + 0.8, X + 1.2, Y + 0.25, 16.0 * UY + 1.4, 'iron', shades=(1, 2, 3), oid=o)
     # front steps
+    tag('back')
     for k in range(3):
         F.box(-5.0 - k * 0.0, tb + 2 * T - 2.0 + k * 1.4, 0, 5.0, tb + 2 * T - 0.6 + k * 1.4, (3 - k) * 1.2, 'rock',
               shades=(0, 1, 2), oid=o)
+    tag(None)
     return o
 
 
@@ -987,10 +1004,13 @@ def school():
                 p.fill(g, 'glass', np.where(z > 15.0, 2, 3))
                 p.fill(g & ((np.abs(u2 - bc) < 0.3) | (np.abs(z - 10.5) < 0.3)), 'cream', 1 + lit)
         return p.rr, p.ii
+    tag('walls')
     F.box(-A, -B, 0, A, B, wh, 'brick', paint=walls, oid=o)
+    tag('gable')
     F.roof_depth(-B - 1.4, B + 1.4, 0.0, A + 1.8, wh - 0.4, wh + 12.0, 'roof', wall='brick', oid=o, tex=shingle_tex(),
                  endtex=end_clap(2.0, ramp='brick'))
     # bell cupola at the front of the ridge
+    tag('roof')
     bc = B - 7.0
     zr = wh + 12.0
     F.box(-2.6, bc - 2.6, zr - 3.0, 2.6, bc + 2.6, zr + 1.0, 'cream', shades=(0, 1, 2), oid=o)
@@ -1000,19 +1020,22 @@ def school():
     X, Y = F.w(0.0, bc)
     sphere(X, Y, zr + 3.8, 1.5, 'brass', oid=o, sz=1.1)
     pyramid(X, Y, zr + 7.0, zr + 11.0, 3.6, 'roof', o)
-    # the porch step and a hand pump
+    # the porch step and a hand pump (they stay when the school is opened); the flagpole fades with the front
+    tag('back')
     F.box(-5.0, B, 0, 5.0, B + 3.0, 1.4, 'wood', paint=planks_top, oid=o)
     X, Y = F.w(12.0, B + 6.0)
     box(X - 0.6, Y - 0.6, 0, X + 0.6, Y + 0.6, 7.0, 'iron', shades=(1, 2, 3), oid=o)
     box(X - 0.3, Y + 0.6, 4.6, X + 0.3, Y + 2.0, 5.4, 'iron', shades=(1, 2, 3), oid=o)
     box(X - 0.3, Y - 3.0, 6.6, X + 0.3, Y - 0.6, 7.2, 'iron', shades=(1, 2, 3), oid=o)
     # a flagpole
+    tag('front')
     X, Y = F.w(-14.0, B + 7.0)
     box(X - 0.3, Y - 0.3, 0, X + 0.3, Y + 0.3, 40.0, 'cream', shades=(1, 2, 3), oid=o)
     for k in range(5):
         box(X + 0.3, Y - 0.15, 37.0 - k * 1.0, X + 7.0, Y + 0.15, 38.0 - k * 1.0, 'red' if k % 2 == 0 else 'cream',
             shades=(1, 1, 2), oid=new_oid(True), cast=False)
     box(X + 0.3, Y - 0.15, 35.0, X + 3.0, Y + 0.15, 38.0, 'navy', shades=(1, 1, 2), oid=new_oid(True), cast=False)
+    tag(None)
     return o
 
 
@@ -1049,11 +1072,14 @@ def house(k, facing_='e'):
             p.fill(g, 'glass', np.where(z > 11.0, 2, 3))
             p.fill(g & ((np.abs(b) < 0.3) | (np.abs(z - 9.0) < 0.3)), tr, 1 + lit)
         return p.rr, p.ii
+    tag('walls')
     F.box(-A, -B, 0, A, B, wh, p_['wall'], paint=walls, oid=o)
     hw = B + 1.8
     endt = end_clap(ramp=p_['wall']) if p_['tex'] == 'clap' else end_batten('y', 2.0, ramp=p_['wall'])
     rt = shingle_tex() if p_['roof'] == 'roof' else roof_tex('tin' if p_['roof'] == 'iron' else 'plank')
+    tag('gable')
     F.roof_across(-A - 1.4, A + 1.4, 0.0, hw, wh - 0.4, wh + hw * 0.75, p_['roof'], wall=p_['wall'], oid=o, tex=rt, endtex=endt)
+    tag('roof')
     zr = wh + hw * 0.75
     if p_['chim'] == 'pipe':
         X, Y = F.w(-6.0, -3.0)
@@ -1062,25 +1088,34 @@ def house(k, facing_='e'):
         F.box(A - 5.0, -1.4, wh + 2.0, A - 2.6, 1.0, zr + 3.0, p_['chim'],
               paint=lambda lf, u, z, a, b, idx, lit: (None, np.where(np.mod(z, 1.6) < 0.5, clampi(idx + 1), idx)), oid=o)
     if p_['porch'] == 'front':
+        tag('back')
         F.box(-A, B, 0, A, B + 6.0, 1.4, 'wood', paint=planks_top, oid=o)
         zt = 3.2 * UY
+        tag('front' if facing_ == 'e' else 'back')     # in the 'w' facing the porch is behind the house
         for a in (-A + 0.6, -0.5, A - 0.6):
             F.box(a - 0.4, B + 5.0, 1.4, a + 0.4, B + 5.8, zt, 'wood', shades=(1, 2, 3), oid=o)
+        tag('roof')
         F.box(-A - 0.6, B - 0.4, zt, A + 0.6, B + 6.6, zt + 0.9, p_['roof'] if p_['roof'] != 'roof' else 'roof',
               paint=lambda lf, u, z, a, b, idx, lit: (None, np.where(np.mod(a, 2.0) < 0.6, clampi(idx + 1), idx)), oid=o)
         # a rocking chair
+        tag('back')
         X, Y = F.w(5.0, B + 2.6)
         box(X - 1.0, Y - 1.0, 1.4, X + 1.0, Y + 1.0, 3.4, 'wood', shades=(1, 2, 3), oid=o)
         box(X - 1.0, Y - 1.0, 3.4, X + 1.0, Y - 0.5, 7.0, 'wood', shades=(1, 2, 3), oid=o) if facing_ == 's' else None
     elif p_['porch'] == 'side':
+        tag('back')
         F.box(-A - 5.0, -B, 0, -A, B, 1.2, 'wood', paint=planks_top, oid=o)
+        tag('front' if facing_ == 'e' else 'back')
         for b in (-B + 0.6, B - 0.6):
             F.box(-A - 4.6, b - 0.4, 1.2, -A - 3.8, b + 0.4, 3.0 * UY, 'wood', shades=(1, 2, 3), oid=o)
+        tag('roof')
         F.box(-A - 5.4, -B - 0.4, 3.0 * UY, -A, B + 0.4, 3.0 * UY + 0.9, 'wood',
               paint=lambda lf, u, z, a, b, idx, lit: (None, np.where(np.mod(b, 2.0) < 0.6, clampi(idx + 1), idx)), oid=o)
     # behind (the -b side): a woodpile and a rain barrel; seen for the east houses ('w')
+    tag('back')
     _woodpile(F, -9.0, -B - 2.6, 9.0, 3, o)
     rain_barrel(F, 9.0, -B - 2.4, o, h=4.6)
+    tag(None)
     return o
 
 

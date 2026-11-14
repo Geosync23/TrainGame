@@ -10,6 +10,7 @@ from engine import R, box, cyl_z, cyl_x, sphere, hash2, new_oid
 import town as TW
 import town27 as T
 from town import Frame, Paint, rect, clampi, shingle_tex, end_batten, text_width
+from ptag import tag  # D32: part tags for buildings that open (no effect on the drawing)
 
 U = 4.0
 UY = 16.0 / 3.0
@@ -38,6 +39,7 @@ def station(lit=False):
 
     def plinth(lf, u, z, a, b, idx, lit_):
         return None, np.where(np.mod(u, 1.6) < 0.45, clampi(idx + 2), clampi(idx + 1))
+    tag('back')                 # D32: part tags for the opened depot (ptag.py); the plinth stays
     F.box(-A, -B, 0, A, B, zb, 'wood', paint=plinth, oid=o)
 
     def walls(lf, u, z, a, b, idx, lt):
@@ -70,7 +72,9 @@ def station(lit=False):
             p.fill(rect(p.u, zz, 6.0, 15.0, 0, 18.0) & (np.abs((p.u - 6.0) - zz * 9.0 / 18.0) < 0.6), 'cream', 3)
             window(22.0, 26.0, 8.0, 18.0, (1, 2))
         return p.rr, p.ii
+    tag('walls')
     F.box(-A + 1.0, -B + 1.0, zb, A - 1.0, B - 1.0, wh, 'straw', paint=walls, oid=o, shades=(1, 1, 2))
+    tag('front')
     # the bay window (the telegrapher watches the line from it): a three-sided box out of the front wall
     def bay(lf, u, z, a, b, idx, lt):
         p = Paint('straw', u, z, idx, lt)
@@ -84,8 +88,10 @@ def station(lit=False):
     F.box(-6.6, B - 1.0, zb + 21.0, 4.6, B + 3.6, zb + 22.2, 'wood', shades=(1, 2, 3), oid=o)
     # roof: ridge along x, gable ends at both ends; brackets under the deep eaves
     hw = B + 2.0
+    tag('gable')
     F.roof_across(-A - 1.0, A + 1.0, 0, hw, wh - 0.4, ST['ridge'], 'brick', wall='straw', oid=o, tex=shingle_tex(),
                   shades=(1, 1), endtex=end_batten('y', 2.6, ramp='straw'))
+    tag('roof')
     F.box(-A - 1.0, -0.5, ST['ridge'] - 0.4, A + 1.0, 0.5, ST['ridge'] + 0.5, 'brick', shades=(1, 2, 3), oid=o, cast=False)
     for a in (-A + 1.0, -A + 14.0, -A + 30.0, A - 22.0, A - 1.0):
         F.box(a - 0.5, B - 1.0, wh - 3.2, a + 0.5, B + 1.4, wh - 0.4, 'wood', shades=(0, 1, 2), oid=o)
@@ -114,6 +120,7 @@ def station(lit=False):
         F.box(ac - 2.0, bc - 2.0, ST['ridge'] + 5.0, ac + 2.0, bc + 2.0, ST['ridge'] + 5.8, 'iron', shades=(1, 2, 3), oid=o)
     # a telegraph wire bracket on the +x end gable
     F.box(A - 1.0, -0.4, ST['ridge'] - 4.0, A + 1.6, 0.4, ST['ridge'] - 3.4, 'wood', shades=(1, 2, 3), oid=o)
+    tag(None)
     return o
 
 
@@ -140,8 +147,10 @@ def station_board(lit=False):
     o = new_oid(True)
     s = 'RAILHEAD'
     w = text_width(s) / 2.0 + 2.6
+    tag('front')
     F.box(ST['a'] + 0.5, -w / 2.0, ST['eave'] - 0.6, ST['a'] + 1.1, w / 2.0, ST['eave'] + 6.6, 'cream',
           shades=(0, 0, 0), oid=o)
+    tag(None)
     return o
 
 
@@ -255,12 +264,14 @@ def freighthouse_body():
         ii = np.where(np.mod(c, 2.6) < 0.5, clampi(idx + 1), idx)
         return np.full(X.shape, R('wood')), ii
     # back wall (its inner face, +z, is what shows) and the two end walls
+    tag('back')
     box(-A, -B, z0, A, -B + 1.0, zu, 'wood', tex=boards, oid=o, shades=(2, 2, 3))
     box(-A, -B, z0, -A + 1.0, B - 3.0, zu, 'wood', tex=boards, oid=o, shades=(2, 3, 3))
     def endwall(face, X, Y, Z, idx):
         rr, ii = boards(face, X, Y, Z, idx)
         # FREIGHT painted on the +x end
         return rr, ii
+    tag('front')
     box(A - 1.0, -B, z0, A, B - 3.0, zu, 'wood', tex=endwall, oid=o)
     # posts along the open side
     for k in range(5):
@@ -272,6 +283,7 @@ def freighthouse_body():
     box(-0.55, B + 0.25, z0 + 9.8, 0.55, B + 1.35, z0 + 12.4, 'lamp', shades=(1, 2, 2), oid=o, cast=False)
     box(-0.4, B + 0.4, z0 + 9.2, 0.4, B + 1.2, z0 + 9.8, 'iron', shades=(1, 2, 3), oid=o, cast=False)
     # shelves along the back wall with parcels
+    tag('back')
     for zz in (z0 + 6.0, z0 + 12.0):
         box(-A + 1.0, -B + 1.0, zz, A - 1.0, -B + 4.0, zz + 0.6, 'wood', shades=(0, 2, 3), oid=o)
     for k in range(9):
@@ -287,6 +299,7 @@ def freighthouse_body():
     box(A - 10.0, -B + 2.0, z0, A - 3.0, -B + 6.0, z0 + 5.6, 'wood', shades=(0, 2, 3), oid=o)
     box(A - 9.6, -B + 1.6, z0 + 5.6, A - 3.4, -B + 3.0, z0 + 8.0, 'wood', shades=(0, 2, 3), oid=o)
     box(A - 6.0, -B + 3.0, z0 + 5.6, A - 5.0, -B + 4.0, z0 + 7.4, 'fire', shades=(0, 1, 1), oid=o)
+    tag(None)
     return o
 
 

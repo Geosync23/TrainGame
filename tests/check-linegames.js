@@ -154,6 +154,9 @@ module.exports = async function checkLineGames() {
         const jb = await page.evaluate(() => { const b = document.getElementById('lgJoin'); const r = b.getBoundingClientRect(); return { hidden: b.hidden, t: b.textContent, k: +b.dataset.k, w: r.width, h: r.height, l: r.left, r: r.right, top: r.top, b: r.bottom }; });
         if (jb.hidden || jb.k !== k) { P(`beside gang ${k} the Join button is ${jb.hidden ? 'not shown' : 'for gang ' + jb.k}`); continue; }
         if (jb.w < 44 || jb.h < 44 || jb.l < 0 || jb.r > vp.width || jb.top < 0 || jb.b > vp.height) P(`the Join button is not thumb-sized on the screen: ${JSON.stringify(jb)}`);
+        // (D34 helper: in landscape a touch of the round before can land on the Dev button beside the panel and open the
+        // dev panel over the Join button; it is closed first, as the player would. Noted in backlog.md.)
+        await page.evaluate(() => { if (!document.getElementById('devPanel').hidden) (0, eval)('dvClose')(); });
         await page.tap('#lgJoin');
         await page.evaluate(() => window.__railhead.step(1));
         await skipLesson();

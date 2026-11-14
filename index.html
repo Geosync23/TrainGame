@@ -9165,11 +9165,11 @@ function lpOutOfBox(S, B, x, z) {
 // the water or the strip's end (the train is walked round, not stopped at).
 function lpClampWalk(S, x, z, tx, tz) {
   const n = Math.ceil(Math.hypot(tx - x, tz - z) / 0.2), f2 = S.ln.f[1];
-  let lx = x, lz = z;
+  let lx = x, lz = z, on = !D34.on || lnWalkable(S.seed, x, z, f2);   // (D34: standing off the walkable ground, set down there at the end of a carry, he walks off it first)
   for (let i = 1; i <= n; i++) {
     const px = x + (tx - x) * i / n, pz = z + (tz - z) * i / n;
-    if (!lnWalkable(S.seed, px, pz, f2)) break;
-    lx = px; lz = pz;
+    if (!lnWalkable(S.seed, px, pz, f2)) { if (on) break; lx = px; lz = pz; continue; }
+    on = true; lx = px; lz = pz;
   }
   return [lx, lz];
 }
@@ -9242,11 +9242,18 @@ function lpWalkTick(S, Q, B, ev) {
   const f2 = S.ln.f[1];
   if (lpInBox(B, Q.tx, Q.tz)) [Q.tx, Q.tz] = lpOutOfBox(S, B, Q.tx, Q.tz);   // (the train moved up onto where he was going)
   let left = playerWalkSpeed(S.track, false) * DT_MIN;
+  const off = D34.on && !lnWalkable(S.seed, Q.x, Q.z, f2);   // D34: set down off the walkable ground (the end of a carry by the creek): he may walk off it
   for (let g = 0; g < 40 && left > 1e-9; g++) {
     const [nx, nz] = lpNext(B, Q.x, Q.z, Q.tx, Q.tz), d = Math.hypot(nx - Q.x, nz - Q.z);
     if (d < 1e-9) break;
     const s = Math.min(left, LP.SUB, d), x = s === d ? nx : Q.x + (nx - Q.x) / d * s, z = s === d ? nz : Q.z + (nz - Q.z) / d * s;
-    if (!lnWalkable(S.seed, x, z, f2) || lpInBox(B, x, z)) { delete Q.tx; delete Q.tz; ev.push({ t: 'lpStopped' }); break; }
+    if ((!off && !lnWalkable(S.seed, x, z, f2)) || lpInBox(B, x, z)) {
+      // D34: hemmed in between the water and the work train standing on the trestle (where a carry can leave him), he
+      // squeezes along the deck past the cars, as the men do, rather than stand there for good
+      const dx = Q.tx - Q.x, dz = Q.tz - Q.z, dd = Math.hypot(dx, dz), st = Math.min(left, LP.SUB, dd), x2 = Q.x + dx / dd * st, z2 = Q.z + dz / dd * st;
+      if (D34.on && g === 0 && dd > 1e-9 && lnWalkable(S.seed, x2, z2, f2) && Math.abs(Q.x - (CW.CREEK[0] + CW.CREEK[1]) / 2) < 30) { Q.f = Math.atan2(dx, dz); Q.x = x2; Q.z = z2; Q.mv = 1; left -= st; continue; }
+      delete Q.tx; delete Q.tz; ev.push({ t: 'lpStopped' }); break;
+    }
     Q.f = Math.atan2(x - Q.x, z - Q.z); Q.x = x; Q.z = z; Q.mv = 1; left -= s;
     if (x === Q.tx && z === Q.tz) break;
   }
@@ -9673,7 +9680,10 @@ function lgWTick(S, Q, ev) {
       else { m.mv = 0; m.f = p.f; }
     });
     if (j.ph === 'go' && all) { j.ph = k === 2 ? 'load' : 'ready'; j.t1 = S.tick; if (k <= 1) j.last = S.tick; ev.push({ t: 'lgReady', stage: k }); }   // (walking to his place is not work; the rock's trips are)
-    else if (j.ph === 'load' && all && S.tick - j.t1 >= LGW.LOAD_T) { j.ph = 'tip'; j.c = 0; j.p0 = [Q.x, Q.z]; ev.push({ t: 'lgOut', stage: k }); }
+    else if (j.ph === 'load' && all && S.tick - j.t1 >= LGW.LOAD_T) {
+      if (lnOpenWork(S, 2) <= 0) { if (!j.wt) { j.wt = 1; ev.push({ t: 'lgWait', stage: k }); } }   // (no bed ready for rock: he waits at the heap with his load)
+      else { delete j.wt; j.ph = 'tip'; j.c = 0; j.p0 = [Q.x, Q.z]; ev.push({ t: 'lgOut', stage: k }); }
+    }
     return;
   }
   if (j.ph === 'carry' || j.ph === 'tip') {
@@ -9685,6 +9695,7 @@ function lgWTick(S, Q, ev) {
     } else { j.c = cwR3(Math.min(o.len, j.c + CW.CARRY * dt)); Q.mv = 1; }
     const p = lgWOnPath(S, j, j.c).pts;
     Q.x = cwR3(p[0][0]); Q.z = cwR3(cwFz(p[0][0], p[0][1])); Q.f = cwR3(p[0][2]); delete Q.tx; delete Q.tz;
+    for (let i = 0; i < 12 && !lnWalkable(S.seed, Q.x, Q.z, S.ln.f[1]); i++) Q.z = cwR3(Q.z * 0.8);   // (by the creek he keeps to the deck)
     p.slice(1).forEach((q, i) => { place(q, i); men[j.m[i]].mv = Q.mv ? 1 : 0; });
     return;
   }
@@ -9730,7 +9741,7 @@ function lgWDone1(S, Q, q, ev) {
   j.last = S.tick; j.n++; j.q = q; j.qs = j.qs.concat([q]).slice(-3); j.wu = Math.round((j.wu + wu - back) * 1000) / 1000;
   const avg = j.qs.reduce((a, b) => a + b, 0) / j.qs.length;
   if (avg >= LG.LIFT_Q) { j.lift = S.tick + LG.LIFT_T; cwBoost(S, k, Q.x, 1 + LG.LIFT * avg / 100, j.lift); } else delete j.lift;
-  ev.push({ t: 'lgDid', stage: k, q, n: j.n, wu: Math.round((wu - back) * 1000) / 1000, m: Math.round((L.f[k] - f0) * 1000) / 1000, stuck: back >= wu - 1e-9 ? 1 : 0, lift: j.lift ? 1 : 0 });
+  ev.push({ t: 'lgDid', stage: k, q, n: j.n, wu: Math.round((wu - back) * 1000) / 1000, m: Math.round((L.f[k] - f0) * 1000) / 1000, f0, stuck: back >= wu - 1e-9 ? 1 : 0, lift: j.lift ? 1 : 0 });   // (m: the front's move by this action alone; f0: where it was)
   if (k >= 2 && k <= 4) { j.ph = 'go'; delete j.c; delete j.p0; delete j.auto; }   // back to the heap, the pile or the stack for the next
 }
 // D34: how one of his mates is drawn (Crew's cwDrawList asks): { act, anim, frame, held?, prop? }.
@@ -9865,7 +9876,7 @@ function lpCheckSaveShape(st) {
   if (j && j.w !== undefined) {
     const men = st.cw && Array.isArray(st.cw.men) ? st.cw.men : [];
     if (j.w !== 1 || !/^(go|ready|load|tip|carry|at|rake)$/.test(j.ph) || !Array.isArray(j.m) || j.m.length > 3 || j.m.some(id => !Number.isInteger(id) || !men[id] || men[id].lg !== 1)
-      || (j.c !== undefined && !num(j.c)) || (j.t1 !== undefined && !Number.isInteger(j.t1)) || (j.p0 !== undefined && (!Array.isArray(j.p0) || !num(j.p0[0]) || !num(j.p0[1])))) bad();
+      || (j.c !== undefined && !num(j.c)) || (j.t1 !== undefined && !Number.isInteger(j.t1)) || (j.wt !== undefined && j.wt !== 1) || (j.auto !== undefined && j.auto !== 1) || (j.p0 !== undefined && (!Array.isArray(j.p0) || !num(j.p0[0]) || !num(j.p0[1])))) bad();
   }
 }
 
@@ -25186,7 +25197,8 @@ function lpHudFrame() {
   const top = Math.round(wide ? tl.top : below + 6) + 'px', left = wide ? Math.round(tl.right + 10) + 'px' : '';
   if (bar.style.top !== top) bar.style.top = top;
   if (bar.style.left !== left) bar.style.left = left;
-  if (bar.hidden) bar.hidden = false;
+  const away = D34.on && typeof lgWOn === 'function' && lgWOn();   // D34: while he works in the world the bar stands aside (the work is in view; Leave is on the chip under him)
+  if (bar.hidden !== away) bar.hidden = away;
   if (lpUi.cardFor && (Q.ph !== 'line' && Q.ph !== 'aboardL' || !(line || D33.on))) lpCloseCard();
   if (lpUi.cardFor && now - lpUi.cardT > 400) { lpUi.cardT = now; lpCardRender(); }
 }
@@ -26110,7 +26122,8 @@ function lgBeatOf(St, m) { const r = lgW.r, b = lgW.beat; return St === S && r &
   $('lgWOut').addEventListener('pointerup', e => { if (lgW.outPtr === e.pointerId && lgWOn()) lgWLeave(); lgW.outPtr = null; });
   $('lgWOut').addEventListener('click', () => { if (lgWOn() && !lgW.left) lgWLeave(); });
   // The game's touches: near the work, before the view's own (a tap there must not walk him away)
-  const near = e => { if (!lgWOn() || !lgW.r || lgW.frozen) return false; const a = lgWAnchor(), s = lgWScr(a.x, a.y, a.z); return Math.hypot(e.clientX - s.x, e.clientY - s.y) <= lgW.R; };
+  // (a touch near the work is the game's even between rounds, so a late tap after a bent spike never walks him away)
+  const near = e => { if (!lgWOn() || lgW.frozen) return false; const a = lgWAnchor(), s = lgWScr(a.x, a.y, a.z); return Math.hypot(e.clientX - s.x, e.clientY - s.y) <= lgW.R; };
   const call = (fn, e) => { const r = lgW.r, G = LGW_GAMES[lgW.k]; if (r && G && G[fn] && !lgW.frozen) G[fn](r, { x: e.clientX, y: e.clientY }, lgT()); };
   canvas.addEventListener('pointerdown', e => {
     if (lgW.ptr !== null || !near(e)) return;
@@ -26126,8 +26139,9 @@ function lgWLeave() { lgW.r = null; lgW.left = true; lgW.fx = []; send({ t: 'lpL
 // The sim's word on a step (handleEvent): wait, again.
 function lgWEvent(e) {
   const now = performance.now(), k = e.stage, ahead = ['', 'the clearers', 'the diggers', 'the rock gang', 'the tie men', 'the rail gang'][k];
-  if (e.t === 'lgWait') { lgW.msg = `Waiting on ${ahead}: no room for a whole ${LGW.THING[k]} yet` + (k >= 3 && S.ln && LINE.SUP && S.ln.sup[lnSupOf(k)] < 1 ? ' (or the supplies)' : ''); lgW.msgT = now; if (lgW.r && k >= 3) { lgW.r = null; } }
+  if (e.t === 'lgWait') { lgW.msg = k === 0 ? 'Far enough ahead of the diggers for now: wait for them' : k <= 2 ? `Waiting on ${ahead}: nothing ready for you yet` : `Waiting on ${ahead}: no room for a whole ${LGW.THING[k]} yet` + (k >= 3 && S.ln && LINE.SUP && S.ln.sup[lnSupOf(k)] < 1 ? ' (or the supplies)' : ''); lgW.msgT = now; if (lgW.r && k >= 3) { lgW.r = null; } }
   else if (e.t === 'lgRedo') { lgW.msg = k === 5 ? 'A bent spike: draw it, a new one' : k === 3 ? 'Off its mark: set it again' : 'Off the gauge: set it again'; lgW.msgT = now; lgW.r = null; }
+  else if (e.t === 'lgDid' && k < 3 && e.stuck) { lgW.msg = k === 0 ? 'Up to the diggers: no more clearing for now' : `Waiting on ${ahead}: the work is up to them`; lgW.msgT = now; }
   else if (e.t === 'lgDid' && k >= 3) { lgW.msg = `${LGW.THING[k][0].toUpperCase() + LGW.THING[k].slice(1)} down: ${e.m >= 1 ? e.m.toFixed(2) + ' m' : Math.round(e.m * 100) + ' cm'} more of the ${['', '', '', 'ties', 'rails', 'spiked track'][k]}`; lgW.msgT = now; }
 }
 // Each frame while he works in the world (lgFrame): the round, its result, the chip.
@@ -26136,7 +26150,12 @@ function lgWFrame(Q, j, dt, hold, frozen) {
   if (lgW.k !== k) { lgW.k = k; lgW.r = null; lgW.res = []; lgW.fx = []; lgW.fell = []; }
   lgW.frozen = frozen;
   // the round follows the task's phase in the sim
-  const ph = j.ph, playable = !walking && (k <= 1 || k === 5 ? ph === 'ready' : k === 2 ? ph === 'tip' || ph === 'rake' : ph === 'ready' || ph === 'carry' || ph === 'at');
+  const ph = j.ph;
+  let room = true;
+  if (k >= 3 && ph === 'ready') { lnLimit.mine = true; try { room = lgUnitWu(S, k, LGW.UNIT_M[k]) <= lnOpenWork(S, k) + 1e-6; } finally { lnLimit.mine = false; } }
+  const open = k === 0 ? cwOpen0(S) > 0 : k === 1 ? lnOpenWork(S, 1) > 0 : room;   // (nothing to clear or dig yet, no room for a whole tie, rail or spike: no round, and the chip says why)
+  const playable = !walking && (k <= 1 || k === 5 ? ph === 'ready' && open : k === 2 ? ph === 'tip' || ph === 'rake' : (ph === 'ready' && open) || ph === 'carry' || ph === 'at');
+  if (!open && !walking && ph === 'ready' && (!lgW.msg || performance.now() - lgW.msgT > 2000)) lgWEvent({ t: 'lgWait', stage: k });
   let r = lgW.r;
   if (r && r.sent && t - r.sent > 1100) r = lgW.r = null;
   if (r && !r.sent && !playable) r = lgW.r = null;

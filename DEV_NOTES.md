@@ -1429,128 +1429,6 @@ This replaces the Foundation's "natural borders" paragraph above where they diff
 
 **Check.** `check-linegames.js`, portrait and landscape, by Chromium touch events (taps, swipes, press-hold-drag-release, a second thumb on Step out): the Join button beside each gang, thumb-sized and on the screen; each game at good, fair and poor timing gives that word (portrait; landscape plays good) and the sim takes it; three good rounds lift the diggers near him (`cwBoost`, the panel says so), poor rounds let it lapse; Step out mid-carry leaves no round sent and him empty-handed; the whole session's ticks replayed from its start give the same hash; a flood of `lgDone` one a tick is taken at most once in 8 ticks and is worth no more than one man at 1.25; no console errors. Screenshots `linegames-<game>-<orient>.png` mid-round. `check-linelessons.js`: in the sim each line lesson opens at its moment, steps on, finishes, never opens twice, comes back after replay, and a mid-day state as JSON plays on to the same hash; on the page the first card holds the game on the line, Show me lets it run, the game panel waits under the first card of the spikers' lesson, the card is inside the screen, Settings has the Lessons row on the line. Screenshots `linelessons-*.png`.
 
-### D32 stage 3: the bigger town (sim) (Town, 2026-11-14)
-
-Plan 8.1 (homes, roles, a daily round) and 8.4 (a simple economy you can see). The rooms (8.2, 8.3: walking inside, the
-fading walls, the shelves indoors) and the far town are the Rooms builder's; people still go in at a door and are not
-drawn, as in D27. Code: section "the bigger town (D32)" (after "hired workers (D32)"; its head comment is the contract)
-and TOWN27's block of rows "D32 stage 3 (Town)" in "starting world layout".
-
-**The switch.** `?tn=0` (`TN_OFF`, `TN.on`) parks all of it: the D27 town of 19 people, the 8 D27 houses, no `S.tn`, no
-economy, W's routines (`check-townsfolk.js` now opens with it: it tests W's town). Nothing is deleted.
-
-**What exists.**
-- **Houses** (TOWN27 rows, `tn: 'cabin' | 'frame' | 'two'`): ten on 8u lots. Five between the D27 houses on the back
-  lanes (house9 at (-35, -50); house10 to house13 at x 35, z -50, -70, -90, -112), doors on lanes W and E as theirs. Five on
-  a third lane west of the town (`TOWN27.tnLanes`: lane `W2` at x -43, joined to lane W at the alley z -73 and at its
-  north end z -116; house14 to house18 at x -51, z -66 to -114, facing it), north of the camp (its z0 is -58; house14
-  ends at -61.75). Clear of every footprint, the camp, the muster, the wash, the line's country (east of x 80) and the
-  wood; solid nature on the new lots and the lane is taken away (only with tn on). The lane and its joins are dirt on the
-  ground (`tnLaneAt`, one line in `pixCellTile`). Each has a door node in the town graph (W's `townGraphBuild` reads
-  `tnLanes`). **Art**: the renderer asks for `bld/house_<tn>/<face>`, then `bld/house_<tn>` (the artist's keys, by key,
-  once they have a box), else the D27 design as a stand-in (`tnHouseKey`; cabin design 3, frame 1, two-room 2).
-- **People**: `TN_PEOPLE`, 22 more in `TF_AGENTS` (41 townsfolk): Martha Pratt and Josie Turner (the keepers' wives),
-  Gus Lindqvist (the smith's hand), the Abbotts (Will, store clerk; Mary; Ada), the Marshes (Edwin, bank clerk; Lucy;
-  Jimmy), Hattie Bell (hotel cook), the Diaz (Rosa, hotel maid; Ana), Billy Ortega (stable boy), Lottie Shaw (barmaid),
-  Sam Ives (printer's devil), Pete Hensley, Otis and Ruth Fenn (carpenter for the undertaker; bath woman at the
-  barber's), Dan Pike (feed hand), Joe Haskins (livery hand), Ned and Nora Quinn (assay clerk; keeps house). Six pupils.
-  Every townsperson has `{ role, home, work }` (`TN_ROLES` for W's 19; with tn on Tommy Pratt lives over the store with
-  his parents and the cowhands' work is the range, `'edge'`). The hired hands (`S.hw`) lodge at the hotel. 26
-  households (the people of one home), each with at least one earner.
-- **The round** (`TN_ROUTINES` by kind: keeper, barkeep, barmaid, clerk, sheriff, preacher, teacher, pupil, laundress,
-  cowhand, homemaker, hand, cook; W's planner with two hooks, `tnRoutine` and `tnPlace`): home, work, the noon meal
-  (the hotel's table or home, `meal`), an errand (a shop by the draw), the saloon or the porch in the evening
-  (`evening`), **home by 21:30** (every evening errand ends by 21:10 plus up to 10 minutes' jitter); church on Sunday;
-  the pupils at school Monday to Friday.
-- **The rail men** (Crew's men, Crew's own walking `cwGo` / `cwStep`): Saturday at 20:20 a third of the men at the camp's
-  fire walk by the town graph to the saloon (each to his own spot by its door, rows of five), are inside to 21:15 (each
-  one custom) and walk back; Sunday from 19:45 a quarter walk to the church for evening prayers to 20:50. Back at the
-  gate they are handed to Crew walking to their cots (`'toBed'`). While out `m.st` is `'town'` (indoors `pl` 0), which
-  Crew's tick leaves alone, and the head count says "the town". The line's pace is untouched (check-bigtown compares the
-  fronts after a week with `?tn=0`: the same to the millimetre).
-- **The economy** (`S.tn`, settled each morning at 05:00 by `tnRoll`, called first in W's `tfTick` so the day's plans see
-  it; `tnTick` counts the day's events):
-  - stock 0 to `TN.CAP` 12 for the nine shops that take goods by rail (`TN.USE`: store 3, saloon 3, hotel 2, smithy 2,
-    livery 2, newspaper 2, bank 1, undertaker 1, feed 1 a day while open); a good handed in at a door (`frDelivered`,
-    `pgDelivered`: the player's, the hired delivery man's and the shop's own collection) adds 3, a plough, piano,
-    furniture or stove 6; a new town starts with two days' use;
-  - open or shut: open while it had stock at 05:00, or on its first morning at 0 ("empty shelves"); shut on the second
-    morning at 0. So goods missed from day 0 give empty shelves on day 2 and every shop shut on day 3 (days counted from
-    0 as the sim does: the clock's Day 1 is day 0). The barber, the sheriff, the assay office, the church and the school
-    keep no stock and are always open. The hotel and the saloon also stay open on yesterday's travellers' custom;
-  - pay: per household 2 coins a day for each earner whose workplace was open, less 1 upkeep, a purse of 0 to 20
-    (starts at 8); mood content, worried after 2 days without pay, unhappy after 4;
-  - what it does to the round: a shut shop's keeper stands at its door all day (so he is there to take a delivery, W's
-    `tfAt`), its other people idle on their porches or at the saloon's door; an errand to a shut shop ends at its door;
-    unhappy households' grown-ups stand about the depot square's ends and the street's foot 18:30 to 20:45;
-  - travellers' custom: each traveller who steps off (`pbOff`, `ppOff`) has a 1 in 3 chance (`rngFor(seed, 'tn',
-    'cust', run, id)`) to walk from platform 1's west end to the hotel or the saloon (half each, shut or not: the custom
-    is what keeps them open), stay an hour (1 in 10 of the hotel's overnight, to 07:00) and walk back; each a custom.
-    The hired hands lodging at the hotel are a night's custom each. At most 16 visitors at once.
-- **Visible signs**: a "Closed" board standing in the street at each shut shop's steps (`tnPixItems`: `ui/closed_card`
-  when the atlas has it, else a paper card with the word in the pixel font; what stands in front turns see-through); the
-  idle on porches and at the saloon's door; the unhappy on the square in the evening; travellers walking in
-  (`tnDrawList`, added to the townsfolk's list in `pixLists`); the **Look card** (a tap on a townsperson, a rail man, a
-  hired hand, a traveller, a home or a shop in the pixel view: role, home, work, household, purse, mood; a shop's stock,
-  open or shut, today's travellers; `tnTap` in the input after `pdTap`, the card is D1's `#lookCard` through
-  `lookCardOf`'s new kind `'tn'`); the dev panel's town line (`tnDevLine`: shops open and which are empty, households paid
-  yesterday, moods, travellers today).
-- **For Rooms**: `tnShop(S, id)` `{ stock (null for a shop that keeps none), open, custom }`, `tnHome(S, who)` `{ pay,
-  mood (0 content, 1 worried, 2 unhappy) }` by home building or member id; `tnRoomOpen()` stays his.
-
-**The tables.** `TN` (every number above), `TN_PEOPLE`, `TN_ROLES`, `TN_ROUTINES`, `TN_ERRANDS`, `TN_SQUARE`, TOWN27's
-rows and `tnLanes`; households are worked out from `TF_AGENTS` (`tnHouseholds`).
-
-**The store** `S.tn = { day, key, shop: { [id]: { s, z, o, c, cy } }, home: { [home]: { p, u, lp } }, vis, vn, cr, tot }`
-(the head comment lists every field). Optional, schema 19 unchanged: a new game gets it at its first tick, a save
-without it at its next 05:00 (its townsfolk are re-planned at once by W's rule, without the economy until then);
-`tnCheckSaveShape` refuses a damaged one. The day's plans are cached by seed, day and `S.tn.key` (the shut shops and
-unhappy homes), so the planner stays a pure function of the state.
-
-**Shared lines touched (each marked "D32 Town" or "D32 (Town)").** TOWN27's block of rows; W's `townGraphBuild` (the new
-lane), `tfPlans` (`tnd`: the routine and place hooks, the cache key), `tfPlanDay`, `tfTick` (`tnRoll` first),
-`tfDrawList`; `BLD_LAYOUTS.proto` (the houses' `tn`); the renderer (`tnHouseKey` for a house27's key, the lit-window
-test knows `house_`, `tnPixItems` after `hwPixItems`, `tnDrawList` in `pixLists`, `tnLaneAt` in `pixCellTile`); Crew's
-`hcRoll` (a man in town); `lookCardOf` and `onTap` (the Look card); `dvStatusText` (the town line); `__railhead.tn`.
-
-**How to test.** `node tests/run-one.js check-bigtown` (the people, houses and graph, a week with a crew of 30: the
-round at 10:00, the noon meal, Sunday church, everyone at home at every 22:00 head count, nobody on a blocked cell, the
-rail men's Saturday and Sunday, the same week twice and after a save, the line's fronts equal to `?tn=0`; screenshots
-`bigtown-{lanes,street}-portrait.png`) and `node tests/run-one.js check-towneconomy` (a week of full deliveries, a week
-of none, travellers' custom, saves and damaged stores, the Look cards and the dev line by real taps; screenshots
-`towneconomy-{closed,look,square}-portrait.png`). Both use scripted trains (as check-townsfolk) and hand in the day's
-goods at 18:00 through `TN_TEST.tnFeed`, so they take seconds.
-
-**Speed.** Measured with check-pixperf (4x-throttled CPU, best of three windows, average ms; its scenes add 7 sorted things with the town on: the new houses at the furthest zoom). Before this work: the station at the furthest zoom 7.74 portrait, 9.76 landscape; the default zoom 5.8, 5.4; the street at dusk 2.56, 3.2 (default) and 4.61, 5.79 (furthest). The same build with `?tn=0`: 6.61, 8.81; 5.49, 5.37; 2.6, 2.92 and 5.29, 6.0. With the town on, two runs: the station at the furthest zoom 9.45 and 6.87 portrait, 8.6 and 7.67 landscape (its own budget is 10); the default zoom 6.18 and 4.46, 5.01 and 6.15; the street at dusk 4.39 and 3.76, 4.14 and 3.55 (default), 5.43 and 5.02, 6.96 and 7.53 (furthest). All within the budgets; the run-to-run noise (up to 3 ms here) is larger than the difference. The sim side (unthrottled): `tfDrawList` with 41 people 18 microseconds (2 with 19), `tnDrawList` 0.1, `tnPixItems` 0.6; a week of the town and a crew of 30 about 1.3 s of sim. What costs is drawing more people outdoors: at 19:45 on a weekday about 15 of the 41 are outdoors (1 of the 19 before).
-
-**Provisional choices for the designer.**
-1. The ten houses' places (five between the D27 houses, five on a third lane west of the town, north of the camp; no
-   third lane east, where the dry wash is) and kinds (four cabins, four frame houses, two two-room houses), with D27
-   house designs standing in until the artist's art lands.
-2. The 22 new people, their names (all the builder's), roles, homes and families; Tommy Pratt moved in with his
-   parents over the store; three households living over shops gained a member.
-3. The routines' times (shops 07:30, clerks 09:00, hands 07:00, the cook 06:00 every day, the barmaid 16:00 to 21:15,
-   home by 21:30; the sheriff's saloon round now ends at 21:15 and the cowhands ride home by 21:20).
-4. Stock: 3 a good (6 a big one), the daily use by shop, a cap of 12, two days' stock at the start.
-5. Open or shut: one morning of empty shelves, shut on the second; the barber, sheriff and assay office keep no stock.
-6. Pay 2 coins an earner a day, upkeep 1, a purse 0 to 20 starting at 8; the preacher, the teacher and the sheriff are
-   always paid (the town and the county pay them).
-7. A shut shop's keeper waits at its door all day (so a delivery can still be made); its hands idle at home or at the
-   saloon's door.
-8. Travellers: 1 in 3 into town, half to the hotel and half to the saloon, an hour, 1 in 10 of the hotel's overnight;
-   the custom keeps those two open even with empty shelves; the hired hands' lodging counts as the hotel's custom.
-9. The rail men: Saturday a third to the saloon 20:20 to about 21:45; Sunday evening prayers (a quarter, 19:45 to
-   about 21:40) instead of the morning service, because the crew works on Sunday morning (no Sunday rest, the lead's
-   decision 3) and taking men off the train would change the line's pace.
-10. The Closed board stands in the street at the shop's steps (on the boardwalk it hid under the awnings).
-11. A tap on a townsperson or a home opens the Look card instead of walking there (a second tap closes it).
-12. The unhappy stand at the square's ends and the street's foot: the square's middle is behind the station building
-   in the view.
-
-**Known limits.** The visitors and the rail men in town pass through people and the player (as the townsfolk's own
-walkers wait for him, these do not). Shops keep their lit windows at night when shut. The Closed card on the east row
-is seen through its building (the east row's backs face the view). The far town and rooms are not here.
-
 ## D33 (one world)
 
 The designer played D32 and asked for one continuous world: the line joined to the station, the crew really boarding
@@ -1707,7 +1585,141 @@ stops at the junction, where the trains are drawn curving away, and the recorder
 its way out), check-pixperf (the furthest-zoom station case's own budget), check-lineplay / check-linegames /
 check-linelessons (`?d33=0`, and they aim their walk again as the gangs move on).
 
-## D32 stage 3: rooms and the far town
+## D32 stage 3: the bigger town
+
+Built 2026-11-14 in four pieces on separate branches and then joined: the buildings artist (every building in parts,
+the three new house kinds, the far town; `plans/d32-art-buildings.md`), the rooms artist (furniture, the new roles and
+the people's work, sit and lie frames, the hired men's clothes; `plans/d32-art-rooms.md`), Town (the sim: houses,
+people, routines, the economy, Look cards) and Rooms (enterable buildings, the far town, the cheer; its art contract
+`plans/d32-rooms-art.md`). The two builders' notes follow as they wrote them, with "(joined: ...)" where the join
+changed what they say; "Joined" at the end says what was done to fit the pieces together.
+
+### The bigger town: the sim (Town, 2026-11-14)
+
+Plan 8.1 (homes, roles, a daily round) and 8.4 (a simple economy you can see). The rooms (8.2, 8.3: walking inside, the
+fading walls, the shelves indoors) and the far town are the Rooms builder's; people still go in at a door and are not
+drawn, as in D27 (joined: with Rooms they walk in to their spots and are drawn inside an open building). Code: section "the bigger town (D32)" (after "hired workers (D32)"; its head comment is the contract)
+and TOWN27's block of rows "D32 stage 3 (Town)" in "starting world layout".
+
+**The switch.** `?tn=0` (`TN_OFF`, `TN.on`) parks all of it: the D27 town of 19 people, the 8 D27 houses, no `S.tn`, no
+economy, W's routines (`check-townsfolk.js` now opens with it: it tests W's town). Nothing is deleted.
+
+**What exists.**
+- **Houses** (TOWN27 rows, `tn: 'cabin' | 'frame' | 'two'`): ten on 8u lots. Five between the D27 houses on the back
+  lanes (house9 at (-35, -50); house10 to house13 at x 35, z -50, -70, -90, -112), doors on lanes W and E as theirs. Five on
+  a third lane west of the town (`TOWN27.tnLanes`: lane `W2` at x -43, joined to lane W at the alley z -73 and at its
+  north end z -116; house14 to house18 at x -51, z -66 to -114, facing it), north of the camp (its z0 is -58; house14
+  ends at -61.75). Clear of every footprint, the camp, the muster, the wash, the line's country (east of x 80) and the
+  wood; solid nature on the new lots and the lane is taken away (only with tn on). The lane and its joins are dirt on the
+  ground (`tnLaneAt`, one line in `pixCellTile`). Each has a door node in the town graph (W's `townGraphBuild` reads
+  `tnLanes`). **Art**: the renderer asks for `bld/house_<tn>/<face>`, then `bld/house_<tn>` (the artist's keys, by key,
+  once they have a box), else the D27 design as a stand-in (`tnHouseKey`; cabin design 3, frame 1, two-room 2). (joined:
+  `tnHouseKey` asks for the artist's `bld/cabin`, `bld/framehouse`, `bld/house2` by `TN_HOUSE_ART`, the second colour
+  `_b` on odd house numbers, `tnv`; the two-room house's lot is 8.25u along the lane for its 7.5u body.)
+- **People** (joined: drawn in the rooms artist's new roles, see "Joined"): `TN_PEOPLE`, 22 more in `TF_AGENTS` (41 townsfolk): Martha Pratt and Josie Turner (the keepers' wives),
+  Gus Lindqvist (the smith's hand), the Abbotts (Will, store clerk; Mary; Ada), the Marshes (Edwin, bank clerk; Lucy;
+  Jimmy), Hattie Bell (hotel cook), the Diaz (Rosa, hotel maid; Ana), Billy Ortega (stable boy), Lottie Shaw (barmaid),
+  Sam Ives (printer's devil), Pete Hensley, Otis and Ruth Fenn (carpenter for the undertaker; bath woman at the
+  barber's), Dan Pike (feed hand), Joe Haskins (livery hand), Ned and Nora Quinn (assay clerk; keeps house). Six pupils.
+  Every townsperson has `{ role, home, work }` (`TN_ROLES` for W's 19; with tn on Tommy Pratt lives over the store with
+  his parents and the cowhands' work is the range, `'edge'`). The hired hands (`S.hw`) lodge at the hotel. 26
+  households (the people of one home), each with at least one earner.
+- **The round** (`TN_ROUTINES` by kind: keeper, barkeep, barmaid, clerk, sheriff, preacher, teacher, pupil, laundress,
+  cowhand, homemaker, hand, cook; W's planner with two hooks, `tnRoutine` and `tnPlace`): home, work, the noon meal
+  (the hotel's table or home, `meal`), an errand (a shop by the draw), the saloon or the porch in the evening
+  (`evening`), **home by 21:30** (every evening errand ends by 21:10 plus up to 10 minutes' jitter); church on Sunday;
+  the pupils at school Monday to Friday.
+- **The rail men** (Crew's men, Crew's own walking `cwGo` / `cwStep`): Saturday at 20:20 a third of the men at the camp's
+  fire walk by the town graph to the saloon (each to his own spot by its door, rows of five), are inside to 21:15 (each
+  one custom) and walk back; Sunday from 19:45 a quarter walk to the church for evening prayers to 20:50. Back at the
+  gate they are handed to Crew walking to their cots (`'toBed'`). While out `m.st` is `'town'` (indoors `pl` 0), which
+  Crew's tick leaves alone, and the head count says "the town". The line's pace is untouched (check-bigtown compares the
+  fronts after a week with `?tn=0`: the same to the millimetre).
+- **The economy** (`S.tn`, settled each morning at 05:00 by `tnRoll`, called first in W's `tfTick` so the day's plans see
+  it; `tnTick` counts the day's events):
+  - stock 0 to `TN.CAP` 12 for the nine shops that take goods by rail (`TN.USE`: store 3, saloon 3, hotel 2, smithy 2,
+    livery 2, newspaper 2, bank 1, undertaker 1, feed 1 a day while open); a good handed in at a door (`frDelivered`,
+    `pgDelivered`: the player's, the hired delivery man's and the shop's own collection) adds 3, a plough, piano,
+    furniture or stove 6; a new town starts with two days' use;
+  - open or shut: open while it had stock at 05:00, or on its first morning at 0 ("empty shelves"); shut on the second
+    morning at 0. So goods missed from day 0 give empty shelves on day 2 and every shop shut on day 3 (days counted from
+    0 as the sim does: the clock's Day 1 is day 0). The barber, the sheriff, the assay office, the church and the school
+    keep no stock and are always open. The hotel and the saloon also stay open on yesterday's travellers' custom;
+  - pay: per household 2 coins a day for each earner whose workplace was open, less 1 upkeep, a purse of 0 to 20
+    (starts at 8); mood content, worried after 2 days without pay, unhappy after 4;
+  - what it does to the round: a shut shop's keeper stands at its door all day (so he is there to take a delivery, W's
+    `tfAt`), its other people idle on their porches or at the saloon's door; an errand to a shut shop ends at its door;
+    unhappy households' grown-ups stand about the depot square's ends and the street's foot 18:30 to 20:45;
+  - travellers' custom: each traveller who steps off (`pbOff`, `ppOff`) has a 1 in 3 chance (`rngFor(seed, 'tn',
+    'cust', run, id)`) to walk from platform 1's west end to the hotel or the saloon (half each, shut or not: the custom
+    is what keeps them open), stay an hour (1 in 10 of the hotel's overnight, to 07:00) and walk back; each a custom.
+    The hired hands lodging at the hotel are a night's custom each. At most 16 visitors at once.
+- **Visible signs**: a "Closed" board standing in the street at each shut shop's steps (`tnPixItems`: `ui/closed_card`
+  when the atlas has it, else a paper card with the word in the pixel font; what stands in front turns see-through); the
+  idle on porches and at the saloon's door; the unhappy on the square in the evening; travellers walking in
+  (`tnDrawList`, added to the townsfolk's list in `pixLists`); the **Look card** (a tap on a townsperson, a rail man, a
+  hired hand, a traveller, a home or a shop in the pixel view: role, home, work, household, purse, mood; a shop's stock,
+  open or shut, today's travellers; `tnTap` in the input after `pdTap`, the card is D1's `#lookCard` through
+  `lookCardOf`'s new kind `'tn'`); the dev panel's town line (`tnDevLine`: shops open and which are empty, households paid
+  yesterday, moods, travellers today).
+- **For Rooms**: `tnShop(S, id)` `{ stock (null for a shop that keeps none), open, custom }`, `tnHome(S, who)` `{ pay,
+  mood (0 content, 1 worried, 2 unhappy) }` by home building or member id; `tnRoomOpen()` stays his.
+
+**The tables.** `TN` (every number above), `TN_PEOPLE`, `TN_ROLES`, `TN_ROUTINES`, `TN_ERRANDS`, `TN_SQUARE`, TOWN27's
+rows and `tnLanes`; households are worked out from `TF_AGENTS` (`tnHouseholds`).
+
+**The store** `S.tn = { day, key, shop: { [id]: { s, z, o, c, cy } }, home: { [home]: { p, u, lp } }, vis, vn, cr, tot }`
+(the head comment lists every field). Optional, schema 19 unchanged: a new game gets it at its first tick, a save
+without it at its next 05:00 (its townsfolk are re-planned at once by W's rule, without the economy until then);
+`tnCheckSaveShape` refuses a damaged one. The day's plans are cached by seed, day and `S.tn.key` (the shut shops and
+unhappy homes), so the planner stays a pure function of the state.
+
+**Shared lines touched (each marked "D32 Town" or "D32 (Town)").** TOWN27's block of rows; W's `townGraphBuild` (the new
+lane), `tfPlans` (`tnd`: the routine and place hooks, the cache key), `tfPlanDay`, `tfTick` (`tnRoll` first),
+`tfDrawList`; `BLD_LAYOUTS.proto` (the houses' `tn`); the renderer (`tnHouseKey` for a house27's key, the lit-window
+test knows `house_`, `tnPixItems` after `hwPixItems`, `tnDrawList` in `pixLists`, `tnLaneAt` in `pixCellTile`); Crew's
+`hcRoll` (a man in town); `lookCardOf` and `onTap` (the Look card); `dvStatusText` (the town line); `__railhead.tn`.
+
+**How to test.** `node tests/run-one.js check-bigtown` (the people, houses and graph, a week with a crew of 30: the
+round at 10:00, the noon meal, Sunday church, everyone at home at every 22:00 head count, nobody on a blocked cell, the
+rail men's Saturday and Sunday, the same week twice and after a save, the line's fronts equal to `?tn=0`; screenshots
+`bigtown-{lanes,street}-portrait.png`) and `node tests/run-one.js check-towneconomy` (a week of full deliveries, a week
+of none, travellers' custom, saves and damaged stores, the Look cards and the dev line by real taps; screenshots
+`towneconomy-{closed,look,square}-portrait.png`). Both use scripted trains (as check-townsfolk) and hand in the day's
+goods at 18:00 through `TN_TEST.tnFeed`, so they take seconds.
+
+**Speed.** Measured with check-pixperf (4x-throttled CPU, best of three windows, average ms; its scenes add 7 sorted things with the town on: the new houses at the furthest zoom). Before this work: the station at the furthest zoom 7.74 portrait, 9.76 landscape; the default zoom 5.8, 5.4; the street at dusk 2.56, 3.2 (default) and 4.61, 5.79 (furthest). The same build with `?tn=0`: 6.61, 8.81; 5.49, 5.37; 2.6, 2.92 and 5.29, 6.0. With the town on, two runs: the station at the furthest zoom 9.45 and 6.87 portrait, 8.6 and 7.67 landscape (its own budget is 10); the default zoom 6.18 and 4.46, 5.01 and 6.15; the street at dusk 4.39 and 3.76, 4.14 and 3.55 (default), 5.43 and 5.02, 6.96 and 7.53 (furthest). All within the budgets; the run-to-run noise (up to 3 ms here) is larger than the difference. The sim side (unthrottled): `tfDrawList` with 41 people 18 microseconds (2 with 19), `tnDrawList` 0.1, `tnPixItems` 0.6; a week of the town and a crew of 30 about 1.3 s of sim. What costs is drawing more people outdoors: at 19:45 on a weekday about 15 of the 41 are outdoors (1 of the 19 before).
+
+**Provisional choices for the designer.**
+1. The ten houses' places (five between the D27 houses, five on a third lane west of the town, north of the camp; no
+   third lane east, where the dry wash is) and kinds (four cabins, four frame houses, two two-room houses), with D27
+   house designs standing in until the artist's art lands.
+2. The 22 new people, their names (all the builder's), roles, homes and families; Tommy Pratt moved in with his
+   parents over the store; three households living over shops gained a member.
+3. The routines' times (shops 07:30, clerks 09:00, hands 07:00, the cook 06:00 every day, the barmaid 16:00 to 21:15,
+   home by 21:30; the sheriff's saloon round now ends at 21:15 and the cowhands ride home by 21:20).
+4. Stock: 3 a good (6 a big one), the daily use by shop, a cap of 12, two days' stock at the start.
+5. Open or shut: one morning of empty shelves, shut on the second; the barber, sheriff and assay office keep no stock.
+6. Pay 2 coins an earner a day, upkeep 1, a purse 0 to 20 starting at 8; the preacher, the teacher and the sheriff are
+   always paid (the town and the county pay them).
+7. A shut shop's keeper waits at its door all day (so a delivery can still be made); its hands idle at home or at the
+   saloon's door.
+8. Travellers: 1 in 3 into town, half to the hotel and half to the saloon, an hour, 1 in 10 of the hotel's overnight;
+   the custom keeps those two open even with empty shelves; the hired hands' lodging counts as the hotel's custom.
+9. The rail men: Saturday a third to the saloon 20:20 to about 21:45; Sunday evening prayers (a quarter, 19:45 to
+   about 21:40) instead of the morning service, because the crew works on Sunday morning (no Sunday rest, the lead's
+   decision 3) and taking men off the train would change the line's pace.
+10. The Closed board stands in the street at the shop's steps (on the boardwalk it hid under the awnings).
+11. A tap on a townsperson or a home opens the Look card instead of walking there (a second tap closes it).
+12. The unhappy stand at the square's ends and the street's foot: the square's middle is behind the station building
+   in the view.
+
+**Known limits.** The visitors and the rail men in town pass through people and the player (as the townsfolk's own
+walkers wait for him, these do not). Shops keep their lit windows at night when shut (joined: fixed, a shut shop is dark).
+The Closed card on the east row is seen through its building (the east row's backs face the view; joined: still so, in
+`backlog.md`). The far town and rooms are not here (joined: they are Rooms', below).
+
+### Rooms and the far town (Rooms, 2026-11-14)
 
 Built 2026-11-14 by the Rooms builder (plans/d32-tech.md 8.2, 8.3, 8.5), alongside the Town builder (homes, roles,
 routines, the economy: `tn`, `S.tn`). The designer's words: "Build out the town with all enterable buildings"; the roof
@@ -1716,7 +1728,7 @@ and the front wall fade in place; "At the end is another town." The art contract
 shut and the townsfolk vanish at their doors, as before), **`?fartown=0`** the far town. No save store: which building
 is open is view state; the townsfolk's two new fields live in W's `S.tf`; schema stays 19.
 
-### How the rooms work
+#### How the rooms work
 
 - **The table (section "rooms (D32)", prefixes `rm`, `RM`).** `rmRooms()` makes a room, once, for every row of
   `BLD_LAYOUTS.proto` that has a door node on the town graph (`door_<shop>` or `door_<building id>`): its floor (the
@@ -1725,7 +1737,8 @@ is open is view state; the townsfolk's two new fields live in W's `S.tf`; schema
   z0, z1, door: { x, z }, furn: [{ key, x, z, f, use }] }`; a row without one is furnished by the recipe of its kind
   (`RM_KIND` by shop id or building kind; any other kind as a home), so the Town builder's new houses become enterable
   as soon as their door nodes are on the graph. 23 rooms today: the twelve shops, the church, the school, the eight
-  houses and the station's waiting room. Furniture sizes: `RM_FURN`. Spots carry a role (keeper, worker, teach,
+  houses and the station's waiting room (joined: 33 with Town's ten houses; every house's room is its art's body,
+  `RM_HOUSE`, furnished by `RM_HOME`). Furniture sizes: `RM_FURN`. Spots carry a role (keeper, worker, teach,
   pulpit, pupil, pew, cust, seat, stool, chair, bed, home, stand) and the way to them from the door.
 - **The walk grid** (`rmCarve`, one marked line in `walkGridBuild`): each floor opened, the doorway cut through the wall,
   solid furniture shut again. `walkDeckY` gives the floor's height (`rmFloorAt`, one marked line); `walkInBuilding`
@@ -1749,13 +1762,13 @@ is open is view state; the townsfolk's two new fields live in W's `S.tf`; schema
   walls with a soft top edge. The west row's awning and sign and the east row's yard fade with it. A player standing
   behind an open building (at an east-row door) shows through its far wall in D31's soft round patch. A shut building
   is drawn exactly as before.
-- **Stand-ins until the art lands**: the far walls are plain boards with the sprite's near faces copied onto them,
+- **Stand-ins until the art lands** (joined: the art has landed, and the stand-ins are only the fallback for a missing key): the far walls are plain boards with the sprite's near faces copied onto them,
   darkened; the floor is drawn planks (earth in the smithy and the livery); furniture is plain boxes (`rmFurnStandIn`),
   shelves and the feed store's sacks at four stock levels from `tnShop(S, id).stock` (full until Town lands it), the
   livery's stalls with horses, a bed with a sleeper is a blanket's hump (no `lie` frames for townsfolk yet). Each part
   drops in by key when the atlas has it (`<B>/floor`, `/back`, `/front`, `/roof`, `_lit`; `furn/<name>[/<level>]/<o>`).
 
-### The far town (section "the far town (D32)", prefixes `ft`, `FT`; drawing in the pixel renderer's far-town block)
+#### The far town (section "the far town (D32)", prefixes `ft`, `FT`; drawing in the pixel renderer's far-town block)
 
 At the end of track (the line's x 3,600u, world 3,680u), north of the track: a platform (plank tiles) from 72u to 4u
 short of the end, the depot (`far/depot`, standing in `bld/station`), a water tank, the town's name board, a square, a
@@ -1768,7 +1781,7 @@ there instead; the rows north of it go on for ever, so no edge of the world show
 furthest zoom in both orientations). The two hazy landmarks south of the line (the old far-town blocks and water
 tower, Foundation's) are kept as outlying farms.
 
-**The last spike.** On `lnDone` a card ("The last spike is in! The line has reached Cedar Bluff ...", `ftEvent` in
+**The last spike.** On `lnDone` a card ("The last spike is in! The line has reached Prospect ..." (joined: was Cedar Bluff), `ftEvent` in
 `handleEvent`), and that day, while the work train stands at the railhead (the platform), the townsfolk crowd the
 platform facing the train (`ftCheering`). The work train's morning run that day ended there; Foundation's rule then
 stops the work train from the next day (the line is done).
@@ -1776,7 +1789,7 @@ stops the work train from the next day (the line is done).
 **Dev mode:** a row "Lay the line to 40 m short of the far town" (command `{ t: 'ftJump' }`, `ftCmd`): the fronts
 moved up to 40 m short of the end (never back), the dump filled; refused while the work train is out.
 
-### Speed (check-pixperf and check-rooms, Chromium, phone size, 4x throttled, best of three windows; this machine is
+#### Speed (check-pixperf and check-rooms, Chromium, phone size, 4x throttled, best of three windows; this machine is
 noisy, the same case varies by 2 ms from run to run)
 
 - Before (this branch's base): station at scale 1 8.28 ms portrait, 6.80 landscape; station default zoom 5.92 / 5.16;
@@ -1787,7 +1800,7 @@ noisy, the same case varies by 2 ms from run to run)
 - An open building (check-rooms, the hotel with its keeper, the laundress and furniture, the same view): 6.64 ms shut,
   6.96 ms open at the default zoom. Its pictures are made once when it first opens (a few ms).
 
-### Provisional choices for the designer
+#### Provisional choices for the designer
 
 1. The fade: the whole building fades in place to nothing over 0.25 s, leaving a 0.45u sill with a soft top; the
    back walls are cut at the eaves (a doll's house look). The other way: keep the far walls to their full height.
@@ -1803,12 +1816,13 @@ noisy, the same case varies by 2 ms from run to run)
    off on time.
 8. The tents open one at a time like buildings, but their walls do not stop walking (the camp is not on the walk grid;
    tents come and go with the crew size).
-9. The far town's name (Cedar Bluff), its layout and buildings, the fields, the dozen townsfolk; the hazy south
+9. The far town's name (joined: Prospect, as the artist painted it on the depot and the sign; was Cedar Bluff), its layout and buildings, the fields, the dozen townsfolk; the hazy south
    landmarks kept as farms; the cheer is a card plus the town on the platform, and the work train does not run after
    the line is done (Foundation's rule).
-10. Night: the open building's windows do not glow (its pictures are not the lit sprites' glow layer).
+10. Night: the open building's windows do not glow (its pictures are not the lit sprites' glow layer). (joined: fixed, the
+    far walls' `/back_lit` glows.)
 
-### Checks
+#### Checks
 
 `tests/check-rooms.js` (picked up by run-all.js now that the file exists): 23 rooms; walls shut but the doorway, floors
 open, every indoor way clear of solid furniture; each building opens by each trigger and not from 2.5u, one at a time;
@@ -1819,6 +1833,8 @@ against shut; the far town drawn at the end of track, no background at the furth
 orientations, the dev jump, 30 men to the last spike, the card and the town on the platform. Screenshots
 `test-output/rooms-{store,school,saloon-evening,home-night,tent-night}-portrait.png`,
 `fartown-{end,far}-{portrait,landscape}.png`, `fartown-cheer-card-portrait.png`, `fartown-cheer-portrait.png`.
+
+@@JOINED@@
 
 ## Next
 

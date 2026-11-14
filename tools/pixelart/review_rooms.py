@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import font as FT
 
-DST = os.path.join(HERE, '..', '..', 'plans', 'pixel', 'd32', 'rooms')
+DST = os.path.join(HERE, 'out', 'review-rooms')
 INK = (43, 32, 38, 255)
 PAPER = (240, 228, 200, 255)
 
@@ -262,6 +262,87 @@ def hired_sheet():
     save(img, 'rooms-hired.png', 2)
 
 
+# Mock rooms: (title, size x, size z, [(key, x, z, lift_px)]) with x, z in u inside the room (0..X, 0..Z); the back
+# walls are at z = 0 (north) and x = 0 (west). Things are sorted by their anchor's x + z (flat ones first).
+ROOMS = [
+    ('the general store', 8.0, 7.0, [
+        ('furn/rug/x', 4.0, 5.2, 0, True),
+        ('furn/shelf/3/x', 2.2, 0.35, 0), ('furn/shelf/2/x', 5.4, 0.35, 0), ('furn/shelf/1/z', 0.35, 3.6, 0),
+        ('furn/counter/x', 4.0, 2.4, 0), ('ppl/storekeeper/work/sw/0', 3.6, 1.45, 0),
+        ('ppl/clerk/work/sw/1', 5.4, 1.45, 0),
+        ('ppl/wife_b/idle/ne/0', 4.0, 3.5, 0), ('ppl/farmer/talk/nw/0', 5.6, 3.6, 0),
+        ('furn/stove/1/x', 6.6, 5.4, 0), ('furn/barrel/x', 1.4, 5.9, 0), ('furn/crates/3/x', 7.0, 1.6, 0),
+        ('furn/sacks/2/z', 1.2, 2.0, 0), ('ppl/boy/work/se/0', 2.6, 5.8, 0),
+        ('furn/clock/z', 0.12, 1.2, 0), ('furn/pegs/x', 7.4, 0.15, 0),
+    ]),
+    ('a home at night', 7.0, 6.0, [
+        ('furn/rug/z', 2.0, 3.6, 0, True),
+        ('furn/bed/z', 1.2, 1.5, 0), ('ppl/wife_a/lie/sw/0', 1.2, 1.5, 0),
+        ('furn/cot_sleeper/z', 3.0, 1.5, 0), ('ppl/girl/lie/sw/0', 3.0, 1.5, 0),
+        ('furn/range/1/x', 5.6, 0.45, 0), ('furn/cupboard/z', 0.35, 4.3, 0),
+        ('furn/table/x', 4.6, 3.6, 0), ('furn/chair/sw', 4.2, 2.9, 0), ('ppl/storekeeper/sit/sw/0', 4.2, 2.9, 0),
+        ('furn/chair/ne', 4.9, 4.4, 0), ('ppl/boy/sit/ne/0', 4.9, 4.4, 0),
+        ('furn/lamp_table_lit/x', 6.4, 2.4, 0), ('furn/wash_stand/x', 2.2, 0.32, 0),
+        ('ppl/wife_b/work/ne/0', 5.4, 1.3, 0), ('furn/trunk/x', 1.2, 3.1, 0),
+    ]),
+    ('the saloon', 10.0, 7.5, [
+        ('furn/backbar/x', 4.0, 0.35, 0), ('furn/bar/x', 4.0, 2.4, 0), ('ppl/barkeep/work/sw/0', 3.4, 1.4, 0),
+        ('ppl/cowhand/idle/ne/1', 3.0, 3.35, 0), ('ppl/cowhand.b/talk/ne/0', 4.6, 3.35, 0),
+        ('furn/barstool/x', 2.0, 3.2, 0), ('ppl/vaquero/sit/ne/0', 2.0, 3.2, 3),
+        ('furn/card_table/x', 7.6, 5.0, 0), ('furn/chair/se', 6.6, 5.0, 0), ('ppl/man_bowler/sit/se/0', 6.6, 5.0, 0),
+        ('furn/chair/nw', 8.6, 5.0, 0), ('ppl/sheriff/sit/nw/0', 8.6, 5.0, 0),
+        ('furn/chair/sw', 7.6, 4.0, 0), ('ppl/printer/sit/sw/0', 7.6, 4.0, 0),
+        ('furn/piano/z', 0.4, 5.6, 0), ('ppl/undertaker/benchSit/nw/0', 1.6, 5.6, 0),
+        ('furn/stove/2/x', 8.8, 1.2, 0),
+    ]),
+    ('the smithy and the livery', 10.0, 7.0, [
+        ('furn/forge/1/x', 2.0, 0.85, 0), ('furn/bellows/z', 0.5, 2.4, 0), ('furn/anvil/x', 2.4, 3.0, 0),
+        ('ppl/smith/work/ne/1', 2.4, 3.75, 0), ('furn/stall/horse/z', 6.0, 2.45, 0), ('furn/stall/z', 8.7, 2.45, 0),
+        ('ppl/stableboy/work/ne/0', 8.7, 3.4, 0), ('furn/barrel/x', 4.4, 0.6, 0), ('furn/sacks/3/x', 4.8, 6.0, 0),
+    ]),
+    ('school and church', 10.0, 7.0, [
+        ('furn/blackboard/x', 3.0, 0.15, 0), ('ppl/teacher/work/sw/0', 1.6, 0.9, 0),
+        ('furn/school_desk/ne', 2.0, 3.0, 0), ('ppl/girl/sit/ne/0', 2.0, 3.55, 0),
+        ('furn/school_desk/ne', 3.8, 3.0, 0), ('ppl/boy/sit/ne/0', 3.8, 3.55, 0),
+        ('furn/desk/sw', 1.0, 4.9, 0), ('furn/pulpit/sw', 7.6, 1.0, 0), ('ppl/preacher/work/sw/0', 7.6, 0.45, 2),
+        ('furn/pew/ne', 7.4, 3.6, 0), ('ppl/wife_a/benchSit/ne/0', 6.6, 3.6, 0),
+        ('ppl/farmer/benchSit/ne/0', 7.4, 3.6, 0), ('furn/pew/ne', 7.4, 5.4, 0),
+        ('ppl/maid/benchSit/ne/0', 8.2, 5.4, 0),
+    ]),
+    ('bank, jail, hotel', 12.0, 7.0, [
+        ('furn/safe/x', 1.0, 0.6, 0), ('furn/bank_counter/x', 2.6, 2.4, 0), ('ppl/banker/work/sw/0', 2.2, 1.5, 0),
+        ('ppl/man_bowler.b/idle/ne/0', 2.2, 3.4, 0), ('furn/desk_roll/sw', 1.4, 5.0, 0),
+        ('furn/cell_bars/z', 6.0, 3.0, 0), ('furn/bunk/z', 5.1, 1.6, 0), ('ppl/cowhand/lie/sw/0', 5.1, 1.6, 0),
+        ('furn/desk/se', 7.4, 5.4, 0), ('furn/chair/se', 6.95, 5.4, 0), ('ppl/sheriff/sit/se/0', 6.95, 5.4, 0),
+        ('furn/key_rack/x', 10.0, 0.15, 0), ('furn/hotel_desk/x', 10.0, 2.0, 0),
+        ('ppl/hotelkeeper/work/sw/0', 9.6, 1.0, 0), ('ppl/cook/idle/sw/0', 11.2, 4.6, 0),
+        ('ppl/maid/work/sw/1', 9.0, 5.2, 0),
+    ]),
+]
+
+
+def scenes():
+    reg = both()
+    cols = 2
+    cw, ch = 300, 230
+    img = canvas(cw * cols, ch * ((len(ROOMS) + cols - 1) // cols))
+    for i, (title, X, Z, things) in enumerate(ROOMS):
+        cx, cy = (i % cols) * cw, (i // cols) * ch
+        sub = canvas(cw, ch, (60, 52, 50, 255))
+        ox, oy = cw // 2 + int(4 * (Z - X)), 70
+        floor_fast(sub, ox, oy, 0, 0, X, Z)
+        walls(sub, ox, oy, 0, 0, X, Z, 4.2)
+        flat = [t for t in things if len(t) > 4]
+        rest = sorted([t for t in things if len(t) == 4], key=lambda t: t[1] + t[2])
+        for t in flat + rest:
+            k, x, z, lift = t[:4]
+            px, py = proj(x, z)
+            draw(sub, reg, k, ox + px, oy + py, lift)
+        blit(img, sub, cx, cy)
+        label(img, title, cx + 4, cy + 4, (240, 228, 200, 255))
+    save(img, 'rooms-scenes.png', 3)
+
+
 if __name__ == '__main__':
     what = sys.argv[1] if len(sys.argv) > 1 else 'all'
     if what in ('furn', 'all'):
@@ -270,3 +351,5 @@ if __name__ == '__main__':
         people_sheet()
     if what in ('hired', 'all'):
         hired_sheet()
+    if what in ('scenes', 'all'):
+        scenes()

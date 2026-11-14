@@ -404,7 +404,7 @@ def sacks_stack(p, level):
     spots = [(0.0, -0.36, 0, 'a'), (0.0, 0.36, 0, 'a'), (-0.95, 0.0, 0, 'c'), (0.95, 0.0, 0, 'c'),
              (-0.3, 0.0, 1, 'c'), (0.3, 0.0, 1, 'c'), (0.75, 0.15, 1, 'c'), (0.0, 0.0, 2, 'a')]
     n = {1: 2, 2: 4, 3: 8}[level]
-    rr = ['canvas', 'straw', 'canvas', 'canvas', 'straw', 'canvas', 'cream', 'canvas']
+    rr = ['straw', 'canvas', 'earth', 'straw', 'canvas', 'earth', 'straw', 'canvas']
     for i, (a, c, lay, ax) in enumerate(spots[:n]):
         sack(p, a, c, lay * 0.42, rr[i], ax, seed=i + 40)
     return dict(foot=[-1.3, -0.7, 1.3, 0.7])
@@ -1331,7 +1331,8 @@ def stall(p, horse=False):
     p.cylv(0.85, -D + 1.1, 0.36, 0.41, 0.18, 'river', oid=p.oid, topidx=2)
     if horse:
         import props27
-        props27.horse(0, 'bay', tack=False, d='w')
+        props27.COATS.setdefault('dbay', ('dwood', 'ink'))          # a darker bay than the street's
+        props27.horse(0, 'dbay', tack=False, d='w')
     return dict(foot=[-1.36, -D, 1.36, D], h=2.5 if horse else 2.3,
                 use=[[0, 0.0, 'horse', '-c'], [0.0, D + 0.4, 'work', '-c']])
 

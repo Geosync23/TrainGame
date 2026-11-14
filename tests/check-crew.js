@@ -11,7 +11,7 @@ const { openGame, screenshotPath } = require('./browser');
 
 module.exports = async function checkCrew() {
   const problems = [], P = m => problems.push(m);
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&dev=1' });
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&dev=1' + (process.env.CREW_Q || '') });
   try {
     const day = await page.evaluate(() => {
       const R = window.__railhead, L = R.ln, LINE = L.LINE, bad = [], B = m => { if (bad.length < 14) bad.push(m); };
@@ -59,6 +59,9 @@ module.exports = async function checkCrew() {
         }
         if (sod === 12.5 * 3600) { const G = CW_TEST.cwGeo(S); out.meal = { n: men.filter(m => m.st === 'meal' && m.a === 'eat').length, far: men.filter(m => m.pl === 2 && Math.hypot(m.x - G.camp, m.z - 9.2) > 10).length }; }
         if (sod === 15 * 3600) out.work = men.filter(m => m.st === 'work').length;
+        // D34: the men at work on average through the working hours (a tie or rail gang made up to whole units moves
+        // men about more, so one moment, 15:00 at the trestle, can catch a dozen at the tool row)
+        if (L.lnHours(S).work) { out.wSum = (out.wSum || 0) + men.filter(m => m.st === 'work').length; out.wN = (out.wN || 0) + 1; }
       }
       out.seq = seen.map(q => q.join('>'));
       out.order = seen.map(q => { let j = 0; for (const s of q) if (s === ORDER[j]) j++; return j; });
@@ -94,7 +97,8 @@ module.exports = async function checkCrew() {
     if (!day.dl || day.dl.n < 25 || !day.dl.ids) P('cwDrawList(line) is not the townsfolk\'s shape for 30 men: ' + JSON.stringify(day.dl));
     if (!day.props || day.props.length < 6) P('the piles and the dinner spot are not listed');
     if (!day.meal || day.meal.n < 28 || day.meal.far) P('at 12:30 the men are not all eating at the dinner spot: ' + JSON.stringify(day.meal));
-    if (!(day.work >= 15)) P(`only ${day.work} men are at work at 15:00`);
+    const wAvg = day.wSum / day.wN, D34_ON = await page.evaluate(() => (0, eval)('D34').on);
+    if (D34_ON ? !(wAvg >= 15) : !(day.work >= 15)) P(D34_ON ? `only ${wAvg.toFixed(1)} men are at work on average in the working hours` : `only ${day.work} men are at work at 15:00`);
     if (day.hEnd !== day.hAgain) P('the same two days twice give different states');
     if (day.hMid !== day.hMid2) P('the state changes through JSON (a save)');
     if (day.hEnd !== day.hReload) P('the day differs after a save and reload in mid morning');
@@ -103,10 +107,15 @@ module.exports = async function checkCrew() {
     if (ms > 0.1) P(`cwTick takes ${ms.toFixed(3)} ms a tick with 30 men (budget 0.1)`);
     console.log(`  day 2 with 30 men: ${day.log.map(m => m.toFixed(0)).join(', ')} m spiked on the first days; gangs at 10:30 ${day.gangs.map(g => g.length).join(', ')}; fronts ${day.fronts.map(v => v.toFixed(0)).join(', ')}; walkers brushed past ${day.pass} times in ${day.manTicks} man-ticks; cwTick ${ms.toFixed(4)} ms a tick (worst ${day.worst.toFixed(2)})`);
     // ---- The pace ----
-    const pace = await page.evaluate(() => { const L = window.__railhead.ln, a = L.cw.cwSimDays(1866, 30, 30), b = L.cw.cwSimDays(1866, 5, 150), c = L.cw.cwSimDays(7, 30, 30); return { a: a.days, aDone: a.done, b: b.days, bDone: b.done, c: c.days, f: a.f }; });
+    const pace = await page.evaluate(() => { const L = window.__railhead.ln, a = L.cw.cwSimDays(1866, 30, 30), b = L.cw.cwSimDays(1866, 5, 150), c = L.cw.cwSimDays(7, 30, 30); return { a: a.days, aDone: a.done, b: b.days, bDone: b.done, c: c.days, f: a.f, d34: (0, eval)('D34').on }; });
     if (pace.aDone < 0 || pace.a < 13 || pace.a > 15) P(`30 men finish the line in ${pace.a} working days (13 to 15)`);
     if (pace.c < 13 || pace.c > 15) P(`30 men of another seed finish in ${pace.c} working days`);
-    if (pace.bDone < 0 || pace.b / pace.a < 5.5 || pace.b / pace.a > 6.5) P(`5 men finish in ${pace.b} working days, ${(pace.b / pace.a).toFixed(2)} times the 30 men's ${pace.a} (5.5 to 6.5)`);
+    // D34 (the honest minimums, DEV_NOTES "D34"): a tie takes two men and a rail four, so a crew of five can lay rails
+    // only with four of its five men at once, and its gangs wait on each other more: 5 men now take about 7.5 times as
+    // long as 30 (97 working days on this seed, was 77, 5.9 times). The window moves from 5.5 to 6.5 to 7 to 8 with
+    // the designer's request; the 30 men's 13 to 15 days are unchanged. With ?d34=0 the old window holds.
+    const lo = pace.d34 ? 7 : 5.5, hi = pace.d34 ? 8 : 6.5;
+    if (pace.bDone < 0 || pace.b / pace.a < lo || pace.b / pace.a > hi) P(`5 men finish in ${pace.b} working days, ${(pace.b / pace.a).toFixed(2)} times the 30 men's ${pace.a} (${lo} to ${hi})`);
     console.log(`  the pace: 30 men ${pace.a} working days (another seed ${pace.c}), 5 men ${pace.b}: ${(pace.b / pace.a).toFixed(2)} times as long`);
     // ---- Seen: the work site in the middle of the morning ----
     await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
@@ -117,7 +126,12 @@ module.exports = async function checkCrew() {
       while (S.time < T) { S.time += 8; S.tick++; const ev = []; R.ln.wtTick(S, ev); R.ln.cw.cwTick(S, ev); }
       // D33: one world, so the work site is looked at in the station's own frame (the line's x plus D33.LX)
       R.pix.warm(true);
-      if (R.lnView.d33.on) { R.camera.zoom = 0.75; R.pix.pixLookAt((S.ln.f[1] + S.ln.f[4]) / 2 * R.ln.LINE.M + R.lnView.d33.LX, 0); }   // (one step out, so the whole little team is in the picture)
+      // (D34: the busiest stretch of the work site, the most men and piles within 30u: the gangs can stand further apart
+      // now that the rail gang works in fours, and a pile can be kept back behind the creek)
+      const pts = S.cw.men.filter(m => m.pl === 2).map(m => m.x).concat(CW_TEST.cwProps(S, 'line').map(q => q.x));
+      let mx = (S.ln.f[1] + S.ln.f[4]) / 2 * R.ln.LINE.M;
+      if ((0, eval)('D34').on && pts.length) { let best = -1; for (const c of pts) { const n = pts.filter(x => Math.abs(x - c) < 30).length; if (n > best) { best = n; mx = c; } } }
+      if (R.lnView.d33.on) { R.camera.zoom = 0.75; R.pix.pixLookAt(mx + R.lnView.d33.LX, 0); }   // (one step out, so the whole little team is in the picture)
       else { R.ln.lnSetView(S, 'line'); R.lnView.lookAt((S.ln.f[1] + S.ln.f[4]) / 2, 0); }
       return S.ln.f;
     });

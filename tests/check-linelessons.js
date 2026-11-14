@@ -10,6 +10,8 @@
 // The page (portrait and landscape): the first card is up on the line with Show me (a real tap lets the clock run),
 // the game panel waits while the first card of a stage's lesson holds the game, the card is inside the screen;
 // Settings has the Lessons row on the line too. No console errors. Screenshots linelessons-*.png.
+// D34: the panel games are parked behind ?d34=0 (the default plays them in the world: check-d34); with ?d33=0 they
+// are off anyway, and the query names both.
 // D33 (one world): this check plays the PARKED separate-line build (the page's ?d33=0), whose screen switch,
 // fades and look point it was written for. The same play in the one world is check-d33's.
 const { openGame, screenshotPath } = require('./browser');
@@ -20,7 +22,7 @@ module.exports = async function checkLineLessons() {
   const problems = [];
   // ---- The sim ----
   {
-    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d33=0' });
+    const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&d33=0&d34=0' });
     const P = m => problems.push('sim: ' + m);
     try {
       const r = await page.evaluate((LN) => {
@@ -105,7 +107,7 @@ module.exports = async function checkLineLessons() {
   // ---- The page ----
   for (const orient of ['portrait', 'landscape']) {
     const P = m => problems.push(`${orient}: ${m}`);
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0&d34=0' });
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const frames = n => page.evaluate(n => new Promise(res => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);

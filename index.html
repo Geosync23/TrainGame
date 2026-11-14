@@ -1904,7 +1904,7 @@ function applyCommand(S, c, ev) {
     case 'pdStart': case 'pdEndDay': case 'pdNextDay': case 'pdLesson': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day; D27: the lessons' Show me, Skip and replay (section "prototype day")
     case 'dvSet': case 'dvSkip': dvCmd(S, c, ev); break;   // D32 (Foundation): dev mode's choices (section "the line (D32)")
     case 'ftJump': ftCmd(S, c, ev); break;   // D32 stage 3 (Rooms): dev mode's jump to just short of the far town (section "rooms (D32)")
-    case 'lpRide': case 'lpGo': case 'lpBack': case 'lpWalk': case 'lpJoin': case 'lpLeave': case 'lgDone': lpCmd(S, c, ev); break;   // D32 (Play): on the line
+    case 'lpRide': case 'lpGo': case 'lpBack': case 'lpWalk': case 'lpJoin': case 'lpLeave': case 'lgDone': case 'lgAct': lpCmd(S, c, ev); break;   // D32 (Play): on the line (D34: lgAct)
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
     case 'stepOff': rideStepOffCmd(S, ev); break;
@@ -7527,6 +7527,14 @@ const D33 = (() => {
   const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
   return { on: !(q && q.get('d33') === '0'), LX: 80, JX: 96, GATE: 88, EDGE: 95, CREW0: 5, WOOD: [96, 192], RUN_V: 180, RUN_S: 240 };
 })();
+// D34 (the join-in games in the world; DEV_NOTES "D34"): the six games are played in the world, at the spot on the line
+// where the work is, with the real men of the gang; a task that takes several men needs them there; a stage's work
+// moves only with the men it truly takes (a tie two, a rail four). D34.on is the switch (the page's ?d34=0 brings back
+// D32's panel games and the old shares: parked, not deleted). It needs the one world (D33).
+const D34 = (() => {
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+  return { on: D33.on && !(q && q.get('d34') === '0') };
+})();
 const LINE = (() => {
   const M = PROTO.M, H = (h, m) => h * 3600 + (m || 0) * 60;
   return {
@@ -7929,8 +7937,13 @@ const lnDayOf = S => Math.floor(S.time / 86400);              // the line's day 
 function lnLimit(S, stage) {
   const f = S.ln.f, E = LINE.LEN_M;
   if (stage === 0) return Math.min(E, f[1] + LINE.CLEAR_AHEAD);
-  return f[stage - 1] >= E ? E : Math.max(f[stage], f[stage - 1] - LINE.GAP[stage]);
+  const lim = f[stage - 1] >= E ? E : Math.max(f[stage], f[stage - 1] - LINE.GAP[stage]);
+  // D34 (Play): while the player brings a whole tie, rail or spike, the gang leaves room for it at the end of what is
+  // open (lnLimit.mine: his own work, which may use it)
+  const j = D34.on && !lnLimit.mine && S.lp && S.lp.j;
+  return j && j.w && j.k === stage && stage >= 3 ? Math.max(f[stage], lim - LGW.UNIT_M[stage]) : lim;
 }
+lnLimit.mine = false;
 const lnSupOf = stage => Object.keys(LINE.SUP).find(k => LINE.SUP[k].stage === stage) || null;
 const lnSupPer = (stage, m) => { const k = lnSupOf(stage); return k && !(k === 'rock' && lnKindAt(m) === 'bridge') ? LINE.SUP[k].per : 0; };
 // The work open to a stage now, in wu: from its front to its limit, or as far as its supplies reach (0 if out).
@@ -8358,6 +8371,10 @@ const CW = {
   REDO_S: 1800,                                // the foreman looks at the shares again this often
   LEAD_M: 12, LEAD_SMALL_M: D33.on ? 10 : 24,                                  // the clearers keep at most this far ahead of the diggers (so the gangs read as one site)
   TOOLS: [['hook', 'axe'], ['pick', 'shovel'], ['barrow', 'rake'], [null], ['tongs'], ['maul']],   // each stage's tools (tie men carry with their hands)
+  // D34: the men a task truly takes: a tie is carried by two, a rail by four; clearing, digging, rock and spiking can
+  // be done alone. With D34 on, a tie or rail man works (gives wu) only in a carrying unit of that size, and the foreman
+  // gives those gangs whole units or nobody (cwAssign); a man left over waits.
+  NEED: [1, 1, 1, 2, 4, 1], UNIT_MIN: 30, UNIT_MIN_SMALL: 10,   // (minutes of work a man before a new tie or rail unit is made up: a crew under 10 keeps its little team closer)
   ANIM: { hook: ['hook', 3], axe: ['axe', 4], pick: ['pick', 4], shovel: ['shovel', 4], rake: ['rake', 3], maul: ['maul', 4] },
   CREEK: [544 * LINE.M - 9.9, 544 * LINE.M + 9.9],   // the creek's stretch (u): crossed on the trestle's deck only
   BRIDGE_M: [536, 552],
@@ -8582,7 +8599,7 @@ function cwOpen0(S) {
 // waiting on always gets a man; ties and rails get an even number when they get more than one; as many men as
 // possible stay where they are (the lowest id moves first). Then each gang's slots, roles and carrying units.
 function cwAssign(S) {
-  const C = S.cw, L = S.ln, men = C.men.filter(m => (m.pl === 2 && m.st !== 'left' && m.st !== 'toTrain') || (m.st === 'ride' && L.tr.ph === 'stand')), n = men.length;
+  const C = S.cw, L = S.ln, men = C.men.filter(m => ((m.pl === 2 && m.st !== 'left' && m.st !== 'toTrain') || (m.st === 'ride' && L.tr.ph === 'stand')) && !m.lg), n = men.length;   // (D34: a man working with the player is his until he lets him go)
   C.fa = S.time; C.idle = [0, 0, 0, 0, 0, 0];
   if (!n) return;
   const open = [0, 1, 2, 3, 4, 5].map(k => (k ? lnOpenWork(S, k) : cwOpen0(S))), cost = open.map((o, k) => lnCost(k, L.f[k]) || 1);
@@ -8609,15 +8626,40 @@ function cwAssign(S) {
     if (d < 0) break;
     cnt[d]--; cnt[k]++;
   }
-  for (const k of [3, 4]) if (cnt[k] > 1 && cnt[k] & 1) {
+  if (!D34.on) for (const k of [3, 4]) if (cnt[k] > 1 && cnt[k] & 1) {
     let d = -1; for (const j of [1, 2, 5, 0]) if (cnt[j] > 1 && (d < 0 || cnt[j] > cnt[d])) d = j;
     if (d >= 0) { cnt[d]--; cnt[k]++; } else { let r = -1; for (const j of [1, 2, 5, 0]) if (w[j] > 0 && (r < 0 || w[j] > w[r])) r = j; if (r >= 0) { cnt[k]--; cnt[r]++; } }
+  }
+  // D34: the rail gang in fours and the tie men in pairs, or nobody: the men short of a whole unit are taken from the
+  // other gangs, else the odd men go to the stage with the most work for its men.
+  // A unit at work stays while its stretch lasts (a small crew's four are not marched off for the diggers and back).
+  if (D34.on) for (const k of [4, 3]) {
+    const u = CW.NEED[k], has = Math.floor(men.filter(m => m.stage === k).length / u) * u, pool = [0, 1, 2, 5, 3].filter(j => j !== k);
+    let want = cnt[k];
+    if (has > want && open[k] >= 5 * CW.K * has) want = has;
+    const rem = want % u;
+    // (up to a whole unit only when there is a good stretch of work for it, CW.UNIT_MIN minutes a man, or it is a unit
+    // already at work, or the last of it once the stage ahead is finished or nothing else is open: so a small crew's
+    // four do not walk up for a few metres)
+    const last = open[k] > 0 && (L.f[k - 1] >= LINE.LEN_M || open.every((o, j) => j === k || o <= 0));
+    if (rem) want += open[k] >= (L.crew < 10 ? CW.UNIT_MIN_SMALL : CW.UNIT_MIN) * CW.K * u * Math.ceil(want / u) || last || has >= want - rem + u ? u - rem : -rem;
+    // (a gang the next one is waiting on keeps its last man: else the clearers, cheap a metre, are emptied for the rails
+    // and every gang behind them stands)
+    const keep = j => (j < 5 && L.f[j] < LINE.LEN_M && lnLimit(S, j + 1) - L.f[j + 1] < 0.5 ? 1 : 0);
+    let avail = 0; for (const j of pool) avail += j === 3 ? Math.max(0, cnt[3] - 2) : Math.max(0, cnt[j] - keep(j));
+    if (want - cnt[k] > avail) want = cnt[k] - cnt[k] % u;   // (not men enough to make it up: the odd ones go)
+    // (from the gang with the most men for what its front costs a metre, the foreman's own measure, so the fronts still
+    // move together; a tie pair is not split for the rails)
+    const per = j => cnt[j] / Math.max(1e-9, cost[j]);
+    for (let i = cnt[k]; i < want; i++) { let d = -1; for (const j of pool) if ((j === 3 ? cnt[3] > 2 : cnt[j] > keep(j)) && (d < 0 || per(j) > per(d) + 1e-9)) d = j; cnt[d]--; }   // (an odd tie gang left by this is put right in the ties' turn)
+    if (want < cnt[k]) { let g = -1; for (const j of [1, 2, 5, 0]) if (w[j] > 0 && (g < 0 || w[j] / (cnt[j] + 1) > w[g] / (cnt[g] + 1))) g = j; cnt[g >= 0 ? g : 1] += cnt[k] - want; }
+    cnt[k] = want;
   }
   // a gang one man over or under its share is left alone (men are not marched about for a trifle)
   const cur = [0, 0, 0, 0, 0, 0];
   let loose = 0, calm = true;
   for (const m of men) if (m.stage >= 0) cur[m.stage]++; else loose++;
-  for (let k = 0; k < 6; k++) if (Math.abs(cnt[k] - cur[k]) > 1 || !cnt[k] !== !cur[k]) calm = false;
+  for (let k = 0; k < 6; k++) if (Math.abs(cnt[k] - cur[k]) > (D34.on && (k === 3 || k === 4) ? CW.NEED[k] : 1) || !cnt[k] !== !cur[k]) calm = false;   // (D34: a tie or rail gang one whole unit over or under)
   if (calm && !loose) return;
   // who stays, who moves
   const gang = [[], [], [], [], [], []], movers = [], moved = new Set();
@@ -8625,28 +8667,35 @@ function cwAssign(S) {
   for (const m of men) if (m.stage < 0) movers.push(m);
   movers.sort((a, b) => a.id - b.id);
   for (let k = 0; k < 6; k++) while (gang[k].length < cnt[k] && movers.length) { const m = movers.shift(); m.slot = 1000 + m.id; m.stage = k; gang[k].push(m); moved.add(m.id); }
-  for (let k = 0; k < 6; k++) {
-    const g = gang[k].sort((a, b) => a.slot - b.slot || a.id - b.id), sig = g.map(m => m.id).join(','), changed = sig !== C.g[k];
-    C.g[k] = sig;
-    g.forEach((m, j) => { m.slot = j; });
-    if (!changed) continue;
-    // roles: the rock gang's rakers (one in three, six at most) and barrow men; the tie pairs; the rail gangs of four
-    const nr = k === 2 ? Math.min(6, Math.floor(g.length / 3)) : 0, nb = g.length - nr, un = k === 3 ? 2 : k === 4 ? 4 : 1;
-    g.forEach((m, j) => {
-      delete m.mem; delete m.ld; delete m.k; delete m.p0; delete m.nb;
-      if (k === 2 && j >= nb) { m.r = 's'; m.q = j - nb; m.want = 'rake'; }
-      else if (k === 2) { m.r = 'c'; m.q = j; m.nb = nb; m.ld = m.id; m.k = 0; m.mem = [m.id]; m.want = 'barrow'; }
-      else if (k === 3 || k === 4) {
-        const ui = Math.floor(j / un), u0 = ui * un, size = Math.min(un, g.length - u0), lone = size === 1 || (size === 3 && j === u0 + 2);
-        m.want = k === 3 ? null : 'tongs';
-        if (lone) { m.r = 'x'; m.q = 0; }
-        else { const L0 = g[u0]; m.r = 'c'; m.q = ui; m.ld = L0.id; m.k = j - u0; if (j === u0) m.mem = g.slice(u0, u0 + (size === 3 ? 2 : size)).map(o => o.id); }
-      } else { m.r = 's'; m.q = j; m.want = CW.TOOLS[k].includes(m.tool) ? m.tool : CW.TOOLS[k][(j + (j >> 2)) % CW.TOOLS[k].length]; }
-      if (m.mem) { m.s = 0; m.n = m.n | 0; if (m.st === 'work') m.a = 'back'; }
-      if ((m.st === 'work' || m.st === 'walk') && (moved.has(m.id) || m.tool !== m.want)) cwGoWork(m);   // (a man who stays with his gang and his tool works on: he only shifts along)
-    });
-  }
+  for (let k = 0; k < 6; k++) cwRoles(S, k, gang[k], moved, false);
 }
+// A gang's slots, roles and carrying units (cwAssign; D34: again when the player takes men of it to work with him, or
+// lets them go): the rock gang's rakers (one in three, six at most) and barrow men; the tie pairs; the rail gangs of
+// four (D34: only whole fours; a man short of one waits, as a lone tie man does).
+function cwRoles(S, k, g, moved, force) {
+  const C = S.cw;
+  g.sort((a, b) => a.slot - b.slot || a.id - b.id);
+  const sig = g.map(m => m.id).join(','), changed = sig !== C.g[k];
+  C.g[k] = sig;
+  g.forEach((m, j) => { m.slot = j; });
+  if (!changed && !force) return;
+  const nr = k === 2 ? Math.min(6, Math.floor(g.length / 3)) : 0, nb = g.length - nr, un = k === 3 ? 2 : k === 4 ? 4 : 1;
+  g.forEach((m, j) => {
+    delete m.mem; delete m.ld; delete m.k; delete m.p0; delete m.nb;
+    if (k === 2 && j >= nb) { m.r = 's'; m.q = j - nb; m.want = 'rake'; }
+    else if (k === 2) { m.r = 'c'; m.q = j; m.nb = nb; m.ld = m.id; m.k = 0; m.mem = [m.id]; m.want = 'barrow'; }
+    else if (k === 3 || k === 4) {
+      const ui = Math.floor(j / un), u0 = ui * un, size = Math.min(un, g.length - u0), lone = size === 1 || (size === 3 && j === u0 + 2) || (D34.on && size < un);
+      m.want = k === 3 ? null : 'tongs';
+      if (lone) { m.r = 'x'; m.q = 0; }
+      else { const L0 = g[u0]; m.r = 'c'; m.q = ui; m.ld = L0.id; m.k = j - u0; if (j === u0) m.mem = g.slice(u0, u0 + (size === 3 ? 2 : size)).map(o => o.id); }
+    } else { m.r = 's'; m.q = j; m.want = CW.TOOLS[k].includes(m.tool) ? m.tool : CW.TOOLS[k][(j + (j >> 2)) % CW.TOOLS[k].length]; }
+    if (m.mem) { m.s = 0; m.n = m.n | 0; if (m.st === 'work') m.a = 'back'; }
+    if ((m.st === 'work' || m.st === 'walk') && (moved.has(m.id) || m.tool !== m.want)) cwGoWork(m);   // (a man who stays with his gang and his tool works on: he only shifts along)
+  });
+}
+// D34: the men of stage k on the line who are not with the player, in their gang's order (for cwRoles).
+const cwGangOf = (S, k) => S.cw.men.filter(m => m.pl === 2 && m.stage === k && !m.lg && m.st !== 'left' && m.st !== 'toTrain');
 // To work: by the tool row first when the job needs another tool than the one in his hands.
 function cwGoWork(m) { m.st = m.tool === m.want ? 'walk' : 'tool'; m.a = 'go'; m.w = 0; delete m.rt; }
 // ---- A carrying unit's tick (its leader's): barrow men alone, tie pairs, rail gangs ----
@@ -8739,7 +8788,8 @@ function cwTick(S, ev) {
     if (m.pl === 2) {
       // ---- on the line ----
       if (m.st === 'left' && !(ph === 'stand' && sod < T.AWAY)) continue;
-      if (ph !== 'stand') { m.st = 'left'; m.a = ''; m.mv = 0; delete m.rt; continue; }   // the train has gone without him
+      if (ph !== 'stand') { m.st = 'left'; m.a = ''; m.mv = 0; delete m.rt; delete m.lg; continue; }   // the train has gone without him
+      if (m.lg) continue;                                      // D34: working with the player (Play's lgWTick moves him)
       if (m.st === 'toTrain') {
         cwGo(m, steps.x + 0.2, cwFz(steps.x + 0.2, steps.z + 0.9));   // (beside the steps; on the trestle, on the deck by the car)
         if (m.tool && m.x < TR.cars[3].x1) m.tool = null;   // his tool handed up into the supply boxcar
@@ -8790,6 +8840,8 @@ function cwTick(S, ev) {
             if (m.sta <= CW.REST_AT && H.work) { cwRest(S, m, G, null); break; }
           }
           if (!H.work) break;
+          // D34: a tie or a rail is not moved by fewer men than it takes: a man without a whole unit waits (no wu)
+          if (D34.on && CW.NEED[m.stage] > 1) { const ld = m.r === 'c' && m.ld !== undefined ? men[m.ld] : null; if (!ld || !ld.mem || ld.mem.length < CW.NEED[m.stage]) break; }
           let k = 1;
           for (let b = 0; b < bo.length; b++) { const B = bo[b]; if (B.stage === m.stage && S.tick < B.until && Math.abs(m.x - B.x) <= 12 * LINE.M && B.k > k) k = B.k; }
           wu[m.stage] += m.skill / C.mean * CW.K * k * dt;
@@ -8879,7 +8931,7 @@ function cwTick(S, ev) {
 // The men of a stage on the line: [{ id, x, z, slot, name, sta, st }].
 function cwGang(S, stage) {
   const out = [];
-  if (S && S.cw) for (const m of S.cw.men) if (m.pl === 2 && m.stage === stage) out.push({ id: m.id, x: m.x, z: m.z, slot: m.slot, name: cwName(S, m.id), sta: Math.round(m.sta), st: m.st });
+  if (S && S.cw) for (const m of S.cw.men) if (m.pl === 2 && m.stage === stage) out.push({ id: m.id, x: m.x, z: m.z, slot: m.slot, name: cwName(S, m.id), sta: Math.round(m.sta), st: m.st, lg: m.lg ? 1 : 0 });   // (D34: lg, working with the player)
   return out;
 }
 // Men of the stage's gang within 12 m of x (line units) work at k times their pace until the tick `until`.
@@ -8903,7 +8955,9 @@ function cwDrawList(S, place) {
     const wf = Math.floor(tick * 0.9 + m.id * 1.7) & 3, slow = (tick >> 3) + m.id, tool = m.tool, ld = m.ld !== undefined ? men[m.ld] : null, ua = ld && m.st === 'work' && ld.st === 'work' ? ld.a : '';
     let act = 'idle', anim = 'idle', frame = slow & 1, y = 0, held = null, prop = null;
     const carry = () => { if (tool === 'barrow') { anim = 'barrow'; frame = m.mv ? wf : 0; held = { key: 'tool/barrow/<dir>', at: 'grip' }; } else if (tool) { anim = 'shoulder'; frame = m.mv ? wf : 0; held = { key: 'tool/' + tool + '/held/<dir>', at: 'tool' }; } else if (m.mv) { anim = 'walk'; frame = wf; } };
-    if (m.st === 'left') { act = 'rest'; anim = 'sit'; frame = 0; }
+    const lgD = pl === 2 && D34.on ? (m.lg ? pixCall('lgMateDraw', S, m) : m.stage === 1 && m.st === 'work' ? pixCall('lgBeatOf', S, m) : null) : null;   // D34: working with the player, or digging on his beat
+    if (lgD) { act = lgD.act || 'work'; anim = lgD.anim; frame = lgD.frame | 0; held = lgD.held || null; prop = lgD.prop || null; }
+    else if (m.st === 'left') { act = 'rest'; anim = 'sit'; frame = 0; }
     else if (m.st === 'rest' && (m.a === 'sit' || m.a === 'drink')) {
       act = 'rest';
       if (m.a === 'drink') { anim = 'drink'; frame = slow & 1; } else { anim = 'sit'; frame = 0; if (tool) prop = { key: tool === 'barrow' ? 'tool/barrow/se' : 'tool/' + tool + '/ground', dx: 0.9, dz: 0.2, before: true }; }
@@ -8927,7 +8981,7 @@ function cwDrawList(S, place) {
       // at his slot: the stage's swing, with a pause now and then (a wiped brow, a word), more of them when the gang
       // is waiting on the gang ahead
       const u = C.u[m.stage], pause = (tick + m.id * 37) % 150 < 9 || ((m.id * 7 + (tick >> 5) * 3) % 10) / 10 >= u;
-      if (pause) carry();
+      if (pause || (D34.on && m.r === 'x' && CW.NEED[m.stage] > 1)) carry();   // (D34: a tie or rail man without his unit stands waiting)
       else if (m.r === 'x') { act = 'work'; anim = m.stage === 3 ? 'tieDrop' : 'railDrop'; frame = (tick >> 2) & 1; if (m.stage === 3) prop = { key: 'line/tie_loose/z', dx: 1, dz: 0, before: false }; }
       else { const A = CW.ANIM[tool]; act = 'work'; if (A) { anim = A[0]; frame = ((tick >> 1) + m.id * 3) % A[1]; } }
     } else carry();
@@ -9116,11 +9170,11 @@ function lpOutOfBox(S, B, x, z) {
 // the water or the strip's end (the train is walked round, not stopped at).
 function lpClampWalk(S, x, z, tx, tz) {
   const n = Math.ceil(Math.hypot(tx - x, tz - z) / 0.2), f2 = S.ln.f[1];
-  let lx = x, lz = z;
+  let lx = x, lz = z, on = !D34.on || lnWalkable(S.seed, x, z, f2);   // (D34: standing off the walkable ground, set down there at the end of a carry, he walks off it first)
   for (let i = 1; i <= n; i++) {
     const px = x + (tx - x) * i / n, pz = z + (tz - z) * i / n;
-    if (!lnWalkable(S.seed, px, pz, f2)) break;
-    lx = px; lz = pz;
+    if (!lnWalkable(S.seed, px, pz, f2)) { if (on) break; lx = px; lz = pz; continue; }
+    on = true; lx = px; lz = pz;
   }
   return [lx, lz];
 }
@@ -9193,11 +9247,18 @@ function lpWalkTick(S, Q, B, ev) {
   const f2 = S.ln.f[1];
   if (lpInBox(B, Q.tx, Q.tz)) [Q.tx, Q.tz] = lpOutOfBox(S, B, Q.tx, Q.tz);   // (the train moved up onto where he was going)
   let left = playerWalkSpeed(S.track, false) * DT_MIN;
+  const off = D34.on && !lnWalkable(S.seed, Q.x, Q.z, f2);   // D34: set down off the walkable ground (the end of a carry by the creek): he may walk off it
   for (let g = 0; g < 40 && left > 1e-9; g++) {
     const [nx, nz] = lpNext(B, Q.x, Q.z, Q.tx, Q.tz), d = Math.hypot(nx - Q.x, nz - Q.z);
     if (d < 1e-9) break;
     const s = Math.min(left, LP.SUB, d), x = s === d ? nx : Q.x + (nx - Q.x) / d * s, z = s === d ? nz : Q.z + (nz - Q.z) / d * s;
-    if (!lnWalkable(S.seed, x, z, f2) || lpInBox(B, x, z)) { delete Q.tx; delete Q.tz; ev.push({ t: 'lpStopped' }); break; }
+    if ((!off && !lnWalkable(S.seed, x, z, f2)) || lpInBox(B, x, z)) {
+      // D34: hemmed in between the water and the work train standing on the trestle (where a carry can leave him), he
+      // squeezes along the deck past the cars, as the men do, rather than stand there for good
+      const dx = Q.tx - Q.x, dz = Q.tz - Q.z, dd = Math.hypot(dx, dz), st = Math.min(left, LP.SUB, dd), x2 = Q.x + dx / dd * st, z2 = Q.z + dz / dd * st;
+      if (D34.on && g === 0 && dd > 1e-9 && lnWalkable(S.seed, x2, z2, f2) && Math.abs(Q.x - (CW.CREEK[0] + CW.CREEK[1]) / 2) < 30) { Q.f = Math.atan2(dx, dz); Q.x = x2; Q.z = z2; Q.mv = 1; left -= st; continue; }
+      delete Q.tx; delete Q.tz; ev.push({ t: 'lpStopped' }); break;
+    }
     Q.f = Math.atan2(x - Q.x, z - Q.z); Q.x = x; Q.z = z; Q.mv = 1; left -= s;
     if (x === Q.tx && z === Q.tz) break;
   }
@@ -9378,7 +9439,7 @@ function lpCmd(S, c, ev) {
     Q.tx = tx; Q.tz = tz;
     return;
   }
-  if (c.t === 'lpJoin' || c.t === 'lpLeave' || c.t === 'lgDone') lgCmd(S, c, ev);
+  if (c.t === 'lpJoin' || c.t === 'lpLeave' || c.t === 'lgDone' || c.t === 'lgAct') lgCmd(S, c, ev);   // (D34: lgAct)
 }
 // ---- Joining in (plan 7.1; the games are on the page, block "Joining in (D32)") ----
 // S.lp.j (absent: he is not working with a gang) = { k (the stage), side (-1 or 1: which side of the track he works),
@@ -9435,6 +9496,7 @@ function lgLeave(S, ev, why) {
   if (!Q || !Q.j) return;
   const j = Q.j;
   delete Q.j;
+  if (j.w) { lgLetGo(S, j); if (Q.tx !== undefined && !Q.go) { delete Q.tx; delete Q.tz; } }   // D34: his mates go back to their gang; he stops where he is
   ev.push({ t: 'lgLeft', stage: j.k, why: why || 'out', n: j.n });
 }
 // Where he can stand to work at stage k: his place (lgSpot), or, if the work train stands on it, the nearest point
@@ -9450,6 +9512,7 @@ function lgPlace(S, Q, k, side) {
 function lgTick(S, Q, ev) {
   const j = Q.j;
   if (!lnHours(S).work || Q.home) { lgLeave(S, ev, lnHours(S).meal ? 'meal' : 'hours'); return; }
+  if (j.w) { lgWTick(S, Q, ev); return; }   // D34: the task in the world
   if (Q.tx !== undefined) return;
   const sp = lgPlace(S, Q, j.k, j.side);
   if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > 1.2) { Q.tx = sp.x; Q.tz = sp.z; }   // the front has moved on: he shuffles up with it
@@ -9466,6 +9529,7 @@ function lgCmd(S, c, ev) {
     if (Q.j && Q.j.k === k) return;
     if (Q.j) lgLeave(S, ev, 'switch');
     const side = Q.z < 0 ? -1 : 1;
+    if (D34.on) { lgWJoin(S, Q, k, side, ev); return; }   // D34: the task in the world, with the gang's own men
     Q.j = { k, side, t: S.tick, last: S.tick, n: 0, q: -1, qs: [], wu: 0 };
     const sp = lgPlace(S, Q, k, side);
     if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > 0.05) { Q.tx = sp.x; Q.tz = sp.z; } else { delete Q.tx; delete Q.tz; }
@@ -9473,9 +9537,11 @@ function lgCmd(S, c, ev) {
     ev.push({ t: 'lgJoined', stage: k });
     return;
   }
+  if (c.t === 'lgAct') { lgWAct(S, Q, c, ev); return; }   // D34: a step of a task in the world
   // lgDone: one finished action
   const j = Q.j, q = c.q;
   if (!j || c.stage !== j.k || !Number.isInteger(q) || q < 0 || q > 100) return;
+  if (j.w) { lgWDone(S, Q, q, ev); return; }   // D34
   if (S.tick - j.last < LG.MIN_T || !lnHours(S).work) return;   // (too soon after the last: tapping fast gains nothing)
   const sp = lgPlace(S, Q, j.k, j.side);
   if (Math.hypot(sp.x - Q.x, sp.z - Q.z) > LG.BACK) return;      // (not at his place)
@@ -9488,6 +9554,231 @@ function lgCmd(S, c, ev) {
   if (avg >= LG.LIFT_Q) { j.lift = S.tick + LG.LIFT_T; cwBoost(S, j.k, Q.x, 1 + LG.LIFT * avg / 100, j.lift); } else delete j.lift;
   ev.push({ t: 'lgDid', stage: j.k, q, n: j.n, wu: Math.round((wu - back) * 1000) / 1000, stuck: back >= wu - 1e-9 ? 1 : 0, lift: j.lift ? 1 : 0 });
 }
+// ---- D34: the join-in games in the world (the sim's side; the page's is the block "Joining in, in the world (D34)") ----
+// With D34 on, lpJoin starts a task at the spot on the line where that stage's work is, with the real men of the gang.
+// S.lp.j then also holds { w: 1, ph, m, c?, p0?, t1? }:
+//   m   the ids of the gang's men working with him (lent: m.lg on the man; Crew's tick leaves him to lgWTick): a tie
+//       takes him and one man, a rail him and three (CW.NEED), a spike may be driven alone or with a spiker striking
+//       in turn; clearing, digging and rock he does alone beside the gang. Too few men at hand: lpJoin is refused and
+//       says why (lgNoMates). A mate who is gone (the crew made smaller) ends the task.
+//   ph  'go' walking to the task's start (the tie pile, the rail stack, the rock heap, his place at the front),
+//       'ready' there (the page's round may begin), 'carry' the tie or rail on its way to the front (c: the distance
+//       carried along the unit's path from p0, the point it was taken up), 'at' at the front (set it down: lgDone),
+//       'load' (rock) filling the barrow at the heap, 'tip' (rock) wheeling it out over the chalk cross (c, p0),
+//       'rake' tipped at the front, raking it level (lgDone).
+// The work is the men's: a tie, a rail and a spike are whole things, each exactly its length of front (LGW.UNIT_M)
+// through lnWork, and refused while the front cannot take a whole one (the gang ahead, the supplies); clearing,
+// digging and rock are worth their time as before (LG.worth). An action is never quicker than its men could do it at
+// LG.worth(100) each, so a flood of commands builds nothing extra.
+const LGW = {
+  UNIT_M: [0, 0, 0, 0.6, 4.55, 0.15],   // a tie, one rail (the two rails of a length alternate north and south), a spike (four a tie)
+  GAUGE: 1.025, LOAD_T: 5,              // the rails' half gauge (u); ticks to fill the barrow at the heap
+  THING: ['clump', 'barrow of earth', 'load of rock', 'tie', 'rail', 'spike'],
+  NUM: ['no', 'one', 'two', 'three', 'four'],
+};
+// The next tie's middle (x, u) and the next rail's { x0 (u, its west end), z (its side) }, from the fronts.
+const lgTieX = S => (LINE.START_M + Math.floor((S.ln.f[3] - LINE.START_M) / LINE.TIE_M + 1e-6) * LINE.TIE_M) * LINE.M + 0.16;
+function lgRailNext(S) {
+  const s = LINE.START_M, n = Math.floor((S.ln.f[4] - s) / LGW.UNIT_M[4] + 1e-6), north = n % 2 === 0;
+  return { n, x0: (s + (north ? n / 2 : (n - 1) / 2) * LINE.RAIL_M) * LINE.M, z: north ? -LGW.GAUGE : LGW.GAUGE };
+}
+// The next spike: { i (its number from the start of the line), x, z }: four a tie, the north rail's outer and inner first.
+function lgSpikeNext(S) {
+  const s = LINE.START_M, i = Math.floor((S.ln.f[5] - s) / LGW.UNIT_M[5] + 1e-6), t = Math.floor(i / 4), q = i % 4;
+  return { i, x: (s + t * LINE.TIE_M) * LINE.M + 0.16, z: (q < 2 ? -1 : 1) * (LGW.GAUGE + (q % 2 ? -0.17 : 0.17)) };
+}
+// The wu of the next d metres of stage k's front (its cost metre by metre), less what is in hand there.
+function lgUnitWu(S, k, d) {
+  const L = S.ln, e = L.f[k] + d;
+  let m = L.f[k], wu = 0;
+  while (m < e - 1e-9) { const seg = lnSegAt(m), x = Math.min(e, seg[1]); wu += (x - m) * lnCost(k, m); m = x; }
+  return Math.max(0, wu - L.wu[k]);
+}
+// The brush or tree the clearers' front comes to next on his side (a scatter thing on the right of way, standing at
+// least knee high), or null: { x, z, key, h }. The cleared front passing it is what takes it away in the world.
+function lgClump(S, side) {
+  const f = S.ln.f[0] * LINE.M, M = LINE.M;
+  let best = null;
+  for (let ci = Math.floor(f / 8); ci <= Math.floor((f + 14) / 8); ci++) for (const cj of [-1, 0]) for (const q of lnScatter(S.seed, ci, cj)) {
+    if (!q.row || q.h < 0.8 || q.x < f + 0.05 || q.x > f + 12 || (q.z < 0 ? -1 : 1) !== side || !/brush|sage|bush|rabbitbrush|pine|oak|juniper|willow|cottonwood|snag|cattail|pear/.test(q.key)) continue;
+    if (!best || q.x < best.x) best = q;
+  }
+  return best ? { x: best.x, z: best.z, key: best.key, h: best.h } : null;
+}
+// Where the task starts for him and his mates: { me: { x, z, f }, mates: [{ x, z, f }] } (line units).
+function lgWStart(S, j, G) {
+  const k = j.k, f = S.ln.f, M = LINE.M, E = Math.PI / 2, side = j.side;
+  const at = (x, z, fc) => cwSafe(S, x, z, fc);
+  if (k === 0) { const c = lgClump(S, side), x = c ? c.x - 1.3 : f[0] * M + 0.9, z = c ? c.z : side * 2.2; return { me: at(x, z, E), mates: [] }; }
+  if (k === 1) return { me: at(f[1] * M - 0.5, side * 1.25, E), mates: [] };
+  if (k === 2) { const nb = (S.cw.men.filter(m => m.pl === 2 && m.stage === 2 && m.r === 'c' && !m.lg).length); return { me: at(G.heap + 1.1 * (nb / 2 + 1), 5.1, 0), mates: [] }; }
+  if (k === 5) { const p = lgSpikeNext(S); return { me: at(p.x, side * 1.55, side > 0 ? Math.PI : 0), mates: j.m.map(() => at(p.x, -side * 1.55, side > 0 ? 0 : Math.PI)) }; }
+  const U = S.cw.men.filter(m => m.pl === 2 && m.stage === k && !m.lg && m.mem).length;   // (the gang's own units, queued at the pile)
+  if (k === 3) { const qp = U ? Math.floor((U - 1) / 2) + 1 : 0, x = G.ties + 1.5 + 5.2 * qp; return { me: at(x - 3, -4.9, E), mates: [at(x, -4.9, E)] }; }
+  const cx = G.rails - 10.5 * U, P = (kk) => at(cx + (kk < 2 ? 4 : -4), -6 + (!(kk & 1) ? -0.6 : 0.6), E);
+  return { me: P(1), mates: [P(0), P(2), P(3)] };
+}
+// The unit's way with its load (line units), from p0 to the front as it is now (the men's ways, cwPath, for the tie
+// and the rail; for the barrow, out along the lane and in over the chalk cross at the rock's front).
+function lgWPath(S, j) {
+  const f = S.ln.f, M = LINE.M, p = j.p0;
+  if (j.k === 3) { const dx = lgTieX(S); return [p, [p[0] + 0.6, p[1]], [p[0] + 1.6, -3.9], [dx, -3.9], [dx, 1.6]]; }
+  if (j.k === 4) { const R = lgRailNext(S), ex = Math.max(p[0] + 16, R.x0 + 6.5); return [p, [p[0] + 5, p[1]], [p[0] + 8, -2.6], [ex - 6.5, -2.6], [ex - 4.5, R.z], [ex, R.z]]; }
+  const cx = lgCrossX(S); return [p, [p[0], 4.2], [Math.max(p[0] + 0.5, cx - 4), 4.2], [Math.max(p[0] + 1, cx - 2), 1.4], [Math.max(p[0] + 2, cx + 3), 1.4]];
+}
+const lgCrossX = S => S.ln.f[2] * LINE.M + 0.8;   // the chalk cross at the rock's front, on his lane (z 1.4)
+// Each member's place on the path at s (the distance carried): the tie's two ends 3u apart (his mate leads), the
+// rail's four men either side of it, 4u before and behind its middle.
+function lgWOnPath(S, j, s) {
+  const P = lgWPath(S, j), len = cwPathLen(P), out = [];
+  if (j.k === 3) { out.push(cwPathAt(P, Math.min(len, s) - 3), cwPathAt(P, Math.min(len, s))); }
+  else if (j.k === 4) for (const kk of [1, 0, 2, 3]) { const p = cwPathAt(P, Math.min(len, s) + (kk < 2 ? 4 : -4)); p[1] += !(kk & 1) ? -0.6 : 0.6; out.push(p); }
+  else out.push(cwPathAt(P, Math.min(len, s)));
+  return { pts: out, len, P };   // pts[0]: him, then his mates in j.m's order
+}
+// Why the task cannot be done with the men at hand (the line the game says), or ''. need: men the task takes.
+function lgNoMates(S, k, free) {
+  const need = CW.NEED[k] - 1, gang = cwGang(S, k).filter(m => !m.lg), name = ['clearers', 'diggers', 'rock gang', 'tie gang', 'rail gang', 'spikers'][k];
+  if (free >= need) return '';
+  const thing = k === 3 ? 'a tie takes two men' : 'a rail takes four men', verb = k === 3 ? 'carry' : 'lift';
+  if (!gang.length) return `No one on the ${name} to ${verb} with you: ${thing}.`;
+  if (gang.length < need) return `Only ${LGW.NUM[gang.length] || gang.length} ${gang.length === 1 ? 'man' : 'men'} on the ${name}: ${thing}. A bigger crew would have them.`;
+  const rest = gang.filter(m => m.st === 'rest').length;
+  return `Not enough of the ${name} at hand just now${rest ? ` (${LGW.NUM[rest] || rest} resting)` : ''}: ${thing}. Wait for them, or join another gang.`;
+}
+function lgWJoin(S, Q, k, side, ev) {
+  const men = S.cw ? S.cw.men : [], free = men.filter(m => m.pl === 2 && m.stage === k && (m.st === 'work' || m.st === 'walk') && !m.lg);   // (at work, or on the way to it)
+  const why = CW.NEED[k] > 1 ? lgNoMates(S, k, free.length) : '';
+  if (why) { ev.push({ t: 'lpRefused', why, lg: k }); return; }
+  // his mates: the nearest free men of the gang (a spiker to strike in turn when one is free)
+  const want = k === 5 ? Math.min(1, free.length) : CW.NEED[k] - 1;
+  const mates = free.sort((a, b) => Math.hypot(a.x - Q.x, a.z - Q.z) - Math.hypot(b.x - Q.x, b.z - Q.z) || a.id - b.id).slice(0, want).map(m => m.id);
+  Q.j = { k, side, t: S.tick, last: S.tick, n: 0, q: -1, qs: [], wu: 0, w: 1, ph: 'go', m: mates };
+  for (const id of mates) { const m = men[id]; m.lg = 1; m.a = ''; m.mv = 0; delete m.rt; delete m.mem; delete m.ld; delete m.k; }
+  if (mates.length) cwRoles(S, k, cwGangOf(S, k), new Set(), true);   // (the rest of the gang make their units again without them)
+  delete Q.home; delete Q.tx; delete Q.tz;
+  ev.push({ t: 'lgJoined', stage: k, mates: mates.length });
+}
+// His mates back to their gang (at work where they stand; the foreman's units made again).
+function lgLetGo(S, j) {
+  const men = S.cw ? S.cw.men : [];
+  let any = false;
+  for (const id of j.m || []) { const m = men[id]; if (!m || !m.lg) continue; delete m.lg; any = true; m.mv = 0; if (m.pl === 2 && m.st !== 'left') { m.st = 'work'; m.a = ''; } }
+  if (any && S.cw) cwRoles(S, j.k, cwGangOf(S, j.k), new Set(), true);
+}
+// Each tick while he works in the world (lgTick): walking to the start, carrying, and his mates with him.
+function lgWTick(S, Q, ev) {
+  const j = Q.j, k = j.k, men = S.cw ? S.cw.men : [], dt = DT_MIN;
+  for (const id of j.m) { const m = men[id]; if (!m || !m.lg || m.pl !== 2) { lgLeave(S, ev, 'mates'); return; } }
+  const G = cwGeo(S);
+  const place = (p, i) => { const m = men[j.m[i]]; m.x = cwR3(p[0]); m.z = cwR3(cwFz(p[0], p[1])); m.f = cwR3(p[2]); m.tx = m.x; m.tz = m.z; };
+  if (j.ph === 'go' || j.ph === 'ready' || j.ph === 'load') {
+    const sp = lgWStart(S, j, G), d = Math.hypot(sp.me.x - Q.x, sp.me.z - Q.z);
+    // (the work moves on as the front does: at the front he shuffles up with it; to a pile he walks back)
+    let all = true;
+    if (j.ph === 'go' ? d > 0.05 : d > 1.2) { if (Q.tx === undefined || Math.hypot(Q.tx - sp.me.x, Q.tz - sp.me.z) > 0.3) { Q.tx = sp.me.x; Q.tz = sp.me.z; } all = false; }
+    else if (Q.tx === undefined) Q.f = sp.me.f;
+    if (Q.tx !== undefined) all = false;
+    j.m.forEach((id, i) => {
+      const m = men[id], p = sp.mates[i];
+      if (Math.hypot(p.x - m.x, p.z - m.z) > (j.ph === 'go' ? 0.05 : 1.2) || m.mv) { cwGo(m, p.x, p.z); if (!cwStep(S, m, CW.WALK * dt, true)) all = false; else m.f = p.f; }
+      else { m.mv = 0; m.f = p.f; }
+    });
+    if (j.ph === 'go' && all) { j.ph = k === 2 ? 'load' : 'ready'; j.t1 = S.tick; if (k <= 1) j.last = S.tick; ev.push({ t: 'lgReady', stage: k }); }   // (walking to his place is not work; the rock's trips are)
+    else if (j.ph === 'load' && all && S.tick - j.t1 >= LGW.LOAD_T) {
+      if (lnOpenWork(S, 2) <= 0) { if (!j.wt) { j.wt = 1; ev.push({ t: 'lgWait', stage: k }); } }   // (no bed ready for rock: he waits at the heap with his load)
+      else { delete j.wt; j.ph = 'tip'; j.c = 0; j.p0 = [Q.x, Q.z]; ev.push({ t: 'lgOut', stage: k }); }
+    }
+    return;
+  }
+  if (j.ph === 'carry' || j.ph === 'tip') {
+    const o = lgWOnPath(S, j, j.c);
+    if (j.c >= o.len - 1e-6) {
+      if (j.ph === 'tip') { j.ph = 'rake'; j.auto = 1; ev.push({ t: 'lgTipped', stage: k, auto: 1 }); }   // (wheeled past the cross without a tip: it is tipped at the end)
+      else { j.ph = 'at'; ev.push({ t: 'lgAt', stage: k }); }
+      delete Q.mv;
+    } else { j.c = cwR3(Math.min(o.len, j.c + CW.CARRY * dt)); Q.mv = 1; }
+    const p = lgWOnPath(S, j, j.c).pts;
+    Q.x = cwR3(p[0][0]); Q.z = cwR3(cwFz(p[0][0], p[0][1])); Q.f = cwR3(p[0][2]); delete Q.tx; delete Q.tz;
+    for (let i = 0; i < 12 && !lnWalkable(S.seed, Q.x, Q.z, S.ln.f[1]); i++) Q.z = cwR3(Q.z * 0.8);   // (by the creek he keeps to the deck)
+    p.slice(1).forEach((q, i) => { place(q, i); men[j.m[i]].mv = Q.mv ? 1 : 0; });
+    return;
+  }
+  // 'at', 'rake': held where they are at the front (which may move on a little under them)
+  delete Q.mv;
+  if (j.ph === 'at') { const p = lgWOnPath(S, j, j.c).pts; p.slice(1).forEach((q, i) => { place(q, i); men[j.m[i]].mv = 0; }); }
+}
+// lgAct { stage, a }: 'lift' (the tie or rail taken up: from 'ready'), 'drop' (let go on the way: set down where it
+// is, to be lifted again), 'tip' (the barrow tipped where it is: from 'tip').
+function lgWAct(S, Q, c, ev) { lnLimit.mine = true; try { lgWAct1(S, Q, c, ev); } finally { lnLimit.mine = false; } }   // (his own work may use the room kept for it)
+function lgWAct1(S, Q, c, ev) {
+  const j = Q.j;
+  if (!j || !j.w || c.stage !== j.k || !lnHours(S).work) return;
+  if (c.a === 'lift' && j.ph === 'ready' && (j.k === 3 || j.k === 4) && Q.tx === undefined) {
+    if (lgUnitWu(S, j.k, LGW.UNIT_M[j.k]) > lnOpenWork(S, j.k) + 1e-6) { ev.push({ t: 'lgWait', stage: j.k }); return; }
+    if (j.p0 === undefined) { j.p0 = j.k === 4 ? [cwR3((Q.x + S.cw.men[j.m[0]].x) / 2 - 4), -6] : [S.cw.men[j.m[0]].x, S.cw.men[j.m[0]].z]; j.c = 0; }
+    j.ph = 'carry'; ev.push({ t: 'lgLift', stage: j.k });
+  } else if (c.a === 'drop' && j.ph === 'carry') { j.ph = 'ready'; ev.push({ t: 'lgDrop', stage: j.k }); }
+  else if (c.a === 'tip' && j.ph === 'tip') { j.ph = 'rake'; delete j.auto; delete Q.mv; ev.push({ t: 'lgTipped', stage: j.k }); }
+}
+// lgDone in the world: one finished action.
+function lgWDone(S, Q, q, ev) { lnLimit.mine = true; try { lgWDone1(S, Q, q, ev); } finally { lnLimit.mine = false; } }
+function lgWDone1(S, Q, q, ev) {
+  const j = Q.j, k = j.k, unit = LGW.UNIT_M[k];
+  if (!lnHours(S).work) return;
+  const near = () => { const sp = lgWStart(S, j, cwGeo(S)).me; return Math.hypot(sp.x - Q.x, sp.z - Q.z) <= LG.BACK; };   // (shuffling up with the front, he is still at the work)
+  const ok = k === 2 ? j.ph === 'rake' : k === 3 || k === 4 ? j.ph === 'at' : j.ph === 'ready' && near();
+  if (!ok) return;
+  const L = S.ln, f0 = L.f[k], men = 1 + j.m.length;
+  let wu, back;
+  if (unit) {
+    wu = lgUnitWu(S, k, unit);
+    if (S.tick - j.last < Math.ceil(wu / (men * LG.rate() * LG.worth(100)) / DT_MIN)) return;   // (never quicker than its men at their best)
+    if (q < LG.FAIR) { j.last = S.tick; ev.push({ t: 'lgRedo', stage: k, q }); return; }   // a bent spike, a tie off its mark, a rail off the gauge: again
+    if (wu > lnOpenWork(S, k) + 1e-6) { ev.push({ t: 'lgWait', stage: k }); return; }
+  } else {
+    if (S.tick - j.last < LG.MIN_T) return;
+    wu = LG.worth(q) * LG.rate() * Math.min(LG.CAP_MIN, (S.tick - j.last) * DT_MIN);
+    if (k === 0) wu = Math.min(wu, cwOpen0(S));
+  }
+  const o = lnWork.ev; lnWork.ev = ev;
+  back = wu > 0 ? lnWork(S, k, wu) : 0;
+  lnWork.ev = o;
+  j.last = S.tick; j.n++; j.q = q; j.qs = j.qs.concat([q]).slice(-3); j.wu = Math.round((j.wu + wu - back) * 1000) / 1000;
+  const avg = j.qs.reduce((a, b) => a + b, 0) / j.qs.length;
+  if (avg >= LG.LIFT_Q) { j.lift = S.tick + LG.LIFT_T; cwBoost(S, k, Q.x, 1 + LG.LIFT * avg / 100, j.lift); } else delete j.lift;
+  ev.push({ t: 'lgDid', stage: k, q, n: j.n, wu: Math.round((wu - back) * 1000) / 1000, m: Math.round((L.f[k] - f0) * 1000) / 1000, f0, stuck: back >= wu - 1e-9 ? 1 : 0, lift: j.lift ? 1 : 0 });   // (m: the front's move by this action alone; f0: where it was)
+  if (k >= 2 && k <= 4) { j.ph = 'go'; delete j.c; delete j.p0; delete j.auto; }   // back to the heap, the pile or the stack for the next
+}
+// D34: how one of his mates is drawn (Crew's cwDrawList asks): { act, anim, frame, held?, prop? }.
+function lgMateDraw(S, m) {
+  const j = S.lp && S.lp.j;
+  if (!j || !j.w || !j.m.includes(m.id)) return null;
+  const tick = S.tick | 0, i = j.m.indexOf(m.id), wf = Math.floor(tick * 0.9 + m.id * 1.7) & 3;
+  if (m.mv && (j.ph === 'go' || j.ph === 'ready')) return j.k === 4 ? { act: 'walk', anim: 'shoulder', frame: wf, held: { key: 'tool/tongs/held/<dir>', at: 'tool' } } : j.k === 5 ? { act: 'walk', anim: 'shoulder', frame: wf, held: { key: 'tool/maul/held/<dir>', at: 'tool' } } : { act: 'walk', anim: 'walk', frame: wf };
+  if (j.k === 3) return j.ph === 'carry' ? { anim: 'tieFront', frame: m.mv ? wf : 0 } : { anim: 'tieDrop', frame: j.ph === 'at' ? 1 : 0 };
+  if (j.k === 4) return j.ph === 'carry' ? { anim: 'railCarry', frame: m.mv ? wf : 0 } : { anim: 'railDrop', frame: j.ph === 'at' ? 1 : 0 };
+  if (j.k === 5) { const A = typeof lgMateBeat === 'function' ? lgMateBeat(S, i) : null; return A || { anim: 'maul', frame: ((tick >> 1) + m.id) % 4 }; }
+  return { anim: 'idle', frame: 0 };
+}
+// D34: his own figure at the task (lpPose): the work clothes, the stage's frames for where the task is (the page's
+// round picks the swing's frame through lgWPoseAnim while it runs), what is in his hands, the rail between the four.
+function lgWPose(S, Q) {
+  const j = Q.j, k = j.k, tool = LG_TOOL(S, k), wf = (S.tick | 0) & 3, mv = !!Q.mv;
+  const p = { x: Q.x, y: 0, z: Q.z, f: Q.f, act: mv ? 'walk' : 'work', who: LG.WHO, held: null, lg: { k, q: j.q, lift: !!j.lift && j.lift > S.tick, w: 1 } };
+  let A;
+  if (k === 2) {
+    if (j.ph === 'rake') A = { anim: 'rake', frame: 0 };
+    else A = { anim: 'barrow', frame: mv ? wf : 0, held: { key: 'tool/barrow/<dir>' + (j.ph === 'tip' || (j.ph === 'load' && S.tick - (j.t1 | 0) >= 2) ? '/full' : ''), at: 'grip' } };
+  } else if (k === 3) A = j.ph === 'carry' ? { anim: 'tieBack', frame: mv ? wf : 0 } : j.ph === 'at' || j.ph === 'ready' ? { anim: 'tieDrop', frame: 0 } : { anim: 'walk', frame: mv ? wf : 0 };
+  else if (k === 4) {
+    if (j.ph === 'carry' || j.ph === 'at') { A = { anim: j.ph === 'at' ? 'railDrop' : 'railCarry', frame: mv ? wf : 0 }; const c = cwPathAt(lgWPath(S, j), Math.min(j.c, cwPathLen(lgWPath(S, j)))); A.prop = { key: 'line/rail_carried', dx: cwR3(c[0] - Q.x), dz: cwR3(c[1] - Q.z), before: false }; }
+    else A = j.ph === 'ready' ? { anim: 'railDrop', frame: 0 } : { anim: 'shoulder', frame: mv ? wf : 0, held: { key: 'tool/tongs/held/<dir>', at: 'tool' } };
+  } else if (mv || j.ph === 'go') A = tool ? { anim: 'shoulder', frame: mv ? wf : 0, held: { key: 'tool/' + tool + '/held/<dir>', at: 'tool' } } : { anim: 'walk', frame: mv ? wf : 0 };
+  else { const W = tool === 'axe' ? ['axe', 4] : LG_ANIM[k]; A = { anim: W[0], frame: ((S.tick | 0) >> 1) % W[1] }; }
+  const R = !mv && typeof lgWPoseAnim === 'function' ? lgWPoseAnim(S, k, j.ph) : null;   // (the page's round: the swing on the beat)
+  return Object.assign(p, A, R || {});
+}
 // For the renderer and pixFocus: { x, y, z, f, act, riding? } in line units, or null when he is not on the line. sod
 // (optional): the second of the day the frame is drawn at, so the view rides with the train as it is drawn. While he
 // works with a gang: who (the work clothes), anim and frame (the navvies' frames; the page's game picks them through
@@ -9495,6 +9786,7 @@ function lgCmd(S, c, ev) {
 function lpPose(S, sod) {
   const Q = S && S.lp;
   if (!Q) return null;
+  if (Q.ph === 'line' && Q.j && Q.j.w) return lgWPose(S, Q);   // D34
   if (Q.ph === 'line' && Q.j) {
     const j = Q.j, tool = LG_TOOL(S, j.k), p = { x: Q.x, y: 0, z: Q.z, f: Q.f, act: Q.mv ? 'walk' : 'work', who: LG.WHO, held: null, lg: { k: j.k, q: j.q, lift: !!j.lift && j.lift > S.tick } };
     const A = typeof lgPoseAnim === 'function' && !Q.mv ? lgPoseAnim(S, j.k) : null;
@@ -9535,6 +9827,18 @@ const LG_HOW = [
     'Spiking: you and your partner strike in turn. Tap on your beat, as the ring closes on the spike: three blows drive it home. A blow off the beat bends the spike.',
     'Tap on your beat'],
 ];
+// D34: the same lessons told for the games in the world (the switch's other side keeps the panel's words above).
+if (D34.on) {
+  const W = {
+    lnClear: ['Clearing: walk into the brush ahead of the clearers and Join. A chalk line is drawn across the clump in front of you: swipe along it, quick and straight, three clean cuts a go (a tree: from the left, then the right). The clump falls when the clearing reaches it.', 'Swipe along the chalk line on the clump'],
+    lnDig: ['Digging: you dig at the trench\'s front beside the diggers. A ring closes on the chalk mark there: tap as it meets it, four swings in time with the men, then flick up to throw the earth out.', 'Tap as the ring meets the mark'],
+    lnRock: ['Laying rock: you fill a barrow at the rock heap and wheel it out. Tap to tip it as its nose is over the chalk cross at the rock\'s front, then drag along the bed to rake the stones level between the two pegs.', 'Tip on the cross, then rake level'],
+    lnTies: ['Ties: a tie takes two men, so one of the tie men carries it with you. At the tie pile press and hold as his "Hup!" ring fills, keep your end level with his as you carry it up (your thumb up and down), and let go on "Down!": it goes down on its chalk marks, one more tie.', 'Hold on "Hup!", let go on "Down!"'],
+    lnRails: ['Rails: a rail takes four men, so three of the rail gang lift it with you. At the rail stack hold on "Lift!", drag to keep the rail on the gauge line as the four of you walk it up, and let go on "Down!": one more rail on the ties.', 'Hold on "Lift!", let go on "Down!"'],
+    lnSpike: ['Spiking: each spike goes in at the next tie. With a spiker beside you, you strike in turn: tap on your beat as the ring closes on the spike head. Alone, every blow is yours, at one man\'s pace. A blow off the beat bends the spike.', 'Tap on your beat'],
+  };
+  for (const H of LG_HOW) if (W[H[0]]) { H[3] = W[H[0]][0]; H[4] = W[H[0]][1]; }
+}
 const LG_LESSONS = [
   { id: 'lnRide', title: 'Out on the line', pic: ['ppl/navvy_b/pick/se/1', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lpOnLine',
@@ -9550,13 +9854,15 @@ const LG_LESSONS = [
     trigger: (S, e) => lgIs(e, 'lgJoined', k),
     steps: [
       lgLesStep(how, short, (S, e) => lgIs(e, 'lgDid', k) || lgIs(e, 'lgLeft', k)),
-      lgLesStep('Each go is marked good, fair or poor. Work well and the men near you work faster too: a glow at their feet. Step out whenever you like.',
-        'Keep at it, or Step out', lgDid3(k)),
+      lgLesStep(D34.on ? 'Each go is marked good, fair or poor. Work well and the men near you work faster too. A task that takes more men than are at hand cannot be done: the game says so, and a bigger crew has them. Leave, or walk away, whenever you like.'
+        : 'Each go is marked good, fair or poor. Work well and the men near you work faster too: a glow at their feet. Step out whenever you like.',
+        D34.on ? 'Keep at it, or Leave' : 'Keep at it, or Step out', lgDid3(k)),
     ] })),
-  { id: 'lnLeave', title: 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
+  { id: 'lnLeave', title: D34.on ? 'Leaving a gang' : 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lgLeft' && (e.why === 'out' || e.why === 'walked'),
     steps: [
-      lgLesStep('You stepped out: your tool is back on the rack and the gang works on without you. Nothing is left half done.',
+      lgLesStep(D34.on ? 'You left the gang: the men who worked with you went back to their own work, and the gang works on without you. Nothing is left half done.'
+        : 'You stepped out: your tool is back on the rack and the gang works on without you. Nothing is left half done.',
         'Walk on, or join a gang again', (S, e) => e.t === 'lpArrived' || e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
       lgLesStep('Walk up to any gang to join it again, or watch the work as long as you like.',
         'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
@@ -9586,6 +9892,12 @@ function lpCheckSaveShape(st) {
   const j = Q.j;
   if (j !== undefined && (!j || Q.ph !== 'line' || !Number.isInteger(j.k) || j.k < 0 || j.k > 5 || (j.side !== 1 && j.side !== -1) || !Number.isInteger(j.t) || !Number.isInteger(j.last)
     || !Number.isInteger(j.n) || !num(j.q) || !num(j.wu) || !Array.isArray(j.qs) || j.qs.some(v => !Number.isInteger(v)) || (j.lift !== undefined && !Number.isInteger(j.lift)))) bad();
+  // D34: a task in the world (optional fields; the men he works with must be the crew's and lent to him)
+  if (j && j.w !== undefined) {
+    const men = st.cw && Array.isArray(st.cw.men) ? st.cw.men : [];
+    if (j.w !== 1 || !/^(go|ready|load|tip|carry|at|rake)$/.test(j.ph) || !Array.isArray(j.m) || j.m.length > 3 || j.m.some(id => !Number.isInteger(id) || !men[id] || men[id].lg !== 1)
+      || (j.c !== undefined && !num(j.c)) || (j.t1 !== undefined && !Number.isInteger(j.t1)) || (j.wt !== undefined && j.wt !== 1) || (j.auto !== undefined && j.auto !== 1) || (j.p0 !== undefined && (!Array.isArray(j.p0) || !num(j.p0[0]) || !num(j.p0[1])))) bad();
+  }
 }
 
 // ==== Section: the far town (D32) ====
@@ -21549,9 +21861,18 @@ function send(cmd) { const no = buildIntakeRefusal(cmd); if (no) { handleEvent(n
 // ==== Section: HUD and panels ====
 const $ = id => document.getElementById(id);
 let toastTimer = 0;
-function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
+// (D34: prio, a line the player must read, such as why a gang cannot be joined: a plain message in the same moments,
+// a lever thrown at the station, does not cover it)
+let toastPrioUntil = 0;
+function toast(msg, ms, prio) {
+  const now = performance.now();
+  if (!prio && now < toastPrioUntil) return;
+  if (prio) toastPrioUntil = now + (ms || 2600);
+  const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600);
+}
 function handleEvent(e) {
-  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { toast(e.why); return; }   // D32
+  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { if (e.lg !== undefined) { toast(e.why, 4000, true); if (typeof lgW !== 'undefined') lgW.refuse = { msg: e.why, t: performance.now() }; } else toast(e.why); return; }   // D32 (D34: why a gang cannot be joined stays up, and is said under him too)
+  if (D34.on && (e.t === 'lgWait' || e.t === 'lgRedo' || e.t === 'lgDid')) { lgWEvent(e); return; }   // D34: the task's word in the chip
   if (e.t === 'lnDone' || e.t === 'ftJump') { ftEvent(e); return; }   // D32 stage 3 (Rooms): the last spike's cheer, dev mode's jump
   if (pdUiOn() && pdEventFirst(e)) return;   // D25 (U): the prototype's switch and train names
   if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
@@ -24906,7 +25227,8 @@ function lpHudFrame() {
   const top = Math.round(wide ? tl.top : below + 6) + 'px', left = wide ? Math.round(tl.right + 10) + 'px' : '';
   if (bar.style.top !== top) bar.style.top = top;
   if (bar.style.left !== left) bar.style.left = left;
-  if (bar.hidden) bar.hidden = false;
+  const away = D34.on && typeof lgWOn === 'function' && lgWOn();   // D34: while he works in the world the bar stands aside (the work is in view; Leave is on the chip under him)
+  if (bar.hidden !== away) bar.hidden = away;
   if (lpUi.cardFor && (Q.ph !== 'line' && Q.ph !== 'aboardL' || !(line || D33.on))) lpCloseCard();
   if (lpUi.cardFor && now - lpUi.cardT > 400) { lpUi.cardT = now; lpCardRender(); }
 }
@@ -24922,7 +25244,8 @@ function lpManInfo(id) {
   const q = (pixCall('cwDrawList', S, 'line') || []).find(m => String(m.id) === String(id)) || null;
   const look = typeof cwLook === 'function' ? pixCall('cwLook', S, id) : null, o = look || {}, d = q || {};
   const k = Number.isInteger(o.stage) ? o.stage : lpStageOf(id), st = [o.stam, d.stam, d.stamina].find(v => typeof v === 'number' && Number.isFinite(v));
-  return { found: !!(q || look), name: o.name || d.name || `Rail man ${id}`, stage: k, doing: o.doing || d.doing || LP_ACT[d.act] || d.act || 'standing by', stam: st === undefined ? null : Math.max(0, Math.min(1, st > 1 ? st / 100 : st)) };
+  const withMe = D34.on && S.lp && S.lp.j && S.lp.j.w && S.lp.j.m.includes(+id);   // D34: one of the men working with him
+  return { found: !!(q || look), name: o.name || d.name || `Rail man ${id}`, stage: k, doing: withMe ? 'working with you' : o.doing || d.doing || LP_ACT[d.act] || d.act || 'standing by', stam: st === undefined ? null : Math.max(0, Math.min(1, st > 1 ? st / 100 : st)) };
 }
 function lpOpenCard(kind, id) { lpUi.cardFor = { kind, id }; lpUi.cardSig = ''; lpUi.card.hidden = false; lpCardRender(); }
 function lpCloseCard() { lpUi.cardFor = null; lpUi.cardSig = ''; if (lpUi.card) lpUi.card.hidden = true; }
@@ -24940,7 +25263,8 @@ function lpCardRender() {
   } else {
     const k = c.id, men = pixCall('cwGang', S, k) || [], H = lnHours(S), info = men.map(q => lpManInfo(q.id)), ss = info.map(i => i.stam).filter(v => v !== null);
     title = `${LINE.STAGE_NAMES[k]} gang`;
-    body = `Men: ${men.length}<br>Front: ${Math.floor(S.ln.f[k]).toLocaleString('en-US')} m of ${LINE.LEN_M.toLocaleString('en-US')}<br>Now: ${H.work ? 'at work' : H.meal ? 'at their meal' : H.pack ? 'packing up' : 'off work'}`
+    const need = D34.on && CW.NEED[k] > 1 ? `<br>${k === 3 ? 'A tie takes two men' : 'A rail takes four men'}: ${men.filter(m => !m.lg).length} of the gang here` + (men.some(m => m.lg) ? `, ${men.filter(m => m.lg).length} with you` : '') : '';   // D34
+    body = `Men: ${men.length}<br>Front: ${Math.floor(S.ln.f[k]).toLocaleString('en-US')} m of ${LINE.LEN_M.toLocaleString('en-US')}<br>Now: ${H.work ? 'at work' : H.meal ? 'at their meal' : H.pack ? 'packing up' : 'off work'}${need}`
       + `<br>Stamina: ${ss.length ? stam(ss.reduce((a, b) => a + b, 0) / ss.length) + ' on average' : 'not known'}` + (info.length ? `<br><small>${info.slice(0, 10).map(i => esc(i.name)).join(', ')}${info.length > 10 ? ' and more' : ''}</small>` : '');
   }
   const sig = title + body + gangBtn;
@@ -25382,6 +25706,30 @@ function lgFrame() {
   } else if (!J.hidden) J.hidden = true;
   if (!j) lgUi.left = false;
   const P = lgUi.panel;
+  if (D34.on) {   // D34: the games are in the world: no panel
+    if (!P.hidden) P.hidden = true;
+    if (!j) lgW.left = false;
+    if (j) lgW.refuse = null;   // (joined after all: the word on why not is spent)
+    // why a gang cannot be joined (too few of its men at hand), in a line under him for a few seconds: the toast's place
+    // at the top is under the line's bar out there
+    const rf = lgW.refuse && performance.now() - lgW.refuse.t < 4500 && !j && line && !hold ? lgW.refuse : null;
+    if (rf) {
+      const C = lgW.chip, sig = 'refuse|' + rf.msg;
+      if (lgW.sig !== sig) { lgW.sig = sig; $('lgWText').textContent = rf.msg; $('lgWPips').innerHTML = ''; }
+      $('lgWOut').hidden = true;
+      const me = lgWMe(), p = lgWScr(me.x, 0, me.z), cw = C.offsetWidth || 220, x = lgCl(p.x, cw / 2 + 6, innerWidth - cw / 2 - 6), y = lgCl(p.y + 26 + 56, 110, innerHeight - 60);
+      C.style.left = Math.round(x) + 'px'; C.style.top = Math.round(y) + 'px';
+      if (C.hidden) C.hidden = false;
+      lgW.r = null; lgW.k = -1; lgW.beat = null;
+      return;
+    }
+    if ($('lgWOut').hidden) $('lgWOut').hidden = false;
+    if (!j || !j.w || !line || lgW.left) { if (!lgW.chip.hidden) lgW.chip.hidden = true; lgW.r = null; lgW.k = -1; lgW.beat = null; return; }
+    const frozen = hold || (lgUi.clock === null && speed === 0);
+    if (!frozen && lgUi.clock === null) lgUi.gt += dt;
+    lgWFrame(Q, j, frozen ? 0 : dt, hold, frozen);
+    return;
+  }
   if (!j || !line || lgUi.left) { if (!P.hidden) P.hidden = true; lgUi.r = null; lgUi.k = -1; return; }
   if (P.hidden !== hold) P.hidden = hold;
   // landscape: the panel stands at the right under the line's bar (its Ride home and Back now stay in reach)
@@ -25436,7 +25784,7 @@ function lgToScreen(x, y) { const b = lgUi.box, R = lgUi.cv.getBoundingClientRec
 // drawing it), and over his head a small bar of his last q; a warm ring at his feet while he lifts the men near him.
 function lgPixDress(it, p, x, z, dir, anim, fr) {
   if (!it || !p || !p.lg) return;
-  if (p.held) cwPixDress(it, p, x, z, dir, anim, fr);
+  if (p.held || p.prop) cwPixDress(it, p, x, z, dir, anim, fr);   // (D34: or the rail the four carry)
   const draw = it.draw, q = p.lg.q;
   it.draw = g => {
     const f = pixProject(x, 0, z), fx = Math.round(f.x) - PIX.vx, fy = Math.round(f.y) - PIX.vy;
@@ -25447,6 +25795,465 @@ function lgPixDress(it, p, x, z, dir, anim, fr) {
     g.fillStyle = '#efe7d4'; g.fillRect(hx, hy, 12, 2);
     if (q >= 0) { g.fillStyle = lgCol(q); g.fillRect(hx, hy, Math.max(1, Math.round(12 * q / 100)), 2); }
   };
+}
+
+// ---- Joining in, in the world (D34) ----
+// Owner: Play. With D34 on (the default; ?d34=0 brings back the panel above) the six games are played where the work
+// is: no panel, no mode, no camera change. He taps Join, walks to his place with his mates (the sim moves them:
+// lgWTick), and the round simply happens over the real things: the chalk line on the real clump, the ring on the
+// trench's front, the chalk cross at the rock's front, the "Hup!" ring over his mate at the tie pile, the foreman's count
+// over the four at the rail stack, the ring on the next spike. The timing, the taps, the rhythm and the scoring are the
+// panel games' own (lgTimeS, the same beats and weights); the marks keep the panel's colours, drawn in the pixel style
+// over the world (lgWDraw, from pixOverlays). A touch near the work is the game's (lgW.R CSS px round it); a tap further
+// off walks him away, which leaves; the small chip under him has Leave. Results go to the sim as before (lgDone; lgAct
+// for the steps the sim must know: the lift, a drop, the tip).
+const lgW = { r: null, k: -1, ph: '', fx: [], chip: null, msg: '', msgT: 0, R: 120, res: [], sent: [], ptr: null, seenAt: 0, tipS: null, beat: null, sig: '', fell: [] };
+const lgWOn = () => D34.on && !!(S && S.lp && S.lp.j && S.lp.j.w && S.lp.ph === 'line');
+// World (line units) to the native buffer and to the screen (CSS px); a line point is at world x + D33.LX.
+const lgWBuf = (x, y, z) => { const p = pixProject(x + D33.LX, y, z); return { x: Math.round(p.x) - PIX.vx, y: Math.round(p.y) - PIX.vy }; };
+const lgWScr = (x, y, z) => pixToScreen(x + D33.LX, y, z);
+const lgWK = () => (PIX.scale || 3) / (PIX.dpr || 1);   // CSS px a native pixel
+// Where a man (an id of the crew, or 'lp') is drawn this frame: between the tick before and this one, as the renderer.
+function lgWAtOf(id, x, z) {
+  const pr = PIX.lnPrev && speed > 0 ? PIX.lnPrev.get(id) : null, a = PIX.lnAlpha === undefined ? 1 : PIX.lnAlpha;
+  return pr && Math.hypot(x - pr[0], z - pr[1]) < PIX.LERP_MAX ? [lerp(pr[0], x, a), lerp(pr[1], z, a)] : [x, z];
+}
+function lgWMe() { const Q = S.lp, p = lgWAtOf('lp', Q.x, Q.z); return { x: p[0], z: p[1] }; }
+function lgWMate(i) { const j = S.lp.j, m = S.cw && S.cw.men[j.m[i]]; if (!m) return null; const p = lgWAtOf(m.id, m.x, m.z); return { x: p[0], z: p[1], id: m.id }; }
+// The round's anchor (the thing worked, line units { x, y, z }) for each stage and phase: the touches within lgW.R of
+// it are the game's.
+function lgWAnchor() {
+  const Q = S.lp, j = Q.j, k = j.k, me = lgWMe();
+  if (k === 0) { const c = lgW.r && lgW.r.c; return c ? { x: c.x, y: Math.min(1.6, c.h * 0.45), z: c.z } : { x: me.x + 1.3, y: 0.4, z: me.z }; }
+  if (k === 1) return { x: S.ln.f[1] * LINE.M + 0.25, y: 0, z: me.z };
+  if (k === 2) return j.ph === 'rake' ? { x: lgW.r && lgW.r.cx !== undefined ? lgW.r.cx : lgCrossX(S), y: 0, z: 1.4 } : { x: lgCrossX(S), y: 0, z: 1.4 };
+  if (k === 3) { const m = lgWMate(0); return m ? { x: (m.x + me.x) / 2, y: 1, z: (m.z + me.z) / 2 } : { x: me.x, y: 1, z: me.z }; }
+  if (k === 4) { const m = [0, 1, 2].map(lgWMate).filter(Boolean), xs = [me.x, ...m.map(q => q.x)], zs = [me.z, ...m.map(q => q.z)]; return { x: xs.reduce((a, b) => a + b) / xs.length, y: 1, z: zs.reduce((a, b) => a + b) / zs.length }; }
+  const p = lgSpikeNext(S); return { x: p.x, y: 0.15, z: p.z };
+}
+// Juice in the world: chips, dust, sparks and words, in native buffer pixels relative to a world point (so they stay
+// put on the ground as the view glides).
+function lgWFx(kind, wx, wy, wz, n, col, o) {
+  o = o || {};
+  for (let i = 0; i < n; i++) {
+    const a = (o.a !== undefined ? o.a : -Math.PI / 2) + ((i * 2.399) % 1 - 0.5) * (o.spread !== undefined ? o.spread : 2.4), v = (o.v || 60) * (0.6 + ((i * 0.618) % 1) * 0.8);
+    lgW.fx.push({ kind, w: [wx, wy, wz], x: 0, y: 0, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: o.life || 500, col, size: o.size || 1, text: o.text, g: o.g !== undefined ? o.g : 160 });
+  }
+}
+const lgWWord = (text, wx, wy, wz, col) => lgW.fx.push({ kind: 'word', w: [wx, wy, wz], x: 0, y: -10, vx: 0, vy: -14, t: 0, life: 900, col, g: 0, text });
+const lgWRingFx = (wx, wy, wz, col, r) => lgW.fx.push({ kind: 'ring', w: [wx, wy, wz], x: 0, y: 0, vx: 0, vy: 0, t: 0, life: 380, col, size: r || 4, g: 0 });
+// A one-pixel circle (the pixel style), a dashed or plain line, a filled box with an ink edge, and outlined text.
+function lgWCirc(g, cx, cy, r, col) { g.fillStyle = col; const n = Math.max(12, Math.round(r * 6.3)); for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI; g.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r * 0.75), 1, 1); } }
+function lgWLine(g, x1, y1, x2, y2, col, dash) { g.fillStyle = col; const n = Math.max(1, Math.round(Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1)))); for (let i = 0; i <= n; i++) { if (dash && i % (dash[0] + dash[1]) >= dash[0]) continue; g.fillRect(Math.round(x1 + (x2 - x1) * i / n), Math.round(y1 + (y2 - y1) * i / n), 1, 1); } }
+function lgWBox(g, x, y, w, h, col) { g.fillStyle = PIX.COL.ink; g.fillRect(x - 1, y - 1, w + 2, h + 2); g.fillStyle = col; g.fillRect(x, y, w, h); }
+function lgWText(g, t, cx, y, col, k) {
+  k = k || 2;
+  const f0 = pixF('font/65');
+  if (!f0) { const w = pixTextWidth(t), x = Math.round(cx - w / 2); for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) pixText(g, t, x + dx, y + dy, PIX.COL.ink); pixText(g, t, x, y, col); return; }
+  const w = pixTextWidth(t) * k, x0 = Math.round(cx - w / 2), y0 = Math.round(y);
+  const put = (c, dx, dy) => { const sh = pixTinted(f0[0], c); let x = x0; for (const ch of String(t)) { const f = pixF('font/' + ch.charCodeAt(0)) || pixF('font/63'); g.drawImage(sh, f[1], f[2], f[3], f[4], x + dx, y0 + (5 - f[6]) * k + dy, f[3] * k, f[4] * k); x += (f[3] + 1) * k; } };
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1]]) put(PIX.COL.ink, dx, dy);
+  put(col, 0, 0);
+}
+// The closing ring of the panel games (from r0 = r1 + 20 native px at `from` to r1 at `at`), on a point of the buffer.
+function lgWCloser(g, x, y, t, from, at, r1, col) { if (t < from || t > at + 120) return; const p = lgCl((t - from) / (at - from), 0, 1), r = r1 + (1 - p) * 22; g.globalAlpha = 0.45 + 0.55 * p; lgWCirc(g, x, y + 1, r, PIX.COL.ink); lgWCirc(g, x, y, r, col || '#fff6dc'); g.globalAlpha = 1; }
+function lgWEnd(r, t, q, w) {   // a round's end: q and its word over the work
+  if (r.q !== undefined) return;
+  r.q = Math.round(lgCl(q, 0, 100)); r.end = t;
+  const v = LG.word(r.q), a = w || lgWAnchor();
+  lgWWord(v === 'good' ? 'Good!' : v === 'fair' ? 'Fair' : 'Poor', a.x, (a.y || 0) + 1.6, a.z, lgCol(r.q));
+}
+// ---- The six games in the world: start(r, t), frame(r, t, dt), down/move/up(r, p, t) (p: CSS px), draw(g, r, t),
+// hint(r, t), pose(r, t). Their numbers are the panel games' (the beats, the windows, the weights). ----
+const LGW_GAMES = [
+  // 0. Clearing: swipe along the chalk line across the clump the clearers' front comes to next (three cuts a round;
+  //    a tree's trunk four, from the left and the right in turn). Its worth goes through lnWork; the clump goes when
+  //    the cleared front passes it, as the clearers' clumps do.
+  {
+    start(r, t) { r.c = lgClump(S, S.lp.j.side); r.tree = !!r.c && /pine|oak|cottonwood|willow|juniper/.test(r.c.key); r.need = r.tree ? 4 : 3; r.cuts = []; r.t0 = t; this.mark(r); },
+    mark(r) {
+      const i = r.cuts.length;
+      if (r.tree) { r.dir = i % 2 ? -1 : 1; r.m = { a: 0, dy: -4 + (lgRnd('y' + i) - 0.5) * 6 }; }
+      else r.m = { a: (lgRnd('a' + i) - 0.5) * 0.9, dy: -6 + i * 5 + (lgRnd('y' + i) - 0.5) * 4 };
+    },
+    seg(r) { const A = lgWScr(...(c => [c.x, c.y, c.z])(lgWAnchor())), L = 36, dx = Math.cos(r.m.a) * L, dy = Math.sin(r.m.a) * L, y = A.y + r.m.dy * lgWK() * 0.5; return { x1: A.x - dx, y1: y - dy, x2: A.x + dx, y2: y + dy }; },
+    down(r, p, t) { r.sw = { x: p.x, y: p.y, t, pts: [p] }; },
+    move(r, p) { if (r.sw) r.sw.pts.push(p); },
+    up(r, p, t) {
+      const w = r.sw; r.sw = null;
+      if (!w || r.q !== undefined) return;
+      const dx = p.x - w.x, dy = p.y - w.y, len = Math.hypot(dx, dy);
+      if (len < 40 || t - w.t > 700) { r.msg = len < 40 ? 'A longer swipe, right across' : 'A quicker swipe'; r.msgT = t; return; }
+      const m = this.seg(r), mx = m.x2 - m.x1, my = m.y2 - m.y1, ml = Math.hypot(mx, my);
+      let ang = Math.abs(Math.atan2(dx * my - dy * mx, dx * mx + dy * my)) * 180 / Math.PI;
+      const wrong = r.tree && Math.sign(dx) !== r.dir;
+      if (!r.tree) ang = Math.min(ang, 180 - ang); else if (wrong) ang = 180 - ang;
+      const cx = (w.x + p.x) / 2, cy = (w.y + p.y) / 2, off = Math.abs((cx - m.x1) * my - (cy - m.y1) * mx) / ml;
+      const s = (1 - lgCl((ang - 6) / 30, 0, 1)) * (1 - lgCl((off - 6) / 18, 0, 1)) * (wrong ? 0.3 : 1);
+      r.cuts.push({ s, t }); r.slash = { a: w, b: p, t };
+      const A = lgWAnchor();
+      lgWFx('chip', A.x, A.y, A.z, 6 + Math.round(s * 6), r.tree ? '#c9a26b' : '#7d9a3c', { a: Math.atan2(dy, dx), spread: 1.6, v: 70 });
+      lgWRingFx(A.x, A.y, A.z, lgCol(s * 100), 3);
+      if (r.cuts.length >= r.need) {
+        const gaps = r.cuts.map((c, i) => c.t - (i ? r.cuts[i - 1].t : r.t0)), avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+        const pace = lgCl(1 - (avg - 1200) / 2500, 0.7, 1);
+        lgWEnd(r, t, 100 * r.cuts.reduce((a, c) => a + c.s, 0) / r.cuts.length * pace);
+        if (r.c) lgW.fell.push({ c: r.c, t0: null });   // (drawn falling when the cleared front takes it)
+      } else this.mark(r);
+    },
+    draw(g, r, t) {
+      if (r.q !== undefined) return;
+      const m = this.seg(r), b = n => { const q = { x: n.x * PIX.dpr / PIX.scale + PIX.camX - PIX.vx, y: n.y * PIX.dpr / PIX.scale + PIX.camY - PIX.vy }; return q; }, a = b({ x: m.x1, y: m.y1 }), c = b({ x: m.x2, y: m.y2 });
+      lgWLine(g, a.x, a.y + 1, c.x, c.y + 1, PIX.COL.ink, [3, 2]); lgWLine(g, a.x, a.y, c.x, c.y, LGC.CHALK, [3, 2]);
+      if (r.tree) { const ax = r.dir > 0 ? a.x - 5 : c.x + 5; lgWLine(g, ax, a.y, ax + r.dir * 4, a.y, LGC.CHALK); lgWLine(g, ax + r.dir * 4, a.y, ax + r.dir * 2, a.y - 2, LGC.CHALK); lgWLine(g, ax + r.dir * 4, a.y, ax + r.dir * 2, a.y + 2, LGC.CHALK); }
+      if (r.slash && t - r.slash.t < 220) { const p = b(r.slash.a), q = b(r.slash.b); lgWLine(g, p.x, p.y, q.x, q.y, '#fffbe8'); }
+      if (r.sw && r.sw.pts.length > 1) { const p = b(r.sw.pts[0]), q = b(r.sw.pts[r.sw.pts.length - 1]); lgWLine(g, p.x, p.y, q.x, q.y, 'rgba(255,250,230,0.7)'); }
+    },
+    pips(r) { return Array.from({ length: r.need }, (_, i) => (i < r.cuts.length ? r.cuts[i].s * 100 : -1)); },
+    hint(r) { return r.tree ? (r.dir > 0 ? 'Swipe from the left along the chalk line' : 'Now from the right along the line') : 'Swipe along the chalk line, quick and straight'; },
+    pose(r, t) { const c = r.cuts.length ? r.cuts[r.cuts.length - 1].t : -1e9, d = t - c; return r.tree ? { anim: 'axe', frame: d < 120 ? 2 : d < 260 ? 3 : 0, held: null } : { anim: 'hook', frame: d < 120 ? 1 : d < 260 ? 2 : 0 }; },
+  },
+  // 1. Digging the bed: four swings of the pick in time (a ring closes on the chalk mark at the trench's front), then
+  //    a flick up to throw the earth onto the spoil. The diggers beside him swing on the same beat.
+  {
+    start(r, t) { r.P = 760; r.b = [0, 1, 2, 3, 4].map(i => t + 1300 + i * r.P); r.s = []; },
+    frame(r, t) {
+      if (r.q !== undefined) return;
+      const A = lgWAnchor();
+      for (let i = 0; i < 4; i++) if (r.s[i] === undefined && t > r.b[i] + 330) { r.s[i] = 0; lgWWord('Missed', A.x, 1.2, A.z, LGC.POOR); }
+      if (r.s[4] === undefined && t > r.b[4] + 700) { r.s[4] = 0; this.done(r, t); }
+    },
+    hit(r, i, t) {
+      const s = lgTimeS(Math.abs(t - r.b[i])), A = lgWAnchor(); r.s[i] = s; r.hitT = t;
+      lgWRingFx(A.x, 0, A.z, lgCol(s * 100), 4);
+      if (s > 0.2) { lgWFx('chip', A.x, 0.1, A.z, 4 + Math.round(6 * s), LGC.EARTH, { spread: 1.8, v: 60 }); lgWFx('dust', A.x, 0.1, A.z, 2, 'rgba(120,90,60,0.5)', { v: 12, g: -6, size: 2, life: 600 }); }
+      else lgWFx('chip', A.x, 0.1, A.z, 4, '#fff2b0', { v: 80, life: 250 });
+    },
+    down(r, p, t) {
+      if (r.q !== undefined) return;
+      let best = -1, be = 1e9;
+      for (let i = 0; i < 4; i++) if (r.s[i] === undefined && Math.abs(t - r.b[i]) < r.P / 2 && Math.abs(t - r.b[i]) < be) { be = Math.abs(t - r.b[i]); best = i; }
+      if (best >= 0) this.hit(r, best, t);
+      r.fl = { y: p.y, t };
+    },
+    up(r, p, t) {
+      const f = r.fl; r.fl = null;
+      if (!f || r.q !== undefined || r.s[4] !== undefined || t < r.b[3] - 100) return;
+      if (f.y - p.y < 30 || t - f.t > 600) return;
+      r.s[4] = lgTimeS(Math.abs(f.t - r.b[4]) / 1.5); r.flick = t;
+      const A = lgWAnchor(), sd = S.lp.j.side; lgWFx('chip', A.x - 0.3, 0.2, A.z, 12, LGC.EARTH, { a: -Math.PI / 2 + sd * 0.8, spread: 0.6, v: 90 });
+      this.done(r, t);
+    },
+    done(r, t) { for (let i = 0; i < 4; i++) if (r.s[i] === undefined) r.s[i] = 0; const pk = (r.s[0] + r.s[1] + r.s[2] + r.s[3]) / 4; lgWEnd(r, t, 100 * (0.8 * pk + 0.2 * (r.s[4] || 0))); },
+    draw(g, r, t) {
+      if (r.q !== undefined) return;
+      const A = lgWAnchor(), c = lgWBuf(A.x, 0, A.z);
+      lgWCirc(g, c.x, c.y + 1, 6, PIX.COL.ink); lgWCirc(g, c.x, c.y, 6, LGC.CHALK);
+      for (let i = 0; i < 4; i++) if (r.s[i] === undefined) lgWCloser(g, c.x, c.y, t, r.b[i] - r.P, r.b[i], 6);
+      if (r.s.length >= 4 && r.s[4] === undefined && t > r.b[3]) { const a = Math.round(Math.sin(t / 90) * 2), x = c.x + 9; lgWLine(g, x, c.y - 2 + a, x, c.y - 12 + a, LGC.CHALK); lgWLine(g, x, c.y - 12 + a, x - 2, c.y - 9 + a, LGC.CHALK); lgWLine(g, x, c.y - 12 + a, x + 2, c.y - 9 + a, LGC.CHALK); }
+    },
+    pips(r) { return [0, 1, 2, 3, 4].map(i => (r.s[i] !== undefined ? r.s[i] * 100 : -1)); },
+    hint(r) { return r.s.filter(v => v !== undefined).length >= 4 && r.s[4] === undefined ? 'Flick up: throw the earth out' : 'Tap as the ring meets the mark'; },
+    pose(r, t) { if (r.flick) { const d = t - r.flick; return { anim: 'shovel', frame: d < 150 ? 2 : 3 }; } const d = r.hitT ? t - r.hitT : 1e9, nx = r.b.find(b => b > t), w = nx ? nx - t : 1e9; return { anim: 'pick', frame: d < 110 ? 2 : d < 260 ? 3 : w < 260 ? 1 : 0 }; },
+    beat(r, t) { const d = ((t - r.b[0]) % r.P + r.P) % r.P; return { anim: 'pick', frame: d < 120 ? 2 : d < 260 ? 3 : d > r.P - 260 ? 1 : 0 }; },
+  },
+  // 2. Laying rock: he wheels the barrow from the heap; tap to tip as its nose is over the chalk cross at the rock's
+  //    front, then drag along the bed to rake the stones level between the two pegs (the panel's rake, over the real
+  //    bed: each pass brings the stones towards the level the load makes).
+  {
+    start(r, t) {
+      if (S.lp.j.ph === 'tip') { r.kind = 'tip'; return; }
+      r.kind = 'rake'; r.T = 4000; r.t0 = t; r.cx = S.lp.j.auto ? S.lp.x + 1 : lgW.tipX !== undefined ? lgW.tipX : lgCrossX(S); r.tipS = S.lp.j.auto ? 0 : lgW.tipS === null ? 0.5 : lgW.tipS; lgW.tipS = null;
+      r.x0 = lgCrossX(S) - 2.2; r.h = []; for (let c = 0; c < 20; c++) { const x = r.x0 + c * 0.22; r.h.push(4 + 30 * Math.exp(-((x - r.cx) ** 2) / 0.35) + 4 * lgRnd('b' + c)); }
+      let v = 0, nb = 0; for (let c = 0; c < 20; c++) { v += r.h[c] - 4; if (this.inBed(r, c)) nb++; }
+      r.L = lgCl(4 + v / nb, 6, 24); r.ev0 = Math.max(1, this.sd(r));
+      const A = lgWAnchor(); lgWFx('chip', r.cx, 0.2, 1.4, 14, LGC.ROCK2, { spread: 2.6, v: 60 }); lgWFx('dust', r.cx, 0.2, 1.4, 4, 'rgba(140,135,125,0.55)', { v: 15, g: -6, size: 2, life: 700 }); lgWRingFx(r.cx, 0, 1.4, lgCol(r.tipS * 100), 4);
+      void A;
+    },
+    inBed(r, c) { return Math.abs(r.x0 + c * 0.22 - lgCrossX(S)) <= 1.6; },
+    sd(r) { let a = 0, n = 0; for (let c = 0; c < 20; c++) if (this.inBed(r, c)) { a += (r.h[c] - r.L) ** 2; n++; } return Math.sqrt(a / n); },
+    even(r) { return 1 - lgCl(this.sd(r) / r.ev0, 0, 1); },
+    nose() { const Q = S.lp, me = lgWMe(); return { x: me.x + Math.sin(Q.f || 0) * 1.1, z: me.z + Math.cos(Q.f || 0) * 1.1 }; },
+    frame(r, t) {
+      if (r.kind !== 'rake' || r.q !== undefined) return;
+      const e = this.even(r); r.ev = e;
+      if (e >= 0.9 || t - r.t0 > r.T) lgWEnd(r, t, 100 * (0.35 * r.tipS + 0.65 * lgCl((e - 0.15) / 0.7, 0, 1)), { x: lgCrossX(S), y: 0.8, z: 1.4 });
+    },
+    down(r, p, t) {
+      if (r.kind === 'tip') { if (r.tipped) return; const n = this.nose(), err = Math.hypot(n.x - lgCrossX(S), n.z - 1.4); lgW.tipS = 1 - lgCl((err - 0.15) / 1.4, 0, 1); lgW.tipX = n.x; r.tipped = t; send({ t: 'lgAct', stage: 2, a: 'tip' }); return; }
+      r.rk = this.wx(p);
+    },
+    wx(p) { const w = groundAt(p.x, p.y); return w ? w.x - D33.LX : null; },
+    move(r, p, t) {
+      if (r.kind !== 'rake' || r.rk === undefined || r.rk === null || r.q !== undefined) return;
+      const x = this.wx(p); if (x === null) return;
+      const a = Math.min(r.rk, x), b = Math.max(r.rk, x), H = r.h;
+      if (b - a > 0.02) { for (let c = 0; c < 20; c++) { const cx = r.x0 + c * 0.22; if (cx < a - 0.15 || cx > b + 0.15) continue; H[c] += ((this.inBed(r, c) ? r.L : 4) - H[c]) * 0.3; } r.rkT = t; }
+      r.rk = x;
+    },
+    up(r) { r.rk = null; },
+    draw(g, r, t) {
+      const C = lgCrossX(S), c = lgWBuf(C, 0, 1.4);
+      if (r.kind === 'tip') {
+        if (r.tipped) return;
+        for (const [d, col] of [[1, PIX.COL.ink], [0, LGC.CHALK]]) { lgWLine(g, c.x - 5, c.y - 3 + d, c.x + 5, c.y + 3 + d, col); lgWLine(g, c.x - 5, c.y + 3 + d, c.x + 5, c.y - 3 + d, col); }   // the chalk cross
+        const n = this.nose(), b = lgWBuf(n.x, 0.4, n.z); lgWCirc(g, b.x, b.y, 1.5, '#efb45c');
+        return;
+      }
+      for (const px of [C - 1.6, C + 1.6]) { const p = lgWBuf(px, 0, 1.4); g.fillStyle = LGC.WOOD; g.fillRect(p.x, p.y - 7, 1, 7); g.fillStyle = LGC.CHALK; g.fillRect(p.x, p.y - 7, 1, 1); }   // the pegs
+      for (let i = 0; i < 20; i++) { const x = r.x0 + i * 0.22, p = lgWBuf(x, 0, 1.4), h = Math.round(r.h[i] / 6); g.fillStyle = LGC.ROCK2; g.fillRect(p.x - 1, p.y - h, 2, h + 1); g.fillStyle = LGC.ROCK; g.fillRect(p.x - 1, p.y - h, 2, 1); }
+      if (r.q === undefined) { const a = lgWBuf(C - 1.6, 0, 1.4), b = lgWBuf(C + 1.6, 0, 1.4), dy = Math.round(r.L / 6); lgWLine(g, a.x, a.y - dy, b.x, b.y - dy, LGC.CHALK, [1, 2]); }
+      const e = r.ev || 0, top = lgWBuf(C, 3.2, 1.4); lgWBox(g, top.x - 18, top.y, 36, 4, 'rgba(43,33,24,0.45)'); g.fillStyle = lgCol(e * 100); g.fillRect(top.x - 18, top.y, Math.round(36 * e), 4); lgWText(g, 'level', top.x, top.y - 8, LGC.PAPER, 1);
+    },
+    pips(r) { return r.kind === 'rake' ? [r.tipS * 100, (r.ev || 0) * 100] : []; },
+    hint(r) { return r.kind === 'tip' ? 'Tap to tip as the nose is over the chalk cross' : 'Drag along the bed: rake it level between the pegs'; },
+    pose(r, t) { if (r.kind === 'tip') return null; if (t - r.t0 < 500) return { anim: 'tip', frame: 1, held: { key: 'tool/barrow/<dir>/tipped', at: 'grip' } }; return { anim: 'rake', frame: r.rkT && t - r.rkT < 200 ? Math.floor(t / 90) % 3 : 0, held: null }; },
+  },
+  // 3. Laying ties, with his mate: press and hold as the mate's "Hup!" ring fills (at the tie pile), keep your end
+  //    level with his as you carry it up (your thumb up and down: your dot against his), let go on "Down!" at the
+  //    front, where the next tie goes (its chalk marks). Let go on the way and the tie is set down there, to lift again.
+  {
+    start(r, t) { const ph = S.lp.j.ph; r.kind = ph === 'ready' ? 'hup' : ph === 'carry' ? 'carry' : 'down'; r.tH = t + 1300; r.dev = 0; r.dn = 0; r.my = 0; r.liftS = ph === 'ready' ? undefined : 0.5; },
+    his(r, t) { return Math.round(3 * Math.sin(t / 380) + 2 * Math.sin(t / 157 + 1)); },   // his end's bob (native px)
+    frame(r, t, dt) {
+      const ph = S.lp.j.ph;
+      if (r.kind === 'hup' && ph === 'ready' && t > r.tH + 600 && !r.sentLift) { r.liftS = 0; r.sentLift = 1; send({ t: 'lgAct', stage: 3, a: 'lift' }); lgWWord('Hup!', this.matePt().x, 2, this.matePt().z, LGC.INK); }
+      if ((r.kind === 'hup' || r.kind === 'carry') && ph === 'carry') r.kind = 'carry';
+      if (r.kind === 'carry' && r.held) { r.dev += Math.abs(r.my - this.his(r, t)) * dt; r.dn += dt; }
+      if ((r.kind === 'carry' || r.kind === 'hup') && ph === 'at') { r.kind = 'down'; r.tD = t + 250; }
+      if (r.kind === 'down' && r.tD === undefined) r.tD = t + 400;
+      if (r.kind === 'down' && r.q === undefined && t > r.tD + 700) this.drop(r, t, 0);
+    },
+    matePt() { return lgWMate(0) || lgWMe(); },
+    down(r, p, t) {
+      r.held = true; r.py = p.y; r.my = 0;
+      if (r.kind === 'hup' && !r.sentLift) { r.liftS = lgTimeS(Math.abs(t - r.tH)); r.sentLift = 1; send({ t: 'lgAct', stage: 3, a: 'lift' }); const m = this.matePt(); lgWWord('Hup!', m.x, 2, m.z, LGC.INK); lgWFx('dust', m.x, 0.1, m.z, 3, 'rgba(120,100,80,0.5)', { v: 12, g: -6, size: 2 }); }
+    },
+    move(r, p) { if (r.held) r.my = lgCl(Math.round((p.y - r.py) / lgWK()), -12, 12); },
+    up(r, p, t) {
+      if (!r.held) return;
+      r.held = false;
+      if (r.kind === 'down') this.drop(r, t, lgTimeS(Math.abs(t - r.tD)));
+      else if (r.kind === 'carry' && S.lp.j.ph === 'carry') { send({ t: 'lgAct', stage: 3, a: 'drop' }); r.dropped = 1; r.msg = 'Set down on the way: lift it again'; r.msgT = t; }
+    },
+    drop(r, t, relS) {
+      if (r.q !== undefined) return;
+      const markS = 1 - lgCl((Math.abs(r.my - this.his(r, t)) - 1) / 8, 0, 1), stepS = r.dn > 0 ? 1 - lgCl((r.dev / r.dn - 2) / 10, 0, 1) : 0.5;
+      const x = lgTieX(S); lgWFx('dust', x, 0.1, -1.4, 4, 'rgba(130,110,90,0.55)', { v: 20, g: -6, size: 2, life: 700 }); lgWFx('dust', x, 0.1, 1.4, 4, 'rgba(130,110,90,0.55)', { v: 20, g: -6, size: 2, life: 700 });
+      lgWRingFx(x, 0, 0, lgCol(markS * 100), 4);
+      lgWEnd(r, t, 100 * (0.2 * (r.liftS || 0) + 0.3 * stepS + 0.25 * relS + 0.25 * markS), { x, y: 1.2, z: 0 });
+    },
+    draw(g, r, t) {
+      const ph = S.lp.j.ph, me = lgWMe(), m = this.matePt();
+      if (ph === 'carry' || ph === 'at') { const x = lgTieX(S); for (const z of [-1.5, 1.5]) { const p = lgWBuf(x, 0, z); g.fillStyle = LGC.CHALK; g.fillRect(p.x - 1, p.y, 3, 1); } }   // the next tie's chalk marks
+      if (r.q !== undefined) return;
+      const hp = lgWBuf(m.x, 2.9, m.z);
+      if (r.kind === 'hup' && !r.sentLift) { const p = lgCl((t - (r.tH - 900)) / 900, 0, 1), n = Math.round(48 * p); lgWCirc(g, hp.x, hp.y, 7, 'rgba(43,32,38,0.45)'); for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + i / 48 * 2 * Math.PI, x = Math.round(hp.x + Math.cos(a) * 7), y = Math.round(hp.y + Math.sin(a) * 7); g.fillStyle = PIX.COL.ink; g.fillRect(x, y + 1, 2, 1); g.fillStyle = p >= 1 ? LGC.GOOD : '#fff6dc'; g.fillRect(x, y, 2, 1); } }
+      if (r.kind === 'carry' || r.kind === 'down') {
+        const a = lgWBuf(m.x, 1.1, m.z), b = lgWBuf(me.x, 1.1, me.z), ha = a.y + this.his(r, t), hb = b.y + r.my, close = Math.abs(r.my - this.his(r, t)) <= 2;
+        if (r.held) lgWLine(g, a.x, ha, b.x, hb, close ? LGC.GOOD : LGC.POOR);
+        lgWBox(g, a.x - 1, ha - 1, 3, 3, LGC.STEEL2);
+        lgWBox(g, b.x - 1, hb - 1, 3, 3, r.held ? LGC.GOOD : LGC.PAPER);
+        if (r.kind === 'down' && t > r.tD - 300) { const x = lgTieX(S), p = lgWBuf(x, 2.6, 0); lgWText(g, 'Down!', p.x, p.y - 8, LGC.PAPER); }
+      }
+    },
+    pips(r) { return r.q !== undefined ? [r.q] : []; },
+    hint(r) { const ph = S.lp.j.ph; return ph === 'ready' ? (r.sentLift ? 'Lifting...' : 'Press and hold as the "Hup!" ring fills') : ph === 'carry' ? (r.held ? 'Keep your end level with his' : 'Hold on: press and keep your end level') : 'Let go on "Down!", on the mark'; },
+    pose(r, t) { return null; },
+  },
+  // 4. Laying rails, with the gang's four: hold on the count's "Lift!" at the rail stack, drag sideways to keep the
+  //    rail on the gauge line (a strip over the rail's end) as the four walk it up, let go on "Down!" over the ties.
+  {
+    start(r, t) { const ph = S.lp.j.ph; r.kind = ph === 'ready' ? 'count' : ph === 'carry' ? 'carry' : 'down'; r.c = [t + 500, t + 1150, t + 1800]; r.tL = r.c[2]; r.A = 4 + lgRnd('a') * 3; r.ph = lgRnd('p') * 6; r.dx = 0; r.liftS = ph === 'ready' ? undefined : 0.5; if (r.kind !== 'count') r.tL = t; },
+    gauge(r, t) { const k = r.kind === 'count' ? 0 : t - r.tL; return r.A * Math.sin(k / 420 + r.ph) + k * 0.002 - r.dx; },   // native px off the gauge line
+    frame(r, t) {
+      const ph = S.lp.j.ph;
+      if (r.kind === 'count' && ph === 'ready' && t > r.tL + 600 && !r.sentLift) { r.liftS = 0; r.sentLift = 1; send({ t: 'lgAct', stage: 4, a: 'lift' }); }
+      if (r.kind === 'count' && ph === 'carry') r.kind = 'carry';
+      if ((r.kind === 'carry' || r.kind === 'count') && ph === 'at') { r.kind = 'down'; r.tD = t + 250; }
+      if (r.kind === 'down' && r.tD === undefined) r.tD = t + 400;
+      if (r.kind === 'down' && r.q === undefined && t > r.tD + 650) this.drop(r, t, 0);
+    },
+    down(r, p, t) {
+      if (r.kind === 'count' && !r.sentLift) { if (t < r.c[0]) return; r.liftS = lgTimeS(Math.abs(t - r.tL)); r.sentLift = 1; send({ t: 'lgAct', stage: 4, a: 'lift' }); }
+      r.held = true; r.gx = p.x; r.dx0 = r.dx;
+    },
+    move(r, p) { if (r.held) r.dx = r.dx0 + (p.x - r.gx) / lgWK() * 0.5; },
+    up(r, p, t) {
+      if (!r.held) return;
+      r.held = false;
+      if (r.kind === 'down') this.drop(r, t, lgTimeS(Math.abs(t - r.tD)));
+      else if (r.kind === 'carry' && S.lp.j.ph === 'carry') { send({ t: 'lgAct', stage: 4, a: 'drop' }); r.msg = 'Set down on the way: lift it again'; r.msgT = t; }
+    },
+    ends() { const R = lgRailNext(S); return [{ x: R.x0, z: R.z }, { x: R.x0 + LINE.RAIL_M * LINE.M, z: R.z }]; },
+    drop(r, t, relS) {
+      if (r.q !== undefined) return;
+      const ge = Math.abs(this.gauge(r, t)); r.gEnd = ge;
+      const gs = 1 - lgCl((ge - 1) / 8, 0, 1);
+      for (const e of this.ends()) lgWFx('spark', e.x, 0.3, e.z, 6, '#ffe08a', { v: 70, life: 350 });
+      const R = lgRailNext(S); lgWWord('Clang!', R.x0 + 6.5, 2.2, R.z, LGC.INK);
+      lgWEnd(r, t, 100 * (0.3 * (r.liftS || 0) + 0.35 * gs + 0.35 * relS), { x: R.x0 + 6.5, y: 3.2, z: R.z });
+    },
+    draw(g, r, t) {
+      const A = lgWAnchor(), top = lgWBuf(A.x, 3.4, A.z);
+      if (r.q !== undefined) return;
+      if (r.kind === 'count') { const i = r.c.findIndex(c => t < c + 450 && t >= c - 150); if (i >= 0) lgWText(g, ['One...', 'Two...', 'Lift!'][i], top.x, top.y - 8, i === 2 ? LGC.PAPER : '#e6dcc3'); }
+      if (r.kind === 'carry' || r.kind === 'down') {
+        // the gauge: a top-down strip, the rail's line against the chalk gauge line
+        const ge = this.gauge(r, t), ok = Math.abs(ge) < 2, sx = top.x, sy = top.y + 4;
+        lgWBox(g, sx - 22, sy, 44, 8, 'rgba(43,33,24,0.55)'); g.fillStyle = LGC.CHALK; for (let y = sy; y < sy + 8; y += 2) g.fillRect(sx, y, 1, 1);
+        g.fillStyle = ok ? LGC.GOOD : LGC.STEEL2; g.fillRect(sx - 1 + Math.round(lgCl(ge, -20, 20)), sy, 3, 8);
+        if (r.kind === 'down' && t > r.tD - 350 && t < r.tD + 650) lgWText(g, 'Down!', top.x, top.y - 16, LGC.PAPER);
+      }
+    },
+    pips(r) { return r.q !== undefined ? [r.q] : []; },
+    hint(r) { const ph = S.lp.j.ph; return ph === 'ready' ? 'Press and hold on "Lift!"' : ph === 'carry' ? 'Drag to keep the rail on the gauge line' : 'Let go on "Down!"'; },
+    pose() { return null; },
+  },
+  // 5. Spiking: with a mate, turn about (he strikes, then you: three each on the 620 ms beat); alone, all six blows
+  //    are yours at one man's pace (1,240 ms). Tap as the ring closes on the spike head; a blow off the beat bends it.
+  {
+    start(r, t) { r.pair = S.lp.j.m.length > 0; r.P = r.pair ? 620 : 1240; r.b = [0, 1, 2, 3, 4, 5].map(i => t + 1000 + i * r.P); r.s = []; r.d = 0; r.sp = lgSpikeNext(S); },
+    mine(r) { return r.pair ? [1, 3, 5].map(i => r.b[i]) : r.b.slice(); },
+    frame(r, t) {
+      if (r.q !== undefined) return;
+      if (r.pair) for (const i of [0, 2, 4]) if (!r['p' + i] && t >= r.b[i]) { r['p' + i] = 1; r.d += 0.12; lgWFx('spark', r.sp.x, 0.2, r.sp.z, 3, '#ffe08a', { v: 50, life: 250 }); }
+      const m = this.mine(r);
+      for (let i = 0; i < m.length; i++) if (r.s[i] === undefined && t > m[i] + 330) { this.bend(r, t, i); return; }
+      if (r.s.length === m.length && r.s.every(v => v !== undefined)) lgWEnd(r, t, 100 * r.s.reduce((a, b) => a + b, 0) / m.length, { x: r.sp.x, y: 1.4, z: r.sp.z });
+    },
+    bend(r, t, i) { r.s[i] = 0; r.bent = t; lgWWord('Bent!', r.sp.x, 1, r.sp.z, LGC.POOR); const ok = r.s.filter(v => v !== undefined); lgWEnd(r, t, 35 * ok.reduce((a, b) => a + b, 0) / this.mine(r).length, { x: r.sp.x, y: 1.6, z: r.sp.z }); r.q = Math.min(r.q, 44); },
+    down(r, p, t) {
+      if (r.q !== undefined) return;
+      const m = this.mine(r);
+      let best = -1, be = 1e9;
+      for (let i = 0; i < m.length; i++) if (r.s[i] === undefined && Math.abs(t - m[i]) < be) { be = Math.abs(t - m[i]); best = i; }
+      if (best < 0 || t < m[best] - r.P) return;
+      const s = lgTimeS(be);
+      if (s <= 0) { this.bend(r, t, best); return; }
+      r.s[best] = s; r.hitT = t; r.d += (r.pair ? 0.2 : 0.12) * s + 0.04;
+      lgWRingFx(r.sp.x, 0.15, r.sp.z, lgCol(s * 100), 3); lgWFx('spark', r.sp.x, 0.2, r.sp.z, 4 + Math.round(5 * s), '#ffe08a', { v: 80, life: 300 });
+    },
+    draw(g, r, t) {
+      const c = lgWBuf(r.sp.x, 0, r.sp.z), top = c.y - 1 - Math.round((1 - Math.min(1, r.d)) * 6);
+      if (r.bent) { g.fillStyle = '#3a3d42'; g.fillRect(c.x, top, 2, c.y - top); g.fillRect(c.x + 2, top - 1, 2, 2); }
+      else if (r.q === undefined) { g.fillStyle = '#3a3d42'; g.fillRect(c.x, top, 2, c.y - top + 1); g.fillStyle = '#2a2d31'; g.fillRect(c.x - 1, top - 1, 4, 2); }
+      if (r.q === undefined) { lgWCirc(g, c.x, top, 6, PIX.COL.ink); lgWCirc(g, c.x, top - 1, 6, LGC.CHALK); this.mine(r).forEach((b, i) => { if (r.s[i] === undefined) lgWCloser(g, c.x, top - 1, t, b - r.P, b, 6); }); }
+    },
+    pips(r) { return this.mine(r).map((_, i) => (r.s[i] !== undefined ? r.s[i] * 100 : -1)); },
+    hint(r) { return r.bent ? 'A bent spike: draw it, a new one' : r.pair ? 'Tap on your beat, as the ring closes' : 'Alone: every blow is yours. Tap as the ring closes'; },
+    pose(r, t) { const d = r.hitT ? t - r.hitT : 1e9, nx = this.mine(r).find(b => b > t), w = nx ? nx - t : 1e9; return { anim: 'maul', frame: d < 120 ? 2 : d < 260 ? 3 : w < 280 ? 1 : 0 }; },
+    mate(r, t) { const nx = [0, 2, 4].map(i => r.b[i]).find(b => b > t - 260) || -1e9, d = t - nx; return { anim: 'maul', frame: d >= 0 && d < 120 ? 2 : d >= 120 && d < 260 ? 3 : d < 0 && d > -260 ? 1 : 0 }; },
+  },
+];
+// His frames while a round runs (lgWPose asks), his spiking mate's on the partner's beats, the diggers' near him on
+// his beat (cwDrawList asks lgBeatOf for the men of the gang he digs with).
+function lgWPoseAnim(St, k, ph) { const r = lgW.r; if (St !== S || !r || lgW.k !== k || !LGW_GAMES[k].pose) return null; return LGW_GAMES[k].pose(r, lgT()); }
+function lgMateBeat(St, i) { const r = lgW.r; return St === S && r && lgW.k === 5 && r.pair && r.q === undefined ? LGW_GAMES[5].mate(r, lgT()) : null; }
+function lgBeatOf(St, m) { const r = lgW.r, b = lgW.beat; return St === S && r && lgW.k === 1 && b && b.includes(m.id) && r.q === undefined ? LGW_GAMES[1].beat(r, lgT()) : null; }
+// The chip under him (CSS, light): the gang and his mates, the hint or the last result, five pips, Leave.
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `
+  #lgW { position: fixed; z-index: 3; transform: translate(-50%, 0); display: flex; align-items: center; gap: 6px; padding: 2px 3px 2px 7px; max-width: min(88vw, 270px);
+    background: rgba(240, 231, 212, 0.88); border: 1px solid var(--edge); border-radius: 8px; font-family: "Trebuchet MS", "DejaVu Sans", Verdana, sans-serif; color: var(--ink); pointer-events: auto; }
+  #lgW[hidden] { display: none; }
+  #lgWText { font-size: 11.5px; line-height: 1.2; min-width: 0; } #lgWText b { font-weight: bold; }
+  #lgWPips { display: flex; gap: 2px; } #lgWPips i { width: 7px; height: 7px; border-radius: 4px; display: block; }
+  #lgWOut { min-height: 44px; min-width: 56px; font-size: 13px; padding: 0 6px; }`;
+  document.head.appendChild(css);
+  const c = document.createElement('div'); c.id = 'lgW'; c.className = 'hud lnHud'; c.hidden = true; c.setAttribute('role', 'status');
+  c.innerHTML = '<div id="lgWText"></div><div id="lgWPips"></div><button id="lgWOut">Leave</button>';
+  document.body.appendChild(c); lgW.chip = c;
+  $('lgWOut').addEventListener('pointerdown', e => { lgW.outPtr = e.pointerId; });
+  $('lgWOut').addEventListener('pointerup', e => { if (lgW.outPtr === e.pointerId && lgWOn()) lgWLeave(); lgW.outPtr = null; });
+  $('lgWOut').addEventListener('click', () => { if (lgWOn() && !lgW.left) lgWLeave(); });
+  // The game's touches: near the work, before the view's own (a tap there must not walk him away)
+  // (a touch near the work is the game's even between rounds, so a late tap after a bent spike never walks him away)
+  const near = e => { if (!lgWOn() || lgW.frozen) return false; const a = lgWAnchor(), s = lgWScr(a.x, a.y, a.z); return Math.hypot(e.clientX - s.x, e.clientY - s.y) <= lgW.R; };
+  const call = (fn, e) => { const r = lgW.r, G = LGW_GAMES[lgW.k]; if (r && G && G[fn] && !lgW.frozen) G[fn](r, { x: e.clientX, y: e.clientY }, lgT()); };
+  canvas.addEventListener('pointerdown', e => {
+    if (lgW.ptr !== null || !near(e)) return;
+    e.stopImmediatePropagation(); e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* (a synthetic pointer) */ }
+    lgW.ptr = e.pointerId; call('down', e);
+  }, { capture: true });
+  canvas.addEventListener('pointermove', e => { if (lgW.ptr !== e.pointerId) return; e.stopImmediatePropagation(); call('move', e); }, { capture: true });
+  const end = e => { if (lgW.ptr !== e.pointerId) return; e.stopImmediatePropagation(); lgW.ptr = null; call('up', e); };
+  canvas.addEventListener('pointerup', end, { capture: true }); canvas.addEventListener('pointercancel', end, { capture: true });
+})();
+function lgWLeave() { lgW.r = null; lgW.left = true; lgW.fx = []; send({ t: 'lpLeave' }); }
+// The sim's word on a step (handleEvent): wait, again.
+function lgWEvent(e) {
+  const now = performance.now(), k = e.stage, ahead = ['', 'the clearers', 'the diggers', 'the rock gang', 'the tie men', 'the rail gang'][k];
+  if (e.t === 'lgWait') { lgW.msg = k === 0 ? 'Far enough ahead of the diggers for now: wait for them' : k <= 2 ? `Waiting on ${ahead}: nothing ready for you yet` : `Waiting on ${ahead}: no room for a whole ${LGW.THING[k]} yet` + (k >= 3 && S.ln && LINE.SUP && S.ln.sup[lnSupOf(k)] < 1 ? ' (or the supplies)' : ''); lgW.msgT = now; if (lgW.r && k >= 3) { lgW.r = null; } }
+  else if (e.t === 'lgRedo') { lgW.msg = k === 5 ? 'A bent spike: draw it, a new one' : k === 3 ? 'Off its mark: set it again' : 'Off the gauge: set it again'; lgW.msgT = now; lgW.r = null; }
+  else if (e.t === 'lgDid' && k < 3 && e.stuck) { lgW.msg = k === 0 ? 'Up to the diggers: no more clearing for now' : `Waiting on ${ahead}: the work is up to them`; lgW.msgT = now; }
+  else if (e.t === 'lgDid' && k >= 3) { lgW.msg = `${LGW.THING[k][0].toUpperCase() + LGW.THING[k].slice(1)} down: ${e.m >= 1 ? e.m.toFixed(2) + ' m' : Math.round(e.m * 100) + ' cm'} more of the ${['', '', '', 'ties', 'rails', 'spiked track'][k]}`; lgW.msgT = now; }
+}
+// Each frame while he works in the world (lgFrame): the round, its result, the chip.
+function lgWFrame(Q, j, dt, hold, frozen) {
+  const t = lgT(), k = j.k, G = LGW_GAMES[k], walking = Q.tx !== undefined;
+  if (lgW.k !== k) { lgW.k = k; lgW.r = null; lgW.res = []; lgW.fx = []; lgW.fell = []; lgW.msg = ''; }
+  lgW.frozen = frozen;
+  // the round follows the task's phase in the sim
+  const ph = j.ph;
+  let room = true;
+  if (k >= 3 && ph === 'ready') { lnLimit.mine = true; try { room = lgUnitWu(S, k, LGW.UNIT_M[k]) <= lnOpenWork(S, k) + 1e-6; } finally { lnLimit.mine = false; } }
+  const open = k === 0 ? cwOpen0(S) > 0 : k === 1 ? lnOpenWork(S, 1) > 0 : room;   // (nothing to clear or dig yet, no room for a whole tie, rail or spike: no round, and the chip says why)
+  const playable = !walking && (k <= 1 || k === 5 ? ph === 'ready' && open : k === 2 ? ph === 'tip' || ph === 'rake' : (ph === 'ready' && open) || ph === 'carry' || ph === 'at');
+  if (!open && !walking && ph === 'ready' && (!lgW.msg || performance.now() - lgW.msgT > 2000)) lgWEvent({ t: 'lgWait', stage: k });
+  let r = lgW.r;
+  if (r && r.sent && t - r.sent > 1100) r = lgW.r = null;
+  if (r && !r.sent && !playable) r = lgW.r = null;
+  if (r && k === 2 && !r.sent && ((r.kind === 'tip') !== (ph === 'tip'))) r = lgW.r = null;   // (tipped: the rake begins)
+  if (r && (k === 3 || k === 4) && !r.sent && ph === 'ready' && r.kind !== 'hup' && r.kind !== 'count') r = lgW.r = null;   // (set down on the way: lift again)
+  if (!r && playable && lnHours(S).work && !frozen) { lgUi.rounds++; r = lgW.r = { t0: t }; G.start(r, t); }
+  if (r && G.frame && !frozen) G.frame(r, t, dt);
+  if (r && r.q !== undefined && !r.sent) { r.sent = t; send({ t: 'lgDone', stage: k, q: r.q }); lgW.res = lgW.res.concat([r.q]).slice(-5); lgW.sent.push(r.q); if (lgW.sent.length > 50) lgW.sent.shift(); }
+  // the diggers beside him swing on his beat
+  if (k === 1 && S.cw) { const me = Q; lgW.beat = S.cw.men.filter(m => m.pl === 2 && m.stage === 1 && m.st === 'work' && !m.mv && Math.abs(m.x - me.x) < 3.5).sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z)).slice(0, 2).map(m => m.id); } else lgW.beat = null;
+  // the chip
+  const now = performance.now(), names = j.m.map(id => cwName(S, id).split(' ')[0]), who = names.length ? ` with ${names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0]}` : ' alone';
+  const where = ph === 'go' ? (k === 3 ? 'to the tie pile' : k === 4 ? 'to the rail stack' : k === 2 ? 'to the rock heap' : 'to your place') : '';
+  const head = names.length ? `With ${names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0]}` : `${LINE.STAGE_NAMES[k]}, alone`;
+  const line = lgW.msg && now - lgW.msgT < 2600 ? lgW.msg : r && r.msg && t - r.msgT < 900 ? r.msg : where ? `Walking ${where}` + (j.m.length ? ', the men with you' : '') : ph === 'load' ? 'Filling the barrow at the heap' : r && r.q === undefined ? G.hint(r, t) : r && r.q !== undefined ? `${LG.word(r.q)[0].toUpperCase() + LG.word(r.q).slice(1)}` : walking ? 'Moving up with the work' : '';
+  const pips = lgW.res.slice(-5);
+  const sig = head + '|' + line + '|' + pips.join();
+  if (sig !== lgW.sig) { lgW.sig = sig; $('lgWText').innerHTML = ''; const b = document.createElement('b'); b.textContent = head; $('lgWText').append(b, document.createElement('br'), line); $('lgWPips').innerHTML = pips.map(q => `<i style="background:${lgCol(q)}"></i>`).join(''); }
+  const C = lgW.chip, me = lgWMe(), p = lgWScr(me.x, 0, me.z), W = innerWidth, H = innerHeight, cw = C.offsetWidth || 220;
+  const x = lgCl(p.x, cw / 2 + 6, W - cw / 2 - 6), y = lgCl(p.y + 9 * lgWK() + 30, 110, H - 60);   // (below the men about him)
+  C.style.left = Math.round(x) + 'px'; C.style.top = Math.round(y) + 'px';
+  if (C.hidden !== hold) C.hidden = hold;
+}
+// Drawn over the world (pixOverlays), in native pixels: the round's marks, the falling clump, the juice.
+function lgWDraw(g) {
+  if (!D34.on || !pixLnOn()) return;
+  const on = lgWOn(), now = performance.now(), dt = lgW.lastDraw === undefined ? 16 : Math.min(100, now - lgW.lastDraw);
+  lgW.lastDraw = now;
+  if (on && lgW.r && !lgW.frozen) LGW_GAMES[lgW.k].draw(g, lgW.r, lgT());
+  // a clump he cut, falling as the cleared front takes it (the world's own clump is gone from that moment)
+  lgW.fell = lgW.fell.filter(o => {
+    if (o.t0 === null) { if (!S.ln || S.ln.f[0] * LINE.M < o.c.x) return now - (o.born || (o.born = now)) < 60000; o.t0 = now; }
+    const p = (now - o.t0) / 500; if (p >= 1) return false;
+    g.globalAlpha = 1 - p; const b = lgWBuf(o.c.x, 0, o.c.z), key = pixKey(o.c.key, null) || o.c.key; pixBlit(g, key, b.x + Math.round(p * 3), b.y + Math.round(p * 2), null); g.globalAlpha = 1;
+    return true;
+  });
+  // the juice
+  const out = [];
+  for (const q of lgW.fx) {
+    q.t += dt; if (q.t >= q.life) continue;
+    q.vy += q.g * dt / 1000; q.x += q.vx * dt / 1000; q.y += q.vy * dt / 1000;
+    const b = lgWBuf(q.w[0], q.w[1], q.w[2]), x = Math.round(b.x + q.x), y = Math.round(b.y + q.y), a = 1 - q.t / q.life;
+    g.globalAlpha = Math.max(0, Math.min(1, a * 1.4));
+    if (q.kind === 'ring') lgWCirc(g, x, y, q.size + (1 - a) * 6, q.col);
+    else if (q.kind === 'word') lgWText(g, q.text, x, y, q.col);
+    else if (q.kind === 'dust') { g.fillStyle = q.col; const s = Math.round(q.size * (1 + (1 - a) * 1.5)); g.fillRect(x - s, y - s, 2 * s, 2 * s); }
+    else { g.fillStyle = q.col; g.fillRect(x, y, q.size, q.size); }
+    out.push(q);
+  }
+  g.globalAlpha = 1;
+  lgW.fx = out;
 }
 
 // ==== Section: input (touch first, mouse and keyboard as extras) ====
@@ -27762,6 +28569,7 @@ function pixWorkOverlays(g) {
 function pixOverlays(g) {
   const C = PIX.COL;
   pixWorkOverlays(g);
+  if (D34.on) lgWDraw(g);   // D34: the join-in game's marks over the work, in the world
   for (const L of PIX.locos) {
     const tr = L.tr;
     if (!tr.name || tr.owner === 'interchange' || tr.owner === 'cut') continue;
@@ -27902,7 +28710,9 @@ function pixPlayerPoint(px, pz, L) {
   // D27 integration: on a train the agent is drawn at P's pose (pixAgentItem), so the view centres there.
   // (D29: the frame's blended pose when given, so the view glides with him in the aisle.)
   const lr = S.player.away ? pixCall('lpStationFocus', S) : null;   // D32: riding through the station in the work train's crew car
-  if (lr) return pixProject(lr.x, lr.y, lr.z);
+  // D34 (the ride's jitter): on the crew car's own whole pixel, as its sprite is drawn, so the car stands still on the
+  // screen and the ground goes by in whole pixels (on its exact point the car shook by a pixel against the view)
+  if (lr) { const p = pixProject(lr.x, lr.y, lr.z); return { x: Math.round(p.x), y: Math.round(p.y) }; }
   const pb = L ? L.pbPose : pixCall('pbPlayerPose', S);
   if (pb && Number.isFinite(pb.x) && Number.isFinite(pb.y) && Number.isFinite(pb.z)) return pixProject(pb.x, pb.y, pb.z);
   const P = S.player, had = Object.prototype.hasOwnProperty.call(PIX.wy, 'player'), keep = PIX.wy.player;
@@ -28003,7 +28813,8 @@ function pixFrame(alpha, dt) {
   const Lf = pixLerpLists(pixLists(), alpha);
   // D33: out on the line (in person, or riding the work train there) the view follows him as he is drawn there
   const lf = pixLnOn() ? pixLnFocusW(alpha) : null;
-  const q = lf ? pixProject(lf.x, lf.y, lf.z) : pixPlayerPoint(px, pz, Lf), moving = lf ? lf.moving : Math.hypot(P.x - prevPlayer.x, P.z - prevPlayer.z) > 1e-4;
+  const q0 = lf ? pixProject(lf.x, lf.y, lf.z) : pixPlayerPoint(px, pz, Lf), moving = lf ? lf.moving : Math.hypot(P.x - prevPlayer.x, P.z - prevPlayer.z) > 1e-4;
+  const q = lf && lf.riding ? { x: Math.round(q0.x), y: Math.round(q0.y) } : q0;   // D34: riding, on the crew car's whole pixel (pixPlayerPoint's note)
   if (moving && (cam.ox || cam.oz)) {
     const b = Math.exp(-dt / PIX.BACK_S);
     cam.ox *= b; cam.oz *= b;
@@ -28094,6 +28905,7 @@ function pixFrame(alpha, dt) {
       pixLnGroundDraw(g, PIX.warm);
       const xs = [[PIX.vx - 16, PIX.vy - 8], [PIX.vx + nw + 16, PIX.vy + nh + 96], [PIX.vx - 16, PIX.vy + nh + 96], [PIX.vx + nw + 16, PIX.vy - 8]].map(([a, b]) => pixUnproject(a, b, 0).x);
       if (Math.max(...xs) + D33.LX > D33.EDGE) pixLnLive(g, Math.max(Math.min(...xs), D33.EDGE - D33.LX), Math.max(...xs));
+      if (D34.on) pixLnFrontsLive(g, Math.min(...xs), Math.max(...xs));   // D34: the fronts to the cell and the spike, not to the metre
     });
     PIX.groundT0 = performance.now() - tg;
     for (const d of all.decals) if (!d.x0 || vis(d)) d.draw(g);
@@ -28615,7 +29427,8 @@ const pixLnBaked = q => q.h < 1 || !!q.far || !!q.edge;
 // The fronts as the ground draws them: whole metres, ties in whole ties, rails in whole 9.1 m lengths.
 function pixLnFronts() {
   const f = S.ln.f, s = LINE.START_M;
-  return [Math.floor(f[0]), Math.floor(f[1]), Math.floor(f[2]), s + Math.floor((f[3] - s) / LINE.TIE_M + 1e-6) * LINE.TIE_M, s + Math.floor((f[4] - s) / LINE.RAIL_M + 1e-6) * LINE.RAIL_M, Math.floor(f[5])];
+  const RM = D34.on ? LGW.UNIT_M[4] : LINE.RAIL_M;   // D34: rail by rail (a length's two rails go down one after the other, north first)
+  return [Math.floor(f[0]), Math.floor(f[1]), Math.floor(f[2]), s + Math.floor((f[3] - s) / LINE.TIE_M + 1e-6) * LINE.TIE_M, s + Math.floor((f[4] - s) / RM + 1e-6) * RM, Math.floor(f[5])];
 }
 // A chunk's stretch of the line and whether the roadbed crosses it.
 function pixLnChunkSpan(ci, cj, N) {
@@ -28697,13 +29510,18 @@ function pixLnChunkBuild(ci, cj, F) {
       const img = g.getImageData(0, 0, N, N), d = img.data, hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
       const tie = hex(PIX.COL.tie), tie2 = hex('#5e3c2a'), rail = hex(PIX.COL.rail), hi = hex(PIX.COL.railHi), rust = hex('#93592d'), rust2 = hex('#c9863b');
       const G = PIX.GAUGE, TL = PIX.TIE[0], pitch = LINE.TIE_M * M, xt = F[3] * M, xr = F[4] * M, xs = F[5] * M;
+      // D34: the north rail of a length goes down first, then the south (each rail is the rail gang's one carry), and
+      // a spiked tie shows its spike heads beside each rail
+      const nR = Math.round((F[4] - LINE.START_M) / LGW.UNIT_M[4]), xrN = D34.on ? (LINE.START_M + Math.ceil(nR / 2) * LINE.RAIL_M) * M : xr, xrS = D34.on ? (LINE.START_M + Math.floor(nR / 2) * LINE.RAIL_M) * M : xr, head = hex('#2a2d31');
       for (let py = 0; py < N; py++) for (let px = 0; px < N; px++) {
         const w = pixUnproject(l + px + 0.5, t + py + 0.5, 0), az = Math.abs(w.z);
         if (az > TL || w.x < (d33 ? EDGE - LX : 0) || w.x >= xt) continue;
         const o = (py * N + px) * 4, dr = az - G;
         let c = null;
-        if (w.x < xr && Math.abs(dr) < 0.13) c = w.x < xs ? (dr < 0 ? hi : rail) : (dr < 0 ? rust2 : rust);
-        else if ((((w.x % pitch) + pitch) % pitch) < 0.32) c = pixHash(px + l, py + t) < 0.15 ? tie2 : tie;
+        const tx = ((w.x % pitch) + pitch) % pitch;
+        if (w.x < (w.z < 0 ? xrN : xrS) && Math.abs(dr) < 0.13) c = w.x < xs ? (dr < 0 ? hi : rail) : (dr < 0 ? rust2 : rust);
+        else if (D34.on && w.x < xs && tx > 0.08 && tx < 0.24 && Math.abs(dr) >= 0.13 && Math.abs(dr) < 0.3) c = head;
+        else if (tx < 0.32) c = pixHash(px + l, py + t) < 0.15 ? tie2 : tie;
         if (c) { d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; }
       }
       g.putImageData(img, 0, 0);
@@ -28732,6 +29550,41 @@ function pixLnChunkBuild(ci, cj, F) {
   // its own chunk there, as before.
   if (sp.stn && !PIX.lnPuts && !GB) { const e = document.createElement('canvas'); e.width = e.height = 1; e.empty = true; return e; }
   return cv;
+}
+// D34: the last part-metre of each front as it really is (the chunks are drawn to the whole metre): the cleared ground,
+// the bed and the rock cell by cell, and each spike driven since the last whole metre, so a digger's or a spiker's work
+// (the player's too) shows at once. A few tiles and pixels a frame, in the ground pass, under everything standing.
+function pixLnFrontsLive(g, bx0, bx1) {
+  const L = S.ln, f = L.f, M = LINE.M, F = pixLnFronts(), seed = S.seed;
+  const key = (i, j, ff) => {
+    const m = (i + 0.5) / M, v = 1 + ((i * 7 + j * 3) & 1);
+    if (j >= -2 && j < 2 && m < ff[2]) return 'tile/ln_rock/' + v;
+    if ((j === -3 || j === 2) && m < ff[2]) return j < 0 ? 'tile/ln_rock_edge_n' : 'tile/ln_rock_edge_s';
+    if (j >= -3 && j < 3 && m < ff[1]) return 'tile/ln_bed/' + v;
+    if ((j === -4 || j === 3) && m < ff[1]) return j < 0 ? 'tile/ln_bed_edge_n' : 'tile/ln_bed_edge_s';
+    if (m < ff[0]) return 'tile/ln_cleared/' + v;
+    return null;
+  };
+  const done = new Set();
+  for (let k = 0; k < 3; k++) {
+    const i0 = Math.floor(F[k] * M) - 1, i1 = Math.ceil(f[k] * M) + 1;
+    if (i1 < bx0 - 2 || i0 > bx1 + 2 || f[k] - F[k] < 1e-6) continue;
+    for (let i = i0; i <= i1; i++) for (let j = -LINE.ROW; j < LINE.ROW; j++) {
+      if (done.has(i * 64 + j)) continue;
+      const a = key(i, j, f), b = key(i, j, F);
+      if (!a || a === b || (i + 0.5) / M >= LINE.LEN_M || lnWaterAt(seed, i + 0.5, j + 0.5) || (D33.on && i + D33.LX < D33.EDGE)) continue;
+      done.add(i * 64 + j);
+      pixSprite(g, a, i, 0, j, null);
+    }
+  }
+  // the spikes since the last whole metre (lgSpikeNext's order: four a tie, the north rail's first)
+  const s = LINE.START_M, i0 = Math.ceil((F[5] - s) / LGW.UNIT_M[5] - 1e-6), i1 = Math.floor((f[5] - s) / LGW.UNIT_M[5] + 1e-6);
+  g.fillStyle = '#2a2d31';
+  for (let i = Math.max(0, i0); i < i1; i++) {
+    const t = Math.floor(i / 4), q = i % 4, x = (s + t * LINE.TIE_M) * M + 0.16, z = (q < 2 ? -1 : 1) * (LGW.GAUGE + (q % 2 ? -0.2 : 0.2));
+    if (x < bx0 || x > bx1) continue;
+    const p = pixProject(x, 0, z); g.fillRect(Math.round(p.x) - PIX.vx, Math.round(p.y) - PIX.vy, 1, 1);
+  }
 }
 // The big sheets of the wild country are decoded by the browser when first drawn (tens of milliseconds each): the
 // sheets of the regions near the view are asked for ahead (Image.decode, off the frame), once each, so the first
@@ -29102,7 +29955,10 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
   // The work train and the supplies beside its cars (the piles shrink as the day uses them).
   const T = lnTrain(S, sod);
   if (T.at === 'line') {
-    for (const v of wtDrawList(S, 'line', sod)) if (inX(v.x)) out.push(pixLnVehItem(v, { k: 'wt', car: v.k }));
+    // (D34: its cars are culled by the view's own west edge, not the line's: just after it leaves the station's map its
+    // last cars still stand over the map, where the line draws nothing else, and they used to vanish for a second)
+    const tx0 = D33.on && PIX.lnViewX0 !== undefined ? Math.min(bx0, PIX.lnViewX0) : bx0;
+    for (const v of wtDrawList(S, 'line', sod)) if (v.x > tx0 - 12 && v.x < bx1 + 12) out.push(pixLnVehItem(v, { k: 'wt', car: v.k }));
     if (T.ph === 'stand' && T.dump) {
       const lvl = k => { const s = L.sup[k], c = LINE.SUP[k].cap; return s <= 0 ? 0 : Math.max(1, Math.min(3, Math.ceil(3 * s / (c / 2)))); }, D = T.dump, z = D.z;
       // (where the corridor is narrow, the shelf and the rock cut, the piles lie on the open ground just before it)
@@ -29128,6 +29984,12 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
   if (p && !p.riding) { const [x, z] = at('lp', p.x, p.z), dir = pixDirOf(p.f), [anim, fr] = p.anim ? [p.anim, p.frame | 0] : pixActAnim(p.act, p, 0); out.push(pixPersonItem('lp', p.who || 'agent', x, p.y || 0, z, dir, anim, fr, { k: 'lp' }, false)); if (p.lg) pixCall('lgPixDress', out[out.length - 1], p, x, z, dir, anim, fr); }   // D32 (Play): at work with a gang
   return out;
 }
+// D34: only the work train of the line's things, when the view is wholly over the station's map (its cars as the line
+// draws them; the station draws it only while its front is still on the map).
+function pixLnTrainItems(alpha, x0, x1) {
+  const sod = pixLnSod(alpha), T = lnTrain(S, sod);
+  return T.at === 'line' ? wtDrawList(S, 'line', sod).filter(v => v.x > x0 - 12 && v.x < x1 + 12).map(v => pixLnVehItem(v, { k: 'wt', car: v.k })) : [];
+}
 // D33: where the view looks while the player is out on the line, in world units: { x, y, z, moving, riding }, or
 // null when he is the station's own man (or is boarding there: the station's hooks follow him).
 function pixLnFocusW(alpha) {
@@ -29142,11 +30004,13 @@ function pixLnFocusW(alpha) {
 // moved to the world's, each drawn in the line's frame.
 function pixLnAdd(all, alpha, dt) {
   PIX.lnT += Math.min(0.1, Math.max(0, dt || 0));
+  PIX.lnAlpha = alpha;   // (D34: the game's marks are placed where the men are drawn)
   const nw = PIX.nw, nh = PIX.nh, LX = D33.LX;
   const list = pixLnIn(() => {
     const cs = [[PIX.vx - 16, PIX.vy - 8], [PIX.vx + nw + 16, PIX.vy - 8], [PIX.vx - 16, PIX.vy + nh + 96], [PIX.vx + nw + 16, PIX.vy + nh + 96]].map(([a, b]) => pixUnproject(a, b, 0));
-    const x1 = Math.max(...cs.map(c => c.x));
-    if (x1 + LX < D33.EDGE - 8) return [];   // the view is west of everything the line has (nothing of it stands on the station's map)
+    const x1 = Math.max(...cs.map(c => c.x)), x0 = Math.min(...cs.map(c => c.x));
+    PIX.lnViewX0 = x0;   // D34: the view's true west edge, for the work train (below)
+    if (x1 + LX < D33.EDGE - 8) return pixLnTrainItems(alpha, x0, x1);   // the view is west of everything the line has (D34: but the work train, its last cars still on the station's map, counts as the line's)
     // (the west end of what the line draws: its own ground begins at the map's edge, so the scene is not built over the station)
     return pixLnScene(alpha, Math.max(Math.min(...cs.map(c => c.x)), D33.EDGE - LX - 8), x1, Math.min(...cs.map(c => c.z)), Math.max(...cs.map(c => c.z)));
   });

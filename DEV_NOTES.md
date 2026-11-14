@@ -432,7 +432,7 @@ The designer, after playing D20 and D21: "Why doesn't the game explain this? Stu
 
 ## Sections of index.html
 
-config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town stage 3: `TN`, `TN_PEOPLE`, `TN_ROUTINES`, the economy `tnRoll` / `tnTick`, `tnShop`, `tnHome`, `tnLook`; its houses are TOWN27's block "D32 stage 3 (Town)" in "starting world layout", `TN_OFF`), rooms (D32 stage 3, Rooms: `RM`, `RM_KIND`, `rmRooms`, `rmCarve`, `rmPeople`), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), the far town (D32 stage 3, Rooms: `FT`, `ftTile`, `ftCmd`), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`; D32 stage 3: the blocks "Rooms (D32)" and "The far town" before the line's view), drawing each frame, main loop, test hooks, start.
+config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town stage 3: `TN`, `TN_PEOPLE`, `TN_ROUTINES`, the economy `tnRoll` / `tnTick`, `tnShop`, `tnHome`, `tnLook`; its houses are TOWN27's block "D32 stage 3 (Town)" in "starting world layout", `TN_OFF`), rooms (D32 stage 3, Rooms: `RM`, `RM_KIND`, `rmRooms`, `rmCarve`, `rmPeople`), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins; D34: `CW.NEED`, `cwRoles`), on the line (D32, Play: stand-ins; D34: the block "D34: the join-in games in the world", `LGW`, `lgW*`), the far town (D32 stage 3, Rooms: `FT`, `ftTile`, `ftCmd`), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation; D34: block "Joining in, in the world (D34)" after the panel games, Play), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`; D34: `pixLnFrontsLive`, `pixLnTrainItems`; D32 stage 3: the blocks "Rooms (D32)" and "The far town" before the line's view), drawing each frame, main loop, test hooks, start.
 
 ## Draw calls
 
@@ -1897,7 +1897,158 @@ on a sheet of their own, `d32_houses` (`bldparts_reg.GROUPS['new_whole']`, 509 x
 `d32_houses_new` and are drawn only while a house is open. Worth keeping in mind: a sprite drawn every frame should
 not share a big sheet with art drawn only now and then.
 
+## D34 (the join-in games in the world)
+
+Built 2026-11-14 by one builder. The designer played version 12: the six join-in games sat in an inset panel whose
+pictures did not match the world one to one. Now they are played in the world, at the spot on the line where that
+stage's work is, with the gang's real men; the panel games are parked behind the page's `?d34=0` (D34 needs the one
+world: with `?d33=0` they are parked too). Code: `D34` (the switch, after `D33`), the block "D34: the join-in games in
+the world" in "on the line (D32)" (the sim: `LGW`, `lgWJoin`, `lgWTick`, `lgWAct`, `lgWDone`, `lgWPose`, `lgMateDraw`),
+the block "Joining in, in the world (D34)" after the panel games in "HUD and panels" (the page: `lgW`, `LGW_GAMES`,
+`lgWFrame`, `lgWDraw`, the chip `#lgW`), `CW.NEED` and the foreman's whole units in "the crew (D32)", and in the
+renderer `pixLnFrontsLive` (the fronts to the cell and the spike), the rails rail by rail and the spike heads in
+`pixLnChunkBuild`, `pixLnTrainItems` and the ride's whole-pixel camera (`pixPlayerPoint`, `pixFrame`). Each changed
+line elsewhere is marked "D34".
+
+### What the six panel games were (played by touch at phone size, check-linegames' rounds, 2026-11-14)
+
+| Game | The panel showed | The player did | It stood for | Where it did not match the world |
+|---|---|---|---|---|
+| Clearing | a drawn clump (or a trunk) side on, a dashed chalk line, two drawn navvies | three swipes along the line (a tree: four, left and right in turn) | felling one clump at the cleared front | the clump was not the world's; the world's brush was untouched; the work was time-based wu, not that clump |
+| Digging | a side view of earth, a ring closing on a chalk mark, a barrow, two navvies | four taps on a 760 ms beat, a flick up | a barrow of earth from the bed's front | the hole and the barrow were not in the world; the two navvies were not the diggers there |
+| Rock | a barrow rolling in, a chalk cross, two pegs, a level bar | a tap to tip, then side-to-side drags | a load spread on the bed | the barrow came from nowhere, not the rock heap; the bed's profile was not the world's rock front |
+| Ties | a top-down tie, a partner navvy, a "Hup!" ring, chalk marks, his end a dot | hold on "Hup!", keep the dot level, let go on "Down!" | one tie carried and set | the partner was a generic navvy, there even with no tie man on the line; the tie was not the pile's nor the next tie; the front moved by time-based worth (up to about 1.7 ties a round) |
+| Rails | four men side on with "you", "One... two... Lift!", a top-down gauge strip | hold on "Lift!", drag to the gauge line, let go on "Down!" | one rail laid by four | three of the four were drawn whatever the rail gang held (with nobody on it too); the rail was not the stack's; the worth was time-based |
+| Spiking | a rail on a tie side on, a partner striking in turn, a ring on the spike head | three taps on a 620 ms beat between his | one spike driven | the partner was generic; the spike was not the next one; a round was worth up to about four spikes of front |
+
+In every game the panel covered a third of a portrait screen and his own figure in the world only stood there with a
+tool.
+
+### What each game is now (the panel's mechanics and look, over the world)
+
+He walks up to a gang (the Join button, as before) and taps Join: no fade, no mode, no camera change (the view stays on
+him as he walks to his place; the line's bar stands aside while he works; the light chip under him has Leave). A
+touch within about 120 CSS px of the work is the game's (even between rounds, so a late tap never walks him off); a tap
+further off walks him away, which leaves. The marks are drawn over the world in the pixel style with the panel's
+colours (chalk, ink, good green, fair ochre, poor red), the words "Hup!", "Lift!", "Down!", "Good!", "Clang!" in the
+pixel font at twice its size; the timing, the windows and the weights are the panel games' own (`lgTimeS`, 90 to 330 ms).
+
+| Game | In the world |
+|---|---|
+| Clearing | He stands in the brush before the clump the clearers' front comes to next on his side (`lgClump`: brush, sage, bushes, trees on the right of way). The chalk line is drawn across that clump; three swipes along it (a tree four, left then right). Each round's worth (as before, `LG.worth`) goes through `lnWork`; the clump falls when the cleared front passes it, as the clearers' clumps do (drawn falling for half a second). |
+| Digging | He stands in the trench at the bed's front; the ring closes on a chalk ring on the front cell; four taps, a flick to throw the earth out; the two diggers nearest him swing on his beat. The front cell is drawn to the true front, so his earth shows at once. |
+| Rock | He fills a barrow at the real rock heap (`cwGeo`), wheels it along the lane and in over the chalk cross at the rock's front: tap as its nose is over the cross (it tips where it is; wheeled past the end it tips itself, a poor tip). Then the pegs and the stones' profile on the bed and a "level" bar: drag along the bed to rake. The round's worth is its time, the trip included. He waits at the heap while no bed is ready. |
+| Ties (two men) | One tie man walks with him to the tie pile; the "Hup!" ring fills over the mate; hold, and the two carry the tie by the men's own way (`cwPath`'s for ties) at the men's carrying pace; keep your end level with his (thumb up and down: his end bobs; a line between the ends, green when close); at the front the next tie's chalk marks; let go on "Down!": exactly one tie (0.6 m of the ties' front) goes down through `lnWork`. Let go on the way: the tie is set down there and lifted again. |
+| Rails (four men) | Three rail men walk with him to the rail stack; "One... two... Lift!" over the four; hold, and the four carry the rail (`line/rail_carried` between them) by the rail gang's way to the next rail's place; drag sideways to keep it on the gauge strip drawn over its end; let go on "Down!": "Clang!", sparks at both ends, exactly one rail (4.55 m of the rails' front: a length's two rails go down one after the other, north first, and are drawn so). |
+| Spiking (alone or two) | The ring closes on the next spike head at the next tie (four a tie). With a free spiker he strikes in turn on the 620 ms beat (the mate swings on his own beats); alone every blow is his, six at 1,240 ms (one man's pace). Exactly one spike (0.15 m of the spiked front) a round; the spike heads are drawn to the spike. |
+
+A tie, a rail and a spike are whole things: one good or fair round is exactly one of them, refused while the front
+cannot take a whole one (the gang ahead, the supplies: the chip says "Waiting on the rock gang: no room for a whole tie
+yet"); while he works the gang leaves room for his (`lnLimit` keeps one unit back for him). A poor round (under 45) is
+not done: the spike is bent, the tie off its mark, the rail off the gauge: again. Clearing, digging and rock keep the
+panel's time-based worth (0.5 to 1.25 men, the 4-minute cap, the 64-second spacing). No action is quicker than its men
+could do it at 1.25 a man. The lift on the men near him is as before.
+
+### The men each task takes, and the messages
+
+`CW.NEED = [1, 1, 1, 2, 4, 1]`: clearing, digging, rock and spiking can be done alone; a tie takes two men, a rail four.
+On Join the nearest free men of the gang (at work or walking to it; not resting, eating or gone) are lent to him
+(`m.lg`; Crew's tick leaves them to `lgWTick`; the rest of the gang make their units again, `cwRoles`), and go back to
+their gang when he leaves or walks off, at the meal and at packing up. With too few men at hand Join is refused with a
+line (a toast), and nothing is done:
+- "No one on the tie gang to carry with you: a tie takes two men." / "No one on the rail gang to lift with you: a rail
+  takes four men."
+- "Only two men on the rail gang: a rail takes four men. A bigger crew would have them."
+- "Not enough of the rail gang at hand just now (three resting): a rail takes four men. Wait for them, or join another
+  gang."
+
+Why a gang cannot be joined is said in the light chip under him for about four seconds (the toast's place at the top
+of the screen is under the line's bar out there), and as a priority toast (`toast(msg, ms, prio)`: a plain message in
+the same moment, a lever thrown at the station, no longer covers it).
+
+The chip's lines: "With Pat" or "Laying rock, alone"; the round's hint ("Tap on your beat, as the ring closes");
+"Walking to the tie pile, the men with you"; "Tie down: 60 cm more of the ties"; "Waiting on the diggers: nothing ready
+for you yet". The Look cards: a mate's card says "Doing: working with you"; the tie and rail gangs' cards say "A tie
+takes two men: 4 of the gang here, 1 with you". The lessons `lnClear` to `lnSpike` and `lnLeave` ("Leaving a gang")
+tell the games in the world (the panel's words stay with `?d34=0`).
+
+### The simulation's honest minimums
+
+The designer saw a stage get work done without the men it needs: a lone tie man or a lone rail man (a "setter") gave
+wu at the front, and two men made a rail gang. Now (D34 on) a tie or rail man gives wu only in a carrying unit of
+`CW.NEED` men; a man short of one waits (drawn standing). The foreman (`cwAssign`) gives the tie men pairs and the rail
+gang fours, or nobody: the men short of a unit come from the gang with the most men for what its front costs a metre,
+never the last man of a gang the next one is waiting on (else the clearers, cheap a metre, were emptied for the rails
+and every gang behind them stood: a whole afternoon's stall with 20 men, found by check-d34); the odd ones go to the
+stage with the most work for its men; a new unit is made up only when there is half an hour's work a man for it
+(`CW.UNIT_MIN` 30; a crew under ten men 10 minutes, `CW.UNIT_MIN_SMALL`, so its little team stays close), or it is a
+unit already at work, or the last of the line; a unit at work stays while its stretch lasts; a tie or rail gang one
+whole unit over or under is left alone.
+
+**The pace** (`cwSimDays`, seeds 1866 and 7): 30 men 13 and 14 working days (13 to 15: unchanged); 20 men 23 (21
+before), 15 men 31 (30), 10 men 44 (40); **5 men 98 days, 7.5 times the 30 men's (before: 77, 5.9 times)**: a crew of
+five can lay rails only with four of its five at once, so its gangs wait on each other more. A crew of five's work site
+is a little longer at its longest (check-d33: the men at work at most 66 to 69u apart through day 1, was 62; that
+check's bound is 70 with D34 on, the reason written there).
+check-crew's 5-man window is 7 to 8 with D34 on (5.5 to 6.5 with `?d34=0`), the reason written there. check-crew also
+counts the men at work on average over the working hours (not at the one moment 15:00, when a reassignment at the
+trestle can catch a dozen at the tool row) and looks at the busiest stretch of the site for its men and piles.
+
+### The work train's flicker (the designer: "flickers and is a little janky" riding out)
+
+Measured with `tests/worktrain-ride.js` (new: boards by the crew car's command, plays the ride in real time at 1x from
+06:21, records every drawn frame). Two causes, both fixed:
+1. **The train vanished for about 1.3 seconds** as it left the station's map: once its front was off the map it was
+   the line's to draw, but the line's scene culls everything west of the map's edge (and is not built at all while
+   the view is wholly over the map), so its last cars, still over the map, were drawn by nobody: about 55 frames with
+   no crew car, the cars coming back one by one. Now the work train is culled by the view's own edge
+   (`PIX.lnViewX0`, `pixLnTrainItems`).
+2. **The jitter**: the view followed the crew car's exact point while the car is drawn on whole pixels, so the car
+   shook by one native pixel (three device pixels) against the screen every few frames (50 jumps on the way out). Now
+   the view rides on the car's whole pixel (`pixPlayerPoint` at the station, the riding branch of the camera on the
+   line): the car stands still and the ground goes by in whole pixels.
+
+After: no frame without the car, no jump, portrait and landscape (check-d34 runs it). At 4x CPU throttling one frame of
+170 ms at the very start (before the train moves), none over 21 ms on the way. Chunks were not the cause.
+
+### Provisional choices for the designer
+
+- A tie takes two men, a rail four, a spike one or two; clearing, digging and rock one.
+- His tie, rail and spike are whole things (0.6 m, 4.55 m, 0.15 m of front); clearing, digging and rock keep their
+  time-based worth. So at 1x a spike round (4 to 7 seconds) is one spike, much less than a navvy's simulated pace
+  (about a spike a game minute): the line goes no faster for his joining in, and his mates are his while they work
+  with him (their own simulated work stops). The lift on the men near him is his gain for the line.
+- A poor round of a tie, a rail or a spike is not done (again).
+- Spiking alone: six blows at 1,240 ms (one man's pace); with a mate, turn about at 620 ms.
+- The rails of a length go down one at a time, north first; the spikers may spike the north rail of a length before
+  its south rail is down (half a rail length at most).
+- A touch within about 120 CSS px of the work is the game's; further off walks him away (and leaves).
+- The line's bar is hidden while he works in the world; the chip under him (light, about 270 px wide) has Leave.
+- The diggers nearest him swing on his beat (drawing only).
+- The foreman's unit rule (`CW.UNIT_MIN`, half an hour of work a man before a new unit forms; 10 minutes for a crew
+  under ten), the 5-man pace window (7 to 8 times) and the little team's bound (70u).
+- While carrying, he and his mates are not stopped by the work train's box (the men never were); hemmed in between the
+  creek and the train on the trestle he may squeeze along the deck past the cars.
+
+### Checks
+
+New: `tests/check-d34.js` (in run-all.js): portrait (a crew of 20) and landscape (30), by real touches: each of the six
+stages joined by a tap on Join with no panel shown and the view on him; the mates the task takes (one, three) are
+men of that gang, lent to him, and carry with him (their places move with his, their frames are the carry's); each
+action moves its front exactly by its work (a tie 0.6 m, a rail 4.55 m, a spike 0.15 m; clearing, digging and rock:
+wu / cost, measured inside the tick); Leave lets the mates go; with a crew of five and the rail gang (or the tie men)
+short, Join says why and nothing is done; a save mid-carry loads into the same moment and the tie is set as one; the
+session's ticks replayed give the same hash; the ride out with the work train drawn whole and still on the screen; no
+console errors. Screenshots `test-output/d34-<game>-<orient>.png` (clear, dig, rock-tip, rock-rake, ties-hup,
+ties-carry, ties-down, rails-count, rails-carry, rails-down, spike, absent-*). The waits are honest (a tie needs room behind the
+rock, a spike behind the rails), so the check waits for them, and tries a stage again after the meal when the meal
+came first. Changed: check-crew (the D34 window and measures), check-d32world (the 5-man window), check-d33 (the little
+team's bound), check-linegames and check-linelessons name `?d34=0` (check-linegames closes the dev panel before a Join in
+landscape: see the backlog). Measuring tool: `node tests/worktrain-ride.js [portrait|landscape] [throttle]`.
+
 ## Next
+
+Update (2026-11-14, D34 the join-in games in the world): the six games are played in the world with the gang's real men, the honest minimums (a tie two men, a rail four), the lessons and Look cards, and the work train's ride drawn whole and steady (see "D34"). `tests/check-d34.js` is new. Not pushed; the lead runs `npm test`.
 
 Update (2026-11-14, D32 stage 3 joined): the bigger town's four pieces (buildings art, rooms art, Town, Rooms) are merged and fitted on one branch (see "D32 stage 3: the bigger town", its part "Joined"); the listed checks pass. Not pushed; the lead runs `npm test`.
 

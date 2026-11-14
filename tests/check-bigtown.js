@@ -84,7 +84,8 @@ module.exports = async function checkBigTown() {
         const f = fps.find(q => q.id === h.id);
         if (!f) { bad.push(`house ${h.id} is not in the layout`); continue; }
         const r = rectOf(f);
-        if (Math.abs(r[1] - r[0] - 7.65) > 0.01 || Math.abs(r[3] - r[2] - 7.65) > 0.01) bad.push(`house ${h.id} is not on an 8u lot: ${r.map(v => v.toFixed(2))}`);
+        // (D32 joined: the two-room house's lot is 8.25u along the lane, its body being 7.5u long in the artist's art)
+        if (Math.abs(r[1] - r[0] - 7.65) > 0.01 || Math.abs(r[3] - r[2] - (h.tn === 'two' ? 8.25 : 7.65)) > 0.01) bad.push(`house ${h.id} is not on an 8u lot: ${r.map(v => v.toFixed(2))}`);
         for (const o of fps) if (o.id !== h.id && !o.flush && hit(r, rectOf(o), 0.5)) bad.push(`house ${h.id} overlaps ${o.id}`);
         for (const [nm, q] of [['the camp', PR.CAMP], ['the muster', PR.MUSTER], ['the wash', PR.WASH]]) if (hit(r, [q.x0, q.x1, q.z0, q.z1], 1)) bad.push(`house ${h.id} is on ${nm}`);
         const B = PR.BOUNDS; if (r[0] < B.x0 + 2 || r[1] > B.x1 - 2 || r[2] < B.z0 + 2 || r[3] > B.z1 - 2) bad.push(`house ${h.id} is at the map's edge`);
@@ -201,7 +202,8 @@ module.exports = async function checkBigTown() {
     for (let k = 0; k < 3; k++) { await page.evaluate(() => { const b = document.getElementById('pdLesson'); if (b && !b.hidden) document.getElementById('pdLesSkip').click(); }); await frames(2); }
     await page.evaluate(() => { window.__railhead.camera.zoom = 1.0; window.__railhead.pix.placePlayer(-43, -84); });
     await frames(8);
-    const d1 = await page.evaluate(() => { const X = window.__railhead.pix.PIX; return { houses: X.drawn.filter(d => /^bld\/house/.test(d.key)).length, errs: Object.keys(X.errs) }; });
+    // (D32 joined: the new houses are the artist's bld/cabin, bld/framehouse and bld/house2 now)
+    const d1 = await page.evaluate(() => { const X = window.__railhead.pix.PIX; return { houses: X.drawn.filter(d => /^bld\/(house|cabin|framehouse)/.test(d.key)).length, errs: Object.keys(X.errs) }; });
     if (d1.houses < 6) P('the third lane: houses not drawn: ' + JSON.stringify(d1));
     await page.screenshot({ path: screenshotPath('bigtown-lanes-portrait') });
     await page.evaluate(() => { window.__railhead.pix.placePlayer(0, -70); });

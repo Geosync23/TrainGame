@@ -21,6 +21,26 @@ import harness as H
 from geom27 import B, CYV, UX, UY, clampi, obox, ocyl
 from geom_d32 import Frame, hashf
 
+def _alias_ramps():
+    """Ramps made of colours the palette already has (no new colour): 'dwood' is the wood ramp a step darker
+    (stained walnut and mahogany: the bar, the bank, the piano, the hotel desk)."""
+    if 'dwood' in E.RAMPS:
+        return
+    E.RAMPS['dwood'] = ['w1', 'w2', 'w3', 'w4', 'ink']
+    E.RNAMES.append('dwood')
+    E.RID['dwood'] = len(E.RNAMES) - 1
+    ml = max(len(v) for v in E.RAMPS.values())
+    pal = np.zeros((len(E.RNAMES), ml, 3), np.uint8)
+    for n, lst in E.RAMPS.items():
+        for i in range(ml):
+            pal[E.RID[n], i] = E.hx(E.HEX[lst[min(i, len(lst) - 1)]])
+    E.PAL = pal
+    E.RLEN = np.array([len(E.RAMPS[n]) for n in E.RNAMES])
+    E.ML = ml
+
+
+_alias_ramps()
+
 YAW = {'sw': 0.0, 'se': 90.0, 'ne': 180.0, 'nw': -90.0, 'x': 0.0, 'z': 90.0}
 CV = dict(canvas=(300, 300), origin=(150, 210))
 
@@ -75,7 +95,10 @@ class P:
 
 # ---------------------------------------------------------------- textures (local coordinates a, c, h in u)
 def planks(step=0.25, axis='a', knot=True):
-    """Boards: a darker seam every `step` across the boards, a knot now and then."""
+    """Boards: a darker seam every `step` across the boards, a knot now and then. Seams closer than 3 px read as a
+    checker at this scale, so the step is at least 0.375u."""
+    step = max(step, 0.375)
+
     def tex(k, sgn, a, c, h, idx):
         v = {'a': a, 'c': c, 'h': h}[axis]
         seam = np.mod(v + 10.0, step) < 0.045
@@ -328,9 +351,9 @@ def crate(p, a, c, h, s=0.8, ramp='wood', mark=None, lid=True, seed=0):
 
 def sack(p, a, c, h, ramp='canvas', axis='a', seed=0):
     o = p.new()
-    L, Wd = (0.9, 0.55) if axis == 'a' else (0.55, 0.9)
-    p.box(a - L / 2, c - Wd / 2, h, a + L / 2, c + Wd / 2, h + 0.32, ramp, oid=o, shades=(1, 2, 3))
-    p.box(a - L / 2 + 0.08, c - Wd / 2 + 0.06, h + 0.32, a + L / 2 - 0.08, c + Wd / 2 - 0.06, h + 0.4, ramp,
+    L, Wd = (1.1, 0.65) if axis == 'a' else (0.65, 1.1)
+    p.box(a - L / 2, c - Wd / 2, h, a + L / 2, c + Wd / 2, h + 0.36, ramp, oid=o, shades=(1, 2, 3))
+    p.box(a - L / 2 + 0.08, c - Wd / 2 + 0.06, h + 0.36, a + L / 2 - 0.08, c + Wd / 2 - 0.06, h + 0.46, ramp,
           oid=o, shades=(1, 2, 3))
     # the tied neck
     if axis == 'a':
@@ -341,7 +364,7 @@ def sack(p, a, c, h, ramp='canvas', axis='a', seed=0):
     if hashf(seed, 3) > 0.4:
         p.box(a - 0.12, c - 0.1, h + 0.4, a + 0.12, c + 0.1, h + 0.41, 'navy' if hashf(seed, 4) > 0.5 else 'red',
               oid=o, shades=(2, 2, 2))
-    return h + 0.4
+    return h + 0.46
 
 
 def crates_stack(p, level):
@@ -378,19 +401,19 @@ def sacks_stack(p, level):
         p.box(-0.3, -0.2, 0.06, 0.25, 0.25, 0.1, 'canvas', oid=o, shades=(2, 2, 3))
         p.box(0.3, 0.2, 0.0, 0.6, 0.5, 0.01, 'cream', oid=p.new(), shades=(0, 0, 0))
         return dict(foot=[-0.5, -0.35, 0.6, 0.55])
-    spots = [(0.0, -0.33, 0, 'a'), (0.0, 0.33, 0, 'a'), (-0.6, 0.0, 0, 'c'), (0.6, 0.0, 0, 'c'),
-             (-0.25, -0.0, 1, 'a'), (0.25, 0.25, 1, 'c'), (0.3, -0.35, 1, 'a'), (0.0, 0.0, 2, 'a')]
+    spots = [(0.0, -0.36, 0, 'a'), (0.0, 0.36, 0, 'a'), (-0.95, 0.0, 0, 'c'), (0.95, 0.0, 0, 'c'),
+             (-0.3, 0.0, 1, 'c'), (0.3, 0.0, 1, 'c'), (0.75, 0.15, 1, 'c'), (0.0, 0.0, 2, 'a')]
     n = {1: 2, 2: 4, 3: 8}[level]
     rr = ['canvas', 'straw', 'canvas', 'canvas', 'straw', 'canvas', 'cream', 'canvas']
     for i, (a, c, lay, ax) in enumerate(spots[:n]):
-        sack(p, a, c, lay * 0.36, rr[i], ax, seed=i + 40)
-    return dict(foot=[-1.0, -0.8, 1.0, 0.8])
+        sack(p, a, c, lay * 0.42, rr[i], ax, seed=i + 40)
+    return dict(foot=[-1.3, -0.7, 1.3, 0.7])
 
 
 def stove(p, f=0):
     """A pot-bellied stove on a zinc plate, its pipe up to 3.8u (the ceiling), a coal scuttle; f 0 and 1: the
     fire's glow through the door flickers."""
-    p.box(-0.55, -0.55, 0.0, 0.55, 0.55, 0.03, 'iron', shades=(0, 1, 2))
+    p.box(-0.55, -0.55, 0.0, 0.55, 0.55, 0.03, 'iron', shades=(1, 2, 3))
     o = p.new()
     glow = ('fire', 'brass')[f]
 
@@ -536,13 +559,14 @@ def cot(p, quilt='slate', made=True):
 def bunk(p):
     """The jail bunk: a plank shelf hung from the wall on two chains, a grey blanket and a straw tick; along a, the
     back (-c) at the wall."""
-    p.box(-1.2, -0.45, BED - 0.12, 1.2, 0.45, BED - 0.04, 'wood', tex=planks(0.25, 'a'))
+    p.box(-1.2, 0.0, BED - 0.12, 1.2, 0.9, BED - 0.04, 'wood', tex=planks(0.25, 'a'))
     for a in (-1.0, 1.0):
-        p.rod((a, 0.42, BED - 0.06), (a, -0.45, 1.7), 0.015, 'iron')
-        p.box(a - 0.05, 0.38, 0.0, a + 0.05, 0.45, BED - 0.12, 'wood')
-    p.box(-1.15, -0.4, BED - 0.04, 1.15, 0.4, BED + 0.06, 'straw', shades=(1, 2, 3))
-    p.box(-0.3, -0.42, BED + 0.06, 1.15, 0.42, BED + 0.12, 'slate', shades=(1, 2, 3), oid=p.new())
-    return dict(foot=[-1.2, -0.45, 1.2, 0.45], bed=BED, wall=True, use=[[0, 0.9, 'side'], [0, 0, 'lie']],
+        p.rod((a, 0.87, BED - 0.06), (a, 0.0, 1.7), 0.015, 'iron')
+        p.box(a - 0.06, 0.0, 1.62, a + 0.06, 0.05, 1.74, 'iron')
+        p.box(a - 0.05, 0.83, 0.0, a + 0.05, 0.9, BED - 0.12, 'wood')
+    p.box(-1.15, 0.05, BED - 0.04, 1.15, 0.85, BED + 0.06, 'straw', shades=(1, 2, 3))
+    p.box(-0.3, 0.03, BED + 0.06, 1.15, 0.87, BED + 0.12, 'slate', shades=(1, 2, 3), oid=p.new())
+    return dict(foot=[-1.2, 0.0, 1.2, 0.9], bed=BED, wall=True, use=[[0, 1.35, 'side', '-c'], [0, 0.45, 'lie']],
                 note='the sleeper lies along a: lie/se on a bunk facing sw, lie/sw on one facing se')
 
 
@@ -697,7 +721,7 @@ def bar(p, length=3.6):
     hl = length / 2
     hd = 0.4
     hb = 1.25
-    p.box(-hl, -hd, 0.0, hl, hd, hb - 0.08, 'umber', tex=combine(planks(0.2, 'h'), panel_tex(
+    p.box(-hl, -hd, 0.0, hl, hd, hb - 0.08, 'dwood', tex=combine(planks(0.2, 'h'), panel_tex(
         -hl, hl, 0.25, hb - 0.2, n=4, fk=1, fs=1, inset=0.1)))
     p.box(-hl, hd - 0.02, 0.0, hl, hd + 0.04, 0.22, 'dark', shades=(1, 2, 2))
     p.box(-hl - 0.1, -hd - 0.04, hb - 0.08, hl + 0.1, hd + 0.12, hb, 'wood', shades=(0, 1, 2),
@@ -723,7 +747,7 @@ def bar(p, length=3.6):
         p.cylv(a, 0.15, hb + 0.02, hb + 0.1, 0.045, 'ochre', oid=p.new())
     o = p.new()
     p.box(hl - 0.55, -0.25, hb, hl - 0.4, -0.1, hb + 0.55, 'brass', oid=o)
-    p.box(hl - 0.52, -0.22, hb + 0.55, hl - 0.43, -0.12, hb + 0.75, 'umber', oid=o)
+    p.box(hl - 0.52, -0.22, hb + 0.55, hl - 0.43, -0.12, hb + 0.75, 'dwood', oid=o)
     p.box(hl - 0.55, -0.12, hb + 0.4, hl - 0.4, 0.02, hb + 0.45, 'brass', oid=o)
     return dict(foot=[-hl - 0.1, -hd - 0.04, hl + 0.1, hd + 0.5], top=hb,
                 use=[[0, -hd - 0.45, 'keeper']] + [[a, hd + 0.55, 'drink'] for a in (-1.2, 0.0, 1.2)])
@@ -732,7 +756,7 @@ def bar(p, length=3.6):
 def backbar(p, length=3.6):
     """The back bar against the wall: a cabinet, a long mirror, shelves of bottles, a cash register."""
     hl = length / 2
-    p.box(-hl, 0.0, 0.0, hl, 0.55, 1.0, 'umber', tex=combine(planks(0.2, 'h'), panel_tex(-hl, hl, 0.1, 0.9, 4,
+    p.box(-hl, 0.0, 0.0, hl, 0.55, 1.0, 'dwood', tex=combine(planks(0.2, 'h'), panel_tex(-hl, hl, 0.1, 0.9, 4,
                                                                                             1, 1, 0.1)))
     p.box(-hl - 0.05, 0.0, 1.0, hl + 0.05, 0.6, 1.06, 'wood', shades=(0, 1, 2))
 
@@ -740,13 +764,13 @@ def backbar(p, length=3.6):
         on = (k == 1) & (sgn > 0)
         streak = np.mod(a - h * 0.8 + 10, 0.9) < 0.12
         frame = (np.abs(a) > hl - 0.45) | (h > 2.85) | (h < 1.2)
-        rr = np.where(on & ~frame, R('glass'), R('umber'))
+        rr = np.where(on & ~frame, R('glass'), R('dwood'))
         ii = np.where(on & ~frame, np.where(streak, 0, 1), idx)
         return rr, ii
-    p.box(-hl, 0.0, 1.06, hl, 0.08, 3.0, 'umber', tex=mirror)
+    p.box(-hl, 0.0, 1.06, hl, 0.08, 3.0, 'dwood', tex=mirror)
     for s in (-1, 1):
-        p.box(s * (hl - 0.2) - 0.12, 0.0, 1.06, s * (hl - 0.2) + 0.12, 0.2, 3.1, 'umber')
-    p.box(-hl - 0.1, 0.0, 3.0, hl + 0.1, 0.3, 3.2, 'umber', shades=(0, 1, 2))
+        p.box(s * (hl - 0.2) - 0.12, 0.0, 1.06, s * (hl - 0.2) + 0.12, 0.2, 3.1, 'dwood')
+    p.box(-hl - 0.1, 0.0, 3.0, hl + 0.1, 0.3, 3.2, 'dwood', shades=(0, 1, 2))
     o = p.new()
     for h in (1.75, 2.35):
         p.box(-hl + 0.4, 0.08, h - 0.04, hl - 0.4, 0.3, h, 'wood', oid=o)
@@ -767,7 +791,7 @@ def barstool(p):
     x, z, _ = p.pt(0, 0, 0)
     for k in range(3):
         a = k * 2 * math.pi / 3 + 0.5
-        p.rod((math.cos(a) * 0.22, math.sin(a) * 0.22, 0.0), (math.cos(a) * 0.1, math.sin(a) * 0.1, 0.92), 0.025,
+        p.rod((math.cos(a) * 0.24, math.sin(a) * 0.24, 0.0), (math.cos(a) * 0.1, math.sin(a) * 0.1, 0.92), 0.045,
               'wood')
     p.cylv(0, 0, 0.3, 0.33, 0.17, 'wood')
     p.cylv(0, 0, 0.92, 1.0, 0.22, 'red', oid=p.new())
@@ -776,18 +800,18 @@ def barstool(p):
 
 def piano(p):
     """An upright piano, its keyboard at +c, candle sconces, sheet music; the stool in front."""
-    p.box(-0.85, 0.0, 0.0, 0.85, 0.7, 1.55, 'umber', tex=combine(planks(0.4, 'h'), panel_tex(
+    p.box(-0.85, 0.0, 0.0, 0.85, 0.7, 1.55, 'dwood', tex=combine(planks(0.4, 'h'), panel_tex(
         -0.75, 0.75, 1.0, 1.45, 2, 1, 1, 0.1), panel_tex(-0.75, 0.75, 0.1, 0.6, 2, 1, 1, 0.1)))
-    p.box(-0.9, 0.0, 1.55, 0.9, 0.75, 1.62, 'umber', shades=(0, 1, 2))
+    p.box(-0.9, 0.0, 1.55, 0.9, 0.75, 1.62, 'dwood', shades=(0, 1, 2))
     # keyboard shelf, keys
     o = p.new()
-    p.box(-0.8, 0.7, 0.72, 0.8, 0.98, 0.82, 'umber', oid=o)
+    p.box(-0.8, 0.7, 0.72, 0.8, 0.98, 0.82, 'dwood', oid=o)
 
     def keys(k, sgn, a, c, h, idx):
         black = (np.mod(a * 12 + 30, 2.0) < 0.7) & (c < 0.86)
         return np.where(black, R('dark'), R('cream')), np.where(black, 1, 0)
     p.box(-0.75, 0.72, 0.82, 0.75, 0.96, 0.85, 'cream', tex=keys, oid=o)
-    p.box(-0.8, 0.7, 0.85, 0.8, 0.76, 0.98, 'umber', oid=o)
+    p.box(-0.8, 0.7, 0.85, 0.8, 0.76, 0.98, 'dwood', oid=o)
     p.box(-0.35, 0.68, 1.0, 0.35, 0.72, 1.3, 'cream', oid=p.new(), shades=(0, 0, 1))      # music on the desk
     for s in (-1, 1):
         o = p.new()
@@ -795,7 +819,7 @@ def piano(p):
         p.cylv(s * 0.7, 0.78, 1.2, 1.38, 0.03, 'cream', oid=o)
     # stool
     o = p.new()
-    p.cylv(0, 1.35, 0.0, 0.5, 0.06, 'umber', oid=o)
+    p.cylv(0, 1.35, 0.0, 0.5, 0.06, 'dwood', oid=o)
     p.cylv(0, 1.35, 0.5, 0.6, 0.2, 'red', oid=o)
     return dict(foot=[-0.9, 0.0, 0.9, 1.6], wall=True, seat=0.6, use=[[0, 1.35, 'play']])
 
@@ -803,12 +827,12 @@ def piano(p):
 def card_table(p):
     """A round card table under green baize: a hand of cards dealt, chips, a glass; four chairs go round it."""
     x, z, _ = p.pt(0, 0, 0)
-    CYV(x, z, 0.0, 0.1, 0.35, 'umber', oid=p.oid, cast=False)
-    CYV(x, z, 0.1, TABLE - 0.08, 0.08, 'umber', oid=p.oid, cast=False)
+    CYV(x, z, 0.0, 0.1, 0.35, 'dwood', oid=p.oid, cast=False)
+    CYV(x, z, 0.1, TABLE - 0.08, 0.08, 'dwood', oid=p.oid, cast=False)
 
     def baize(part, s, ang, rho, idx):
         edge = (part != 0) & (rho > 0.68)
-        return np.where(edge | (part == 0), R('umber'), R('green')), np.where(part == 0, idx, 1)
+        return np.where(edge | (part == 0), R('dwood'), R('green')), np.where(part == 0, idx, 1)
     ocyl((x, z, TABLE - 0.04), (0, 0, 1), 0.8, 0.04, 'green', tex=baize, oid=p.oid)
     for k in range(4):
         a = k * math.pi / 2 + 0.3
@@ -829,7 +853,7 @@ def bank_counter(p, length=3.0):
     an arched teller's window, a pen on a chain."""
     hl, hd = length / 2, 0.4
     hb = 1.2
-    p.box(-hl, -hd, 0.0, hl, hd, hb - 0.08, 'umber', tex=combine(planks(0.2, 'h'), panel_tex(
+    p.box(-hl, -hd, 0.0, hl, hd, hb - 0.08, 'dwood', tex=combine(planks(0.2, 'h'), panel_tex(
         -hl, hl, 0.15, hb - 0.2, n=3, fk=1, fs=1, inset=0.1)))
 
     def marble(k, sgn, a, c, h, idx):
@@ -838,10 +862,10 @@ def bank_counter(p, length=3.0):
     p.box(-hl - 0.06, -hd - 0.06, hb - 0.08, hl + 0.06, hd + 0.06, hb, 'rock', tex=marble, shades=(0, 1, 2))
     # the grille: brass bars from the top up to 2.3, a frame, the window
     o = p.new()
-    p.box(-hl, -0.05, hb, hl, 0.05, hb + 0.12, 'umber', oid=o)
-    p.box(-hl, -0.05, 2.25, hl, 0.05, 2.38, 'umber', oid=o)
+    p.box(-hl, -0.05, hb, hl, 0.05, hb + 0.12, 'dwood', oid=o)
+    p.box(-hl, -0.05, 2.25, hl, 0.05, 2.38, 'dwood', oid=o)
     for s in (-1, 1):
-        p.box(s * hl - 0.06, -0.06, hb, s * hl + 0.06, 0.06, 2.38, 'umber', oid=o)
+        p.box(s * hl - 0.06, -0.06, hb, s * hl + 0.06, 0.06, 2.38, 'dwood', oid=o)
     o = p.new()
     for k in range(int(length / 0.16)):
         a = -hl + 0.12 + k * 0.16
@@ -978,7 +1002,8 @@ def forge(p, f=0):
         return rr, ii
     p.box(-0.45, 0.4, 0.95, 0.45, 1.1, 1.02, 'dark', tex=coals, oid=o)
     p.ball(0.0, 0.75, 1.02, 0.18, glow[0], sz=0.6, oid=o, th=(0.5, 0.0, -0.6))
-    # hood and chimney
+    # the chimney breast at the back, the hood and the chimney
+    p.box(-0.75, 0.0, 0.95, 0.75, 0.35, 2.0, 'brick', tex=brick, oid=p.new())
     o = p.new()
     p.box(-0.8, 0.0, 2.0, 0.8, 1.2, 2.15, 'iron', oid=o, shades=(1, 2, 3))
     p.box(-0.6, 0.0, 2.15, 0.6, 0.9, 2.5, 'iron', oid=o, shades=(1, 2, 3))
@@ -994,17 +1019,18 @@ def forge(p, f=0):
 
 def anvil(p):
     """The anvil on its elm stump, the horn along +a; a hammer resting on it."""
-    p.cylv(0, 0, 0.0, 0.6, 0.32, 'bark', tex=lambda part, s, ang, rho, idx: (
-        None, np.where((part != 0) & (np.mod(rho * 18, 1) < 0.3), clampi(idx + 1), idx)))
+    p.cylv(0, 0, 0.0, 0.5, 0.4, 'wood', topidx=1)
+    p.box(-0.45, -0.3, 0.0, 0.45, 0.3, 0.1, 'bark', oid=p.oid)
     o = p.new()
-    p.box(-0.25, -0.18, 0.6, 0.25, 0.18, 0.7, 'iron', oid=o, shades=(1, 2, 3))
-    p.box(-0.12, -0.1, 0.7, 0.12, 0.1, 0.82, 'iron', oid=o, shades=(1, 2, 3))
-    p.box(-0.35, -0.13, 0.82, 0.3, 0.13, 0.98, 'iron', oid=o, shades=(0, 1, 3))
-    p.F.box(0.3, -0.08, 0.86, 0.55, 0.08, 0.96, 'iron', oid=o, cast=False, shades=(0, 1, 3))
-    p.F.box(0.55, -0.04, 0.9, 0.68, 0.04, 0.95, 'iron', oid=o, cast=False, shades=(0, 1, 3))
+    p.box(-0.4, -0.26, 0.5, 0.36, 0.26, 0.62, 'slate', oid=o, shades=(1, 2, 3))
+    p.box(-0.2, -0.14, 0.62, 0.18, 0.14, 0.82, 'slate', oid=o, shades=(1, 2, 3))
+    p.box(-0.5, -0.17, 0.82, 0.4, 0.17, 1.06, 'slate', oid=o, shades=(0, 2, 3))
+    p.box(0.4, -0.13, 0.88, 0.62, 0.13, 1.06, 'slate', oid=o, shades=(0, 2, 3))
+    p.box(0.62, -0.07, 0.94, 0.8, 0.07, 1.05, 'slate', oid=o, shades=(0, 2, 3))
+    p.box(-0.58, -0.12, 0.92, -0.5, 0.12, 1.06, 'slate', oid=o, shades=(0, 2, 3))
     o = p.new()
-    p.box(-0.3, 0.2, 0.98, -0.18, 0.32, 1.06, 'iron', oid=o)
-    p.rod((-0.24, 0.26, 1.02), (0.15, 0.55, 0.85), 0.025, 'wood', oid=o)
+    p.box(-0.35, 0.22, 1.06, -0.15, 0.34, 1.16, 'iron', oid=o)
+    p.rod((-0.25, 0.28, 1.1), (0.3, 0.45, 1.06), 0.03, 'wood', oid=o)
     return dict(foot=[-0.35, -0.35, 0.7, 0.35], use=[[0.0, 0.7, 'work']],
                 note='the smith stands at use (the side facing +c) and hammers (work frames)')
 
@@ -1037,7 +1063,7 @@ def hotel_desk(p, length=2.4):
     hb = 1.15
     p.box(-hl, -hd, 0.0, hl, hd, hb - 0.08, 'wood', tex=combine(planks(0.2, 'h'), panel_tex(
         -hl, hl, 0.15, hb - 0.2, n=3, fk=1, fs=1, inset=0.1)))
-    p.box(-hl - 0.08, -hd - 0.05, hb - 0.08, hl + 0.08, hd + 0.08, hb, 'umber', shades=(0, 1, 2))
+    p.box(-hl - 0.08, -hd - 0.05, hb - 0.08, hl + 0.08, hd + 0.08, hb, 'dwood', shades=(0, 1, 2))
     o = p.new()
     p.box(-0.45, -0.05, hb, -0.02, 0.3, hb + 0.04, 'cream', oid=o, shades=(0, 0, 1))
     p.box(0.02, -0.05, hb, 0.45, 0.3, hb + 0.04, 'cream', oid=o, shades=(1, 1, 1))
@@ -1056,7 +1082,7 @@ def hotel_desk(p, length=2.4):
 
 def key_rack(p):
     """The board of room keys and pigeonholes behind the hotel desk (on the wall)."""
-    p.box(-0.8, 0.0, 1.4, 0.8, 0.08, 2.4, 'umber', tex=planks(0.3, 'a'))
+    p.box(-0.8, 0.0, 1.4, 0.8, 0.08, 2.4, 'dwood', tex=planks(0.3, 'a'))
     o = p.new()
     for r in range(2):
         for k in range(6):
@@ -1067,13 +1093,13 @@ def key_rack(p):
                 p.box(a - 0.03, 0.12, h - 0.2, a + 0.03, 0.14, h - 0.02, 'brass', oid=o, shades=(0, 1, 1))
                 p.box(a - 0.05, 0.11, h - 0.3, a + 0.05, 0.15, h - 0.2, 'red' if r else 'navy', oid=o)
     o = p.new()
-    p.box(-0.8, 0.0, 1.32, 0.8, 0.25, 1.4, 'umber', oid=o)
+    p.box(-0.8, 0.0, 1.32, 0.8, 0.25, 1.4, 'dwood', oid=o)
     for k in range(6):
-        p.box(-0.78 + k * 0.27, 0.0, 1.0, -0.76 + k * 0.27 + 0.02, 0.25, 1.32, 'umber', oid=o)
+        p.box(-0.78 + k * 0.27, 0.0, 1.0, -0.76 + k * 0.27 + 0.02, 0.25, 1.32, 'dwood', oid=o)
     for k in range(5):
         if k % 2 == 0:
             p.box(-0.7 + k * 0.27, 0.1, 1.05, -0.56 + k * 0.27, 0.24, 1.12, 'cream', oid=p.new())
-    p.box(-0.8, 0.0, 0.98, 0.8, 0.25, 1.02, 'umber', oid=o)
+    p.box(-0.8, 0.0, 0.98, 0.8, 0.25, 1.02, 'dwood', oid=o)
     return dict(foot=[-0.8, 0.0, 0.8, 0.25], wall=True, note='hangs on the wall, 1.0 to 2.4u up')
 
 
@@ -1179,17 +1205,17 @@ def lamp(p, lit=False):
     """A table oil lamp: a brass font, a glass chimney, a shade; lit: the flame and a warm glow on the chimney.
     Stands on a surface: draw it at the surface's height (extra.top of what it stands on)."""
     o = p.oid
-    p.cylv(0, 0, 0.0, 0.05, 0.12, 'brass', oid=o)
-    p.cylv(0, 0, 0.05, 0.18, 0.04, 'brass', oid=o)
-    p.ball(0, 0, 0.26, 0.11, 'brass', sz=0.8, oid=o)
+    p.cylv(0, 0, 0.0, 0.06, 0.15, 'brass', oid=o)
+    p.cylv(0, 0, 0.06, 0.22, 0.05, 'brass', oid=o)
+    p.ball(0, 0, 0.32, 0.15, 'brass', sz=0.8, oid=o)
     if lit:
-        p.cylv(0, 0, 0.34, 0.6, 0.05, 'bloom', oid=o, topidx=0)
-        p.cylv(0, 0, 0.4, 0.5, 0.025, 'fire', oid=o, topidx=0)
-        p.cylv(0, 0, 0.52, 0.6, 0.12, 'bloom', oid=o, topidx=1)
+        p.cylv(0, 0, 0.42, 0.78, 0.07, 'bloom', oid=o, topidx=0)
+        p.cylv(0, 0, 0.5, 0.62, 0.035, 'fire', oid=o, topidx=0)
+        p.cylv(0, 0, 0.66, 0.78, 0.17, 'bloom', oid=o, topidx=0)
     else:
-        p.cylv(0, 0, 0.34, 0.6, 0.05, 'glass', oid=o)
-        p.cylv(0, 0, 0.52, 0.6, 0.12, 'cream', oid=o, topidx=1)
-    return dict(foot=[-0.12, -0.12, 0.12, 0.12], note='stands on a table or counter: lift it by that piece\'s top',
+        p.cylv(0, 0, 0.42, 0.78, 0.07, 'glass', oid=o)
+        p.cylv(0, 0, 0.66, 0.78, 0.17, 'cream', oid=o, topidx=1)
+    return dict(foot=[-0.17, -0.17, 0.17, 0.17], note='stands on a table or counter: lift it by that piece\'s top',
                 light=bool(lit))
 
 
@@ -1259,13 +1285,12 @@ def coffin(p, lid=False):
         p.rod((a, 0.3, 0.0), (a, 0.0, 0.7), 0.035, 'wood')
         p.box(a - 0.05, -0.35, 0.68, a + 0.05, 0.35, 0.74, 'wood')
     o = p.new()
-
-    def shape(k, sgn, a, c, h, idx):
-        w = np.where(a < -0.55, 0.28 + (a + 1.15) * 0.25, 0.43 - (a + 0.55) * 0.12)
-        keep = np.abs(c) < w
-        return None, np.where(np.mod(h, 0.15) < 0.03, clampi(idx + 1), idx), keep
-    p.F.box(-1.15, -0.45, 0.74, 1.15, 0.45, 1.25, 'straw', tex=_kept(shape, -1.15, -0.45, 0.74, 1.15, 0.45, 1.25),
-            oid=o, cast=False)
+    # the six-sided box: shoulders wide, tapering to the head and the feet (three boxes), the lid a shade lighter
+    p.box(-0.95, -0.3, 0.74, 1.15, 0.3, 1.18, 'straw', tex=planks(0.4, 'h'), oid=o)
+    p.box(-0.65, -0.4, 0.74, 0.3, 0.4, 1.18, 'straw', tex=planks(0.4, 'h'), oid=o)
+    p.box(-1.15, -0.22, 0.74, -0.95, 0.22, 1.18, 'straw', oid=o)
+    p.box(-0.93, -0.27, 1.18, 1.12, 0.27, 1.24, 'straw', shades=(0, 1, 2), oid=o)
+    p.box(-0.63, -0.37, 1.18, 0.28, 0.37, 1.24, 'straw', shades=(0, 1, 2), oid=o)
     return dict(foot=[-1.15, -0.45, 1.15, 0.45], use=[[0, 0.7, 'work']])
 
 

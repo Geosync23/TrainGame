@@ -265,7 +265,9 @@ module.exports = async function checkD32World() {
       const p30 = L.cw.cwSimDays(1866, 30, 40), p5 = L.cw.cwSimDays(1866, 5, 200);
       out.pace = { d30: p30.days, d5: p5.days, ratio: p5.days / p30.days };
       if (!(p30.done >= 0 && p30.days >= 13 && p30.days <= 15)) B(`30 men took ${p30.days} working days`);
-      if (!(p5.done >= 0 && p5.days / p30.days >= 5.5 && p5.days / p30.days <= 6.5)) B(`5 men took ${p5.days} days, ${(p5.days / p30.days).toFixed(2)} times 30 men's`);
+      // (D34: a tie takes two men and a rail four, so five men take about 7.5 times as long: check-crew's reason)
+      const lo5 = (0, eval)('D34').on ? 7 : 5.5, hi5 = (0, eval)('D34').on ? 8 : 6.5;
+      if (!(p5.done >= 0 && p5.days / p30.days >= lo5 && p5.days / p30.days <= hi5)) B(`5 men took ${p5.days} days, ${(p5.days / p30.days).toFixed(2)} times 30 men's`);
       if (p30.done !== p30.days - 1) B(`30 men: ${p30.days} working days in ${p30.done + 1} calendar days (a day of rest?)`);
       if (p30.f.some(v => v !== 2520)) B('the fronts did not all reach 2,520 m: ' + p30.f.join(', '));
       // ---- Away ----

@@ -85,6 +85,7 @@ Current checks:
 - D31 (see "D31 (play-test fixes)"): `check-d31.js` (the first freight unloaded by real taps, one tap per good and the queue, the small cart, the pace, the soft see-through patch, `?d31=0`); `tests/d31-lib.js` brings a default game to the first freight for it.
 - D32 (see "D32 (line building)"): `check-d32world.js`, `check-worktrain.js`, `check-linerender.js` (Foundation), `check-crew.js`, `check-camp.js` (Crew); the other owners' checks have their lines in `run-all.js` and are skipped with a note until their files land.
 - D32 (see "D32 (line building)"): `check-d32world.js`, `check-worktrain.js`, `check-linerender.js` (Foundation), `check-lineplay.js`, `check-linegames.js`, `check-linelessons.js` (Play); the other owners' checks have their lines in `run-all.js` and are skipped with a note until their files land.
+- D32 stage 3 (see "D32 stage 3: the bigger town (sim)"): `check-bigtown.js`, `check-towneconomy.js` (Town); `check-townsfolk.js` opens with `?tn=0` (the D27 town).
 - `check-protoworld.js` (D25 foundation): the prototype's layout, walking distances, reachability (platform 2 only over the walkway), the first trains in and out with the switches set by hand, the parked systems off over a day, the day's phases, the older worlds in 3D, and the pixel renderer (whole scale and zoom steps, screen to world and back, picking a coach, frame time). Screenshots `protoworld-{start,out,trains}-{portrait,landscape}.png`.
 - `check-freight.js` (D24, CG): the freight trains' goods; see "Station rework (D24)". Screenshots `freight-dock-*.png`.
 - `check-rrtrains.js` (D24, TR): the railroad's trains over a day with a scripted player; `check-tickets.js` (D24, PX): tickets on board; `check-hubui.js` (D24, UI): the screen guidance (with fakes of PX's and CG's reads, and a part on the real pieces); `check-hub-day.js` (D24, integrator): three game days in the hub played by `tests/hub-bot.js`. See "Station rework (D24)".
@@ -431,7 +432,7 @@ The designer, after playing D20 and D21: "Why doesn't the game explain this? Stu
 
 ## Sections of index.html
 
-config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town: stand-ins), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`), drawing each frame, main loop, test hooks, start.
+config, pixel art data (generated: `PIX_ATLAS`), random numbers (seeded), track graph, track validation, test yard layout, starting world layout (also the D24 hub world: `HUBW`, `buildHubWorld`, `WORLDS.hub`, `worldParked`; and the prototype: `PROTO`, `PROTO_SW`, `buildProtoWorld`, `WORLDS.proto`; D27: `PROTO_LEVERS`, `PROTO_BRIDGES`, `PROTO_LEVELS`, `PROTO_DECKS`, `TOWN27`, `SHOPS27`, `d27On`), game state, routes, commands, trains, timetable, railroad trains (D24, TR; D25: `RR_WORLDS`, `PROTO_SCHEDULE`, `PROTO_STOCK`, `protoStopPos`, `rrThroughTick`), cargo (items and waybills; D27: `GOODS27`, `SHOP_GOODS27`, the handling places, `itemAudit`), construction jobs, town, the town (D27, W), hired workers (D32, Town: stand-ins), the bigger town (D32, Town stage 3: `TN`, `TN_PEOPLE`, `TN_ROUTINES`, the economy `tnRoll` / `tnTick`, `tnShop`, `tnHome`, `tnLook`; its houses are TOWN27's block "D32 stage 3 (Town)" in "starting world layout", `TN_OFF`), the line (D32, Foundation: `LINE`, the country `lnTile` / `lnScatter` / `lnBorder`, the fronts `lnWork`, the work train `wt*`, away `aw*`, dev mode's commands `dvCmd`, the clock `clockRate`; D33: `D33`, the line's place in the world, `lnBegin`, `lnCrewNow`), the crew (D32, Crew: stand-ins), on the line (D32, Play: stand-ins), economy, freight trains' goods (D24, CG), walk grid and path-finding (D27: levels, `walkDeckY`), player, passengers, tickets on board (D24, PX), prototype passengers (D25, P), tickets on board (D27, P), prototype goods (D25, F), freight handling (D27, F), prototype day (D25, U; D27: the block "Lessons (D27)" at its end, U), telegrams and alerts, tutorial, sim tick, saving, models (procedural, low-poly), renderer and camera, world rendering, terrain, day and night, buildings (D25: `BLD_LAYOUTS.proto`, `PROTO_SHOPS`), people (crowd), build tool, debug, game loop state, HUD and panels (D25: block "Prototype (D25)", U, with the D27 lesson card, jobs and buttons; D32: block "Dev mode (D32)" at its end, Foundation), input (touch first, mouse and keyboard as extras), pixel renderer (D25, R; D32: block "The line's view (D32)" at its end, Foundation; D33: that block also draws the line inside the station's world, `pixLnIn` / `pixWorldIn`, `pixBranch`, `pixStnChunk`, `pixLnAdd`), drawing each frame, main loop, test hooks, start.
 
 ## Draw calls
 
@@ -1427,6 +1428,128 @@ This replaces the Foundation's "natural borders" paragraph above where they diff
 **Provisional choices (Play, stage 2).** The worth (0.5 to 1.25 men), the lift (1.15 at most, within 12 m, from an average of 60), the 4-minute cap and the one-second spacing; the beats (760 ms digging, 620 ms spiking) and the timing window (90 to 330 ms); the rake's 4 s and its level 0.9; the clearers' place 1.8u into the brush; the player is not drawn in his own ties game (his end is the dot).
 
 **Check.** `check-linegames.js`, portrait and landscape, by Chromium touch events (taps, swipes, press-hold-drag-release, a second thumb on Step out): the Join button beside each gang, thumb-sized and on the screen; each game at good, fair and poor timing gives that word (portrait; landscape plays good) and the sim takes it; three good rounds lift the diggers near him (`cwBoost`, the panel says so), poor rounds let it lapse; Step out mid-carry leaves no round sent and him empty-handed; the whole session's ticks replayed from its start give the same hash; a flood of `lgDone` one a tick is taken at most once in 8 ticks and is worth no more than one man at 1.25; no console errors. Screenshots `linegames-<game>-<orient>.png` mid-round. `check-linelessons.js`: in the sim each line lesson opens at its moment, steps on, finishes, never opens twice, comes back after replay, and a mid-day state as JSON plays on to the same hash; on the page the first card holds the game on the line, Show me lets it run, the game panel waits under the first card of the spikers' lesson, the card is inside the screen, Settings has the Lessons row on the line. Screenshots `linelessons-*.png`.
+
+### D32 stage 3: the bigger town (sim) (Town, 2026-11-14)
+
+Plan 8.1 (homes, roles, a daily round) and 8.4 (a simple economy you can see). The rooms (8.2, 8.3: walking inside, the
+fading walls, the shelves indoors) and the far town are the Rooms builder's; people still go in at a door and are not
+drawn, as in D27. Code: section "the bigger town (D32)" (after "hired workers (D32)"; its head comment is the contract)
+and TOWN27's block of rows "D32 stage 3 (Town)" in "starting world layout".
+
+**The switch.** `?tn=0` (`TN_OFF`, `TN.on`) parks all of it: the D27 town of 19 people, the 8 D27 houses, no `S.tn`, no
+economy, W's routines (`check-townsfolk.js` now opens with it: it tests W's town). Nothing is deleted.
+
+**What exists.**
+- **Houses** (TOWN27 rows, `tn: 'cabin' | 'frame' | 'two'`): ten on 8u lots. Five between the D27 houses on the back
+  lanes (house9 at (-35, -50); house10 to house13 at x 35, z -50, -70, -90, -112), doors on lanes W and E as theirs. Five on
+  a third lane west of the town (`TOWN27.tnLanes`: lane `W2` at x -43, joined to lane W at the alley z -73 and at its
+  north end z -116; house14 to house18 at x -51, z -66 to -114, facing it), north of the camp (its z0 is -58; house14
+  ends at -61.75). Clear of every footprint, the camp, the muster, the wash, the line's country (east of x 80) and the
+  wood; solid nature on the new lots and the lane is taken away (only with tn on). The lane and its joins are dirt on the
+  ground (`tnLaneAt`, one line in `pixCellTile`). Each has a door node in the town graph (W's `townGraphBuild` reads
+  `tnLanes`). **Art**: the renderer asks for `bld/house_<tn>/<face>`, then `bld/house_<tn>` (the artist's keys, by key,
+  once they have a box), else the D27 design as a stand-in (`tnHouseKey`; cabin design 3, frame 1, two-room 2).
+- **People**: `TN_PEOPLE`, 22 more in `TF_AGENTS` (41 townsfolk): Martha Pratt and Josie Turner (the keepers' wives),
+  Gus Lindqvist (the smith's hand), the Abbotts (Will, store clerk; Mary; Ada), the Marshes (Edwin, bank clerk; Lucy;
+  Jimmy), Hattie Bell (hotel cook), the Diaz (Rosa, hotel maid; Ana), Billy Ortega (stable boy), Lottie Shaw (barmaid),
+  Sam Ives (printer's devil), Pete Hensley, Otis and Ruth Fenn (carpenter for the undertaker; bath woman at the
+  barber's), Dan Pike (feed hand), Joe Haskins (livery hand), Ned and Nora Quinn (assay clerk; keeps house). Six pupils.
+  Every townsperson has `{ role, home, work }` (`TN_ROLES` for W's 19; with tn on Tommy Pratt lives over the store with
+  his parents and the cowhands' work is the range, `'edge'`). The hired hands (`S.hw`) lodge at the hotel. 26
+  households (the people of one home), each with at least one earner.
+- **The round** (`TN_ROUTINES` by kind: keeper, barkeep, barmaid, clerk, sheriff, preacher, teacher, pupil, laundress,
+  cowhand, homemaker, hand, cook; W's planner with two hooks, `tnRoutine` and `tnPlace`): home, work, the noon meal
+  (the hotel's table or home, `meal`), an errand (a shop by the draw), the saloon or the porch in the evening
+  (`evening`), **home by 21:30** (every evening errand ends by 21:10 plus up to 10 minutes' jitter); church on Sunday;
+  the pupils at school Monday to Friday.
+- **The rail men** (Crew's men, Crew's own walking `cwGo` / `cwStep`): Saturday at 20:20 a third of the men at the camp's
+  fire walk by the town graph to the saloon (each to his own spot by its door, rows of five), are inside to 21:15 (each
+  one custom) and walk back; Sunday from 19:45 a quarter walk to the church for evening prayers to 20:50. Back at the
+  gate they are handed to Crew walking to their cots (`'toBed'`). While out `m.st` is `'town'` (indoors `pl` 0), which
+  Crew's tick leaves alone, and the head count says "the town". The line's pace is untouched (check-bigtown compares the
+  fronts after a week with `?tn=0`: the same to the millimetre).
+- **The economy** (`S.tn`, settled each morning at 05:00 by `tnRoll`, called first in W's `tfTick` so the day's plans see
+  it; `tnTick` counts the day's events):
+  - stock 0 to `TN.CAP` 12 for the nine shops that take goods by rail (`TN.USE`: store 3, saloon 3, hotel 2, smithy 2,
+    livery 2, newspaper 2, bank 1, undertaker 1, feed 1 a day while open); a good handed in at a door (`frDelivered`,
+    `pgDelivered`: the player's, the hired delivery man's and the shop's own collection) adds 3, a plough, piano,
+    furniture or stove 6; a new town starts with two days' use;
+  - open or shut: open while it had stock at 05:00, or on its first morning at 0 ("empty shelves"); shut on the second
+    morning at 0. So goods missed from day 0 give empty shelves on day 2 and every shop shut on day 3 (days counted from
+    0 as the sim does: the clock's Day 1 is day 0). The barber, the sheriff, the assay office, the church and the school
+    keep no stock and are always open. The hotel and the saloon also stay open on yesterday's travellers' custom;
+  - pay: per household 2 coins a day for each earner whose workplace was open, less 1 upkeep, a purse of 0 to 20
+    (starts at 8); mood content, worried after 2 days without pay, unhappy after 4;
+  - what it does to the round: a shut shop's keeper stands at its door all day (so he is there to take a delivery, W's
+    `tfAt`), its other people idle on their porches or at the saloon's door; an errand to a shut shop ends at its door;
+    unhappy households' grown-ups stand about the depot square's ends and the street's foot 18:30 to 20:45;
+  - travellers' custom: each traveller who steps off (`pbOff`, `ppOff`) has a 1 in 3 chance (`rngFor(seed, 'tn',
+    'cust', run, id)`) to walk from platform 1's west end to the hotel or the saloon (half each, shut or not: the custom
+    is what keeps them open), stay an hour (1 in 10 of the hotel's overnight, to 07:00) and walk back; each a custom.
+    The hired hands lodging at the hotel are a night's custom each. At most 16 visitors at once.
+- **Visible signs**: a "Closed" board standing in the street at each shut shop's steps (`tnPixItems`: `ui/closed_card`
+  when the atlas has it, else a paper card with the word in the pixel font; what stands in front turns see-through); the
+  idle on porches and at the saloon's door; the unhappy on the square in the evening; travellers walking in
+  (`tnDrawList`, added to the townsfolk's list in `pixLists`); the **Look card** (a tap on a townsperson, a rail man, a
+  hired hand, a traveller, a home or a shop in the pixel view: role, home, work, household, purse, mood; a shop's stock,
+  open or shut, today's travellers; `tnTap` in the input after `pdTap`, the card is D1's `#lookCard` through
+  `lookCardOf`'s new kind `'tn'`); the dev panel's town line (`tnDevLine`: shops open and which are empty, households paid
+  yesterday, moods, travellers today).
+- **For Rooms**: `tnShop(S, id)` `{ stock (null for a shop that keeps none), open, custom }`, `tnHome(S, who)` `{ pay,
+  mood (0 content, 1 worried, 2 unhappy) }` by home building or member id; `tnRoomOpen()` stays his.
+
+**The tables.** `TN` (every number above), `TN_PEOPLE`, `TN_ROLES`, `TN_ROUTINES`, `TN_ERRANDS`, `TN_SQUARE`, TOWN27's
+rows and `tnLanes`; households are worked out from `TF_AGENTS` (`tnHouseholds`).
+
+**The store** `S.tn = { day, key, shop: { [id]: { s, z, o, c, cy } }, home: { [home]: { p, u, lp } }, vis, vn, cr, tot }`
+(the head comment lists every field). Optional, schema 19 unchanged: a new game gets it at its first tick, a save
+without it at its next 05:00 (its townsfolk are re-planned at once by W's rule, without the economy until then);
+`tnCheckSaveShape` refuses a damaged one. The day's plans are cached by seed, day and `S.tn.key` (the shut shops and
+unhappy homes), so the planner stays a pure function of the state.
+
+**Shared lines touched (each marked "D32 Town" or "D32 (Town)").** TOWN27's block of rows; W's `townGraphBuild` (the new
+lane), `tfPlans` (`tnd`: the routine and place hooks, the cache key), `tfPlanDay`, `tfTick` (`tnRoll` first),
+`tfDrawList`; `BLD_LAYOUTS.proto` (the houses' `tn`); the renderer (`tnHouseKey` for a house27's key, the lit-window
+test knows `house_`, `tnPixItems` after `hwPixItems`, `tnDrawList` in `pixLists`, `tnLaneAt` in `pixCellTile`); Crew's
+`hcRoll` (a man in town); `lookCardOf` and `onTap` (the Look card); `dvStatusText` (the town line); `__railhead.tn`.
+
+**How to test.** `node tests/run-one.js check-bigtown` (the people, houses and graph, a week with a crew of 30: the
+round at 10:00, the noon meal, Sunday church, everyone at home at every 22:00 head count, nobody on a blocked cell, the
+rail men's Saturday and Sunday, the same week twice and after a save, the line's fronts equal to `?tn=0`; screenshots
+`bigtown-{lanes,street}-portrait.png`) and `node tests/run-one.js check-towneconomy` (a week of full deliveries, a week
+of none, travellers' custom, saves and damaged stores, the Look cards and the dev line by real taps; screenshots
+`towneconomy-{closed,look,square}-portrait.png`). Both use scripted trains (as check-townsfolk) and hand in the day's
+goods at 18:00 through `TN_TEST.tnFeed`, so they take seconds.
+
+**Speed.** Measured with check-pixperf (4x-throttled CPU, best of three windows, average ms; its scenes add 7 sorted things with the town on: the new houses at the furthest zoom). Before this work: the station at the furthest zoom 7.74 portrait, 9.76 landscape; the default zoom 5.8, 5.4; the street at dusk 2.56, 3.2 (default) and 4.61, 5.79 (furthest). The same build with `?tn=0`: 6.61, 8.81; 5.49, 5.37; 2.6, 2.92 and 5.29, 6.0. With the town on, two runs: the station at the furthest zoom 9.45 and 6.87 portrait, 8.6 and 7.67 landscape (its own budget is 10); the default zoom 6.18 and 4.46, 5.01 and 6.15; the street at dusk 4.39 and 3.76, 4.14 and 3.55 (default), 5.43 and 5.02, 6.96 and 7.53 (furthest). All within the budgets; the run-to-run noise (up to 3 ms here) is larger than the difference. The sim side (unthrottled): `tfDrawList` with 41 people 18 microseconds (2 with 19), `tnDrawList` 0.1, `tnPixItems` 0.6; a week of the town and a crew of 30 about 1.3 s of sim. What costs is drawing more people outdoors: at 19:45 on a weekday about 15 of the 41 are outdoors (1 of the 19 before).
+
+**Provisional choices for the designer.**
+1. The ten houses' places (five between the D27 houses, five on a third lane west of the town, north of the camp; no
+   third lane east, where the dry wash is) and kinds (four cabins, four frame houses, two two-room houses), with D27
+   house designs standing in until the artist's art lands.
+2. The 22 new people, their names (all the builder's), roles, homes and families; Tommy Pratt moved in with his
+   parents over the store; three households living over shops gained a member.
+3. The routines' times (shops 07:30, clerks 09:00, hands 07:00, the cook 06:00 every day, the barmaid 16:00 to 21:15,
+   home by 21:30; the sheriff's saloon round now ends at 21:15 and the cowhands ride home by 21:20).
+4. Stock: 3 a good (6 a big one), the daily use by shop, a cap of 12, two days' stock at the start.
+5. Open or shut: one morning of empty shelves, shut on the second; the barber, sheriff and assay office keep no stock.
+6. Pay 2 coins an earner a day, upkeep 1, a purse 0 to 20 starting at 8; the preacher, the teacher and the sheriff are
+   always paid (the town and the county pay them).
+7. A shut shop's keeper waits at its door all day (so a delivery can still be made); its hands idle at home or at the
+   saloon's door.
+8. Travellers: 1 in 3 into town, half to the hotel and half to the saloon, an hour, 1 in 10 of the hotel's overnight;
+   the custom keeps those two open even with empty shelves; the hired hands' lodging counts as the hotel's custom.
+9. The rail men: Saturday a third to the saloon 20:20 to about 21:45; Sunday evening prayers (a quarter, 19:45 to
+   about 21:40) instead of the morning service, because the crew works on Sunday morning (no Sunday rest, the lead's
+   decision 3) and taking men off the train would change the line's pace.
+10. The Closed board stands in the street at the shop's steps (on the boardwalk it hid under the awnings).
+11. A tap on a townsperson or a home opens the Look card instead of walking there (a second tap closes it).
+12. The unhappy stand at the square's ends and the street's foot: the square's middle is behind the station building
+   in the view.
+
+**Known limits.** The visitors and the rail men in town pass through people and the player (as the townsfolk's own
+walkers wait for him, these do not). Shops keep their lit windows at night when shut. The Closed card on the east row
+is seen through its building (the east row's backs face the view). The far town and rooms are not here.
 
 ## D33 (one world)
 

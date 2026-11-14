@@ -21,7 +21,9 @@ const { openGame, screenshotPath } = require('./browser');
 
 module.exports = async function CheckTownsfolk() {
   const problems = [], P = m => problems.push(m);
-  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto' });
+  // (D32 stage 3: the D27 town of 19 is parked behind ?tn=0; the bigger town has its own checks, check-bigtown and
+  // check-towneconomy.)
+  const { browser, page, errors } = await openGame('portrait', { query: '?paused&world=proto&tn=0' });
   try {
     // ---- The graph and the people ----
     const g = await page.evaluate(() => {

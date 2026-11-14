@@ -6647,7 +6647,7 @@ const TN = {
   CUSTOM_P: 1 / 3, NIGHT_P: 0.1, VIS_WAIT_S: 600, STAY_S: 3600, NIGHT_TO_S: 7 * 3600, VIS_MAX: 16,
   CREW_SAT: 1 / 3, CREW_SUN: 1 / 4,
   SAT_GO_S: 20 * 3600 + 1200, SAT_BACK_S: 21 * 3600 + 900,     // the saloon: leave the camp 20:20, leave the saloon 21:15
-  SUN_GO_S: 19 * 3600 + 3300, SUN_BACK_S: 21 * 3600,           // evening prayers: leave the camp 19:55, leave the church 21:00
+  SUN_GO_S: 19 * 3600 + 2700, SUN_BACK_S: 20 * 3600 + 3000,    // evening prayers: from the camp (or on the way to it) 19:45, leave the church 20:50
   MOODS: ['content', 'worried', 'unhappy'],
 };
 // The 22 new townsfolk (W's agent shape plus role): id, name, who (A1's people types), kind (the routine), role, home,
@@ -6840,7 +6840,7 @@ function tnTick(S, ev) {
   const st = S.tn;
   for (const e of ev) {
     if ((e.t === 'frDelivered' || e.t === 'pgDelivered') && e.shop && st.shop[e.shop]) {
-      const q = st.shop[e.shop], k = Number.isInteger(e.id) ? itemType(S, e.id) : null;
+      const q = st.shop[e.shop], k = Number.isInteger(e.id) ? itemType(S, e.id) : e.commodity && COMMODITIES[e.commodity] ? COMMODITIES[e.commodity].type : null;   // (a check's event names its commodity)
       q.s = Math.min(TN.CAP, q.s + (TN.BIG.includes(k) ? TN.BIG_UNIT : TN.UNIT));
       st.tot.delivered++;
     } else if (e.t === 'pbOff' || e.t === 'ppOff') tnCustom(S, st, e, ev);
@@ -6884,9 +6884,12 @@ function tnVisTick(S, st) {
 }
 // The rail men's evenings in town (Saturday the saloon, Sunday evening prayers): Crew's men, walked by Crew's own
 // stepping (cwGo, cwStep) along the town graph from the camp's gate, then handed back to Crew walking to their cots.
-function tnCrewRoute(to) {
-  const g = PROTO.CAMP.gate, path = townPath('sq_ww', 'door_' + to) || [], G = TOWN_GRAPH;
-  return [[g.x, g.z], [g.x, -26]].concat(path.map(id => [G.nodes[G.idx[id]].x, G.nodes[G.idx[id]].z]));
+// The way from the camp's gate to the door (its last point: the k-th man's own spot by the door, in rows of five).
+function tnCrewRoute(to, k) {
+  const g = PROTO.CAMP.gate, path = townPath('sq_ww', 'door_' + to) || [], G = TOWN_GRAPH, R = [[g.x, g.z], [g.x, -26]].concat(path.map(id => [G.nodes[G.idx[id]].x, G.nodes[G.idx[id]].z]));
+  const e = R[R.length - 1], a = ((k % 5) - 2) * 0.8, b = Math.floor(k / 5) % 2 * 0.8;
+  R[R.length - 1] = to === 'church' ? [e[0] + a, e[1] + 0.4 + b] : [e[0] - 0.3 - b, e[1] + a];
+  return R;
 }
 function tnCrewTick(S, st, ev) {
   const C = S.cw;
@@ -6895,13 +6898,13 @@ function tnCrewTick(S, st, ev) {
   const go = wd === 5 ? TN.SAT_GO_S : wd === 6 ? TN.SUN_GO_S : -1;
   if (go >= 0 && sod >= go && sod < go + CFG.TICK_GAME_S) {
     const to = wd === 5 ? 'saloon' : 'church', k = wd === 5 ? TN.CREW_SAT : TN.CREW_SUN, X = rngFor(S.seed, 'tn', 'crew', day);
-    const can = men.filter(m => m.pl === 1 && m.st === 'camp' && m.a !== 'toBed' && !st.cr.some(c => c.id === m.id)).map(m => ({ m, r: rngNext(X) })).sort((a, b) => a.r - b.r || a.m.id - b.m.id);
-    for (const { m } of can.slice(0, Math.ceil(men.length * k))) {
-      const R = tnCrewRoute(to), end = R.pop();
+    const can = men.filter(m => m.pl === 1 && (m.st === 'camp' || (wd === 6 && m.st === 'toCamp')) && m.a !== 'toBed' && !st.cr.some(c => c.id === m.id)).map(m => ({ m, r: rngNext(X) })).sort((a, b) => a.r - b.r || a.m.id - b.m.id);
+    can.slice(0, Math.ceil(men.length * k)).forEach(({ m }, j) => {
+      const R = tnCrewRoute(to, j), end = R.pop();
       m.st = 'town'; m.a = to; m.w = 0; cwGo(m, end[0], end[1], R);
-      st.cr.push({ id: m.id, to, st: 'go', t: 0 });
+      st.cr.push({ id: m.id, to, st: 'go', t: 0, k: j });
       ev.push({ t: 'tnCrewOut', id: m.id, to });
-    }
+    });
   }
   if (!st.cr.length) return;
   const back = c => c.to === 'saloon' ? TN.SAT_BACK_S : TN.SUN_BACK_S;
@@ -6917,7 +6920,7 @@ function tnCrewTick(S, st, ev) {
         else { m.mv = 0; m.f = 0; }                     // a shut saloon: they stand at its door
       }
     } else if (c.st === 'in') {
-      if (sod >= back(c)) { const R = tnCrewRoute(c.to).reverse(), end = R.pop(); R.shift(); m.pl = 1; c.st = 'back'; cwGo(m, end[0], end[1], R); }
+      if (sod >= back(c)) { const R = tnCrewRoute(c.to, c.k | 0).reverse(), end = R.pop(); R.shift(); m.pl = 1; c.st = 'back'; cwGo(m, end[0], end[1], R); }
     } else if (cwStep(S, m, v, false)) {
       const t = cwCot(m.id);
       m.st = 'camp'; m.a = 'toBed'; m.pl = 1; cwGo(m, t.x, t.z, cwBedRoute(m.id).slice(0, -1));
@@ -7032,6 +7035,14 @@ function tnPixItems(S) {
     out.push(it);
   }
   return out;
+}
+// The ground under the bigger town's own lanes (the renderer's tiles): the lane and its joins to lane W, in dirt.
+function tnLaneAt(x, z) {
+  for (const L of TOWN27.tnLanes) {
+    if (Math.abs(x - L.x) <= 2 && z >= L.joins[1][1] - 1.5 && z <= L.z1 - 1) return true;
+    for (const [, jz] of L.joins) if (Math.abs(z - jz) <= 1.5 && x >= L.x - 2 && x <= PROTO.LANES.W.x0) return true;
+  }
+  return false;
 }
 // The house kinds' art (the renderer): bld/house_<tn>/<face>, bld/house_<tn>, else the D27 design (the stand-in).
 function tnHouseKey(at) {
@@ -25837,6 +25848,7 @@ function pixCellTile(G, i, j) {
   if (x >= ST.x0 && x <= ST.x1 && z >= ST.end.z0 && z <= ST.z1) return pick('street', 3);
   if ((x >= SQ.x0 && x <= SQ.x1 && z >= SQ.z0 && z <= SQ.z1) || (z >= LA.z0 && z <= LA.z1 && ((x >= LA.W.x0 && x <= LA.W.x1) || (x >= LA.E.x0 && x <= LA.E.x1)))) return pick('dirt', 3);
   if (z >= ST.z0 && z <= ST.z1 && ((x >= ST.x0 - ST.walk && x < ST.x0) || (x > ST.x1 && x <= ST.x1 + ST.walk))) return pick('dirt', 3);   // the alleys between the boardwalks
+  if (tnLaneAt(x, z)) return pick('dirt', 3);   // D32 (Town): the bigger town's third lane and its joins
   if (pixOnPath(x, z)) return pick('path', 2);
   return dry ? pick('drygrass', 2) : pick('grass', 4);
 }

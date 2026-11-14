@@ -1,0 +1,47 @@
+{
+  "answers": {
+    "q.camera": {
+      "choice": "yes"
+    },
+    "q.depart": {
+      "choice": "strict"
+    },
+    "q.evening": {
+      "choice": "keep"
+    },
+    "q.feel": {
+      "choice": "yes"
+    },
+    "q.goods": {
+      "choice": "keep"
+    },
+    "q.handling": {
+      "choice": "faster",
+      "note": "Needs to me much smoother and more clear"
+    },
+    "q.keeper": {
+      "choice": "keep"
+    },
+    "q.lessons": {
+      "choice": "keep"
+    },
+    "q.levers": {
+      "choice": "keep",
+      "note": "Let's make all switches in the same place even if not realistic "
+    },
+    "q.punch": {
+      "choice": "faster",
+      "note": "Needs to be smoother too its very hitchy when in the train"
+    },
+    "q.runs": {
+      "choice": "keep"
+    },
+    "q.town": {
+      "choice": "keep"
+    },
+    "q.zoom": {
+      "choice": "keep"
+    }
+  },
+  "savedAt": 1794508076014
+}

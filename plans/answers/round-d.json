@@ -1,0 +1,35 @@
+{
+  "answers": {
+    "cordwood": {
+      "choice": "cart"
+    },
+    "inspect": {
+      "choice": "look"
+    },
+    "link": {
+      "choice": "yes"
+    },
+    "office": {
+      "choice": "desk"
+    },
+    "pause": {
+      "choice": "no"
+    },
+    "tape": {
+      "choice": "slide"
+    },
+    "travel": {
+      "choice": "ride"
+    },
+    "tutorial": {
+      "choice": "skip"
+    },
+    "wftickets": {
+      "choice": "honor"
+    },
+    "wood": {
+      "choice": "yes"
+    }
+  },
+  "savedAt": 1793592572982
+}

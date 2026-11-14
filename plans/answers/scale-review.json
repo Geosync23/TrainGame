@@ -1,0 +1,17 @@
+{
+  "answers": {
+    "q.next": {
+      "choice": "go"
+    },
+    "q.size": {
+      "choice": "right"
+    },
+    "q.walk": {
+      "choice": "slower"
+    },
+    "q.zoom": {
+      "choice": "keep"
+    }
+  },
+  "savedAt": 1793712288881
+}

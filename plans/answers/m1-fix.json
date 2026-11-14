@@ -1,0 +1,41 @@
+{
+  "answers": {
+    "q.board": {
+      "choice": "wall"
+    },
+    "q.clip": {
+      "choice": "feet"
+    },
+    "q.crossings": {
+      "choice": "fixedown"
+    },
+    "q.cutaway": {
+      "choice": "roofwall"
+    },
+    "q.gaps": {
+      "choice": "all"
+    },
+    "q.map": {
+      "choice": "room"
+    },
+    "q.review": {
+      "choice": "scalefirst"
+    },
+    "q.roof": {
+      "choice": "fade"
+    },
+    "q.scale": {
+      "choice": "world"
+    },
+    "q.side": {
+      "choice": "either"
+    },
+    "q.times": {
+      "choice": "same"
+    },
+    "q.zoom": {
+      "choice": "wider"
+    }
+  },
+  "savedAt": 1793646460878
+}

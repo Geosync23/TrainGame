@@ -1,0 +1,155 @@
+{
+  "answers": {
+    "map.hubplan": {
+      "choice": "keep"
+    },
+    "map.size": {
+      "choice": "change",
+      "note": "needs to be larger , as mentioned above. scale it all up. "
+    },
+    "map.spacing": {
+      "choice": "keep"
+    },
+    "map.speeds": {
+      "choice": "keep"
+    },
+    "map.telegraph": {
+      "choice": "keep"
+    },
+    "map.wf": {
+      "choice": "keep"
+    },
+    "money.byday": {
+      "choice": "keep"
+    },
+    "money.cutoff": {
+      "choice": "keep"
+    },
+    "money.key": {
+      "choice": "keep"
+    },
+    "money.nosale": {
+      "choice": "keep"
+    },
+    "money.owner": {
+      "choice": "keep"
+    },
+    "money.payday": {
+      "choice": "keep"
+    },
+    "money.sixcars": {
+      "choice": "keep"
+    },
+    "money.wfmiles": {
+      "choice": "keep"
+    },
+    "move.boardany": {
+      "choice": "keep"
+    },
+    "move.flatcar": {
+      "choice": "keep"
+    },
+    "move.hidden": {
+      "choice": "change",
+      "note": "see above"
+    },
+    "move.nocart": {
+      "choice": "keep"
+    },
+    "move.staffride": {
+      "choice": "keep",
+      "note": "this is fine. I want to be able to see into the train cars when we enter them. a cutaway view. the traisn should also be larger the whole game needs to be scaled up"
+    },
+    "move.tags": {
+      "choice": "keep"
+    },
+    "move.walktrack": {
+      "choice": "change",
+      "note": "we need to get the core loop going and this is needed. this also brings up another issues- the platform is way too small. the entire scae of the game is too small. The roof on the platform also prevesnts it from being easy to read. "
+    },
+    "office.alerts": {
+      "choice": "keep"
+    },
+    "office.inbox": {
+      "choice": "keep"
+    },
+    "office.lowwood": {
+      "choice": "keep"
+    },
+    "office.tutorder": {
+      "choice": "keep"
+    },
+    "office.which": {
+      "choice": "keep"
+    },
+    "pax.board": {
+      "choice": "change",
+      "note": "make it both"
+    },
+    "pax.door": {
+      "choice": "keep"
+    },
+    "pax.rates": {
+      "choice": "keep"
+    },
+    "pax.vanish": {
+      "choice": "keep"
+    },
+    "pax.window": {
+      "choice": "keep"
+    },
+    "q.feel": {
+      "choice": "notyet",
+      "note": "please also removie playform clipping and scale as talked about above then i will retest"
+    },
+    "q.handspeed": {
+      "choice": "keep3"
+    },
+    "q.next": {
+      "choice": "gaps"
+    },
+    "q.playtest": {
+      "choice": "skip"
+    },
+    "towns.devyard": {
+      "choice": "keep"
+    },
+    "towns.openstock": {
+      "choice": "keep"
+    },
+    "towns.people": {
+      "choice": "keep"
+    },
+    "towns.tent": {
+      "choice": "keep"
+    },
+    "trains.couple": {
+      "choice": "keep"
+    },
+    "trains.dwell": {
+      "choice": "keep"
+    },
+    "trains.nodrive": {
+      "choice": "keep"
+    },
+    "trains.off": {
+      "choice": "keep"
+    },
+    "trains.orderboard": {
+      "choice": "keep"
+    },
+    "trains.schedule": {
+      "choice": "keep"
+    },
+    "trains.tender": {
+      "choice": "keep"
+    },
+    "trains.times": {
+      "choice": "keep"
+    },
+    "trains.work": {
+      "choice": "keep"
+    }
+  },
+  "savedAt": 1793635154754
+}

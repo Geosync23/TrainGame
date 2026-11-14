@@ -1,0 +1,24 @@
+{
+  "answers": {
+    "q.clear": {
+      "choice": "partly",
+      "note": "See latest survey "
+    },
+    "q.day1": {
+      "choice": "throw"
+    },
+    "q.look": {
+      "choice": "keep"
+    },
+    "q.next": {
+      "choice": "m2"
+    },
+    "q.overland": {
+      "choice": "me"
+    },
+    "q.spring": {
+      "choice": "spring"
+    }
+  },
+  "savedAt": 1793795843465
+}

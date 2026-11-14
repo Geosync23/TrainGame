@@ -1,0 +1,22 @@
+{
+  "build": "keep",
+  "build_note": "",
+  "buildings": "change",
+  "buildings_note": "Larger platform",
+  "crowd": "off",
+  "crowd_note": "",
+  "look": "yes",
+  "look_note": "",
+  "next": "m1plan",
+  "next_note": "",
+  "night": "keep",
+  "night_note": "",
+  "other_note": "",
+  "phone": "smooth",
+  "phone_note": "",
+  "savedAt": "2026-11-01T16:23:33.873Z",
+  "start": "keep",
+  "start_note": "",
+  "zoom": "keep",
+  "zoom_note": ""
+}

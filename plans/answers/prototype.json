@@ -1,0 +1,34 @@
+{
+  "answers": {
+    "q.build": {
+      "choice": "same"
+    },
+    "q.day": {
+      "choice": "fixed"
+    },
+    "q.late": {
+      "choice": "wait"
+    },
+    "q.layout": {
+      "choice": "other",
+      "note": "PLatform with main station, then track x2, then platform on ither side with antoher track on the other side of that. SO we have pull overs and a through line for any trains wanting to get through or go the other way"
+    },
+    "q.pixel": {
+      "choice": "soon",
+      "note": "FULL art sytle changes this round"
+    },
+    "q.score": {
+      "choice": "summary"
+    },
+    "q.shops": {
+      "choice": "three"
+    },
+    "q.switches": {
+      "choice": "both"
+    },
+    "q.tickets": {
+      "choice": "line"
+    }
+  },
+  "savedAt": 1794340856515
+}

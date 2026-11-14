@@ -1,0 +1,58 @@
+{
+  "answers": {
+    "q.away": {
+      "choice": "suffer",
+      "note": "Dev mode needs to let ypu hire them right away "
+    },
+    "q.cart": {
+      "choice": "half"
+    },
+    "q.day": {
+      "choice": "slow"
+    },
+    "q.easy": {
+      "choice": "onetap"
+    },
+    "q.econ": {
+      "choice": "simple"
+    },
+    "q.hired": {
+      "choice": "share"
+    },
+    "q.inside": {
+      "choice": "cut"
+    },
+    "q.join": {
+      "choice": "mix"
+    },
+    "q.land": {
+      "choice": "rich",
+      "note": "Variety from the start but everything else from  the 1st option"
+    },
+    "q.last": {
+      "note": "Lwt me read what I wrorw"
+    },
+    "q.lift": {
+      "choice": "nobtn"
+    },
+    "q.order": {
+      "note": "Go as long as it takes"
+    },
+    "q.see": {
+      "choice": "behind"
+    },
+    "q.stages": {
+      "choice": "full"
+    },
+    "q.start": {
+      "choice": "plan"
+    },
+    "q.walk": {
+      "choice": "40"
+    },
+    "q.worth": {
+      "choice": "lift"
+    }
+  },
+  "savedAt": 1794541061156
+}

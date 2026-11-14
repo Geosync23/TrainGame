@@ -1,0 +1,21 @@
+{
+  "answers": {
+    "q.board": {
+      "choice": "needs"
+    },
+    "q.contract": {
+      "choice": "board",
+      "note": "couldnt find the work board make it obvious"
+    },
+    "q.engine": {
+      "choice": "auto"
+    },
+    "q.goal": {
+      "choice": "yes"
+    },
+    "q.mine": {
+      "choice": "plate"
+    }
+  },
+  "savedAt": 1793736697022
+}

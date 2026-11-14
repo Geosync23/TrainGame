@@ -8,6 +8,8 @@
 // - Step out mid-carry (a tie in the air): the panel goes, nothing is sent for the round, he stands with empty hands.
 // - Replay: the ticks and commands of the whole session played again from its start give the same hash.
 // - No console errors. Screenshots linegames-<stage>-<orient>.png, each mid-round.
+// D34: the panel games are parked behind ?d34=0 (the default plays them in the world: check-d34); with ?d33=0 they
+// are off anyway, and the query names both.
 // D33 (one world): this check plays the PARKED separate-line build (the page's ?d33=0), whose screen switch,
 // fades and look point it was written for. The same play in the one world is check-d33's.
 const { openGame, screenshotPath } = require('./browser');
@@ -19,7 +21,7 @@ module.exports = async function checkLineGames() {
   const problems = [];
   for (const orient of ['portrait', 'landscape']) {
     const P = m => problems.push(`${orient}: ${m}`);
-    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0' });
+    const { browser, page, errors } = await openGame(orient, { query: '?paused&world=proto&dev=1&d33=0&d34=0' });
     try {
       await page.waitForFunction(() => window.__railhead.pix.atlasReady, null, { timeout: 10000 }).catch(() => P('the atlas did not load'));
       const cdp = await page.context().newCDPSession(page);

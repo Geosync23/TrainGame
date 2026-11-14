@@ -8631,7 +8631,7 @@ function cwAssign(S) {
     if (d >= 0) { cnt[d]--; cnt[k]++; } else { let r = -1; for (const j of [1, 2, 5, 0]) if (w[j] > 0 && (r < 0 || w[j] > w[r])) r = j; if (r >= 0) { cnt[k]--; cnt[r]++; } }
   }
   // D34: the rail gang in fours and the tie men in pairs, or nobody: the men short of a whole unit are taken from the
-  // gangs that work alone (the biggest first), else the odd men go to the stage with the most work for its men.
+  // other gangs, else the odd men go to the stage with the most work for its men.
   // A unit at work stays while its stretch lasts (a small crew's four are not marched off for the diggers and back).
   if (D34.on) for (const k of [4, 3]) {
     const u = CW.NEED[k], has = Math.floor(men.filter(m => m.stage === k).length / u) * u, pool = [0, 1, 2, 5, 3].filter(j => j !== k);
@@ -8645,8 +8645,10 @@ function cwAssign(S) {
     if (rem) want += open[k] >= CW.UNIT_MIN * CW.K * u * Math.ceil(want / u) || last || has >= want - rem + u ? u - rem : -rem;
     let avail = 0; for (const j of pool) avail += j === 3 ? Math.max(0, cnt[3] - 2) : cnt[j];
     if (want - cnt[k] > avail) want = cnt[k] - cnt[k] % u;   // (not men enough to make it up: the odd ones go)
-    const spare = j => cnt[j] - (j === 3 ? 2 : 0);   // (a tie pair is not split for the rails)
-    for (let i = cnt[k]; i < want; i++) { let d = -1; for (const j of pool) if ((j === 3 ? cnt[3] > 2 : cnt[j] > 0) && (d < 0 || spare(j) > spare(d))) d = j; cnt[d]--; }   // (an odd tie gang left by this is put right in the ties' turn)
+    // (from the gang with the most men for what its front costs a metre, the foreman's own measure, so the fronts still
+    // move together; a tie pair is not split for the rails)
+    const per = j => cnt[j] / Math.max(1e-9, cost[j]);
+    for (let i = cnt[k]; i < want; i++) { let d = -1; for (const j of pool) if ((j === 3 ? cnt[3] > 2 : cnt[j] > 0) && (d < 0 || per(j) > per(d) + 1e-9)) d = j; cnt[d]--; }   // (an odd tie gang left by this is put right in the ties' turn)
     if (want < cnt[k]) { let g = -1; for (const j of [1, 2, 5, 0]) if (w[j] > 0 && (g < 0 || w[j] / (cnt[j] + 1) > w[g] / (cnt[g] + 1))) g = j; cnt[g >= 0 ? g : 1] += cnt[k] - want; }
     cnt[k] = want;
   }
@@ -8654,7 +8656,7 @@ function cwAssign(S) {
   const cur = [0, 0, 0, 0, 0, 0];
   let loose = 0, calm = true;
   for (const m of men) if (m.stage >= 0) cur[m.stage]++; else loose++;
-  for (let k = 0; k < 6; k++) if (Math.abs(cnt[k] - cur[k]) > 1 || !cnt[k] !== !cur[k]) calm = false;
+  for (let k = 0; k < 6; k++) if (Math.abs(cnt[k] - cur[k]) > (D34.on && (k === 3 || k === 4) ? CW.NEED[k] : 1) || !cnt[k] !== !cur[k]) calm = false;   // (D34: a tie or rail gang one whole unit over or under)
   if (calm && !loose) return;
   // who stays, who moves
   const gang = [[], [], [], [], [], []], movers = [], moved = new Set();
@@ -9822,6 +9824,18 @@ const LG_HOW = [
     'Spiking: you and your partner strike in turn. Tap on your beat, as the ring closes on the spike: three blows drive it home. A blow off the beat bends the spike.',
     'Tap on your beat'],
 ];
+// D34: the same lessons told for the games in the world (the switch's other side keeps the panel's words above).
+if (D34.on) {
+  const W = {
+    lnClear: ['Clearing: walk into the brush ahead of the clearers and Join. A chalk line is drawn across the clump in front of you: swipe along it, quick and straight, three clean cuts a go (a tree: from the left, then the right). The clump falls when the clearing reaches it.', 'Swipe along the chalk line on the clump'],
+    lnDig: ['Digging: you dig at the trench\'s front beside the diggers. A ring closes on the chalk mark there: tap as it meets it, four swings in time with the men, then flick up to throw the earth out.', 'Tap as the ring meets the mark'],
+    lnRock: ['Laying rock: you fill a barrow at the rock heap and wheel it out. Tap to tip it as its nose is over the chalk cross at the rock\'s front, then drag along the bed to rake the stones level between the two pegs.', 'Tip on the cross, then rake level'],
+    lnTies: ['Ties: a tie takes two men, so one of the tie men carries it with you. At the tie pile press and hold as his "Hup!" ring fills, keep your end level with his as you carry it up (your thumb up and down), and let go on "Down!": it goes down on its chalk marks, one more tie.', 'Hold on "Hup!", let go on "Down!"'],
+    lnRails: ['Rails: a rail takes four men, so three of the rail gang lift it with you. At the rail stack hold on "Lift!", drag to keep the rail on the gauge line as the four of you walk it up, and let go on "Down!": one more rail on the ties.', 'Hold on "Lift!", let go on "Down!"'],
+    lnSpike: ['Spiking: each spike goes in at the next tie. With a spiker beside you, you strike in turn: tap on your beat as the ring closes on the spike head. Alone, every blow is yours, at one man\'s pace. A blow off the beat bends the spike.', 'Tap on your beat'],
+  };
+  for (const H of LG_HOW) if (W[H[0]]) { H[3] = W[H[0]][0]; H[4] = W[H[0]][1]; }
+}
 const LG_LESSONS = [
   { id: 'lnRide', title: 'Out on the line', pic: ['ppl/navvy_b/pick/se/1', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lpOnLine',
@@ -9837,13 +9851,15 @@ const LG_LESSONS = [
     trigger: (S, e) => lgIs(e, 'lgJoined', k),
     steps: [
       lgLesStep(how, short, (S, e) => lgIs(e, 'lgDid', k) || lgIs(e, 'lgLeft', k)),
-      lgLesStep('Each go is marked good, fair or poor. Work well and the men near you work faster too: a glow at their feet. Step out whenever you like.',
-        'Keep at it, or Step out', lgDid3(k)),
+      lgLesStep(D34.on ? 'Each go is marked good, fair or poor. Work well and the men near you work faster too. A task that takes more men than are at hand cannot be done: the game says so, and a bigger crew has them. Leave, or walk away, whenever you like.'
+        : 'Each go is marked good, fair or poor. Work well and the men near you work faster too: a glow at their feet. Step out whenever you like.',
+        D34.on ? 'Keep at it, or Leave' : 'Keep at it, or Step out', lgDid3(k)),
     ] })),
-  { id: 'lnLeave', title: 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
+  { id: 'lnLeave', title: D34.on ? 'Leaving a gang' : 'Stepping out', pic: ['tool/pick/ground', 'ppl/navvy_a/idle/se/0'], need: null, line: true,
     trigger: (S, e) => e.t === 'lgLeft' && (e.why === 'out' || e.why === 'walked'),
     steps: [
-      lgLesStep('You stepped out: your tool is back on the rack and the gang works on without you. Nothing is left half done.',
+      lgLesStep(D34.on ? 'You left the gang: the men who worked with you went back to their own work, and the gang works on without you. Nothing is left half done.'
+        : 'You stepped out: your tool is back on the rack and the gang works on without you. Nothing is left half done.',
         'Walk on, or join a gang again', (S, e) => e.t === 'lpArrived' || e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
       lgLesStep('Walk up to any gang to join it again, or watch the work as long as you like.',
         'Join a gang, or watch', (S, e) => e.t === 'lgJoined' || e.t === 'lpToTrain' || e.t === 'lpHome'),
@@ -25215,7 +25231,8 @@ function lpManInfo(id) {
   const q = (pixCall('cwDrawList', S, 'line') || []).find(m => String(m.id) === String(id)) || null;
   const look = typeof cwLook === 'function' ? pixCall('cwLook', S, id) : null, o = look || {}, d = q || {};
   const k = Number.isInteger(o.stage) ? o.stage : lpStageOf(id), st = [o.stam, d.stam, d.stamina].find(v => typeof v === 'number' && Number.isFinite(v));
-  return { found: !!(q || look), name: o.name || d.name || `Rail man ${id}`, stage: k, doing: o.doing || d.doing || LP_ACT[d.act] || d.act || 'standing by', stam: st === undefined ? null : Math.max(0, Math.min(1, st > 1 ? st / 100 : st)) };
+  const withMe = D34.on && S.lp && S.lp.j && S.lp.j.w && S.lp.j.m.includes(+id);   // D34: one of the men working with him
+  return { found: !!(q || look), name: o.name || d.name || `Rail man ${id}`, stage: k, doing: withMe ? 'working with you' : o.doing || d.doing || LP_ACT[d.act] || d.act || 'standing by', stam: st === undefined ? null : Math.max(0, Math.min(1, st > 1 ? st / 100 : st)) };
 }
 function lpOpenCard(kind, id) { lpUi.cardFor = { kind, id }; lpUi.cardSig = ''; lpUi.card.hidden = false; lpCardRender(); }
 function lpCloseCard() { lpUi.cardFor = null; lpUi.cardSig = ''; if (lpUi.card) lpUi.card.hidden = true; }
@@ -25233,7 +25250,8 @@ function lpCardRender() {
   } else {
     const k = c.id, men = pixCall('cwGang', S, k) || [], H = lnHours(S), info = men.map(q => lpManInfo(q.id)), ss = info.map(i => i.stam).filter(v => v !== null);
     title = `${LINE.STAGE_NAMES[k]} gang`;
-    body = `Men: ${men.length}<br>Front: ${Math.floor(S.ln.f[k]).toLocaleString('en-US')} m of ${LINE.LEN_M.toLocaleString('en-US')}<br>Now: ${H.work ? 'at work' : H.meal ? 'at their meal' : H.pack ? 'packing up' : 'off work'}`
+    const need = D34.on && CW.NEED[k] > 1 ? `<br>${k === 3 ? 'A tie takes two men' : 'A rail takes four men'}: ${men.filter(m => !m.lg).length} of the gang here` + (men.some(m => m.lg) ? `, ${men.filter(m => m.lg).length} with you` : '') : '';   // D34
+    body = `Men: ${men.length}<br>Front: ${Math.floor(S.ln.f[k]).toLocaleString('en-US')} m of ${LINE.LEN_M.toLocaleString('en-US')}<br>Now: ${H.work ? 'at work' : H.meal ? 'at their meal' : H.pack ? 'packing up' : 'off work'}${need}`
       + `<br>Stamina: ${ss.length ? stam(ss.reduce((a, b) => a + b, 0) / ss.length) + ' on average' : 'not known'}` + (info.length ? `<br><small>${info.slice(0, 10).map(i => esc(i.name)).join(', ')}${info.length > 10 ? ' and more' : ''}</small>` : '');
   }
   const sig = title + body + gangBtn;

@@ -89,6 +89,7 @@ const checks = {
   'three line days end to end (D32, the lead)': d32Later('./check-d32-day'),
   'play-test fixes by real taps: one tap per good, the small cart, the pace, the soft patch (D31)': require('./check-d31'),
   'one world: the line joined to the station (D33, by real taps from the first morning: the men board, the train runs out, the six kinds of work in view, the walk from the platform, the evening return, the line longer next day)': require('./check-d33'),
+  'the join-in games in the world (D34, by real touches in portrait and landscape: each game at the work with the gang\'s real men, one tie, rail or spike per action, the no-mate message, Leave, a save mid-carry, replay)': require('./check-d34'),
 };
 function d32Later(file) {
   if (require('fs').existsSync(require('path').join(__dirname, file + '.js'))) return require(file);

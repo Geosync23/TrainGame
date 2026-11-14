@@ -3,6 +3,7 @@
 A train game for phones: 3D, seen from an isometric view, made with three.js in an HTML page that runs in the browser.
 
 ## Read first, every session
+0. `README.md` and, if you are new to the project, `docs/TRANSFER.md`: the map of the documents and how to pick the project up (added 2026-11-14 for the move to a new account). `docs/STATE.md` says where the project is, `docs/ROADMAP.md` where it is headed.
 1. `DEV_NOTES.md`: how the project works, how to test it, and what's next. Its "Next" section names the current job.
 2. `design-doc.md`: what the project is meant to be. It's the single source of truth for the design, with all open questions in its last section.
 

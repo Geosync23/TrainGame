@@ -5,9 +5,16 @@ A fresh session should also read `plans/handover.md` if it exists.
 
 ## What the project is
 
-Railhead (working title) is an isometric, low-poly railroad game set in 1866, built for phones first.
-The whole game is one file, `index.html`, using three.js r128 loaded from cdnjs.
+Railhead (working title) is a railroad game set in 1866, built for phones first.
+The whole game is one file, `index.html`. The game you get by default (the "proto" world, since D25) is drawn in
+2D pixel art by its own renderer; the earlier 3D worlds, drawn with three.js r128 from cdnjs, are still in the
+file and open with a switch.
 The full design is in `design-doc.md`. The original PDF it was converted from is kept in `docs/`.
+
+How to use these notes: they grew one part per piece of work, oldest systems first, and are long. For the
+picture of the project as it stands read `docs/STATE.md`; for the order things happened read `docs/HISTORY.md`;
+for what is next read `docs/ROADMAP.md`. Come here for how one system works: find its part in the list of
+headings. Parts dated before 2026-11-10 describe the parked 3D game.
 
 ## Platform decisions (2026-11-01)
 
@@ -2048,9 +2055,15 @@ landscape: see the backlog). Measuring tool: `node tests/worktrain-ride.js [port
 
 ## Next
 
-Update (2026-11-14, D34 the join-in games in the world): the six games are played in the world with the gang's real men, the honest minimums (a tie two men, a rail four), the lessons and Look cards, and the work train's ride drawn whole and steady (see "D34"). `tests/check-d34.js` is new. Not pushed; the lead runs `npm test`.
+Current (2026-11-14): version 13 is pushed (the bigger town and the join-in games in the world). The project is
+being handed to a new account: see `docs/TRANSFER.md` and `plans/handover.md`. The next jobs are the two bugs the
+designer reported (top of `backlog.md`) and the review survey of the provisional choices (`docs/ROADMAP.md`).
 
-Update (2026-11-14, D32 stage 3 joined): the bigger town's four pieces (buildings art, rooms art, Town, Rooms) are merged and fitted on one branch (see "D32 stage 3: the bigger town", its part "Joined"); the listed checks pass. Not pushed; the lead runs `npm test`.
+### Earlier updates (history, not in date order; kept for the record)
+
+Update (2026-11-14, D34 the join-in games in the world): the six games are played in the world with the gang's real men, the honest minimums (a tie two men, a rail four), the lessons and Look cards, and the work train's ride drawn whole and steady (see "D34"). `tests/check-d34.js` is new. Merged, tested and pushed 2026-11-14 as version 13.
+
+Update (2026-11-14, D32 stage 3 joined): the bigger town's four pieces (buildings art, rooms art, Town, Rooms) are merged and fitted on one branch (see "D32 stage 3: the bigger town", its part "Joined"); the listed checks pass. Merged, tested and pushed 2026-11-14 as version 13.
 
 Update (2026-11-13, D31 play-test fixes): one tap per good, the small cart, the faster walk and the soft see-through
 patch are built on their own branch (see "D31"); `tests/check-d31.js` is new. Not pushed; the lead runs `npm test`.

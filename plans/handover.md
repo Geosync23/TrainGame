@@ -1,108 +1,39 @@
-# Handover (updated 2026-11-02 by the fourth lead session)
+# Handover (2026-11-14, for the first session on the new account)
 
-## Latest (2026-11-13): D31 fixes and D32 line building, stages 1 and 2
-- D31 (play-test fixes) and D32 stage 1 (the line, crew, camp, riding out, dev mode, the slower clock) are merged, fully tested and published as version 10 of https://claude.ai/artifact/215immEY4Skh13fN9fN2db. Turn the line on from Settings > Dev (or `?dev=1`).
-- D32 stage 2 (the six join-in games, the line's lessons, hired station workers and the away rules) and the wilds art (nine regions, far and near borders, moving water, landmarks, wildlife) are merged, fully tested, pushed and published as version 11. The game file is 5.9 MB. Art rebuild: DEV_NOTES D32 (the far modules are cut from the committed sheets, about two minutes).
-- D33 (one world: the line joined to the station, on from a new game with 5 men, the work train boarded in view as the first train out, the little team near the yard) is merged, fully tested (all checks passed), pushed and published as version 12. The old line screen is parked behind `?d33=0`. Details and provisional choices: DEV_NOTES "D33 (one world)". Rough edges in backlog (no points drawn at the junction; pale square patches where the yard meets the wood).
-- D32 stage 3 (the bigger town: houses, roles, enterable buildings, the economy, the far town "Prospect") was built on 2026-11-14 by four Opus helpers and one joining helper. Details, switches (`?tn=0`, `?rooms=0`, `?fartown=0`), provisional choices and rough edges: DEV_NOTES "D32 stage 3: the bigger town". Art contract: plans/d32-rooms-art.md. The whole houses sit on their own small sheet because drawing them from the big parts sheet tripled the frame time at the furthest zoom.
-- D34 (the join-in games in the world, not in a panel; a crewmate needed where the job needs one; the work train flicker fixed) was built on 2026-11-14 by one Opus helper, merged, and published with the town as version 13. The panel games are parked behind `?d34=0`. A 5-man crew now takes 98 days (tie and rail men work only in whole units); 30 men are unchanged at 13 to 14 days. Details: DEV_NOTES "D34". The full test passed 80 of 81; check-clarity failed once under load (a tap in landscape part 4 did not land) and passed three times alone. The designer has not yet reviewed the town or D34: a review survey for the provisional choices is owed.
-- check-pixperf's station case at the furthest zoom sits on its budget and fails some runs even on a quiet machine (backlog).
-- Usage: the designer's cap is 80% of the allowance (overall and Fable), resetting Saturday 03:00 Eastern; the lead cannot read the meter and must ask. Programmers for hard pieces on Fable, the rest and art on Opus.
-- The machine restarted twice on 2026-11-13: helpers must commit often; after a restart, make a WIP commit in the helper's worktree and start a resume helper.
-- Provisional choices for the designer's review are in DEV_NOTES "D32" (each builder's part) and plans/d32-tech.md's last sections; a review survey page is still to be made.
-
-## Earlier (2026-11-12): D27 working day and D28 morning fixes, D29 review fixes and D30 smooth trains built
-- D29 (faster, smoother handling and punching; all switches in one lever frame beside track 1 off platform 1's west end, old layout `?levers=two`) and D30 (trains drawn as one block stepping along the rails, no judder; off with `?d30=0`, measuring tool tests/train-play.js) are merged. DEV_NOTES "D29" and "D30" have the details. Open D30 note: when the player rides a moving train his car can step a pixel against the camera; left as is because the camera is the designer's decision.
-- D27 (bigger trains with interiors, punching on board, step-by-step freight onto a cart, raised cargo platform, evening trip to town with keeper hand-ins and pickups, 19 townsfolk, six lessons, night lights) and D28 (smooth camera, platform planking, station set back, Start over) are merged, tested (full npm test passed) and published at https://claude.ai/artifact/215immEY4Skh13fN9fN2db.
-- Review page with every overnight provisional choice: https://claude.ai/artifact/EJsq45PwyyTbaFcyTFYD89 (answers/d27-review). Full list: plans/d27-choices.md. Tech plan: plans/d27-tech.md. DEV_NOTES "D27" covers each builder's part.
-- Known: the evening takes about 4 game hours (day ends ~23:15); check-pixperf's scale-1 landscape case is borderline under load; the morning trains board covers Settings (backlog).
-
-## Earlier (2026-11-10): D25 prototype built
-- D25 (the streamlined prototype in pixel art) is built and merged: switches, ticket lines and punching, freight unload/load, the evening handcart to three shops, the end-of-day summary. It is the default world; ?world=hub etc. still open the parked 3D game.
-- Checks: 54, including check-proto-day (a bot plays two full days). See DEV_NOTES "Prototype (D25)".
-- Station placement answered 2026-11-11: back behind the platform roof (done). Style: the designer wants the new art style next, before reviewing the prototype; the richer one stays on deck. Plan page https://claude.ai/artifact/CCcToxUJ81G3jT9EeV42Qe (answers/art-plan) waits on answers; nothing drawn until it is signed off. The prototype review https://claude.ai/artifact/CPVGkAAmr81A2CGCLkHAMW (answers/d25-review) waits until after the art round.
-- Saves are kept per world (2026-11-11): an old save from another world is moved aside to world-<id> / railhead-quicksave-<id>, so the prototype's page no longer reopens an old 3D game.
-- Known weak point: with the far switches W3/E3 a long walk from platform 1, even the bot runs trains 15 to 45 minutes late.
-- Art: python3 tools/pixelart/build.py then embed.py after any sprite change; the layout comes from node tools/pixelart/export-layout.js.
-
-## Earlier (2026-11-07): D24 station rework built
-- Playable: https://claude.ai/artifact/215immEY4Skh13fN9fN2db (version 3, the hub world: railroad trains, tickets on board, cargo track).
-- Review survey: https://claude.ai/artifact/AkbCSk732HZcQkMtqfrCiL (answers/d24-review); waiting on the designer.
-- Full npm test: 47 of 47 passed at 858b90a. Hub bot, 3 days: 27 runs, worst late 11 min, 96% tickets checked, all goods delivered.
-- Tech plan plans/rework-tech.md; provisional choices in DEV_NOTES "Station rework (D24)".
-- Overland is parked, so M2's newspaper delivery needs a new carrier (M2 plan).
-
-## Latest (2026-11-04)
-- D22 (first-time cards, arrival warnings, schedule board on posts, Work board button, one top line, switch 1 starts straight) merged; full npm test passed (41 checks). check-m1: worst lateness 4, none cancelled, 211 tickets. D23: the designer is the M1 gate; M2 (plan https://claude.ai/artifact/XoP9wEVwNNTo3p7zbv2orE) starts only after the designer is satisfied with the M1 fixes.
-- D20 and D21 built, merged and pushed (fc66b95); full npm test passed (all checks). check-m1: worst lateness 0, none cancelled, 215 tickets, siding day 3 20:37. Busiest draw calls 84.
-- NEW playable link (published by the lead from index.html, no read needed for a new artifact): https://claude.ai/artifact/215immEY4Skh13fN9fN2db. Republish from the lead by publishing /home/user/traingame/index.html again (same path keeps the URL in this session). The old link HhqBH3hg3z1LwSS6MzxE8s is frozen at the fix-round build: updating it needs reading the live copy and index.html in full, too big for a helper now.
-- Review survey: https://claude.ai/artifact/A11agKBsDAyLdFViBAYHEn (plans/d21-review.html, answers in answers/d21-review): clarity, Willow Ford spring switches, day-1 switch work, the Overland's switches, plate/sign look, next step (M2 plan suggested).
-- Clarity survey answered (D21): https://claude.ai/artifact/JeWrFM5D3Nnoukd7f1FgAy.
-
-
-## Start here (latest, 2026-11-03)
-The whole fix round is built and pushed (commit 5012289 and after; 36 checks pass): D15 crossings (schema 15, check-crossings), cutaway (check-cutaway), departure boards and the ticket booth inside the depot (check-board), D19 plank platforms and station detail (check-station; the M1 bot's boardLead sets off earlier when the combine is far). Playable link being updated to this build. End-of-round review page: https://claude.ai/artifact/KQQ2FMUHSBNGEkYEGy6djw (source plans/fix-round-review.html, pictures put in at publish; answers in `answers/fix-round-review`: keys `<group>.<item>` and `q.walk`, `q.feel`, `q.next`, `q.else`). The walking follow-up page https://claude.ai/artifact/E7Uqbtnynk4pbFVttfSohn (`answers/walk-speed-2`) asks the same walk question; read both. Measure memory with `python3 tools/context-usage.py`.
-
-## Earlier (2026-11-02 evening)
-After the designer's first look at the 1.6x build, D16 and D17 were built and pushed (commit f8856be; 32 checks pass): platforms 9.6u deep with everything behind them moved back; the canopy fades see-through near or over the player (check-roof); a new walk animation (GAIT, check-walk); a slower clock (one game minute = 1.0 real second, 7.5 ticks a second at 1x) with walk speeds back to 2.8 / 4.4. Playable link updated (version 4). Waiting for the designer to play it and answer the scale check page https://claude.ai/artifact/RPbPS5SWB7cRUAqxr3KL4T (answers/scale-review). Note: on screen the walk is 6.5 steps a second (short legs; the feet do not slide) - watch the designer's reaction. The walking-speed survey (D17) is https://claude.ai/artifact/E7Uqbtnynk4pbFVttfSohn.
-
-## Earlier: scale step done, waiting for the designer's scale check
-- DONE and pushed (commit 445b6f9 and after): the 1.6x scale (D15) merged with the feet fix and the three gap fixes. Full `npm test`: 30 of 30 pass (check-interchange once failed on a tap under heavy machine load and passed alone; a known slow-machine wobble). Save schema 14 (old saves convert by x1.6). Draw calls: hub at start zoom 70, busiest scene zoomed out to 0.4x 86 (budget 100).
-- Game fixes made while integrating: a moving train's walk-grid footprint reaches ahead (player no longer ends up inside a moving train); a walk to a spot beside a train goes the last bit straight (`walkLineOpen`; the bigger train blocked the water spout, which cancelled every afternoon Willow Ford train); build-tool message reads `BUILD.SW_THROUGH`.
-- Bot week (check-m1) after scale: 14 of 14 runs, none cancelled, worst 7 min late (was 0); pressure gap 9 to 10 min (passes); tickets 120 (was 173); cash $2,479.72 (was $2,500.52). Not investigated yet; watch it. The bot's morning boarding at Willow Ford fails with "The train moved off" (was so before the scale too; see backlog).
-- Playable link updated in place: https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s (version 3). Gotcha: an update to that URL is refused unless the publisher has read the live copy in full AND index.html in full (about 190,000 tokens each); one fresh helper with nothing else to do can just manage both. Helpers may not create NEW artifacts (blocked as "Create Public Surface"); only the lead can.
-- Scale check page for the designer: https://claude.ai/artifact/RPbPS5SWB7cRUAqxr3KL4T (source plans/scale-review.html; pictures from the integrator worktree test-output/d15-*.png put in at publish as JPEG data). Answers: collection `answers`, document `scale-review` (q.size, q.zoom, q.walk, q.next, q.else).
-- NEXT: read those answers. If "go": build the rest of the round in one go (D15): see-through platform roof when the player is under or near it; crossings (track not walkable except at plank crossings at both ends of each platform, depot to freight shed across the hub tracks, one at Willow Ford; the player can stake a crossing with the Build tool as a small job using one tie bundle; switches, couplings, wood and water worked from either side; a train on a crossing blocks it); cutaway (boarding hides that car's roof and camera-side wall, showing the player in the combine's baggage end, travellers and freight; follows camera turns; closes on stepping off); departure board on the depot wall beside the ticket window at both stations (next 4 departures, readable zoomed in; card stays). Then full checks, update the playable link, one review page with a survey. Crossings will change the bot's walking (check-m1) and check-paths; budget time for that.
-- Worktrees under .claude/worktrees/ from this round can be removed once you no longer need them (all merged).
-
-## Earlier: the fix-round plan was published
-The M1 fix-round plan and survey are published: https://claude.ai/artifact/8ReXohbMSFEDaa1eaog927 (source `plans/m1-fix-plan.html`). Answers save in its database: collection `answers`, document `m1-fix` (keys `q.<id>`, each `{choice, note}`; ids scale, map, times, zoom, roof, clip, cutaway, inside, crossings, side, board, gaps, review, else). Read them with the ArtifactData tool. NEXT: when answered, record them as D15 in design-doc section 0, write the build order into the plan, then build (helpers inside the session). Do not build before the designer agrees.
-
-What the investigation found (so you need not redo it): a unit is about one person (1.75 m); engine and tender 5.2u, cars 2.6 to 2.8u (about half real size next to a person); hub platform 20 x 2.4u; map 336 x 128u (`WORLDS.start`, `HUB`, `WFORD`, `buildStartWorld` in "starting world layout"); camera `cam.zoom` 1.25 at start with `CFG.VIEW_MIN_U` 14 (about 11u across an upright phone), zoom 0.6 to 4; track geometry `CFG.GEOM`, switch legs radius 10 and 8 giving the 3.41u spacing (`TURN_OFF`); speeds `CFG.LIM`, `CFG.WALK`; miles are 16u (`CORD_U`, `WATER_U` and fares depend on it); vehicle lengths at index.html "game state" (around line 751) and `OVERLAND_LOCO`/`OVERLAND_CARS`; building sizes `BLD_EXTENTS`, `BLD_LAYOUT`, `BLD_PLATFORM_TOP` 0.3; walk grid 0.5u cells. Uniform scaling of everything (people too) is the same as zooming in, so the suggested answer grows the world 1.6x around the people. Feet sink because the player is drawn at y 0 (`pl.position.set(px, 0, pz)` in "drawing each frame"); passengers already use a platform height lookup (people section, around line 7324). Saves: schema 13; the plan promises conversion (schema 14 scales stored positions), keeping an unconvertible save and starting fresh with a note.
-
-## Earlier (third lead session): the end-of-M1 review is answered (D14)
-The designer answered the review (https://claude.ai/artifact/CKNAh874bKoJ1EZWAX9zEB; raw answers in its database, collection `answers`, document `m1-review`, readable with the ArtifactData tool). Recorded as D14 in design-doc section 0. In short: M1 is "not yet" right; they retest after a fix round. Playtest gate: later, not now. Next after the fix round: plan M2.
-
-The designer's own words (notes on the page), kept here because they matter for the plan:
-- "the platform is way too small. the entire scale of the game is too small. The roof on the platform also prevents it from being easy to read."
-- Map size: "needs to be larger ... scale it all up."
-- "I want to be able to see into the train cars when we enter them. a cutaway view. the trains should also be larger the whole game needs to be scaled up"
-- Walking across track: change, "we need to get the core loop going and this is needed" (read as: build crossings and make track impassable elsewhere, design-doc 11).
-- Departure board: "make it both" (the card and a board in the world).
-- "please also remove platform clipping and scale as talked about above then i will retest" (read as the backlog item: feet sink into the platform and dock; confirm in the plan survey).
-Everything else on the page was Keep; hand-building stays at about 3 real minutes.
-
-## YOUR JOB: the fix-round plan (plan before building)
-Write a short plan for the M1 fix round and publish it with a survey (house rule: a choice per question, your suggestion marked, a note box, answers saved in the page's database; copy the pattern of plans/m1-review.html). Do not build until the designer agrees. Questions the plan must settle with the designer:
-1. How much bigger: one scale factor for people, trains, buildings and platform together, or separate ones; and how much larger the map (and so the 10-mile spur). Investigate first how sizes are set in index.html (units, walk grid cell size, camera zoom range D3 0.6x to 4x, track geometry, switch radius, 3.41u track spacing, speeds and timetable times, which all depend on distances). Scaling touches saves: old saves must still load (CLAUDE.md), so propose how (convert, or start fresh with a note).
-2. The platform roof: hide it when the player is under it or near it, make it see-through, or remove it.
-3. Cutaway into cars: when the player boards, hide the car's roof (and near wall?) and show the player and travellers inside.
-4. Crossings: where (platform ends, grade crossings at roads), and whether the player can still throw switches from beside the track.
-5. Confirm "platform clipping" means the feet sinking into the platform.
-6. The departure board in the world: where it stands.
-Then build in pieces (one piece at a time, review each, or as the designer chooses), with helpers inside this session (house rule). Mind draw calls (busy scene now 73 with the tutorial marker; budget 100).
-
-## Older notes (from the second lead session, still useful)
-
-Read this, then CLAUDE.md (house rules at the end of "My rules" and "Memory and handover": questions always as an interactive survey with answers saved on the page; workers stay inside the lead session; the lead hands over on its own by starting the new lead session), DEV_NOTES.md, design-doc.md section 0 (D1 to D12) and plans/m1-team-plan.md.
+The project is being moved to a new account. Read `docs/TRANSFER.md` first if you have not; it holds the setup,
+the reading order and what did not travel. This note is the short current picture.
 
 ## Where things stand
-- All of M1 rounds A to C and most of round D are merged and pushed on `ccr-59cb4c1f-rnscv9`; 27 checks pass (schema 13). Round D so far: D3 acceptance check with a bot playing a week, D4 fixes from the test week, D2 tutorial (investor E. Hartwell), D6 cordwood on the handcart + fares on arrival at Willow Ford + 8 starting cords, D5 riding your own train. Decisions D12 (M1 plan) and D13 (round D answers) are in design-doc section 0.
-- ALL OF M1 IS MERGED AND PUSHED (2026-11-02): D1 office, telegram inbox, alerts and Look; D7 platform dwell. 28 checks pass, schema 13. Nothing is running. Latest bot week (check-m1, seed 1866): all 14 runs on time (worst 0 min late), 173 tickets at the hub, 36 fares on arrival, gave up 174 hub and 109 Willow Ford, cash $2,500.52, 82 of 82 items arrived, all contracts done. Watch: the pressure check (Overland and No. 1 within 10 minutes) now passes at exactly 10 minutes; a timing change could tip it.
-- DONE 2026-11-02 (third lead session): the playable link is republished with the end-of-M1 build, and the end-of-M1 review page is published at https://claude.ai/artifact/CKNAh874bKoJ1EZWAX9zEB (answers in its database, document `answers/m1-review`; read them with ArtifactData). 28 checks pass. NEXT: read the designer's answers, record them as D14 in design-doc section 0 (move any answered open questions), then act on their choice for the playtest and the next step.
-- (Earlier plan, now done:) Do (a) republish the playable link (see Gotchas: one fresh helper reads the whole page file and publishes), and (b) the END-OF-M1 REVIEW for the designer (they chose one review at the end): a published page with screenshots, what was built, every provisional choice from DEV_NOTES (search "provisional"), the M1 acceptance results from check-m1 (the bot's week figures), the known gaps and backlog, and survey questions with answer boxes saved to the page database (house rule). The design-doc M1 gate (5 outside playtesters) is the designer's to run.
-- The designer reviews M1 ONCE AT THE END. Report progress in short plain messages.
-- Pages: M1 plan https://claude.ai/artifact/GbucAqeiKB7imWD2TRYZsu; M1 survey (D12) https://claude.ai/artifact/VaTAWnL2ycb8JqzZJSJyfA; round D survey (D13) https://claude.ai/artifact/AJG1v9NjZkQxbhmc81ZJQn; playable link https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s.
+- Version 13 is built, tested and pushed on the branch `ccr-59cb4c1f-rnscv9` (`main` holds only the first
+  commit; see `docs/TRANSFER.md`, "The branch").
+- Built and playing by default: the station day (switches, tickets, freight, the evening cart to the shops),
+  the town of 41 people with an economy and buildings you can enter, the line east of the yard built by the crew,
+  the work train, the six join-in games played in the world, and the far town at the end of the line.
+- The last full test: 80 of 81 checks passed; check-clarity failed once on a tap under load and passed three
+  times alone (backlog).
+- The designer has played version 13 and reported two bugs (top of `backlog.md`). They have not yet reviewed
+  the bigger town or the join-in games in the world in a survey.
+- Playable link: none on the new account yet. Publish `index.html` and write the link here.
 
-## How merging works now
-- Builders work in worktrees under `.claude/worktrees/`, each on branch `worktree-agent-<id>`. They do not push.
-- The lead (or an integrator helper) merges into `ccr-59cb4c1f-rnscv9` with `git merge --no-ff`, runs `npm test` in the background (16+ checks, about 12 minutes), and pushes only when all pass.
-- Gotcha: a worktree builder once committed its `node_modules` link; merged, it replaced the real folder with a link to itself (ELOOP errors, test runner exits at once). `.gitignore` now ignores `node_modules` as a link too. If it happens again: `git rm --cached node_modules; rm node_modules; npm install`.
-- `node tests/run-one.js check-<name>` runs a single check.
+## Do first
+1. Publish `index.html` so the designer has a link.
+2. Plan and fix the two reported bugs: hold to walk does not work on the line; the rail workers are not seen
+   leaving their tents and boarding the work train in the morning.
+3. Make the review survey owed to the designer (`docs/ROADMAP.md`, "Decisions waiting on the designer").
+4. Ask the designer what comes next, and what their usage limits are on the new account.
 
-## Gotchas (still true)
-- The cloud test machine draws without a graphics chip; frame times there mean nothing for phones.
-- cdnjs is blocked on the test machine; tests serve three.js r128 from node_modules.
-- Draw calls: busy scenes 44 to 63 (budget under 100).
-- Playable link of M1 so far (D13): https://claude.ai/artifact/HhqBH3hg3z1LwSS6MzxE8s (published 2026-11-02 from the team branch after round D3/D4; title "Railhead Piece 1"). The old M0 link https://claude.ai/artifact/EHNWb1dZKQJA5HYT11k7Rc still shows the end-of-M0 build. index.html is now about 537KB: a helper must read the whole page file before publishing, which fills most of one helper's memory, so republishing to the same URL needs one helper per publish with nothing else to read.
-- GitHub says the repository moved to https://github.com/Geosync23/TrainGame.git; pushes to the old address still work.
+## Loose ends
+- `tests/check-d32-day.js` (a bot playing a whole day with the line) was never written; `tests/run-all.js`
+  skips it.
+- check-pixperf's station case at the furthest zoom sits on its budget and can fail on a busy machine.
+- A 5-man crew takes 98 days to build the line since the join-in games moved into the world (tie and rail men
+  work only in whole teams); 30 men take 13 to 14 days. The designer has been told but has not ruled on it.
+- The far town's name, "Prospect", is the lead's placeholder.
+
+## Gotchas
+- Helpers work in their own working copies, commit often and never push; the lead merges and tests.
+- Do not run other heavy work during the full test.
+- The cloud machine restarted twice on 2026-11-13 and lost unsaved helper work: have helpers commit often.
+- After any sprite change: `python3 tools/pixelart/build.py`, then `embed.py`, then check-atlas.
+
+Older handover notes are in `plans/handover-archive.md`.

@@ -25707,6 +25707,7 @@ function lgFrame() {
   if (D34.on) {   // D34: the games are in the world: no panel
     if (!P.hidden) P.hidden = true;
     if (!j) lgW.left = false;
+    if (j) lgW.refuse = null;   // (joined after all: the word on why not is spent)
     // why a gang cannot be joined (too few of its men at hand), in a line under him for a few seconds: the toast's place
     // at the top is under the line's bar out there
     const rf = lgW.refuse && performance.now() - lgW.refuse.t < 4500 && !j && line && !hold ? lgW.refuse : null;

@@ -415,7 +415,7 @@ def stove(p, f=0):
     fire's glow through the door flickers."""
     p.box(-0.55, -0.55, 0.0, 0.55, 0.55, 0.03, 'iron', shades=(1, 2, 3))
     o = p.new()
-    glow = ('fire', 'brass')[f]
+    glow = {-1: 'dark', 0: 'fire', 1: 'brass'}[f]
 
     def st(part, s, ang, rho, idx):
         rr = np.full(s.shape, R('blk')); ii = idx.copy()
@@ -496,10 +496,11 @@ def bench(p, length=2.4):
 QUILT = 'red'
 
 
-def bed(p, sleeper=False, quilt='red', length=2.9, width=1.5, iron=False, frame='wood', who_hair='wood'):
-    """A bed, its head at -c (against the wall), the foot at +c. Made: pillow, a patchwork quilt. sleeper: the
-    quilt humped over someone asleep, the head on the pillow (a generic sleeper, for anyone without a lie frame).
-    Mattress top at BED (the people's lie frames lie there)."""
+def bed(p, sleeper=False, quilt='red', length=2.6, width=1.3, iron=False, frame='wood'):
+    """A bed, its head at -c (against the wall), the foot at +c. Made: pillow, a patchwork quilt, the sheet turned
+    down. sleeper: the quilt humped over someone asleep and pulled up to the pillow; the sleeper's head is the
+    person's lie frame, drawn over it (ppl/<who>/lie). Every bed, cot and bunk is 2.6u long with the pillow's middle
+    at HEAD from the centre, so one lie frame fits them all. Mattress top at BED."""
     hl, hw = length / 2, width / 2
     # frame: head board, foot board, side rails
     if iron:
@@ -541,33 +542,29 @@ def bed(p, sleeper=False, quilt='red', length=2.9, width=1.5, iron=False, frame=
         p.box(-0.42, q0 - 0.05, BED, 0.38, q0 + 1.35, BED + 0.26, quilt, tex=patch, oid=o)
         p.box(-0.36, q0 + 0.4, BED + 0.2, 0.36, q0 + 0.95, BED + 0.36, quilt, tex=patch, oid=o)
         p.box(-0.3, hl - 0.45, BED, 0.3, hl - 0.15, BED + 0.3, quilt, tex=patch, oid=o)
-        p.box(-0.45, q0 - 0.14, BED + 0.1, 0.45, q0 + 0.04, BED + 0.3, 'cream', shades=(0, 1, 2), oid=o)
         p.box(-hw + 0.15, -hl + 0.1, BED - 0.06, hw - 0.15, -hl + 0.6, BED + 0.12, 'cream', shades=(0, 0, 1),
               oid=p.new())
-        o = p.new()
-        p.box(-0.22, -hl + 0.22, BED + 0.1, 0.22, -hl + 0.6, BED + 0.46, 'skin', shades=(0, 0, 1), oid=o)
-        p.box(-0.25, -hl + 0.15, BED + 0.24, 0.25, -hl + 0.4, BED + 0.52, who_hair, shades=(1, 1, 2), oid=o)
-    return dict(foot=[-hw - 0.08, -hl - 0.12, hw + 0.08, hl + 0.12], bed=BED,
+    return dict(foot=[-hw - 0.08, -hl - 0.12, hw + 0.08, hl + 0.12], bed=BED, h=1.63 if not iron else 1.45,
                 use=[[hw + 0.5, 0.0, 'side'], [0, 0, 'lie']])
 
 
-def cot(p, quilt='slate', made=True):
-    """A narrow iron cot (a child's bed, a maid's room): 2.4 x 0.9u, mattress at BED."""
-    return bed(p, quilt=quilt, length=2.4, width=0.9, iron=True)
+def cot(p, quilt='slate', sleeper=False):
+    """A narrow iron bed (a child's bed, a maid's room, a hotel room): 2.6 x 0.9u, mattress at BED."""
+    return bed(p, quilt=quilt, length=2.6, width=0.9, iron=True, sleeper=sleeper)
 
 
 def bunk(p):
     """The jail bunk: a plank shelf hung from the wall on two chains, a grey blanket and a straw tick; along a, the
     back (-c) at the wall."""
-    p.box(-1.2, 0.0, BED - 0.12, 1.2, 0.9, BED - 0.04, 'wood', tex=planks(0.25, 'a'))
+    p.box(-1.3, 0.0, BED - 0.12, 1.3, 0.9, BED - 0.04, 'wood', tex=planks(0.25, 'a'))
     for a in (-1.0, 1.0):
         p.rod((a, 0.87, BED - 0.06), (a, 0.0, 1.7), 0.015, 'iron')
         p.box(a - 0.06, 0.0, 1.62, a + 0.06, 0.05, 1.74, 'iron')
         p.box(a - 0.05, 0.83, 0.0, a + 0.05, 0.9, BED - 0.12, 'wood')
-    p.box(-1.15, 0.05, BED - 0.04, 1.15, 0.85, BED + 0.06, 'straw', shades=(1, 2, 3))
-    p.box(-0.3, 0.03, BED + 0.06, 1.15, 0.87, BED + 0.12, 'slate', shades=(1, 2, 3), oid=p.new())
-    return dict(foot=[-1.2, 0.0, 1.2, 0.9], bed=BED, wall=True, use=[[0, 1.35, 'side', '-c'], [0, 0.45, 'lie']],
-                note='the sleeper lies along a: lie/se on a bunk facing sw, lie/sw on one facing se')
+    p.box(-1.25, 0.05, BED - 0.04, 1.25, 0.85, BED + 0.06, 'straw', shades=(1, 2, 3))
+    p.box(-0.55, 0.03, BED + 0.06, 1.25, 0.87, BED + 0.12, 'slate', shades=(1, 2, 3), oid=p.new())
+    return dict(h=1.75, foot=[-1.3, 0.0, 1.3, 0.9], bed=BED, wall=True, use=[[0, 1.35, 'side', '-c'], [0, 0.45, 'lie']],
+                note='the sleeper lies along its length, the head at the -x (bunk x) or -z (bunk z) end')
 
 
 def cupboard(p, width=1.4, depth=0.6, height=2.5, glass=True):
@@ -695,7 +692,7 @@ def pew(p, length=3.0):
         p.box(-hl + 0.5 + k * 1.0, -0.5, 1.24, -hl + 0.75 + k * 1.0, -0.36, 1.3, 'red' if k % 2 else 'navy',
               oid=p.new())
     return dict(foot=[-hl - 0.06, -0.52, hl + 0.06, 0.28], seat=SEAT,
-                use=[[-hl + 0.5 + k * 0.67, 0.0, 'sit'] for k in range(4)])
+                use=[[round(-hl + (k + 0.5) * length / int(length / 0.8), 2), 0.0, 'sit'] for k in range(int(length / 0.8))])
 
 
 def pulpit(p):
@@ -993,7 +990,7 @@ def forge(p, f=0):
     p.box(-0.9, 0.0, 0.0, 0.9, 1.4, 0.95, 'brick', tex=brick)
     # the fire bed, coals glowing
     o = p.new()
-    glow = [('fire', 'brass'), ('brass', 'fire')][f]
+    glow = {-1: ('dark', 'iron'), 0: ('fire', 'brass'), 1: ('brass', 'fire')}[f]
 
     def coals(k, sgn, a, c, h, idx):
         n = E.hash2(np.floor((a + 3) * 9).astype(int) + f * 3, np.floor((c + 3) * 9).astype(int)) % 5
@@ -1132,7 +1129,7 @@ def washstand(p):
 def kitchen_range(p, f=0):
     """A cast-iron cook stove: four lids on the top, the oven doors with nickel trim, a warming shelf above, the pipe
     up to the ceiling, a kettle and a pot on it; f 0 and 1: the fire's glow at the grate."""
-    glow = ('fire', 'brass')[f]
+    glow = {-1: 'dark', 0: 'fire', 1: 'brass'}[f]
 
     def front(k, sgn, a, c, h, idx):
         on = (k == 1) & (sgn > 0)
@@ -1303,26 +1300,35 @@ def _kept(tex, a0, c0, h0, a1, c1, h1):
     return t
 
 
-def stall(p):
-    """A horse stall in the livery: plank partitions each side (along c), a manger with hay at the back (c = 0, the
-    wall), straw on the floor. 2.4 wide, 3.6 deep."""
+def stall(p, horse=False):
+    """A horse stall in the livery, drawn with its depth along c: the manger with hay at the back (-c, at the wall),
+    plank partitions each side, straw on the floor, a water bucket; 2.6 wide, 4.8 deep, centred on the anchor.
+    horse: a bay standing in it, head to the manger (the D27 street horse without its saddle). Draw it at yaw 'se'
+    (depth along +x, the manger at -x): the horse is drawn along x."""
+    D = 2.4
+
     def straw_floor(k, sgn, a, c, h, idx):
         n = E.hash2(np.floor((a + 5) * 7).astype(int), np.floor((c + 5) * 7).astype(int)) % 4
         return None, np.where(n == 0, 2, 1)
-    p.box(-1.15, 0.0, 0.0, 1.15, 3.6, 0.04, 'straw', tex=straw_floor, shades=(1, 1, 1))
+    p.box(-1.25, -D, 0.0, 1.25, D, 0.04, 'straw', tex=straw_floor, shades=(1, 1, 1))
     for s in (-1, 1):
         o = p.new()
-        a = s * 1.2
-        p.box(a - 0.06, 0.0, 0.0, a + 0.06, 3.0, 1.5, 'wood', tex=planks(0.25, 'h'), oid=o)
-        p.box(a - 0.08, 2.9, 0.0, a + 0.08, 3.1, 2.2, 'wood', oid=o)
-        p.box(a - 0.08, 0.0, 1.5, a + 0.08, 3.0, 1.58, 'wood', oid=o, shades=(0, 1, 2))
+        a = s * 1.3
+        p.box(a - 0.06, -D, 0.0, a + 0.06, D - 0.6, 1.5, 'wood', tex=planks(0.4, 'h'), oid=o)
+        p.box(a - 0.08, D - 0.7, 0.0, a + 0.08, D - 0.5, 2.2, 'wood', oid=o)
+        p.box(a - 0.08, -D, 1.5, a + 0.08, D - 0.6, 1.58, 'wood', oid=o, shades=(0, 1, 2))
+        p.ball(a, D - 0.6, 2.25, 0.1, 'wood', oid=o)
     o = p.new()
-    p.box(-1.1, 0.0, 0.7, 1.1, 0.6, 1.2, 'wood', oid=o, tex=planks(0.2, 'h'))
-    p.box(-1.0, 0.05, 1.2, 1.0, 0.55, 1.4, 'straw', oid=o,
+    p.box(-1.2, -D, 0.7, 1.2, -D + 0.6, 1.2, 'wood', oid=o, tex=planks(0.4, 'h'))
+    p.box(-1.1, -D + 0.05, 1.2, 1.1, -D + 0.55, 1.4, 'straw', oid=o,
           tex=lambda k, sgn, a, c, h, idx: (None, np.where(np.mod(a * 9 + h * 5, 1) < 0.3, 2, idx)))
-    p.cylv(0.7, 1.2, 0.0, 0.4, 0.25, 'wood', oid=p.new())
-    p.cylv(0.7, 1.2, 0.36, 0.41, 0.2, 'river', oid=p.oid, topidx=2)
-    return dict(foot=[-1.28, 0.0, 1.28, 3.6], wall=True, use=[[0, 1.8, 'horse'], [0.0, 3.3, 'work']])
+    p.cylv(0.85, -D + 1.1, 0.0, 0.4, 0.22, 'wood', oid=p.new())
+    p.cylv(0.85, -D + 1.1, 0.36, 0.41, 0.18, 'river', oid=p.oid, topidx=2)
+    if horse:
+        import props27
+        props27.horse(0, 'bay', tack=False, d='w')
+    return dict(foot=[-1.36, -D, 1.36, D], h=2.5 if horse else 2.3,
+                use=[[0, 0.0, 'horse', '-c'], [0.0, D + 0.4, 'work', '-c']])
 
 
 def trunk(p):
@@ -1334,83 +1340,137 @@ def trunk(p):
     return dict(foot=[-0.52, -0.32, 0.52, 0.32], top=0.6)
 
 
+def lamp_table(p, lit=False):
+    """A small round lamp table (a crocheted mat on it) with the oil lamp; top 0.75u, the lamp to 1.5u."""
+    x, z, _ = p.pt(0, 0, 0)
+    CYV(x, z, 0.0, 0.06, 0.18, 'wood', oid=p.oid, cast=False)
+    CYV(x, z, 0.06, 0.68, 0.05, 'wood', oid=p.oid, cast=False)
+    CYV(x, z, 0.68, 0.75, 0.27, 'wood', oid=p.oid, cast=False, topidx=1)
+    CYV(x, z, 0.75, 0.76, 0.19, 'cream', oid=p.new(), cast=False, topidx=0)
+    q = P(p.d, origin=(x, z, 0.76))
+    lamp(q, lit)
+    return dict(foot=[-0.27, -0.27, 0.27, 0.27], h=1.55, top=0.76, light=bool(lit))
+
+
+def small_desk(p):
+    """A plain writing desk, 1.1 x 0.8u, top 1.05u: one pedestal of drawers, the knee hole at +c; a ledger, an
+    inkwell and a paper (the bank's clerk, the sheriff, the assayer, the newspaper; pupils too)."""
+    hl, hd = 0.55, 0.4
+    p.box(0.1, -hd, 0.0, hl, hd, TABLE - 0.06, 'wood', tex=combine(planks(0.4, 'h'),
+                                                                  drawers(0.1, hl, 0.08, TABLE - 0.1, rows=3)))
+    for c in (-hd + 0.05, hd - 0.05):
+        p.box(-hl, c - 0.05, 0.0, -hl + 0.1, c + 0.05, TABLE - 0.06, 'wood')
+    p.box(-hl, -hd, 0.75, 0.1, -hd + 0.05, TABLE - 0.06, 'wood', shades=(2, 3, 3))
+    p.box(-hl - 0.04, -hd - 0.04, TABLE - 0.08, hl + 0.04, hd + 0.04, TABLE, 'wood', shades=(0, 1, 2))
+    o = p.new()
+    p.box(0.15, -0.3, TABLE, 0.45, -0.05, TABLE + 0.12, 'brick', oid=o)
+    p.box(-0.35, -0.05, TABLE, 0.05, 0.25, TABLE + 0.02, 'cream', shades=(0, 0, 1), oid=p.new())
+    p.box(-0.45, -0.3, TABLE, -0.33, -0.18, TABLE + 0.1, 'dark', oid=p.new())
+    p.rod((-0.4, -0.24, TABLE + 0.1), (-0.3, -0.12, TABLE + 0.3), 0.012, 'cream', oid=p.new())
+    return dict(foot=[-hl - 0.04, -hd - 0.04, hl + 0.04, hd + 0.04], top=TABLE, h=1.4,
+                use=[[0, hd + 0.45, 'sit', '-c']])
+
+
 # ---------------------------------------------------------------- the list
-# key, function, facings ('front' 4, 'wall' 2, 'axis' x z, 'none'), frames (list of kwargs; several = an indexed
-# animation or levels), note
-DIR4 = ('se', 'sw', 'ne', 'nw')
-DIR2 = ('se', 'sw')
+# Each entry: name, the drawing function, the orientations {key's <o>: how it is drawn}, the frames
+# [(key suffix, kwargs)], the height h (u, for extra.box), a note.
+#   How it is drawn: a facing for the local frame (sw: the front to +z, se: to +x, ne: to -z, nw: to -x), or
+#   ('rot', facing): drawn at that facing, then the whole canvas turned a quarter (the stall with its horse, which is
+#   drawn along x).
+# The rule for the keys (plans/d32-rooms-art.md, the Rooms builder's contract): <o> is x or z for a piece whose long
+# side lies along world x or z; then its front (a counter's customers' side, a shelf's open side, a bed's foot) is
+# towards the viewer: +z for x, +x for z. A piece that faces a way (chair, desk, pulpit, barber chair, school desk)
+# has se, sw, ne, nw: the way a person sitting or standing at it faces. ne and nw on a counter, bar or pew: the same
+# piece turned to face away from the viewer.
+AX = {'x': 'sw', 'z': 'se'}                   # long side along the local a
+AC = {'x': 'se', 'z': 'sw'}                   # long side along the local c (beds, cots, the stall)
+AXA = dict(AX, ne='ne', nw='nw')              # and turned away
+F4 = {d: d for d in ('se', 'sw', 'ne', 'nw')}
+F4R = {'se': 'nw', 'sw': 'ne', 'ne': 'sw', 'nw': 'se'}   # a desk: its front (the knee hole) faces the sitter
+X1 = {'x': 'sw'}
+LV = [(str(i), dict(level=i)) for i in range(4)]
+FIRE = [('', dict(f=-1)), ('1', dict(f=0)), ('2', dict(f=1))]
 
 PIECES = [
-    # shops and homes
-    ('counter', counter, DIR4, None, 'a shop counter 3 x 0.8u, top 1.15u: the panelled front faces the customers, '
-                                     'the keeper stands behind (use keeper); scales, a candy jar, paper and twine'),
-    ('shelves', shelves, DIR2, [dict(level=i) for i in range(4)],
-     'general goods shelves against the wall, 2.4u wide, 2.8u tall: frame = stock level 0 empty, 1 low, 2 half, '
-     '3 full'),
-    ('crates', crates_stack, None, [dict(level=i) for i in range(4)],
-     'crates on the floor: frame = stock level 0 empty (an opened crate), 1 two, 2 four, 3 seven'),
-    ('sacks', sacks_stack, None, [dict(level=i) for i in range(4)],
-     'sacks of flour and feed on the floor: frame = stock level 0 empty, 1 two, 2 four, 3 eight'),
-    ('stove', stove, None, [dict(f=0), dict(f=1)], 'a pot-bellied stove, its pipe up to 3.8u; 2 frames of '
-                                                   'firelight (about 3 a second)'),
-    ('table', table, ('x', 'z'), None, 'a kitchen table 2 x 1.2u, top 1.05u, a jug and plates; /x long along x'),
-    ('table_cloth', lambda p: table(p, cloth='red', seed=2), ('x', 'z'), None,
-     'the hotel\'s dining table with a checked cloth'),
-    ('chair', chair, DIR4, None, 'a kitchen chair, seat 0.62u (the seated frames sit on it): faces the way the '
-                                 'sitter faces'),
-    ('bench', bench, ('x', 'z'), None, 'a plain bench 2.4u, seat 0.62u'),
-    ('bed', bed, DIR2, None, 'a double bed 2.9 x 1.5u made up with a patchwork quilt, its head at the wall: se lies '
-                             'along x (head to -x), sw along z (head to -z); mattress 0.75u'),
-    ('bed_sleeper', lambda p: bed(p, sleeper=True), DIR2, None,
-     'the bed with a sleeper under the quilt, the head on the pillow (for anyone without a lie frame)'),
-    ('bed_blue', lambda p: bed(p, quilt='navy'), DIR2, None, 'the bed with a blue quilt (a second home)'),
-    ('cot', cot, DIR2, None, 'a narrow iron bed 2.4 x 0.9u (a child, the maid, a hotel room), mattress 0.75u'),
-    ('cupboard', cupboard, DIR2, None, 'a kitchen dresser against the wall, glass doors, plates and cups; 2.6u'),
-    ('washstand', washstand, DIR2, None, 'a washstand with basin, jug and towel, a mirror on the wall above'),
-    ('range', kitchen_range, DIR2, [dict(f=0), dict(f=1)], 'the cook stove (homes, the hotel kitchen), lids, oven, '
-                                                           'kettle and pot, pipe to 3.8u; 2 frames of firelight'),
-    ('barrel', barrel, None, None, 'a cracker barrel, lid half off, top 1.15u'),
-    ('rug', rug, ('x', 'z'), None, 'a rag rug 2.6 x 1.7u, flat: draw it with the floor, before anything standing'),
-    ('trunk', trunk, ('x', 'z'), None, 'a steamer trunk at the foot of a bed'),
-    ('lamp', lamp, None, None, 'a table oil lamp, unlit (stands on a surface: lift it by extra.top of the surface)'),
-    ('lamp_lit', lambda p: lamp(p, True), None, None, 'the lamp lit'),
-    ('clock', wall_clock, DIR2, None, 'a regulator clock on the wall'),
-    ('pegs', coat_pegs, DIR2, None, 'coat pegs on the wall with a coat, a hat and a lantern'),
-    # office, school, church
-    ('desk', desk, DIR4, None, 'an office desk 1.8 x 0.9u, top 1.05u: its front is the knee hole, the sitter faces '
-                               'the other way (the sheriff, the newspaper, the assay office, the bank)'),
-    ('desk_roll', lambda p: desk(p, roll=True), DIR4, None, 'a roll-top desk (the bank, the hotel office)'),
-    ('school_desk', school_desk, DIR4, None, 'a pupil\'s desk with its bench joined on; the pupil faces its front'),
-    ('blackboard', blackboard, DIR2, None, 'the blackboard on the wall, chalked'),
-    ('pew', pew, DIR4, None, 'a church pew 3u long, seat 0.62u, four sitters; faces the way they face'),
-    ('pulpit', pulpit, DIR4, None, 'the pulpit on its dais; the preacher stands behind it facing its front'),
-    # saloon
-    ('bar', bar, DIR4, None, 'the saloon bar 3.6u long, top 1.25u, foot rail, spittoon, bottles, glasses, a beer '
-                             'pump; its front faces the drinkers'),
-    ('backbar', backbar, DIR2, None, 'the back bar against the wall: mirror, bottles, the cash register'),
-    ('barstool', barstool, None, None, 'a bar stool, seat 1.0u (lift a seated frame 3 px)'),
-    ('piano', piano, DIR2, None, 'an upright piano and its stool, against the wall; the player faces the wall'),
-    ('card_table', card_table, None, None, 'a round card table, baize, cards and chips; chairs go round it'),
-    # bank, newspaper, jail
-    ('bank_counter', bank_counter, DIR4, None, 'the bank counter, marble top, brass grille with the teller\'s '
-                                               'window; its front faces the customers'),
-    ('safe', safe, DIR2, None, 'the bank\'s iron safe (also the hotel, the assay office)'),
-    ('press', press, DIR2, None, 'the Washington hand press and the ink table'),
-    ('type_case', type_case, DIR2, None, 'the compositor\'s type cases against the wall'),
-    ('cell_bars', cell_bars, ('x', 'z'), None, 'a wall of jail bars 3u long, 2.8u tall, the barred door in the '
-                                               'middle'),
-    ('bunk', bunk, DIR2, None, 'the jail bunk hung from the wall on chains, a grey blanket; mattress 0.75u'),
-    # smithy, livery, barber, undertaker
-    ('forge', forge, DIR2, [dict(f=0), dict(f=1)], 'the forge: brick hearth, coals (2 frames of glow), hood, '
-                                                    'chimney, the slack tub'),
-    ('anvil', anvil, ('x', 'z'), None, 'the anvil on its stump, the horn along the axis'),
-    ('bellows', bellows, DIR2, None, 'the great bellows and its rocker beside the forge'),
-    ('stall', stall, DIR2, None, 'a horse stall 2.4 x 3.6u (the livery): partitions, the manger with hay at the '
-                                 'wall, straw, a bucket'),
-    ('barber_chair', barber_chair, DIR4, None, 'the barber\'s chair; the customer faces its front, the barber '
-                                               'works behind (use work)'),
-    ('coffin', coffin, ('x', 'z'), None, 'a pine coffin on trestles (the undertaker\'s shop)'),
-    # hotel
-    ('hotel_desk', hotel_desk, DIR4, None, 'the hotel\'s front desk with the register, a bell and flowers'),
-    ('key_rack', key_rack, DIR2, None, 'the key board and pigeonholes behind the hotel desk, on the wall'),
+    # ---- in the contract (plans/d32-rooms-art.md section 3) ----
+    ('counter', lambda p: counter(p, length=4.0, depth=0.9, height=1.2), AXA, None, 1.65,
+     'a shop counter 4 x 0.9u, top 1.2u: panelled front (the customers\' side), the keeper\'s side has open shelves; '
+     'scales, a candy jar, brown paper and twine on top'),
+    ('shelf', lambda p, level: shelves(p, level, length=3.0, depth=0.6, height=2.6), AX, LV, 2.75,
+     'general goods shelves 3 x 0.6u, 2.6u tall, against a back wall: /0 empty, /1 low, /2 half, /3 full'),
+    ('sacks', lambda p, level: sacks_stack(p, level), AX, LV, 1.3,
+     'sacks of flour and feed on the floor: /0 empty (a folded sack, spilt flour), /1 two, /2 four, /3 eight'),
+    ('table', lambda p: table(p, length=1.6, width=1.0), AX, None, 1.4,
+     'a kitchen table 1.6 x 1.0u, top 1.05u, a jug, plates and a bowl'),
+    ('chair', chair, F4, None, 1.46, 'a kitchen chair, seat 0.62u (the seated frames sit on it)'),
+    ('bed', lambda p: bed(p, sleeper=True), AC, None, 1.63,
+     'a double bed 2.6 x 1.3u, the quilt humped over a sleeper and pulled up to the pillow: draw '
+     'ppl/<who>/lie/se/0 (bed x) or lie/sw/0 (bed z) at the same anchor after it; the head is at -x or -z'),
+    ('bed_made', bed, AC, None, 1.63, 'the double bed made up, empty: pillow, patchwork quilt, the sheet turned down'),
+    ('stove', stove, X1, FIRE, 3.8, 'a pot-bellied stove, its pipe to 3.8u (cut it at the ceiling): no number '
+                                    'cold, /1 and /2 burning (the firelight flickers, about 3 a second)'),
+    ('bar', lambda p: bar(p, length=5.0), AXA, None, 2.0,
+     'the saloon bar 5 x 1.0u, top 1.25u: the brass foot rail, a spittoon, bottles, glasses, the beer pump; its '
+     'front faces the drinkers'),
+    ('barstool', barstool, X1, None, 1.0, 'a bar stool, seat 1.0u (lift a seated frame 3 px: extra.sit_dy)'),
+    ('desk', lambda p: small_desk(p), {d: F4R[d] for d in F4}, None, 1.4,
+     'a writing desk 1.1 x 0.8u, top 1.05u, a pedestal of drawers: <o> is the way the sitter faces (a chair at '
+     'extra.use)'),
+    ('pew', lambda p: pew(p, length=4.0), AXA, None, 1.65, 'a church pew 4u long, seat 0.62u, five sitters'),
+    ('pulpit', pulpit, F4, None, 1.85, 'the pulpit on its dais; <o> is the way the preacher faces'),
+    ('blackboard', lambda p: blackboard(p, length=3.0), AX, None, 2.55, 'the blackboard on the back wall, chalked'),
+    ('press', press, AX, None, 2.3, 'the Washington hand press with the ink table'),
+    ('cell_bars', lambda p: cell_bars(p, length=4.0, height=3.0), AX, None, 3.0,
+     'a wall of jail bars 4u long, 3u tall, the barred door in the middle (a -0.45 to 0.45)'),
+    ('safe', safe, AX, None, 1.4, 'the iron safe'),
+    ('barber_chair', barber_chair, F4, None, 1.68, 'the barber\'s chair; <o> is the way the customer faces'),
+    ('coffin', coffin, AX, None, 1.25, 'a pine coffin on trestles'),
+    ('forge', forge, AX, FIRE, 4.0, 'the forge against the wall: brick hearth, the coals (no number banked, /1 and '
+                                    '/2 glowing), hood and chimney, the slack tub'),
+    ('anvil', anvil, AX, None, 1.16, 'the anvil on its stump, the horn along the axis'),
+    ('stall', stall, {'x': 'se', 'z': ('rot', 'se')}, [('', {}), ('horse', dict(horse=True))], 2.5,
+     'a horse stall 2.6 x 4.8u, its depth along <o>, the manger at the back wall end (-x or -z): /horse with a bay '
+     'in it'),
+    ('piano', piano, AX, None, 1.62, 'an upright piano and its stool, against the wall'),
+    ('rug', lambda p: rug(p, length=2.4, width=1.6), AX, None, 0.03,
+     'a rag rug 2.4 x 1.6u, flat: draw it with the floor, before anything standing'),
+    ('wash_stand', washstand, AX, None, 2.15, 'a washstand with basin, jug and towel, a mirror on the wall above'),
+    ('lamp_table', lamp_table, X1, None, 1.55, 'a small lamp table with the oil lamp, unlit'),
+    ('lamp_table_lit', lambda p: lamp_table(p, lit=True), X1, None, 1.55, 'the lamp table with the lamp lit'),
+    ('bench', lambda p: bench(p, length=3.0), AX, None, 0.62, 'a plain bench 3u, seat 0.62u'),
+    # ---- more, for fuller rooms ----
+    ('crates', lambda p, level: crates_stack(p, level), AX, LV, 1.9,
+     'crates on the floor: /0 empty (an opened crate, straw), /1 two, /2 four, /3 seven'),
+    ('table_cloth', lambda p: table(p, length=1.6, width=1.0, cloth='red'), AX, None, 1.4,
+     'the table with a checked cloth (the hotel\'s dining room)'),
+    ('card_table', card_table, X1, None, 1.2, 'a round card table, baize, cards and chips; chairs go round it'),
+    ('cot', cot, AC, None, 1.45, 'a narrow iron bed 2.6 x 0.9u, made (a child, the maid, a hotel room)'),
+    ('cot_sleeper', lambda p: cot(p, sleeper=True), AC, None, 1.45,
+     'the iron bed with a sleeper under the blanket: draw the lie frame after it, as on the bed'),
+    ('bunk', bunk, AX, None, 1.75, 'the jail bunk hung from the wall on chains, a grey blanket; a sleeper\'s head '
+                                   'at the -x (x) or -z (z) end: the lie frames fit it'),
+    ('cupboard', cupboard, AX, None, 2.62, 'a kitchen dresser against the wall, glass doors, plates and cups'),
+    ('range', kitchen_range, AX, FIRE, 3.8, 'the cook stove (homes, the hotel kitchen): no number cold, /1 and /2 '
+                                            'burning'),
+    ('barrel', barrel, X1, None, 1.35, 'a cracker barrel, its lid half off'),
+    ('trunk', trunk, AX, None, 0.6, 'a steamer trunk at the foot of a bed'),
+    ('lamp', lamp, X1, None, 0.78, 'the oil lamp alone, unlit (stands on a surface: lift it by that piece\'s '
+                                   'extra.top)'),
+    ('lamp_lit', lambda p: lamp(p, True), X1, None, 0.78, 'the oil lamp alone, lit'),
+    ('clock', wall_clock, AX, None, 2.78, 'a regulator clock on the wall (1.7 to 2.8u up)'),
+    ('pegs', coat_pegs, AX, None, 2.1, 'coat pegs on the wall with a coat, a hat and a lantern'),
+    ('desk_office', desk, {d: F4R[d] for d in F4}, None, 1.4, 'a big office desk 1.8 x 0.9u, two pedestals, '
+                                                             'ledgers; <o> the way the sitter faces'),
+    ('desk_roll', lambda p: desk(p, roll=True), {d: F4R[d] for d in F4}, None, 2.1,
+     'a roll-top desk 1.8 x 0.9u (the bank, the hotel office); <o> the way the sitter faces'),
+    ('school_desk', school_desk, F4, None, 0.97, 'a pupil\'s desk with its bench joined on (seat 0.52u); <o> the '
+                                                 'way the pupil faces'),
+    ('backbar', lambda p: backbar(p, length=4.0), AX, None, 3.2,
+     'the back bar against the wall: mirror, bottles, the cash register'),
+    ('bank_counter', bank_counter, AXA, None, 2.38, 'the bank counter, marble top, the brass grille with the '
+                                                    'teller\'s window'),
+    ('hotel_desk', hotel_desk, AXA, None, 1.55, 'the hotel\'s front desk with the register, a bell and flowers'),
+    ('key_rack', key_rack, AX, None, 2.4, 'the key board and pigeonholes behind the hotel desk, on the wall'),
+    ('type_case', type_case, AX, None, 1.38, 'the compositor\'s type cases'),
+    ('bellows', bellows, AX, None, 2.05, 'the great bellows and its rocker beside the forge'),
 ]

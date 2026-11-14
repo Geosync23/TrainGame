@@ -1962,8 +1962,9 @@ line (a toast), and nothing is done:
 - "Not enough of the rail gang at hand just now (three resting): a rail takes four men. Wait for them, or join another
   gang."
 
-Why a gang cannot be joined is shown as a priority toast (`toast(msg, ms, prio)`): a plain message in the same
-moment (a lever thrown at the station) no longer covers it.
+Why a gang cannot be joined is said in the light chip under him for about four seconds (the toast's place at the top
+of the screen is under the line's bar out there), and as a priority toast (`toast(msg, ms, prio)`: a plain message in
+the same moment, a lever thrown at the station, no longer covers it).
 
 The chip's lines: "With Pat" or "Laying rock, alone"; the round's hint ("Tap on your beat, as the ring closes");
 "Walking to the tie pile, the men with you"; "Tie down: 60 cm more of the ties"; "Waiting on the diggers: nothing ready

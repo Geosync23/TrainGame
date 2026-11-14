@@ -8374,7 +8374,7 @@ const CW = {
   // D34: the men a task truly takes: a tie is carried by two, a rail by four; clearing, digging, rock and spiking can
   // be done alone. With D34 on, a tie or rail man works (gives wu) only in a carrying unit of that size, and the foreman
   // gives those gangs whole units or nobody (cwAssign); a man left over waits.
-  NEED: [1, 1, 1, 2, 4, 1], UNIT_MIN: 30,
+  NEED: [1, 1, 1, 2, 4, 1], UNIT_MIN: 30, UNIT_MIN_SMALL: 10,   // (minutes of work a man before a new tie or rail unit is made up: a crew under 10 keeps its little team closer)
   ANIM: { hook: ['hook', 3], axe: ['axe', 4], pick: ['pick', 4], shovel: ['shovel', 4], rake: ['rake', 3], maul: ['maul', 4] },
   CREEK: [544 * LINE.M - 9.9, 544 * LINE.M + 9.9],   // the creek's stretch (u): crossed on the trestle's deck only
   BRIDGE_M: [536, 552],
@@ -8642,7 +8642,7 @@ function cwAssign(S) {
     // already at work, or the last of it once the stage ahead is finished or nothing else is open: so a small crew's
     // four do not walk up for a few metres)
     const last = open[k] > 0 && (L.f[k - 1] >= LINE.LEN_M || open.every((o, j) => j === k || o <= 0));
-    if (rem) want += open[k] >= CW.UNIT_MIN * CW.K * u * Math.ceil(want / u) || last || has >= want - rem + u ? u - rem : -rem;
+    if (rem) want += open[k] >= (L.crew < 10 ? CW.UNIT_MIN_SMALL : CW.UNIT_MIN) * CW.K * u * Math.ceil(want / u) || last || has >= want - rem + u ? u - rem : -rem;
     // (a gang the next one is waiting on keeps its last man: else the clearers, cheap a metre, are emptied for the rails
     // and every gang behind them stands)
     const keep = j => (j < 5 && L.f[j] < LINE.LEN_M && lnLimit(S, j + 1) - L.f[j + 1] < 0.5 ? 1 : 0);

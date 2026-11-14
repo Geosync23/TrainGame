@@ -8643,12 +8643,15 @@ function cwAssign(S) {
     // four do not walk up for a few metres)
     const last = open[k] > 0 && (L.f[k - 1] >= LINE.LEN_M || open.every((o, j) => j === k || o <= 0));
     if (rem) want += open[k] >= CW.UNIT_MIN * CW.K * u * Math.ceil(want / u) || last || has >= want - rem + u ? u - rem : -rem;
-    let avail = 0; for (const j of pool) avail += j === 3 ? Math.max(0, cnt[3] - 2) : cnt[j];
+    // (a gang the next one is waiting on keeps its last man: else the clearers, cheap a metre, are emptied for the rails
+    // and every gang behind them stands)
+    const keep = j => (j < 5 && L.f[j] < LINE.LEN_M && lnLimit(S, j + 1) - L.f[j + 1] < 0.5 ? 1 : 0);
+    let avail = 0; for (const j of pool) avail += j === 3 ? Math.max(0, cnt[3] - 2) : Math.max(0, cnt[j] - keep(j));
     if (want - cnt[k] > avail) want = cnt[k] - cnt[k] % u;   // (not men enough to make it up: the odd ones go)
     // (from the gang with the most men for what its front costs a metre, the foreman's own measure, so the fronts still
     // move together; a tie pair is not split for the rails)
     const per = j => cnt[j] / Math.max(1e-9, cost[j]);
-    for (let i = cnt[k]; i < want; i++) { let d = -1; for (const j of pool) if ((j === 3 ? cnt[3] > 2 : cnt[j] > 0) && (d < 0 || per(j) > per(d) + 1e-9)) d = j; cnt[d]--; }   // (an odd tie gang left by this is put right in the ties' turn)
+    for (let i = cnt[k]; i < want; i++) { let d = -1; for (const j of pool) if ((j === 3 ? cnt[3] > 2 : cnt[j] > keep(j)) && (d < 0 || per(j) > per(d) + 1e-9)) d = j; cnt[d]--; }   // (an odd tie gang left by this is put right in the ties' turn)
     if (want < cnt[k]) { let g = -1; for (const j of [1, 2, 5, 0]) if (w[j] > 0 && (g < 0 || w[j] / (cnt[j] + 1) > w[g] / (cnt[g] + 1))) g = j; cnt[g >= 0 ? g : 1] += cnt[k] - want; }
     cnt[k] = want;
   }

@@ -152,7 +152,9 @@ module.exports = async function checkD34() {
       // ---- Each stage ----
       const order = orient === 'portrait' ? [0, 1, 2, 4, 3, 5] : [4, 3, 5, 1, 0, 2];   // (portrait: the clearers before the line reaches the creek, where nobody crosses before the trestle)
       let saved = null;
-      for (const k of order) {
+      const again = {};
+      for (let oi = 0; oi < order.length; oi++) {
+        const k = order[oi];
         await page.evaluate(() => { const R = window.__railhead, S = R.state, g = (0, eval); for (let i = 0; i < 12000 && !g('lnHours')(S).work; i++) R.step(1); });   // (after the meal, or the next morning)
         await page.evaluate(k => { const R = window.__railhead, S = R.state, g = (0, eval); for (let n = 0; n < 6 && g('lgNearStage')(S) !== k; n++) { const sp = g('lgSpot')(S, k, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 400 && S.lp.tx !== undefined; i++) R.step(1); } }, k);
         await frames(3); await skipLesson(); await frames(2);
@@ -188,16 +190,18 @@ module.exports = async function checkD34() {
         if (s.panel) P(`the ${NAMES[k]}: the game panel is shown`);
         if (!s.chip) P(`the ${NAMES[k]}: the small chip with Leave is not shown`);
         // two actions, each moving its front exactly by its work
-        let did = [];
+        let did = [], retry = false;
         for (let a = 0; a < 2 && did.length < 2; a++) {
           const why = await play[k](k === 3 && orient === 'portrait' && !saved ? async () => {
             saved = await page.evaluate(() => { const R = window.__railhead; return { save: R.exportSave(), h: R.hash(), j: JSON.stringify(R.state.lp.j) }; });
           } : null);
           const gone = !(await st()).j;
           if (why && gone && did.length) break;   // (the meal or the end of the day ended his work after an action: enough)
+          if (why && gone && (again[k] || 0) < 2) { retry = true; break; }   // (the meal came while the gang ahead left him no room: again after it)
           if (why) { P(`${NAMES[k]}: ${why}` + (/left/.test(why) ? ' ' + JSON.stringify(await page.evaluate(() => window.__d34Ev.filter(e => e.t === 'lgLeft' || e.t === 'lpRefused').slice(-3))) : '')); break; }
           for (let i = 0; i < 40; i++) { await at(T + 125); const e = (await evs()).filter(q => q.t === 'lgDid' && q.stage === k); did.push(...e); if (e.length) break; const w = (await page.evaluate(() => window.__d34Ev.slice(-3))).find(q => q.t === 'lgWait'); if (w && i > 20) break; }
         }
+        if (!did.length && (retry || !(await st()).j) && (again[k] || 0) < 2) { again[k] = (again[k] || 0) + 1; order.push(k); if (process.env.D34_DEBUG) console.log(orient, NAMES[k], 'again after the meal'); continue; }
         if (!did.length) { P(`${NAMES[k]}: no action was taken by the sim`); await shot(`fail-${NAMES[k]}`); }
         else if (!did.some(e => e.wu > 0)) P(`${NAMES[k]}: none of his actions did any work (the front ahead never gave him room): ${JSON.stringify(did)}`);
         for (const e of did) {
@@ -247,7 +251,7 @@ module.exports = async function checkD34() {
           // (wait for a moment the rail gang, or the tie men, are short, walk up to them, and look again: they may be back)
           for (let tries = 0; tries < 200; tries++) {
             let k = -1;
-            for (let i = 0; i < 4000 && k < 0; i++) { if (g('lnHours')(S).work && free(4) < 3) k = 4; else if (g('lnHours')(S).work && free(3) < 1) k = 3; else R.step(1); }
+            for (let i = 0; i < 12000 && k < 0; i++) { if (g('lnHours')(S).work && free(4) < 3) k = 4; else if (g('lnHours')(S).work && free(3) < 1) k = 3; else R.step(1); }
             if (k < 0) return { k };
             for (let n = 0; n < 6 && g('lgNearStage')(S) !== k; n++) { const sp = g('lgSpot')(S, k, 1); R.send({ t: 'lpWalk', x: Math.round(sp.x * 100), z: Math.round(sp.z * 100) }); R.step(1); for (let i = 0; i < 400 && S.lp.tx !== undefined; i++) R.step(1); }
             if (g('lgNearStage')(S) === k && free(k) < (k === 4 ? 3 : 1) && g('lnHours')(S).work) return { k, near: k, free: free(k) };

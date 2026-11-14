@@ -111,7 +111,9 @@ show the cots. Added, as the contract asks: `camp/tent/floor`, `camp/cooktent/fl
   (`furn/...`); the walls carry only what is fixed to them, kept mostly high on the wall so furniture against it
   does not hide it.
 - New sheets (6): `d32_rooms_w`, `d32_rooms_e`, `d32_rooms_civic`, `d32_rooms_houses`, `d32_houses_new`, `d32_far`.
-  The atlas index allows 64 sheets.
+  The atlas index allows 64 sheets; with them the full build has 51.
+- **Size:** the six new sheets are about 205 KB of PNG; the full build's `atlas.js` grows from 3,935 KB to 4,219 KB
+  (+284 KB with the index). Measured with `python3 tools/pixelart/build.py` on this branch (not embedded).
 
 ## Not done
 

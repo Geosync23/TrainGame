@@ -524,9 +524,14 @@ def bed(p, sleeper=False, quilt='red', length=2.6, width=1.3, iron=False, frame=
     p.box(-hw + 0.04, -hl + 0.02, 0.45, hw - 0.04, hl - 0.02, BED - 0.06, 'cream', shades=(1, 2, 3))
 
     def patch(k, sgn, a, c, h, idx):
-        q = (np.floor(a * 2.6 + 9) * 3 + np.floor(c * 2.6 + 9) * 5) % 4
-        rr = np.where(q == 0, R('cream'), np.where(q == 1, R(quilt), np.where(q == 2, R('ochre'), R(quilt))))
-        ii = np.where(q == 3, clampi(idx + 1), idx)
+        # big two-tone patches (about 4 px) so the shape under the quilt still reads, a cream patch now and then,
+        # a cream border round the edge
+        ia = np.floor(a / 0.45 + 20).astype(int); ic = np.floor(c / 0.45 + 20).astype(int)
+        q = (ia + ic) % 2
+        cream = (E.hash2(ia, ic + 3) % 5 == 0) & (k == 2)
+        edge = (k != 2) & (h < BED - 0.08)
+        rr = np.where(cream | edge, R('cream'), R(quilt))
+        ii = np.where(cream | edge, clampi(idx), np.where(q == 1, clampi(idx + 1), idx))
         return rr, ii
     o = p.new()
     q0 = -hl + 0.75

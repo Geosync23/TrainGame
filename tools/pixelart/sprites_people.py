@@ -11,3 +11,6 @@ def register(reg):
         reg.add(name, 'people', frames, meta, indexed=True)
     for name, frames, meta, indexed in P27.build_all():
         reg.add(name, 'people', frames, meta, indexed=indexed)
+    import people_d32 as P32           # D32 stage 3: the new roles, work, sit, lie, the hired workers' outfits
+    for name, frames, meta, indexed in P32.build_all():
+        reg.add(name, 'people_d32', frames, meta, indexed=indexed)

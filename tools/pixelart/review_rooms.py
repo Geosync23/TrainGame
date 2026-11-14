@@ -179,7 +179,94 @@ def furn_sheet():
     save(img, 'rooms-furniture-1x.png', 1)
 
 
+_REG = [None]
+
+
+def both():
+    if _REG[0] is None:
+        _REG[0] = load(['sprites_rooms', 'sprites_people'])
+    return _REG[0]
+
+
+def people_sheet():
+    """One row per person: idle and walk (new roles), work in four facings, sit in four facings on a chair at a
+    table, lie in a bed both ways."""
+    import people_d32 as P32
+    reg = both()
+    whos = P32.NEW_ROLES + P32.OLD_FOLK + P32.STAND_INS
+    rowh = 46
+    W = 1180
+    for part, ws in (('new', P32.NEW_ROLES), ('old', P32.OLD_FOLK + P32.STAND_INS)):
+        img = canvas(W, rowh * len(ws) + 14)
+        label(img, 'name     idle walk(se) | work se, sw, ne, nw (2 frames each) | sit at a table se sw ne nw | in bed '
+                   'x (lie/se), z (lie/sw)', 4, 2)
+        for r, who in enumerate(ws):
+            y0 = 14 + r * rowh
+            gy = y0 + 36
+            label(img, who, 4, y0 + 4)
+            label(img, P32.NAMES.get(who, ''), 4, y0 + 14)
+            x = 110
+            if who in P32.NEW_ROLES:
+                for k in ('idle/se/0', 'idle/ne/0', 'walk/se/0', 'walk/se/1', 'walk/sw/2', 'talk/se/0',
+                          'benchSit/se/0'):
+                    draw(img, reg, f'ppl/{who}/{k}', x, gy)
+                    x += 22
+            else:
+                x += 22 * 7
+            x += 8
+            for d in ('se', 'sw', 'ne', 'nw'):
+                for f in (0, 1):
+                    draw(img, reg, f'ppl/{who}/work/{d}/{f}', x, gy)
+                    x += 20
+                x += 4
+            x += 10
+            for d in ('se', 'sw', 'ne', 'nw'):
+                # the table on the far side of a sitter facing d, a chair under him
+                tx, tz = {'se': (0.9, 0), 'sw': (0, 0.9), 'ne': (0, -0.9), 'nw': (-0.9, 0)}[d]
+                key = f'ppl/{who}/sit/{d}/0' if f'ppl/{who}/sit/{d}/0' in reg.f else f'ppl/{who}/sit/{d}/0'
+                tpx, tpy = proj(tx, tz)
+                if d in ('ne', 'nw'):
+                    draw(img, reg, 'furn/table/x' if d == 'ne' else 'furn/table/z', x + tpx, gy + tpy)
+                draw(img, reg, f'furn/chair/{d}', x, gy)
+                draw(img, reg, key, x, gy)
+                if d in ('se', 'sw'):
+                    draw(img, reg, 'furn/table/z' if d == 'se' else 'furn/table/x', x + tpx, gy + tpy)
+                x += 40
+            for o, d in (('x', 'se'), ('z', 'sw')):
+                draw(img, reg, f'furn/bed/{o}', x + 10, gy - 6)
+                draw(img, reg, f'ppl/{who}/lie/{d}/0', x + 10, gy - 6)
+                x += 46
+        save(img, f'rooms-people-{part}.png', 2)
+        save(img, f'rooms-people-{part}-1x.png', 1)
+
+
+def hired_sheet():
+    import people_d32 as P32
+    reg = both()
+    anims = ['idle', 'walk', 'punch', 'carry', 'push', 'throw', 'wave', 'lantern', 'lift', 'shoulder/idle',
+             'shoulder/walk', 'roll', 'drag', 'truck', 'heave', 'stackHigh', 'door', 'climb', 'handOver', 'pull']
+    img = canvas(1000, 4 * 4 * 30 + 20)
+    y = 14
+    for who in ['agent'] + P32.HIRED:
+        for d in ('se', 'sw', 'ne', 'nw'):
+            label(img, f'{who} {d}', 4, y + 8)
+            x = 110
+            for a in anims:
+                for f in range(4):
+                    k = f'ppl/{who}/{a}/{d}/{f}'
+                    if k in reg.f:
+                        draw(img, reg, k, x, y + 26)
+                        x += 15
+                x += 4
+            y += 30
+    save(img, 'rooms-hired.png', 2)
+
+
 if __name__ == '__main__':
     what = sys.argv[1] if len(sys.argv) > 1 else 'all'
     if what in ('furn', 'all'):
         furn_sheet()
+    if what in ('people', 'all'):
+        people_sheet()
+    if what in ('hired', 'all'):
+        hired_sheet()

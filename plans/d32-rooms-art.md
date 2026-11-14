@@ -162,4 +162,7 @@ follows. Where this differs from the sections above, this section is true.
 - **The far town** uses `far/depot`, `far/tank`, `far/grainstore`, `far/hotel2` and `far/sign`; its name is
   **Prospect** (provisional, the designer's to choose), as painted on the depot and the sign (`far_d32.TOWN_NAME`)
   and in the code (`FT.NAME`).
+- **Sheets.** The new houses' whole sprites and their `_lit` are on their own small sheet, `d32_houses`, apart from
+  their parts (`d32_houses_new`): sprites drawn every frame should not share a big sheet with parts drawn only while
+  a building is open (frame time, DEV_NOTES "Joined").
 - Not drawn yet (stand-ins still used): `ui/closed_card` (Town's paper card), `ui/purse`, `ui/face/0..2`.

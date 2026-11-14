@@ -1834,9 +1834,72 @@ orientations, the dev jump, 30 men to the last spike, the card and the town on t
 `test-output/rooms-{store,school,saloon-evening,home-night,tent-night}-portrait.png`,
 `fartown-{end,far}-{portrait,landscape}.png`, `fartown-cheer-card-portrait.png`, `fartown-cheer-portrait.png`.
 
-@@JOINED@@
+### Joined (2026-11-14)
+
+The four pieces merged onto the buildings artist's commit 137229f, in this order: the rooms artist's 561c200, Town's
+224b978, Rooms' 5a6cd63. Conflicts: `tools/pixelart/sprites_camp.py` (both artists added `camp/tent/floor` and
+`camp/cooktent/floor`: the rooms artist's, made to the Rooms contract, kept, one of each key); `index.html` `pixLists`
+(the townsfolk list takes Town's `tnDrawList` and Rooms' `rmPeople`); the section list here (both kept). The atlas is
+rebuilt from all the art (`build.py`, `embed.py`): 4,369 KB, so check-atlas's budget is now 4,700 KB.
+
+**Switches.** `?tn=0` parks the bigger town (the D27 town of 19 people and 8 houses), `?rooms=0` the rooms (the
+buildings stay shut, the townsfolk vanish at their doors), `?fartown=0` the far town. Each still works on its own.
+
+**What was changed to fit them together** (each line marked "D32 joined" in the code):
+
+- **Taps.** A tap on a shut building opens it (Rooms) and shows its Look card (Town); a tap on the open one walks him
+  in; a tap on a townsperson is Town's Look card as before (`onTap`).
+- **The new houses' art.** `tnHouseKey` asks for `bld/cabin`, `bld/framehouse`, `bld/house2` by kind
+  (`TN_HOUSE_ART`), the second colour `_b` on odd house numbers (`tnv`: house9, 11, 13, 15, 17), with their `_lit`
+  bodies at night. The two-room house's lot is 8.25u along the lane (its body is 7.5u).
+- **Every house's room is its real body** (`RM_HOUSE`, `rmHouseOf`): the D27 designs 5 x 6u, the cabin 4 x 5, the
+  frame house 5 x 6, the two-room house 5 x 7.5 with its partition; the doorway where the art's front door is; the
+  walls' ring (the room's `fp`) is the body, the porch and yard outside it; the walk grid's door cut reaches the door
+  node past the porch. Homes are furnished per body (`RM_HOME`): a double bed (two sleepers), a cot for a child, the
+  table and chairs, the stove; the cabin round the art's hearth; the middle of each room kept clear.
+- **Furniture by the art** (`rmRoomOf`'s `F`, `rmFurnItems`): the rooms artist's keys and orientations (counters,
+  bars, pews by their front; seats and desks by the sitter's facing), sizes from `extra.box` (the walk grid's solid
+  furniture and the sort boxes too), drawn at their anchors; `bed_made` empty, `bed` with the sleeper's `lie` frame;
+  `cot` / `cot_sleeper`; stoves and ranges burning (cold 10:00 to 16:00 and in a shut shop), the forge glowing in
+  working hours, horses in the livery's five real-size stalls (2.6 x 4.8u, along the north wall), crates and a cracker
+  barrel in the store at the stock's level, school desks with their bench, four to a pew. The stove pipe is cut at a
+  low house's eaves.
+- **People indoors** (`rmPersonInner`): `work` frames for keepers and workers and the preacher (on his dais, 2 px up);
+  `sit` at tables and desks, `benchSit` on pews, benches, stools and the barber chair, lifted by `sit_dy`; the `lie`
+  frame over the occupied bed at its anchor (`se` along x, `sw` along z). Worker spots for Town's clerks, hands and
+  wives (the store has two behind the counter); Town's homemakers are at home, not at a customer's spot.
+- **Town's people** wear the new roles: the clerks `clerk`, Hattie `cook`, Rosa `maid`, Billy `stableboy`, the wives
+  `wife_a` / `wife_b`, the hands `farmer` / `cowhand.b`, the children `girl` / `boy`, Lottie and Ruth `woman_shawl`.
+- **The hired hands** wear `ppl/hired_punch`, `hired_load`, `hired_deliver` (`hwOutfit`), the agent's uniform if the
+  atlas lacks them.
+- **Shops:** shelves, sacks and crates at the four levels of `tnShop(S, id).stock`; a shut shop is dark at night
+  outside and in, its stove cold, its shelves empty, its keeper waiting at the door with the Closed board.
+- **Night indoors:** an open building's far walls glow at night (its `/back_lit` goes to the glow pass).
+- **The far town** is **Prospect** (provisional, the designer's to name), as the artist painted it on `far/depot` and
+  `far/sign`; it uses all five `far/...` sprites.
+- **check-rooms** keeps Town's shops stocked in its helper (with the economy a shop without goods shuts and its keeper
+  waits outside); **check-bigtown** knows the two-room house's longer lot and the new houses' keys.
+
+**Known rough edges** (in `backlog.md`): the east row's Closed board still shows through its building; the two-room
+house's partition is part of `/back`, so someone in the kitchen of an 'e' house is drawn over it; the two-room house's
+small furniture is not solid; porches are not decks (people walk them at ground height); wall pieces against a near
+wall show their fronts; visitors and rail men in town still pass through people (Town's note).
+
+**Speed** (check-pixperf, Chromium at phone size, 4x-throttled CPU, best of three windows): the station at the furthest
+zoom 7.35 ms portrait and 8.41 landscape on average (98th centile 8.5 and 10.8; its own budget 10 and 20); the station at
+the default zoom 5.4 and 6.32; the street at dusk 3.98 and 3.8 (default zoom), 5.94 and 6.38 (furthest). Joined as
+merged, the station at the furthest zoom was 17.8 and 30.9 ms: the new houses' whole sprites were drawn every frame
+from the big sheet that also holds all their parts (`d32_houses_new`, 506 x 1484 px), and together with the station's
+see-through canvases in the same frame Chromium's canvas spent 10 to 25 ms a frame there (found by elimination: the same
+frame with the D27 house art, without the see-through, or with the whole houses on a small sheet costs about 3 ms of
+drawing; the draws themselves are cheap one by one). The build now puts the new houses' whole sprites and their `_lit`
+on a sheet of their own, `d32_houses` (`bldparts_reg.GROUPS['new_whole']`, 509 x 523 px); the parts stay on
+`d32_houses_new` and are drawn only while a house is open. Worth keeping in mind: a sprite drawn every frame should
+not share a big sheet with art drawn only now and then.
 
 ## Next
+
+Update (2026-11-14, D32 stage 3 joined): the bigger town's four pieces (buildings art, rooms art, Town, Rooms) are merged and fitted on one branch (see "D32 stage 3: the bigger town", its part "Joined"); the listed checks pass. Not pushed; the lead runs `npm test`.
 
 Update (2026-11-13, D31 play-test fixes): one tap per good, the small cart, the faster walk and the soft see-through
 patch are built on their own branch (see "D31"); `tests/check-d31.js` is new. Not pushed; the lead runs `npm test`.

@@ -30,6 +30,7 @@ These override the original design document wherever they disagree. Details are 
 ## How to test
 
 1. Install the test tools once: `npm install`. This only fetches a copy of three.js r128 used by the tests.
+   Playwright and Chromium are not in `package.json`: Claude's cloud machines bring their own (1.63 on 2026-11-14). On another machine see `docs/TRANSFER.md`, "Setting up". `tests/check-smooth.js` is not in `npm test`; run it alone.
 2. Run every check: `npm test`. It must pass before every push.
 3. Screenshots land in `test-output/`. That folder is not saved to git.
 

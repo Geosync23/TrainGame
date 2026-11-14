@@ -17,7 +17,9 @@ Read these when working on the game as it is today.
 
 | File | What it is | Date | Decision |
 |---|---|---|---|
-| `handover.md` | The lead's handover note to the next session, newest part at the top (D31 to D34 and version 13 at the top; older parts below are history). Its heading still says "updated 2026-11-02". | 2026-11-01, last changed 2026-11-14 | all |
+| `handover.md` | The short current note a fresh lead session reads first (rewritten 2026-11-14 for the move to a new account). | 2026-11-01, last changed 2026-11-14 | all |
+| `handover-archive.md` | The older handover notes, 2026-11-02 to 2026-11-14, newest first. History; kept for the record. | 2026-11-01, last changed 2026-11-14 | all |
+| `answers/` | The designer's saved answers to every survey and review page, copied out of the pages' databases on 2026-11-14, with an index in `answers/README.md`. | 2026-11-01, last changed 2026-11-14 | all |
 | `d32-tech.md` | Technical plan for line building, workers and the bigger town: the split between owners, the sim, the numbers. The lead's decisions at its end override its body. | 2026-11-13 | D32 (and D33, D34 build on it) |
 | `d32-journey.md` | The designer's journey along the line: the nine regions and the border rules. | 2026-11-13 | D32 |
 | `d32-rooms-art.md` | Art contract between the Rooms code and the artists: buildings in parts, tents, furniture, people indoors, the far town. Section 6 ("As joined") is what the code reads today. | 2026-11-14 | D32 stage 3 |

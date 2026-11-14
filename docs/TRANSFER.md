@@ -168,6 +168,9 @@ In the old lead's suggested order (`docs/ROADMAP.md` has the detail):
   background and do not edit the files it is testing while it runs.
 - A helper once committed its link to `node_modules`; merged, it broke the tests with ELOOP errors. The fix, if
   it happens again: `git rm --cached node_modules; rm node_modules; npm install`.
+- `CLAUDE.md` opens by calling the game 3D with an isometric three.js camera. That was true until 2026-11-10; the
+  default game is now 2D pixel art from one fixed view, and three.js draws only the parked older worlds. The rules
+  in `CLAUDE.md` still stand; its wording is the designer's to change.
 - Notes older than 2026-11-10 describe the 3D game. Where an old note and `docs/STATE.md` disagree,
   `docs/STATE.md` is right.
 - GitHub reports that the repository moved to `github.com/Geosync23/TrainGame`; the older lower-case address

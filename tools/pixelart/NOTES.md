@@ -1,3 +1,5 @@
+> Note (2026-11-14): the sizes and the sheet format described below are from the first art round. The art in `index.html` is now the packed v2 format, 54 sheets, about 4,370 KB against a budget of 4,700 KB. `docs/STATE.md` (the art pipeline) is current.
+
 # Notes on the sprite contract (from the art pipeline)
 
 Points where the art differs from, adds to or reads `plans/proto-sprites.md` in a particular way. The integrator

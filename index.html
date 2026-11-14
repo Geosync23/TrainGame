@@ -25968,7 +25968,7 @@ const LGW_GAMES = [
       const C = lgCrossX(S), c = lgWBuf(C, 0, 1.4);
       if (r.kind === 'tip') {
         if (r.tipped) return;
-        lgWLine(g, c.x - 3, c.y - 2, c.x + 3, c.y + 2, LGC.CHALK); lgWLine(g, c.x - 3, c.y + 2, c.x + 3, c.y - 2, LGC.CHALK);
+        for (const [d, col] of [[1, PIX.COL.ink], [0, LGC.CHALK]]) { lgWLine(g, c.x - 5, c.y - 3 + d, c.x + 5, c.y + 3 + d, col); lgWLine(g, c.x - 5, c.y + 3 + d, c.x + 5, c.y - 3 + d, col); }   // the chalk cross
         const n = this.nose(), b = lgWBuf(n.x, 0.4, n.z); lgWCirc(g, b.x, b.y, 1.5, '#efb45c');
         return;
       }

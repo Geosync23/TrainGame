@@ -6766,7 +6766,8 @@ function rmRoomOf(at) {
     if (q.use) spots.push({ role: q.use, x: q.x, z: q.z, f: 0, dir: 'sw', act: /bed/.test(q.key) ? 'lie' : /chair|pew|stool|bench/.test(q.key) ? 'sit' : 'idle', path: [[q.x, q.z]] });
   } else K.fill(F, P, W, D, opt);
   // Spare places to stand (more visitors than spots): the open floor, clear of the furniture.
-  const clear = (x, z) => furn.every(q => Math.abs(x - q.x) > q.w / 2 + 0.6 || Math.abs(z - q.z) > q.d / 2 + 0.6) && spots.every(p => Math.hypot(p.x - x, p.z - z) > 0.8);
+  const [ix0, iz0] = at2(ud, RM.IN_V), seg = (x, z) => { for (let s = 0; s <= 1; s += 0.05) { const px = ix0 + (x - ix0) * s, pz = iz0 + (z - iz0) * s; if (furn.some(q => q.solid && Math.abs(px - q.x) < q.w / 2 + 0.3 && Math.abs(pz - q.z) < q.d / 2 + 0.3)) return false; } return true; };
+  const clear = (x, z) => furn.every(q => Math.abs(x - q.x) > q.w / 2 + 0.6 || Math.abs(z - q.z) > q.d / 2 + 0.6) && spots.every(p => Math.hypot(p.x - x, p.z - z) > 0.8) && seg(x, z);   // (a straight way to it from the door)
   let nst = 0;
   for (let v = 1.8; v < D - 2.2; v += 1.3) for (let u = -(W / 2 - 1.2); u <= W / 2 - 1.2; u += 1.3) { const [x, z] = at2(u, v); if (clear(x, z) && nst++ < 10) spots.push({ role: 'stand', x, z, f: Math.atan2(n[0], n[1]), dir: pixDir(n[0], n[1]), act: 'idle', path: [[x, z]] }); }
   const [dx, dz] = at2(ud, -Wl), [ix, iz] = at2(ud, RM.IN_V);

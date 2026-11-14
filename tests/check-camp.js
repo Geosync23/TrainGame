@@ -108,9 +108,10 @@ module.exports = async function checkCamp() {
     const a = await drawn();
     if (a.men < 20 || !a.fire || a.tents < 4) P('the camp at supper is not drawn: ' + JSON.stringify(a));
     await page.screenshot({ path: screenshotPath('d32-camp-supper-portrait') });
-    await to(21.8); await page.evaluate(() => window.__railhead.pix.placePlayer(-60, -40)); await frames(6);
+    // D32 stage 3 (Rooms): the tents open one at a time, as the buildings: the one he stands in (tent 1 here)
+    await to(21.8); await page.evaluate(() => window.__railhead.pix.placePlayer(-59.5, -45)); await frames(12);
     const b = await drawn();
-    if (b.lie < 8 || b.cots < 8) P('with the player among the tents the men are not seen in their cots: ' + JSON.stringify(b));
+    if (b.lie < 3 || b.cots < 4) P('with the player in a tent the men are not seen in their cots: ' + JSON.stringify(b));
     await page.screenshot({ path: screenshotPath('d32-camp-night-portrait') });
     await page.evaluate(() => window.__railhead.pix.placePlayer(-44, -28)); await frames(6);
     const c = await drawn();

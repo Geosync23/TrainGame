@@ -27642,7 +27642,7 @@ function rmCanvases(K, lit, R, ax, az, b) {
   }
   sgc.putImageData(sim, 0, 0); bg.putImageData(bim, 0, 0);
   if (artBack) { bg.clearRect(0, 0, bw, bh); for (const k of [K.B + '/floor', K.B + '/back' + (pixF(K.B + '/back' + lit) ? lit : '')]) { const q = pixF(k); if (q) bg.drawImage(PIXA.imgs[q[0]], q[1], q[2], q[3], q[4], M + aX - q[5], M + aY - q[6], q[3], q[4]); } }
-  C = { back: { cv: bc, l: -aX - M, t: -aY - M }, sill: { cv: sc, l: -aX, t: -aY } };
+  C = { back: { cv: bc, l: -aX - M, t: -aY - M }, sill: { cv: sc, l: -aX, t: -aY }, floor: [fl, ft, fr - fl + 1, fb - ft + 1] };
   PIX.rm.cv.set(id, C);
   if (PIX.rm.cv.size > 40) PIX.rm.cv.delete(PIX.rm.cv.keys().next().value);
   return C;
@@ -27674,7 +27674,7 @@ function rmBldDraw(g, it) {
     }
   }
   g.drawImage(back, bx + C.back.l, by + C.back.t); PIX.stats.draws++;
-  PIX.drawn.push({ si: -1, w: back.width, h: back.height, l: bx + C.back.l + PIX.vx, t: by + C.back.t + PIX.vy, hit: Q.pick, id: it.id });
+  PIX.drawn.push({ si: -1, w: C.floor[2], h: C.floor[3], l: bx + C.floor[0] + PIX.vx, t: by + C.floor[1] + PIX.vy, hit: Q.pick, id: it.id });   // (a tap on the open floor)
   for (const q of Q.inner) { PIX.curId = q.id; q.draw(g); }
   PIX.curId = it.id;
   // the whole building at 1 - fade, then the sill

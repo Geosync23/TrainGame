@@ -41,6 +41,7 @@ OWNERS = {
                      'nat/aspen', 'nat/snag', 'nat/bones', 'nat/burrow', 'nat/bush',
                      'veh/crewcar', 'veh/gondola', 'veh/flat_rails', 'veh/flat_ties'),   # D32: the line and the country
     'sprites_camp': ('camp/',),                   # D32: the crew's camp
+    'sprites_rooms': ('furn/',),                  # D32 stage 3: furniture and fittings inside the buildings
     # D32 the journey (Artist 3): the wild country's near side, the landmarks, the wildlife
     'sprites_wild_near': ('wild/near/', 'wild/mark/', 'wild/life/'),
     # D32 wild country, Artist 2: the far-side borders and their ranks, and the regions' ground (plans/pixel/d32/far)

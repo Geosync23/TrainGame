@@ -9600,7 +9600,7 @@ const FT = (() => {
   const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null, X = LINE.LEN, SX = X - 30;
   const lots = [-38, -52, -66, -80];
   return {
-    ON: !(q && q.get('fartown') === '0'), NAME: 'Cedar Bluff', X0: X - 150, X1: X + 150, ZN: -125,
+    ON: !(q && q.get('fartown') === '0'), NAME: 'Prospect', X0: X - 150, X1: X + 150, ZN: -125,
     PLAT: { x0: X - 72, x1: X - 4, z0: -8.4, z1: -2.7, y: 0.375 },
     DEPOT: { x: SX, z: -13.6 }, TANK: { x: X - 80, z: -11 }, SIGN: { x: X - 6, z: -6.0 },
     SQUARE: { x0: SX - 18, x1: SX + 18, z0: -28, z1: -18.6 }, STREET: { x0: SX - 7, x1: SX + 7, z0: -92, z1: -28, walk: 2.5 },
@@ -27279,7 +27279,7 @@ function pixScene(alpha, Lgiven) {
       const y0 = flat ? 0 : f.kind === 'storage' ? (roof ? FH.roof + P27.DOCK_Y : P27.DOCK_Y) : fy;
       const it = pixItem(ax + b[0], ax + b[2], az + b[1], az + b[3], y0, Math.max(y0 + 0.1, b[4]), g => {
         // D27 integration (the follow-up art): at night the lit bodies (same size and anchor), so their windows glow.
-        const lk = night && !flat && !roof && /\/body$|^bld\/(church|school|house\/|house_|cabin|framehouse|house2)/.test(key) && pixF(key + '_lit') && !(sh && rmShut(sh.id)) ? key + '_lit' : key;   // (D32 joined: the new houses' _lit; a shut shop's windows stay dark)
+        const lk = night && !flat && !roof && /\/body$|^bld\/(church|school|house\/|house_|cabin|framehouse|house2)/.test(key) && pixF(key + '_lit') && !(f.kind === 'shop' && rmShut((SHOPS27.find(q => q.bld === f.id) || {}).id)) ? key + '_lit' : key;   // (D32 joined: the new houses' _lit; a shut shop's windows stay dark)
         if (pixSprite(g, lk, ax, fy, az, flat || roof ? null : pick, roof && underFH ? { dither: true } : undefined)) { if (f.kind === 'station') pixBoardOnStation(g, f); return; }
         if (/\/body$|^bld\/(station|church|school|house)/.test(key)) { pixBox(g, ax + (b[0] + b[2]) / 2, az + (b[1] + b[3]) / 2, 0, b[2] - b[0], b[3] - b[1], y0, b[4], C.wall); pixPickRect(it, pick); }
       });

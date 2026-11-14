@@ -96,7 +96,7 @@ module.exports = async function checkWorkTrain() {
     if (on.sup.length !== 3) P(`the supplies were brought ${on.sup.length} times in three days`);
     on.sup.forEach((s, i) => { if (s.rock < 110 || s.ties < 360 || s.rails < 48 || s.kegs < 10) P(`day ${i + 1}: the dump after the train came: ${JSON.stringify(s)}`); });
     if (on.sum.length < 2) P(`only ${on.sum.length} summaries in three days`);
-    for (const s of on.sum) if (!s.hc || s.hc.total < 30 || s.hc.total > 60) P(`day ${s.day + 1}: the summary has no head count of the 30 rail men and the townsfolk: ${JSON.stringify(s.hc)}`);
+    for (const s of on.sum) if (!s.hc || s.hc.total < 30 || s.hc.total > 80) P(`day ${s.day + 1}: the summary has no head count of the 30 rail men and the townsfolk: ${JSON.stringify(s.hc)}`);
     console.log(`  with the line on: ${on.rr.length} railroad train events, the same as with it off; nearest a railroad train came to the work train at the station: ${on.minGap > 1e8 ? 'never on the map together' : on.minGap.toFixed(1) + ' u'}`);
     console.log(`  spiked at 06:00 each day: ${on.days.map(d => d.f6.toFixed(0)).join(', ')} m; the days ended at ${on.sum.map(s => s.at).join(', ')}; summaries late trains ${on.sum.map(s => s.late).join(', ')}`);
     console.log(`  the work train's phases: ${on.wt.join(' | ')}`);

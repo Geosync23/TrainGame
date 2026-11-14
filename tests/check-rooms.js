@@ -313,9 +313,12 @@ module.exports = async function checkRooms() {
         await frames(page, 10);
         const crowd = await ev(page, `const S = R.state; return { n: (g('PIX').order || []).filter(id => /^ftp/.test(id)).length, lp: S.lp, away: S.player.away, cheer: g('ftCheering')(S), sod: g('rrSod')(S.time) / 3600 };`);
         if (crowd.n < 8) P(`only ${crowd.n} townsfolk in view on the platform at the cheer: ` + JSON.stringify(crowd));
-        await page.screenshot({ path: screenshotPath('fartown-cheer-portrait') });
+        await page.screenshot({ path: screenshotPath('fartown-cheer-card-portrait') });
         const ok = await page.evaluate(() => { const b = document.getElementById('ftCardOk'); if (b) b.click(); const c = document.getElementById('ftCard'); return !!c && c.hidden; });
         if (!ok) P('the card does not close');
+        await ev(page, `const S = R.state; S.lp.x = g('LINE').LEN - 34; S.lp.z = -1; R.step(1); g('cam').ox = 0; g('cam').oz = 0;`);
+        await frames(page, 10);
+        await page.screenshot({ path: screenshotPath('fartown-cheer-portrait') });
       }
       if (errors.length) P('console errors: ' + errors.slice(0, 3).join(' | '));
     } finally { await browser.close(); }

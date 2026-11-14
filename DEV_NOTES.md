@@ -1695,7 +1695,7 @@ behind his counter, the player inside, nobody of a shut building drawn); the ten
 against shut; the far town drawn at the end of track, no background at the furthest zoom from seven places in both
 orientations, the dev jump, 30 men to the last spike, the card and the town on the platform. Screenshots
 `test-output/rooms-{store,school,saloon-evening,home-night,tent-night}-portrait.png`,
-`fartown-{end,far}-{portrait,landscape}.png`, `fartown-cheer-portrait.png`.
+`fartown-{end,far}-{portrait,landscape}.png`, `fartown-cheer-card-portrait.png`, `fartown-cheer-portrait.png`.
 
 ## Next
 

@@ -9013,7 +9013,7 @@ const FT = (() => {
     // the eight street buildings: [the far town's key, today's sprite standing in, its lot side, its lot z]
     BLDS: [['bld/shop_store/e/body', null, 'W', lots[0]], ['far/hotel2', 'bld/shop_hotel/e/body', 'W', lots[1]], ['bld/shop_bank/e/body', null, 'W', lots[2]], ['far/grainstore', 'bld/shop_feed/e/body', 'W', lots[3]],
       ['bld/shop_saloon/w/body', null, 'E', lots[0]], ['bld/shop_newspaper/w/body', null, 'E', lots[1]], ['bld/shop_sheriff/w/body', null, 'E', lots[2]], ['bld/shop_barber/w/body', null, 'E', lots[3]]]
-      .map(([key, alt, side, z]) => ({ key, alt, side, x: SX + (side === 'W' ? -15.5 : 15.5), z, walk: key.replace(/\/body$/, '/walk'), shadow: key.replace(/\/body$/, '/shadow') })),
+      .map(([key, alt, side, z]) => ({ key, alt, side, x: SX + (side === 'W' ? -15.5 : 15.5), z, walk: (alt || key).replace(/\/body$/, '/walk'), shadow: (alt || key).replace(/\/body$/, '/shadow') })),
     FIELDS: [{ x0: X - 140, x1: X - 58, z0: -100, z1: -36 }, { x0: X + 6, x1: X + 140, z0: -110, z1: -26 }],
     FOLK: ['storekeeper', 'hotelkeeper', 'banker', 'smith', 'barkeep', 'printer', 'woman_bonnet', 'man_top', 'woman_shawl', 'child', 'cowhand', 'man_bowler'],
     JUMP_M: 40,
@@ -27840,7 +27840,7 @@ function ftItems(out, inX, sod) {
   // the town's name board at the end of the platform
   const G = FT.SIGN;
   if (inX(G.x)) out.push(pixItem(G.x - 0.4, G.x + 0.4, G.z - 0.2, G.z + 0.2, FT.PLAT.y, FT.PLAT.y + 3, g => {
-    if (pixSprite(g, 'far/sign', G.x, FT.PLAT.y, G.z, { k: 'ft', id: 'sign' })) return;
+    if (pixF('far/sign') && pixSprite(g, 'far/sign', G.x, FT.PLAT.y, G.z, { k: 'ft', id: 'sign' })) return;
     const C = PIX.COL, y = FT.PLAT.y, w = pixTextWidth(FT.NAME.toUpperCase()) + 6;
     for (const dx of [-0.9, 0.9]) pixBox(g, G.x + dx, G.z, 0, 0.15, 0.15, y, y + 2.4, [C.deckFace, C.deckFace, C.deckSide]);
     const p = pixProject(G.x, y + 2.6, G.z), x0 = Math.round(p.x) - PIX.vx - (w >> 1), y0 = Math.round(p.y) - PIX.vy - 4;
@@ -28007,7 +28007,7 @@ function pixLnChunkBuild(ci, cj, F) {
   const i0 = Math.floor(sp.w0) - 1, i1 = Math.ceil(sp.w1) + 1, j0 = Math.floor(sp.v0) - 1, j1 = Math.ceil(sp.v1) + 1;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
-    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || (j < jN && wall(i) && !(FT.ON && i >= FT.X0 - 16 && i < FT.X1 + 16 && j > FT.ZN - 30))) continue;   // (D32 Rooms: the far town's ground under the wall it replaces)
+    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || (j < jN && wall(i) && !(FT.ON && i >= FT.X0 - 90 && i < FT.X1 + 90 && j > FT.ZN - 80))) continue;   // (D32 Rooms: the far town's ground under the wall it replaces)
     // D33: the station's own ground is left clear, and over the 8u east of the map's edge the two grounds mix cell by cell
     if (sp.stn && (pixLnInStn(i, j) || (i + LX < EDGE + 8 && j >= PROTO.BOUNDS.z0 && j < PROTO.BOUNDS.z1 && lnHash(seed, i, j, 3) > (i + LX - EDGE + 1) / 9))) continue;   // (the station's own ground, under this chunk already)
     let key = lnTile(seed, i, j), road = false;

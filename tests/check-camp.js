@@ -113,7 +113,7 @@ module.exports = async function checkCamp() {
     const b = await drawn();
     if (b.lie < 3 || b.cots < 4) P('with the player in a tent the men are not seen in their cots: ' + JSON.stringify(b));
     await page.screenshot({ path: screenshotPath('d32-camp-night-portrait') });
-    await page.evaluate(() => window.__railhead.pix.placePlayer(-44, -28)); await frames(6);
+    await page.evaluate(() => window.__railhead.pix.placePlayer(-44, -28)); await frames(6); await page.waitForTimeout(400); await frames(4);   // (D32 Rooms: the tent's fade back, 0.25 s)
     const c = await drawn();
     if (c.lie || c.cots || c.tents < 3) P('from outside the camp the tents are not closed: ' + JSON.stringify(c));
     if (a.errs.length || b.errs.length || c.errs.length) P('the renderer reported: ' + a.errs.concat(b.errs, c.errs).join(', '));

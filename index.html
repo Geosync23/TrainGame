@@ -7240,7 +7240,7 @@ const RM_KIND = {
       const v = 2.6 + 1.6 * r;
       for (const c of [-2.45, 2.45]) {
         F('pew', c, v, 'in');
-        for (const du of [-1.2, 0, 1.2]) P('pew', c + du, v, 'in', 'sit', [[0, v - 0.65], [c + du, v - 0.65], [c + du, v]]);
+        for (const du of [-1.2, -0.4, 0.4, 1.2]) P('pew', c + du, v, 'in', 'sit', [[0, v - 0.65], [c + du, v - 0.65], [c + du, v]]);   // (D32 joined: four to a pew, the whole town fits on Sunday)
       }
     }
   } },

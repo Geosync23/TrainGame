@@ -11,6 +11,7 @@
 //   nothing is done.
 // - A save mid-carry (a tie in the air) loads into the same moment (same hash) and the tie is set as before.
 // - The whole session's ticks and commands replayed from its start give the same hash.
+// - The ride out with the work train: the crew car drawn in every frame, still on the screen as the view rides with it.
 // - No console errors. Screenshots test-output/d34-<game>-<orient>.png, each mid-round in the world.
 const { openGame, screenshotPath } = require('./browser');
 
@@ -285,6 +286,19 @@ module.exports = async function checkD34() {
       if (!rep.lg) P('no game command was sent in the session');
       if (errors.length) P('console errors: ' + errors.slice(0, 4).join(' | '));
     } catch (e) { P(String(e && e.stack || e)); } finally { await browser.close(); }
+  }
+  // ---- The ride out with the work train (the designer's "flickers and a little janky"): the crew car is drawn in
+  // every frame of the ride and stands still on the screen while the view rides with it (tests/worktrain-ride.js) ----
+  if (!process.env.D34_ORIENT) {
+    const { rideOut, analyse } = require('./worktrain-ride');
+    for (const orient of ['portrait', 'landscape']) {
+      const { rec, errors } = await rideOut(orient, 1);
+      const a = analyse(rec);
+      if (!a.handover) problems.push(`${orient}: the ride out never left the station's map (${a.frames} frames)`);
+      if (a.gone) problems.push(`${orient}: the crew car was not drawn in ${a.gone} frames of the ride`);
+      if (a.jumps.length) problems.push(`${orient}: the crew car moved on the screen ${a.jumps.length} times while the view rode with it: ${JSON.stringify(a.jumps.slice(0, 3))}`);
+      if (errors.length) problems.push(`${orient} ride: console errors: ` + errors.slice(0, 3).join(' | '));
+    }
   }
   return problems;
 };

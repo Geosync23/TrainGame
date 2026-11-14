@@ -28682,7 +28682,9 @@ function pixPlayerPoint(px, pz, L) {
   // D27 integration: on a train the agent is drawn at P's pose (pixAgentItem), so the view centres there.
   // (D29: the frame's blended pose when given, so the view glides with him in the aisle.)
   const lr = S.player.away ? pixCall('lpStationFocus', S) : null;   // D32: riding through the station in the work train's crew car
-  if (lr) return pixProject(lr.x, lr.y, lr.z);
+  // D34 (the ride's jitter): on the crew car's own whole pixel, as its sprite is drawn, so the car stands still on the
+  // screen and the ground goes by in whole pixels (on its exact point the car shook by a pixel against the view)
+  if (lr) { const p = pixProject(lr.x, lr.y, lr.z); return { x: Math.round(p.x), y: Math.round(p.y) }; }
   const pb = L ? L.pbPose : pixCall('pbPlayerPose', S);
   if (pb && Number.isFinite(pb.x) && Number.isFinite(pb.y) && Number.isFinite(pb.z)) return pixProject(pb.x, pb.y, pb.z);
   const P = S.player, had = Object.prototype.hasOwnProperty.call(PIX.wy, 'player'), keep = PIX.wy.player;
@@ -28783,7 +28785,8 @@ function pixFrame(alpha, dt) {
   const Lf = pixLerpLists(pixLists(), alpha);
   // D33: out on the line (in person, or riding the work train there) the view follows him as he is drawn there
   const lf = pixLnOn() ? pixLnFocusW(alpha) : null;
-  const q = lf ? pixProject(lf.x, lf.y, lf.z) : pixPlayerPoint(px, pz, Lf), moving = lf ? lf.moving : Math.hypot(P.x - prevPlayer.x, P.z - prevPlayer.z) > 1e-4;
+  const q0 = lf ? pixProject(lf.x, lf.y, lf.z) : pixPlayerPoint(px, pz, Lf), moving = lf ? lf.moving : Math.hypot(P.x - prevPlayer.x, P.z - prevPlayer.z) > 1e-4;
+  const q = lf && lf.riding ? { x: Math.round(q0.x), y: Math.round(q0.y) } : q0;   // D34: riding, on the crew car's whole pixel (pixPlayerPoint's note)
   if (moving && (cam.ox || cam.oz)) {
     const b = Math.exp(-dt / PIX.BACK_S);
     cam.ox *= b; cam.oz *= b;
@@ -29924,7 +29927,10 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
   // The work train and the supplies beside its cars (the piles shrink as the day uses them).
   const T = lnTrain(S, sod);
   if (T.at === 'line') {
-    for (const v of wtDrawList(S, 'line', sod)) if (inX(v.x)) out.push(pixLnVehItem(v, { k: 'wt', car: v.k }));
+    // (D34: its cars are culled by the view's own west edge, not the line's: just after it leaves the station's map its
+    // last cars still stand over the map, where the line draws nothing else, and they used to vanish for a second)
+    const tx0 = D33.on && PIX.lnViewX0 !== undefined ? Math.min(bx0, PIX.lnViewX0) : bx0;
+    for (const v of wtDrawList(S, 'line', sod)) if (v.x > tx0 - 12 && v.x < bx1 + 12) out.push(pixLnVehItem(v, { k: 'wt', car: v.k }));
     if (T.ph === 'stand' && T.dump) {
       const lvl = k => { const s = L.sup[k], c = LINE.SUP[k].cap; return s <= 0 ? 0 : Math.max(1, Math.min(3, Math.ceil(3 * s / (c / 2)))); }, D = T.dump, z = D.z;
       // (where the corridor is narrow, the shelf and the rock cut, the piles lie on the open ground just before it)
@@ -29950,6 +29956,12 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
   if (p && !p.riding) { const [x, z] = at('lp', p.x, p.z), dir = pixDirOf(p.f), [anim, fr] = p.anim ? [p.anim, p.frame | 0] : pixActAnim(p.act, p, 0); out.push(pixPersonItem('lp', p.who || 'agent', x, p.y || 0, z, dir, anim, fr, { k: 'lp' }, false)); if (p.lg) pixCall('lgPixDress', out[out.length - 1], p, x, z, dir, anim, fr); }   // D32 (Play): at work with a gang
   return out;
 }
+// D34: only the work train of the line's things, when the view is wholly over the station's map (its cars as the line
+// draws them; the station draws it only while its front is still on the map).
+function pixLnTrainItems(alpha, x0, x1) {
+  const sod = pixLnSod(alpha), T = lnTrain(S, sod);
+  return T.at === 'line' ? wtDrawList(S, 'line', sod).filter(v => v.x > x0 - 12 && v.x < x1 + 12).map(v => pixLnVehItem(v, { k: 'wt', car: v.k })) : [];
+}
 // D33: where the view looks while the player is out on the line, in world units: { x, y, z, moving, riding }, or
 // null when he is the station's own man (or is boarding there: the station's hooks follow him).
 function pixLnFocusW(alpha) {
@@ -29968,8 +29980,9 @@ function pixLnAdd(all, alpha, dt) {
   const nw = PIX.nw, nh = PIX.nh, LX = D33.LX;
   const list = pixLnIn(() => {
     const cs = [[PIX.vx - 16, PIX.vy - 8], [PIX.vx + nw + 16, PIX.vy - 8], [PIX.vx - 16, PIX.vy + nh + 96], [PIX.vx + nw + 16, PIX.vy + nh + 96]].map(([a, b]) => pixUnproject(a, b, 0));
-    const x1 = Math.max(...cs.map(c => c.x));
-    if (x1 + LX < D33.EDGE - 8) return [];   // the view is west of everything the line has (nothing of it stands on the station's map)
+    const x1 = Math.max(...cs.map(c => c.x)), x0 = Math.min(...cs.map(c => c.x));
+    PIX.lnViewX0 = x0;   // D34: the view's true west edge, for the work train (below)
+    if (x1 + LX < D33.EDGE - 8) return pixLnTrainItems(alpha, x0, x1);   // the view is west of everything the line has (D34: but the work train, its last cars still on the station's map, counts as the line's)
     // (the west end of what the line draws: its own ground begins at the map's edge, so the scene is not built over the station)
     return pixLnScene(alpha, Math.max(Math.min(...cs.map(c => c.x)), D33.EDGE - LX - 8), x1, Math.min(...cs.map(c => c.z)), Math.max(...cs.map(c => c.z)));
   });

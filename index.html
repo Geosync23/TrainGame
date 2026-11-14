@@ -24535,8 +24535,10 @@ function rrHud() {
       b.dataset.act = act; b.dataset.tr = tr.id; b.dataset.car = c.id;
       if (!b._w) { b.style.visibility = 'hidden'; b.hidden = false; b._w = b.offsetWidth; b._h = b.offsetHeight; }
       // Over the vehicle; where a neighbour's button (or the HUD) is there already, a row higher, else a row lower.
-      const s = toScreen(p.x, (c.k === 'loco' ? 2.4 : 2.0) * WS, p.z);
-      const r = [0, -(b._h + 6), b._h + 6].map(dy => ({ l: s.x - b._w / 2, r: s.x + b._w / 2, t: s.y - b._h + dy, b: s.y + dy })).find(q => rrClear(q, taken));
+      // (In whole pixels, as the button is drawn: the helper arrow's label keeps clear of the button's drawn box, so a
+      // fraction of a pixel here must not see the label touching it and step the button a row for a frame.)
+      const s = toScreen(p.x, (c.k === 'loco' ? 2.4 : 2.0) * WS, p.z), sx = Math.round(s.x - b._w / 2), sy = Math.round(s.y - b._h);
+      const r = [0, -(b._h + 6), b._h + 6].map(dy => ({ l: sx, r: sx + b._w, t: sy + dy, b: sy + b._h + dy })).find(q => rrClear(q, taken));
       if (!r) return;
       taken.push(r); used[key] = true;
       b.hidden = false; b.style.visibility = 'visible';

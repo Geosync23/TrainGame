@@ -202,6 +202,11 @@ module.exports = async function checkHubUi() {
       if (k !== 'fsend' || !j.t || j.t.k !== 'engine' || !/send Freight 1 off/.test(j.text)) P(`${orient} 3: the last step should be sending Freight 1 off at its engine: ${k} ${JSON.stringify(j)}`);
       await R(t => { const S = window.__railhead.state; S.player.x = t.x; S.player.z = t.z; S.player.mode = 'idle'; window.__railhead.camera.fx = S.player.x; window.__railhead.camera.fz = S.player.z; window.__fx.goods = {}; }, j.t);
       await frames(600);
+      // (The step's telegram slides in under the clock for 4.5 s while the Next job line steps aside; when the line comes
+      // back (two lines in landscape) the Send off button steps a row down, out of its way. On a busy machine that can
+      // fall between tapEl's look and its touch: wait for the slide to go first, up to 8 seconds.)
+      for (let i = 0; i < 40 && await R(() => document.getElementById('tgSlide').classList.contains('show')); i++) await frames(200);
+      await frames(300);
       await shot('tut-9-fsend');
       for (const e of await page.$$('.rrBtn')) if (await e.evaluate(e => !e.hidden && e.dataset.act === 'send')) { await tapEl(e); break; }
       await R(() => window.__railhead.step(3));

@@ -27515,7 +27515,7 @@ function rmTap(hit) {
 // The building key <B> of a layout entry and its whole sprite (today's art).
 function rmKeys(f, at) {
   const face = at.face || 'e';
-  if (f.kind === 'shop') return { B: `bld/${f.id}/${face}`, src: `bld/${f.id}/${face}/body`, more: face === 'e' ? [`bld/${f.id}/${face}/awning`, `bld/${f.id}/${face}/sign`] : [] };
+  if (f.kind === 'shop') return { B: `bld/${f.id}/${face}`, src: `bld/${f.id}/${face}/body`, more: face === 'e' ? [`bld/${f.id}/${face}/awning`, `bld/${f.id}/${face}/sign`] : [`bld/${f.id}/${face}/yard`] };   // (the parts on the viewer's side fade with it)
   if (f.kind === 'house27') return { B: `bld/house/${at.design}/${at.face}`, src: `bld/house/${at.design}/${at.face}`, more: [] };
   if (/^(cabin|framehouse|house2)$/.test(f.kind)) return { B: `bld/${f.kind}/${face}`, src: pixKey(`bld/${f.kind}/${face}`, `bld/${f.kind}/${face}/body`) || `bld/${f.kind}/${face}`, more: [] };
   return { B: `bld/${f.kind}`, src: `bld/${f.kind}`, more: [] };
@@ -27552,8 +27552,21 @@ function rmCanvases(K, lit, R, ax, az, b) {
     else { const a = alongX ? Z : X, q = a / 0.55, k = Math.floor(q), fr2 = q - k, along = alongX ? X : Z, j = Math.floor((along + k * 1.7) / 3.1); c = fr2 < 0.12 ? wood[2] : wood[(k + j) & 1]; if (Math.abs((along + k * 1.7) / 3.1 - j) < 0.03) c = wood[2]; }
     put(bd, bw, px + aX + M, py + aY + M, c[0], c[1], c[2], 255);
   }
-  // Each pixel of the near walls: its face and height; the far walls get the near faces' pixels, darkened.
+  // The far walls' inner faces in plain boards first (z = rz0 seen from inside, x = rx0), so a wall the sprite's near
+  // faces do not cover (a porch, a roof's overhang) is still a wall.
   const artBack = pixF(K.B + '/back');
+  if (!artBack) {
+    const wl = [[112, 78, 54], [98, 68, 47], [80, 55, 38]], wb = [[-8 * (rx1 - rz0), 4 * (rx0 + rz0) - 8 * E], [8 * (rx1 - rz0), 4 * (rx1 + rz1) - 8 * Fy]];
+    for (let py = Math.floor(wb[0][1]) - 2; py <= Math.ceil(wb[1][1]) + 2; py++) for (let px = Math.floor(8 * (rx0 - rz1)) - 2; px <= Math.ceil(8 * (rx1 - rz0)) + 2; px++) {
+      const dx = px + 0.5, dy = py + 0.5;
+      const Xn = dx / 8 + rz0, Yn = (4 * (Xn + rz0) - dy) / 8, Zw = rx0 - dx / 8, Yw = (4 * (rx0 + Zw) - dy) / 8;
+      let c = null;
+      if (Xn >= rx0 && Xn <= rx1 && Yn >= Fy && Yn <= E) c = wl[(Math.floor(Xn / 0.5) & 1) + (Yn - Fy < 0.25 ? 1 : 0)];
+      else if (Zw >= rz0 && Zw <= rz1 && Yw >= Fy && Yw <= E) c = wl[(Math.floor(Zw / 0.5) & 1) + 1];
+      if (c) put(bd, bw, px + aX + M, py + aY + M, c[0], c[1], c[2], 255);
+    }
+  }
+  // Each pixel of the near walls: its face and height; the far walls get the near faces' pixels, darkened.
   for (let v = 0; v < h; v++) for (let u = 0; u < w; u++) {
     const o = (v * w + u) * 4;
     if (!d[o + 3]) continue;

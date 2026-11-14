@@ -22,7 +22,10 @@ module.exports = async function checkRooms() {
     await page.evaluate(() => { const R = window.__railhead; R.pdui.closeBoard(); R.send({ t: 'pdStart' }); R.step(2); });
   };
   // (the lessons out of the way: their cards hold the clock and cover the screen)
-  const NOL = `const nol = () => { const S = R.state; if (S.pd) { S.pd.les = S.pd.les || {}; for (const L of R.les.PD_LESSONS) S.pd.les[L.id] = -1; S.pd.lesWait = []; } for (const id of ['pdLesson', 'pdSum']) { const b = document.getElementById(id); if (b) b.hidden = true; } };`;
+  const NOL = `const nol = () => { const S = R.state; if (S.pd) { S.pd.les = S.pd.les || {}; for (const L of R.les.PD_LESSONS) S.pd.les[L.id] = -1; S.pd.lesWait = []; } for (const id of ['pdLesson', 'pdSum']) { const b = document.getElementById(id); if (b) b.hidden = true; } if (S.tn) for (const q of Object.values(S.tn.shop)) q.s = Math.max(q.s, 6); };`;
+  // (D32 joined: nol also keeps Town's shops stocked, as if the day's goods came in: with the town's economy a shop with
+  // no goods for two days shuts and its keeper waits at the door outside, so the keepers this check looks for indoors
+  // would not be there; check-towneconomy tests the shut shops.)
   const ev = (page, body, arg) => page.evaluate(`(async (A) => { const R = window.__railhead, g = (0, eval); ${NOL} ${body} })(${JSON.stringify(arg === undefined ? null : arg)})`);
 
   // ---------------- Part 1: the rooms, portrait ----------------

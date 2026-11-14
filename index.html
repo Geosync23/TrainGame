@@ -1388,7 +1388,7 @@ if (!TN_OFF) (() => {
   const DESIGN = { cabin: 3, frame: 1, two: 2 };   // the stand-in art (the D27 house designs)
   for (const [id, tn, x, z, lane] of ROWS) {
     const e = x < 0;
-    T.houses.push({ id, kind: 'house', design: DESIGN[tn], tn, x, z, face: e ? 'e' : 'w', ext: e ? [-3.5, 4.15, -3.4, 4.25] : [-4.15, 3.5, -4.25, 3.4], h: 6, ...(lane ? { lane } : {}) });
+    T.houses.push({ id, kind: 'house', design: DESIGN[tn], tn, tnv: +id.slice(5) % 2, x, z, face: e ? 'e' : 'w', ext: e ? [-3.5, 4.15, -3.4, 4.25] : [-4.15, 3.5, -4.25, 3.4], h: 6, ...(lane ? { lane } : {}) });   // (D32 joined: tnv, the art's colour: odd numbers the second, bld/<kind>_b)
   }
   // The third lane: its x, the doors' x, where it joins lane W (node id, z), its extent (for clearing nature).
   T.tnLanes.push({ id: 'W2', x: -43, door: -46.2, joins: [['laneW_a2', -73], ['laneW_n', -116]], z0: -118, z1: -62 });
@@ -6518,6 +6518,9 @@ function hwSummaryLine(S) {
 }
 // ---- Drawing (read by the renderer only) ----
 // The men outdoors, in the townsfolk's shape with the agent's animation by name: [{ id, who, name, k, x, y, z, f, act, anim, frame }].
+// D32 joined: the hired men wear their own clothes (the rooms artist's ppl/hired_punch, hired_load, hired_deliver: the
+// agent's build, frames and hands), the agent's uniform until the atlas has them.
+function hwOutfit(m) { const k = 'hired_' + m.k; return typeof PIX_ATLAS !== 'undefined' && PIX_ATLAS.frames && PIX_ATLAS.frames[`ppl/${k}/idle/se/0`] ? k : 'agent'; }
 function hwDrawList(S) {
   if (!hwOn(S)) return [];
   const out = [];
@@ -6534,7 +6537,7 @@ function hwDrawList(S) {
     else if (acting && (st.a === 'grab' || st.a === 'park')) { anim = 'push'; frame = 0; }
     else if (held) { anim = 'carry'; frame = 0; }
     const y = Number.isFinite(m.y) ? m.y : walkDeckY(S.track, m.x, m.z);
-    out.push({ id: 'hw' + m.id, who: 'agent', name: hwName(S, m), k: m.k, x: m.x, y, z: m.z, f: m.f, act: walking ? 'walk' : 'idle', anim, frame });
+    out.push({ id: 'hw' + m.id, who: hwOutfit(m), name: hwName(S, m), k: m.k, x: m.x, y, z: m.z, f: m.f, act: walking ? 'walk' : 'idle', anim, frame });
   }
   return out;
 }
@@ -6549,7 +6552,7 @@ function hwPbList(S) {
     if (acting && (st.a === 'up' || st.a === 'down')) { act = 'climb'; frame = Math.floor(prog * 4) % 2; }
     else if (acting && st.a === 'punch') { act = 'punch'; frame = Math.min(2, Math.floor(prog * 3)); }
     else if (m.in.mv) { act = 'walk'; frame = S.tick % 4; }
-    out.push({ id: 'hw' + m.id, who: 'agent', x: m.x, y: m.y, z: m.z, f, dir: f, act, frame, stock: m.in.stock, seat: null, hw: m.id, key: `ppl/agent/${act}/${f}/${frame}` });
+    out.push({ id: 'hw' + m.id, who: hwOutfit(m), x: m.x, y: m.y, z: m.z, f, dir: f, act, frame, stock: m.in.stock, seat: null, hw: m.id, key: `ppl/${hwOutfit(m)}/${act}/${f}/${frame}` });
   }
   return out;
 }
@@ -6652,31 +6655,31 @@ const TN = {
   SUN_GO_S: 19 * 3600 + 2700, SUN_BACK_S: 20 * 3600 + 3000,    // evening prayers: from the camp (or on the way to it) 19:45, leave the church 20:50
   MOODS: ['content', 'worried', 'unhappy'],
 };
-// The 22 new townsfolk (W's agent shape plus role): id, name, who (A1's people types), kind (the routine), role, home,
-// work. Names are the builder's (provisional).
+// The 22 new townsfolk (W's agent shape plus role): id, name, who (A1's people types; D32 joined: the rooms artist's
+// new roles clerk, cook, maid, stableboy, wife_a, wife_b, farmer, girl, boy), kind (the routine), role, home, work. Names are the builder's (provisional).
 const TN_PEOPLE = [
-  ['martha', 'Martha Pratt', 'woman_bonnet', 'keeper', 'keeps the store with her husband', 'shop_store', 'shop_store'],
-  ['josie', 'Josie Turner', 'woman_shawl', 'homemaker', 'keeps house over the smithy', 'shop_smithy', 'shop_smithy'],
-  ['gus', 'Gus Lindqvist', 'worker', 'hand', 'the smith\'s hand', 'house9', 'shop_smithy'],
-  ['will', 'Will Abbott', 'man_bowler.b', 'clerk', 'clerk at the general store', 'house10', 'shop_store'],
-  ['mary', 'Mary Abbott', 'woman_bonnet.b', 'homemaker', 'keeps house', 'house10', 'house10'],
-  ['ada', 'Ada Abbott', 'child.b', 'pupil', 'pupil at the school', 'house10', 'school'],
-  ['edwin', 'Edwin Marsh', 'man_top', 'clerk', 'clerk at the bank', 'house11', 'shop_bank'],
-  ['lucy', 'Lucy Marsh', 'woman_shawl.b', 'homemaker', 'keeps house', 'house11', 'house11'],
-  ['jimmy', 'Jimmy Marsh', 'child', 'pupil', 'pupil at the school', 'house11', 'school'],
-  ['hattie', 'Hattie Bell', 'woman_shawl', 'cook', 'cook at the hotel', 'house12', 'shop_hotel'],
-  ['rosa', 'Rosa Diaz', 'woman_bonnet', 'hand', 'maid at the hotel', 'house3', 'shop_hotel'],
-  ['ana', 'Ana Diaz', 'child.b', 'pupil', 'pupil at the school', 'house3', 'school'],
-  ['billy', 'Billy Ortega', 'child', 'hand', 'stable boy at the livery', 'shop_livery', 'shop_livery'],
-  ['lottie', 'Lottie Shaw', 'woman_bonnet.b', 'barmaid', 'serves at the saloon', 'house13', 'shop_saloon'],
-  ['sam', 'Sam Ives', 'worker.b', 'hand', 'printer\'s devil at the newspaper', 'house14', 'shop_newspaper'],
-  ['pete', 'Pete Hensley', 'child', 'pupil', 'pupil at the school', 'house5', 'school'],
-  ['otis', 'Otis Fenn', 'worker', 'hand', 'carpenter for the undertaker', 'house15', 'shop_undertaker'],
+  ['martha', 'Martha Pratt', 'wife_a', 'keeper', 'keeps the store with her husband', 'shop_store', 'shop_store'],
+  ['josie', 'Josie Turner', 'wife_b', 'homemaker', 'keeps house over the smithy', 'shop_smithy', 'shop_smithy'],
+  ['gus', 'Gus Lindqvist', 'farmer', 'hand', 'the smith\'s hand', 'house9', 'shop_smithy'],
+  ['will', 'Will Abbott', 'clerk', 'clerk', 'clerk at the general store', 'house10', 'shop_store'],
+  ['mary', 'Mary Abbott', 'wife_b', 'homemaker', 'keeps house', 'house10', 'house10'],
+  ['ada', 'Ada Abbott', 'girl', 'pupil', 'pupil at the school', 'house10', 'school'],
+  ['edwin', 'Edwin Marsh', 'clerk', 'clerk', 'clerk at the bank', 'house11', 'shop_bank'],
+  ['lucy', 'Lucy Marsh', 'wife_a', 'homemaker', 'keeps house', 'house11', 'house11'],
+  ['jimmy', 'Jimmy Marsh', 'boy', 'pupil', 'pupil at the school', 'house11', 'school'],
+  ['hattie', 'Hattie Bell', 'cook', 'cook', 'cook at the hotel', 'house12', 'shop_hotel'],
+  ['rosa', 'Rosa Diaz', 'maid', 'hand', 'maid at the hotel', 'house3', 'shop_hotel'],
+  ['ana', 'Ana Diaz', 'girl', 'pupil', 'pupil at the school', 'house3', 'school'],
+  ['billy', 'Billy Ortega', 'stableboy', 'hand', 'stable boy at the livery', 'shop_livery', 'shop_livery'],
+  ['lottie', 'Lottie Shaw', 'woman_shawl', 'barmaid', 'serves at the saloon', 'house13', 'shop_saloon'],
+  ['sam', 'Sam Ives', 'boy', 'hand', 'printer\'s devil at the newspaper', 'house14', 'shop_newspaper'],
+  ['pete', 'Pete Hensley', 'boy', 'pupil', 'pupil at the school', 'house5', 'school'],
+  ['otis', 'Otis Fenn', 'man_bowler', 'hand', 'carpenter for the undertaker', 'house15', 'shop_undertaker'],
   ['ruth', 'Ruth Fenn', 'woman_shawl.b', 'hand', 'bath woman at the barber\'s', 'house15', 'shop_barber'],
-  ['dan', 'Dan Pike', 'worker.b', 'hand', 'hand at the feed store', 'house16', 'shop_feed'],
-  ['joe', 'Joe Haskins', 'man_bag', 'hand', 'hand at the livery', 'house17', 'shop_livery'],
-  ['ned', 'Ned Quinn', 'man_top.b', 'clerk', 'clerk at the assay office', 'house18', 'shop_assay'],
-  ['nora', 'Nora Quinn', 'woman_bonnet', 'homemaker', 'keeps house', 'house18', 'house18'],
+  ['dan', 'Dan Pike', 'farmer', 'hand', 'hand at the feed store', 'house16', 'shop_feed'],
+  ['joe', 'Joe Haskins', 'cowhand.b', 'hand', 'hand at the livery', 'house17', 'shop_livery'],
+  ['ned', 'Ned Quinn', 'clerk', 'clerk', 'clerk at the assay office', 'house18', 'shop_assay'],
+  ['nora', 'Nora Quinn', 'wife_a', 'homemaker', 'keeps house', 'house18', 'house18'],
 ].map(([id, name, who, kind, role, home, work]) => ({ id, name, who, kind, role, home, work, tn: 1 }));
 // The roles of W's 19 (and what changes for them with the town on: the storekeeper's boy lives over the store with his
 // parents; the cowhands' work is the range).
@@ -7046,9 +7049,12 @@ function tnLaneAt(x, z) {
   }
   return false;
 }
-// The house kinds' art (the renderer): bld/house_<tn>/<face>, bld/house_<tn>, else the D27 design (the stand-in).
+// The house kinds' art (the renderer): the buildings artist's bld/cabin/<face>, bld/framehouse/<face>, bld/house2/<face>
+// and their second colours bld/cabin_b/... (D32 joined: TN_HOUSE_ART, the colour fixed by house, tnv), else the D27
+// design (the stand-in).
+const TN_HOUSE_ART = { cabin: 'cabin', frame: 'framehouse', two: 'house2' };
 function tnHouseKey(at) {
-  const keys = at.tn ? [`bld/house_${at.tn}/${at.face}`, `bld/house_${at.tn}`] : [];
+  const a = at.tn && TN_HOUSE_ART[at.tn], keys = a ? [`bld/${a}${at.tnv ? '_b' : ''}/${at.face}`, `bld/${a}/${at.face}`] : [];
   for (const k of keys) { const X = typeof pixX === 'function' ? pixX(k) : null; if (X && X.box) return k; }
   return `bld/house/${at.design}/${at.face}`;
 }
@@ -7098,7 +7104,31 @@ const RM_FURN = {
   barber_chair: [1.0, 1.0, 1.4, 0], coffin: [2.4, 0.8, 0.7, 1], forge: [2.0, 1.6, 1.6, 1], anvil: [0.8, 0.4, 0.8, 1], stall: [3.0, 2.6, 1.6, 1],
   piano: [1.6, 0.7, 1.6, 1], rug: [2.4, 1.6, 0.05, 0], wash_stand: [0.7, 0.6, 1.2, 1], lamp_table: [0.5, 0.5, 1.3, 1], sacks: [1.6, 1.0, 1.0, 1],
   bench: [3.0, 0.6, 0.8, 0],
+  // D32 joined: more of the rooms artist's pieces (sizes as their extra.box), and the two-room house's partition (no
+  // picture of its own: the artist's /back draws it; solid on the walk grid)
+  crates: [1.8, 1.8, 1.9, 1], cot: [2.8, 1.1, 1.45, 1], cupboard: [1.5, 0.7, 2.6, 1], school_desk: [1.3, 1.3, 1.0, 1], hotel_desk: [2.6, 1.0, 1.55, 1],
+  bank_counter: [3.1, 0.9, 2.4, 1], backbar: [4.2, 0.6, 3.2, 1], trunk: [1.0, 0.6, 0.6, 1], partition: [2.75, 0.3, 3.4, 1], card_table: [1.6, 1.6, 1.2, 1],
 };
+// D32 joined: the art's orientation keys (plans/d32-art-rooms.md 1). Pieces with a front (the customers' side, the way
+// a pew's sitters face) take x (front +z), z (front +x), ne (front -z) or nw (front -x); a seat or desk takes the way
+// the person at it faces (se, sw, ne, nw); every other piece x or z by its long side (or x only).
+const RM_FRONT = new Set(['counter', 'bar', 'pew', 'bank_counter', 'hotel_desk']);
+const RM_FACED = new Set(['chair', 'desk', 'pulpit', 'barber_chair', 'school_desk', 'desk_office', 'desk_roll']);
+const rmFrontKey = v => v[0] > 0.5 ? 'z' : v[1] > 0.5 ? 'x' : v[0] < -0.5 ? 'nw' : 'ne';
+// The art's frame and extra for a key, from the atlas's index (there at once, before the pictures load), or null.
+function rmArt(key) { const A = typeof PIX_ATLAS !== 'undefined' ? PIX_ATLAS : null; return A && A.frames && A.frames[key] && A.extra && A.extra[key] && A.extra[key].box ? A.extra[key] : null; }
+// D32 joined: the houses' real bodies (the art: town27.house for the D27 designs, houses_d32.house for Town's cabin,
+// frame house and two-room house): half sizes across the lane (x) and along it (z), the front door's u (the local a of
+// the art: u from the door wall's middle, the same in both facings) and the eaves. The room is the body less 0.25u
+// walls; the rest of the lot (porch, yard) stays outside.
+const RM_HOUSE = { d27: { bx: 2.5, bz: 3.0, du: -1.125, eave: 3.4 }, cabin: { bx: 2.0, bz: 2.5, du: 0, eave: 3.0 },
+  framehouse: { bx: 2.5, bz: 3.0, du: -1.175, eave: 3.6 }, house2: { bx: 2.5, bz: 3.75, du: 1.375, eave: 3.4 } };
+function rmHouseOf(at) {
+  if (at.kind !== 'house27') return null;
+  const hk = at.tn && typeof TN_HOUSE_ART !== 'undefined' ? TN_HOUSE_ART[at.tn] : 'd27', H = RM_HOUSE[hk] || RM_HOUSE.d27, w = 0.25;
+  return { hk, x0: at.x - H.bx + w, x1: at.x + H.bx - w, z0: at.z - H.bz + w, z1: at.z + H.bz - w, du: H.du, eave: at.design === 3 && hk === 'd27' ? 4.2 : H.eave,
+    body: [-H.bx, -H.bz, H.bx, H.bz, H.eave] };
+}
 // The kinds of room: floor height, eaves (u), earth floor, the recipe. A recipe lays out the room in its door's frame:
 // u along the door's wall (from the wall's middle), v inwards from the door's wall (0 at its inner face); W the room's
 // width along the door's wall, D its depth, ud the doorway's u. F(name, u, v, o, extra) puts a piece (o: 't' its long
@@ -7111,29 +7141,33 @@ function rmShopBase(F, P, W, D, stock, sacks) {
   else { for (const s of [-1, 1]) { F('shelf', s * (W / 4 + 0.3), D - 0.35, 't', { stock }); F('shelf', s * (W / 2 - 0.35), D / 2 + 0.3, 'n', { stock }); } }
   F('counter', 0, D - 2.4, 't');
   P('keeper', 0, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [0, D - 1.3]]);
+  P('worker', -1.6, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [-1.6, D - 1.3]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   P('cust', -0.9, D - 3.5, 'in', 'idle'); P('cust', 1.1, D - 3.4, 'in', 'idle');
   P('cust', -(W / 2 - 1.4), D / 2 + 0.3, 'l', 'idle');
 }
 const RM_KIND = {
-  store: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) { rmShopBase(F, P, W, D, o.stock); F('stove', -(W / 2 - 0.9), 1.0, 'n'); } },
+  store: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) { rmShopBase(F, P, W, D, o.stock); F('stove', -(W / 2 - 0.9), 1.0, 'n'); F('crates', W / 2 - 1.3, 1.4, 't', { stock: 3 }); F('crates', W / 2 - 1.3, 3.5, 't', { stock: 3 }); F('barrel', -1.6, D - 3.6, 'x'); } },   // (D32 joined: the floor stacks of crates at the stock's four levels, a cracker barrel)
   feed: { y: 1.0, eave: 4.6, fill(F, P, W, D, o) { rmShopBase(F, P, W, D, o.stock, true); } },
   undertaker: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     F('shelf', -(W / 4 + 0.3), D - 0.35, 't', { stock: 3 }); F('counter', 0, D - 2.4, 't');
     P('keeper', 0, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [0, D - 1.3]]);
     F('coffin', W / 2 - 1.6, D / 2 - 1.0, 'n'); F('coffin', W / 2 - 0.6, D / 2 - 1.0, 'n');
     P('cust', -0.9, D - 3.5, 'in', 'idle'); P('cust', -2.4, 2.4, 'r', 'idle');
+    P('worker', W / 2 - 2.7, D / 2 - 1.0, 'r', 'work');   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   bank: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     F('counter', 0, D - 2.4, 't'); F('safe', W / 2 - 0.9, D - 0.9, 'n'); F('shelf', -(W / 4 + 0.3), D - 0.35, 't', { stock: 3 });
     F('desk', -(W / 2 - 1.4), 2.6, 'r'); F('chair', -(W / 2 - 0.7), 2.6, 'r'); F('rug', 0, 3.2, 't');
     P('keeper', 0, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [0, D - 1.3]]);
     P('cust', -0.9, D - 3.5, 'in', 'idle'); P('cust', 1.1, D - 3.4, 'in', 'idle'); P('seat', -(W / 2 - 0.7), 2.6, 'r', 'sit');
+    P('worker', -1.6, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [-1.6, D - 1.3]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   assay: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     F('counter', 0, D - 2.4, 't'); F('safe', W / 2 - 0.9, D - 0.9, 'n'); F('shelf', -(W / 4 + 0.3), D - 0.35, 't', { stock: 2 });
     F('desk', -(W / 2 - 1.4), 2.2, 'r'); F('chair', -(W / 2 - 0.7), 2.2, 'r');
     P('keeper', 0, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [0, D - 1.3]]);
     P('cust', 0.9, D - 3.5, 'in', 'idle'); P('seat', -(W / 2 - 0.7), 2.2, 'r', 'sit');
+    P('worker', -1.6, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [-1.6, D - 1.3]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   hotel: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     const cu = -(W / 2 - 2.6);
@@ -7147,10 +7181,11 @@ const RM_KIND = {
     }
     F('piano', W / 2 - 0.5, D - 1.4, 'n'); F('wash_stand', W / 2 - 0.5, 1.2, 'n');
     P('worker', W / 2 - 1.3, 1.2, 'r', 'work');
+    P('worker', cu + 1.6, D - 1.5, 'out', 'work', [[-0.4, D - 3.7], [-0.4, D - 1.5], [cu + 1.6, D - 1.5]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   saloon: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     const bu = -(W / 2 - 1.6), bv = D / 2 + 0.5;
-    F('bar', bu, bv, 'n'); F('rug', 2.4, 1.6, 't');
+    F('bar', bu, bv, 'n', { front: 'r' }); F('rug', 2.4, 1.6, 't');   // (D32 joined: front, the stools' side)
     P('keeper', -(W / 2 - 0.6), bv, 'r', 'work', [[-2.4, D - 0.9], [-(W / 2 - 0.6), D - 0.9], [-(W / 2 - 0.6), bv]]);
     for (const v of [bv - 1.8, bv - 0.6, bv + 0.6, bv + 1.8]) { F('barstool', bu + 1.25, v, 'x'); P('stool', bu + 1.25, v, 'l', 'sit'); }
     for (const v of [3.2, 6.2]) {
@@ -7160,19 +7195,27 @@ const RM_KIND = {
     }
     F('piano', W / 2 - 0.5, D - 1.3, 'n');
     P('cust', bu + 1.4, bv - 3.0, 'l', 'idle');
+    P('worker', -(W / 2 - 0.6), bv + 1.6, 'r', 'work', [[-2.4, D - 0.9], [-(W / 2 - 0.6), D - 0.9], [-(W / 2 - 0.6), bv + 1.6]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   smithy: { y: 0.05, eave: 4.6, earth: true, fill(F, P, W, D, o) {
     F('forge', 0, D - 1.2, 't'); F('anvil', 0.6, D - 3.4, 't'); F('table', -(W / 2 - 0.6), D / 2, 'n'); F('shelf', W / 2 - 0.35, D / 2, 'n', { stock: 2 });
     P('keeper', -0.4, D - 3.4, 'r', 'work');
+    P('worker', 1.9, D - 3.4, 'l', 'work');   // (D32 joined: a worker spot for Town's clerks, hands and wives)
     P('cust', 2.4, 2.8, 'in', 'idle'); P('cust', -2.4, 2.4, 'in', 'idle');
   } },
   livery: { y: 0.05, eave: 5.2, earth: true, fill(F, P, W, D, o) {
-    for (const s of [-1, 1]) for (let k = 0; k < 4; k++) F('stall', s * (W / 2 - 1.3), 3.2 + 3.2 * k, 'n', { horse: (k + (s > 0 ? 1 : 0)) % 3 !== 2 });
-    P('keeper', 0.4, D / 2, 'l', 'work'); P('cust', -0.6, 2.6, 'in', 'idle'); P('cust', 0.8, 3.4, 'in', 'idle');
+    // D32 joined: the artist's stalls are 2.6 wide and 4.8 deep (a horse is 4.7u long), the manger at the stall's -z
+    // end: five along the north wall side by side, deep across the room; sacks of feed and a bench along the south wall.
+    const sn = o.nu || 1;
+    for (let k = 0; k < 5; k++) F('stall', sn * (W / 2 - 2.45), 2.0 + 2.75 * k, 't', { horse: k % 3 !== 2 });
+    F('sacks', -sn * (W / 2 - 0.8), D - 2.0, 'n', { stock: 2 }); F('bench', -sn * (W / 2 - 0.4), D / 2, 'n');
+    P('keeper', sn * 0.4, D / 2, sn > 0 ? 'r' : 'l', 'work'); P('cust', -sn * 0.8, 2.6, 'in', 'idle'); P('cust', -sn * 1.4, 3.6, 'in', 'idle');
+    P('worker', sn * 0.4, 4.6, sn > 0 ? 'r' : 'l', 'work'); P('worker', sn * 0.4, 12.4, sn > 0 ? 'r' : 'l', 'work');   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   newspaper: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     F('press', -2.0, D - 2.6, 't'); F('counter', 2.6, D - 2.4, 't'); F('shelf', 3.1, D - 0.35, 't', { stock: 3 }); F('desk', -(W / 2 - 1.0), 2.2, 'r');
     P('keeper', -2.0, D - 3.9, 'in', 'work'); P('cust', 2.6, D - 3.6, 'in', 'idle'); P('cust', 0.6, 2.4, 'in', 'idle');
+    P('worker', 2.6, D - 1.3, 'out', 'work', [[4.9, D - 3.6], [4.9, D - 1.3], [2.6, D - 1.3]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   barber: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     F('barber_chair', 3.0, D - 2.2, 'out'); F('barber_chair', 0.4, D - 2.2, 'out'); F('shelf', 1.7, D - 0.35, 't', { stock: 2 }); F('wash_stand', W / 2 - 0.5, D - 0.6, 'n');
@@ -7180,6 +7223,7 @@ const RM_KIND = {
     P('keeper', 1.7, D - 2.2, 'r', 'work', [[1.7, D - 3.4], [1.7, D - 2.2]]);
     P('seat', 3.0, D - 2.2, 'out', 'sit', [[3.0, D - 3.4], [3.0, D - 2.2]]); P('seat', 0.4, D - 2.2, 'out', 'sit', [[0.4, D - 3.4], [0.4, D - 2.2]]);
     P('seat', -(W / 2 - 0.6), D / 2 - 0.7, 'r', 'sit'); P('seat', -(W / 2 - 0.6), D / 2 + 0.7, 'r', 'sit');
+    P('worker', 4.6, D - 3.4, 'l', 'work');   // (D32 joined: a worker spot for Town's clerks, hands and wives)
   } },
   sheriff: { y: 0.3, eave: 4.6, fill(F, P, W, D, o) {
     for (const u of [-(W / 2 - 2), 0, W / 2 - 2]) F('cell_bars', u, D - 2.6, 't');
@@ -7189,7 +7233,7 @@ const RM_KIND = {
   } },
   church: { y: 0.3, eave: 7.0, fill(F, P, W, D, o) {
     F('pulpit', 0, D - 2.0, 'out'); F('stove', W / 2 - 0.8, 1.0, 'n');
-    P('pulpit', 0, D - 1.1, 'out', 'idle', [[1.2, D - 3.0], [1.2, D - 1.1], [0, D - 1.1]]);
+    P('pulpit', 0, D - 1.1, 'out', 'work', [[1.2, D - 3.0], [1.2, D - 1.1], [0, D - 1.1]]);   // (D32 joined: work, a hand raised)
     for (let r = 0; r < 6; r++) {
       const v = 2.6 + 1.6 * r;
       for (const c of [-2.45, 2.45]) {
@@ -7201,7 +7245,7 @@ const RM_KIND = {
   school: { y: 0.3, eave: 4.5, fill(F, P, W, D, o) {
     F('blackboard', 0, D - 0.15, 't'); F('table', 2.2, D - 2.4, 't'); F('stove', -(W / 2 - 0.7), D / 2, 'n');
     P('teach', -0.6, D - 1.2, 'out', 'idle', [[-0.6, D - 3.6], [-0.6, D - 1.2]]);
-    for (const v of [3.0, 4.6, 6.2]) for (const u of [-1.6, 1.6]) { F('desk', u, v, 'in'); P('pupil', u, v - 0.6, 'in', 'sit', [[0, v - 0.6], [u, v - 0.6]]); }
+    for (const v of [3.0, 4.6, 6.2]) for (const u of [-1.6, 1.6]) { F('school_desk', u, v, 'in'); P('pupil', u, v - 0.43, 'in', 'sit', [[0, v - 0.6], [u, v - 0.43]]); }   // (D32 joined: the pupils' desks with their bench)
   } },
   station: { y: 0.375, eave: 5.5, fill(F, P, W, D, o) {
     F('counter', 4.0, D - 2.2, 't'); F('shelf', 4.0, D - 0.35, 't', { stock: 3 }); F('stove', W / 2 - 0.8, 1.2, 'n');
@@ -7209,6 +7253,7 @@ const RM_KIND = {
     P('cust', 4.0, D - 3.4, 'in', 'idle');
   } },
   home: { y: 0.3, eave: 3.4, fill(F, P, W, D, o) {
+    if (o.hk && RM_HOME[o.hk]) { RM_HOME[o.hk](F, P, W, D, o); return; }   // (D32 joined: the real house bodies)
     const bu = W / 2 - 1.3;
     F('bed', -bu, D - 0.7, 't'); F('bed', bu, D - 0.7, 't');
     F('table', 0.6, D / 2 - 0.6, 't'); F('chair', -0.55, D / 2 - 0.6, 'r'); F('chair', 1.75, D / 2 - 0.6, 'l');
@@ -7219,6 +7264,39 @@ const RM_KIND = {
     P('home', 1.75, D / 2 - 0.6, 'l', 'sit', [[2.5, 1.6], [2.5, D / 2 - 0.6], [1.75, D / 2 - 0.6]]);
     P('home', -(W / 2 - 1.4), 1.0, 'l', 'work');
   } },
+};
+// D32 joined: the homes inside the art's house bodies (u along the door wall, v inwards; o.du the door's u, o.nu +1 when
+// the north end is at +u). A double bed sleeps two (two bed spots on it), a cot a child; by day the table, the stove.
+const RM_HOME = {
+  cabin(F, P, W, D, o) {   // 4.5 x 3.5; the hearth is the art's, in the north wall's middle
+    const n = o.nu || 1, f = n > 0 ? 'r' : 'l';
+    F('bed', -n * 1.52, 2.03, 'n'); F('table', n * 0.6, 2.4, 'n'); F('chair', -n * 0.25, 2.4, f); F('wash_stand', n * 1.7, D - 0.32, 't');
+    P('bed', -n * 1.52, 2.03, 'out', 'lie', [[-n * 0.4, 1.4], [-n * 1.52, 2.03]]);
+    P('home', -n * 0.25, 2.4, f, 'sit', [[-n * 0.25, 2.4]]);
+    P('home', n * 1.45, 1.75, f, 'work', [[n * 1.45, 1.0], [n * 1.45, 1.75]]);
+  },
+  framehouse(F, P, W, D, o) { RM_HOME.d27(F, P, W, D, o); },
+  d27(F, P, W, D, o) {   // 5.5 x 4.5, the door at o.du; the bed along the back wall, a cot by the door's side wall
+    const sd = o.du < 0 ? -1 : 1, bv = D - 0.76, tw = sd > 0 ? 'r' : 'l', aw = sd > 0 ? 'l' : 'r';
+    F('bed', -sd * 1.33, bv, 't'); F('cot', sd * 2.2, 3.05, 'n'); F('table', -sd * 0.3, 2.1, 't');
+    F('chair', -sd * 1.45, 2.1, tw); F('chair', sd * 0.85, 2.1, aw); F('stove', -sd * 2.0, 1.0, 'x');
+    const tob = [[sd * 1.1, 2.85], [-sd * 0.2, 2.85]];
+    P('bed', -sd * 1.33, bv + 0.28, 'out', 'lie', tob.concat([[-sd * 1.33, 2.85], [-sd * 1.33, bv + 0.28]])); P('bed', sd * 2.2, 3.05, 'out', 'lie', [[sd * 1.1, 2.85], [sd * 2.2, 3.05]]);
+    P('bed', -sd * 1.33, bv - 0.28, 'out', 'lie', tob.concat([[-sd * 1.33, 2.85], [-sd * 1.33, bv - 0.28]]));
+    P('home', -sd * 1.45, 2.1, tw, 'sit', tob.concat([[-sd * 1.45, 2.85], [-sd * 1.45, 2.1]]));
+    P('home', sd * 0.85, 2.1, aw, 'sit', [[sd * 1.1, 1.3], [sd * 0.85, 2.1]]);
+    P('home', -sd * 0.9, 1.0, aw, 'work', [[-sd * 0.9, 1.0]]);
+  },
+  house2(F, P, W, D, o) {   // 7.0 x 4.5: the kitchen on the door's side (+u), the bedroom beyond the partition (u 0), its doorway at the back
+    F('partition', 0, 1.375, 'n');
+    F('stove', 2.95, 1.2, 'x'); F('table', 1.6, 2.7, 't'); F('chair', 0.45, 2.7, 'r'); F('chair', 2.85, 2.7, 'l'); F('cot', 2.0, 3.97, 't');
+    F('bed', -2.75, D - 1.6, 'n'); F('wash_stand', -1.4, D - 0.32, 't'); F('rug', -1.2, 1.4, 't');
+    const via = [[0.45, 1.8], [0.4, 3.75], [-0.5, 3.75], [-1.4, 2.6]];
+    P('bed', -2.75 + 0.28, D - 1.6, 'out', 'lie', via.concat([[-2.75 + 0.28, D - 1.6]])); P('bed', 2.0, 3.97, 'out', 'lie', [[0.45, 1.8], [0.4, 3.35], [2.0, 3.35], [2.0, 3.97]]);
+    P('bed', -2.75 - 0.28, D - 1.6, 'out', 'lie', via.concat([[-2.75 - 0.28, D - 1.6]]));
+    P('home', 0.45, 2.7, 'r', 'sit', [[0.45, 1.8], [0.45, 2.7]]); P('home', 2.85, 2.7, 'l', 'sit', [[2.0, 1.9], [2.85, 2.05], [2.85, 2.7]]);
+    P('home', 2.0, 1.2, 'r', 'work', [[2.0, 1.2]]);
+  },
 };
 const RM_SKIP = new Set(['p1deck', 'p2deck', 'storage', 'schedboard', 'lamp', 'leverframe', 'prop27', 'nature']);
 let RM_ROOMS = null;
@@ -7242,7 +7320,7 @@ function rmRoomOf(at) {
   for (const [lx, lz] of [[e[0], e[2]], [e[1], e[2]], [e[0], e[3]], [e[1], e[3]]]) { xs.push(at.x + lx * c + lz * s); zs.push(at.z - lx * s + lz * c); }
   const r2 = v => Math.round(v * 1000) / 1000, fp = { x0: r2(Math.min(...xs)), x1: r2(Math.max(...xs)), z0: r2(Math.min(...zs)), z1: r2(Math.max(...zs)) };
   const kind = at.kind === 'shop' ? at.shop : at.kind === 'house27' ? 'home' : at.kind;
-  const K = RM_KIND[kind] || RM_KIND.home, own = at.room || null, Wl = RM.WALL;
+  const K = RM_KIND[kind] || RM_KIND.home, HB = rmHouseOf(at), own = at.room || HB, Wl = RM.WALL;   // (D32 joined: a house's room is its real body, HB)
   const R = own && Number.isFinite(own.x0) ? { x0: own.x0, x1: own.x1, z0: own.z0, z1: own.z1 } : { x0: fp.x0 + Wl, x1: fp.x1 - Wl, z0: fp.z0 + Wl, z1: fp.z1 - Wl };
   const ox = own && own.door ? own.door.x : N.x, oz = own && own.door ? own.door.z : N.z;
   // The door's wall: the side the door node is beyond (else the nearest).
@@ -7250,7 +7328,7 @@ function rmRoomOf(at) {
   const n = { '+x': [-1, 0], '-x': [1, 0], '+z': [0, -1], '-z': [0, 1] }[side], t = [-n[1], n[0]];
   const Cx = side === '+x' ? R.x1 : side === '-x' ? R.x0 : (R.x0 + R.x1) / 2, Cz = side === '+z' ? R.z1 : side === '-z' ? R.z0 : (R.z0 + R.z1) / 2;
   const W = side[1] === 'x' ? R.z1 - R.z0 : R.x1 - R.x0, D = side[1] === 'x' ? R.x1 - R.x0 : R.z1 - R.z0;
-  const ud = Math.max(-(W / 2 - 1), Math.min(W / 2 - 1, (ox - Cx) * t[0] + (oz - Cz) * t[1]));
+  const ud = own && Number.isFinite(own.du) ? own.du : Math.max(-(W / 2 - 1), Math.min(W / 2 - 1, (ox - Cx) * t[0] + (oz - Cz) * t[1]));   // (D32 joined: du, the art's door)
   const at2 = (u, v) => [r2(Cx + u * t[0] + v * n[0]), r2(Cz + u * t[1] + v * n[1])];
   const vec = f => f === 'in' ? n : f === 'out' ? [-n[0], -n[1]] : f === 'l' ? [-t[0], -t[1]] : f === 'r' ? t : null;
   const axisOf = v => Math.abs(v[0]) > 0.5 ? 'x' : 'z';
@@ -7258,6 +7336,12 @@ function rmRoomOf(at) {
   const F = (k, u, v, o, ex) => {
     const D0 = RM_FURN[k] || [1, 1, 1, 0], fv = vec(o), long = o === 't' ? axisOf(t) : o === 'n' ? axisOf(n) : o === 'x' || o === 'z' ? o : axisOf(fv[0] ? [0, 1] : [1, 0]);
     const [x, z] = at2(u, v), q = { k, x, z, ax: fv ? pixDir(fv[0], fv[1]) : long, long, w: long === 'x' ? D0[0] : D0[1], d: long === 'x' ? D0[1] : D0[0], h: D0[2], solid: !!D0[3], ...(ex || {}) };
+    // D32 joined: the art's own key (q.ak) and its real size (extra.box, about the anchor q.px, q.pz; q.x, q.z the box's middle)
+    const fr = RM_FRONT.has(k) ? (ex && ex.front ? vec(ex.front) : fv || vec('out')) : null, lv = /^(shelf|sacks|crates)$/.test(k) ? '3/' : '';
+    let ak = fr ? rmFrontKey(fr) : RM_FACED.has(k) && fv ? pixDir(fv[0], fv[1]) : long, X = rmArt(`furn/${k}/${lv}${ak}`);
+    if (!X && !fr && !RM_FACED.has(k)) { const a2 = long === 'x' ? 'z' : 'x'; X = rmArt(`furn/${k}/${lv}x`) ? (ak = 'x', rmArt(`furn/${k}/${lv}x`)) : null; if (!X && rmArt(`furn/${k}/${lv}${a2}`)) { ak = a2; X = rmArt(`furn/${k}/${lv}${a2}`); } }
+    q.ak = ak; q.px = x; q.pz = z;
+    if (X) { const b = X.box; q.w = r2(b[2] - b[0]); q.d = r2(b[3] - b[1]); q.h = b[4]; q.x = r2(x + (b[0] + b[2]) / 2); q.z = r2(z + (b[1] + b[3]) / 2); q.art = true; if (X.sit_dy) q.dy = X.sit_dy; }
     furn.push(q);
     return q;
   };
@@ -7266,7 +7350,7 @@ function rmRoomOf(at) {
     if (path.length && (path[path.length - 1][0] !== x || path[path.length - 1][1] !== z)) path.push([x, z]);
     spots.push({ role, x, z, f: Math.atan2(fv[0], fv[1]), dir: pixDir(fv[0], fv[1]), act, path });
   };
-  const opt = { stock: 3, kind, id: at.id };
+  const opt = { stock: 3, kind, id: at.id, hk: HB ? HB.hk : null, du: ud, nu: Math.abs(t[1]) > 0.5 ? -t[1] : 0 };   // (D32 joined: hk the house's body, nu +1 when the north end (-z) is at +u)
   if (own && Array.isArray(own.furn)) for (const q of own.furn) {   // a row's own furniture (world u), with its spots from `use`
     const D0 = RM_FURN[q.key] || [1, 1, 1, 0], long = q.f === 'z' ? 'z' : 'x';
     furn.push({ k: q.key, x: q.x, z: q.z, ax: q.f || 'x', long, w: long === 'x' ? D0[0] : D0[1], d: long === 'x' ? D0[1] : D0[0], h: D0[2], solid: !!D0[3] });
@@ -7278,7 +7362,7 @@ function rmRoomOf(at) {
   let nst = 0;
   for (let v = 1.8; v < D - 2.2; v += 1.3) for (let u = -(W / 2 - 1.2); u <= W / 2 - 1.2; u += 1.3) { const [x, z] = at2(u, v); if (clear(x, z) && nst++ < 10) spots.push({ role: 'stand', x, z, f: Math.atan2(n[0], n[1]), dir: pixDir(n[0], n[1]), act: 'idle', path: [[x, z]] }); }
   const [dx, dz] = at2(ud, -Wl), [ix, iz] = at2(ud, RM.IN_V);
-  return { id: at.id, kind, shop: sh ? sh.id : null, ...R, y: K.y, eave: K.eave, earth: !!K.earth, fp, side, W, D,
+  return { id: at.id, kind, shop: sh ? sh.id : null, ...R, y: K.y, eave: HB ? HB.eave : K.eave, earth: !!K.earth, fp, side, W, D, body: HB ? HB.body : null,
     door: { x: dx, z: dz, ox, oz, ix, iz, n, t, w: RM.DOOR_W }, furn, spots };
 }
 // Is (x, z) on a room's floor or in its doorway (and which room)? m: grown by m.
@@ -7306,7 +7390,8 @@ function rmCarve(cost) {
   const each = (x0, x1, z0, z1, f) => { for (let j = walkRowOf(z0); j <= walkRowOf(z1); j++) for (let i = walkCellOf(x0); i <= walkCellOf(x1); i++) { const [cx, cz] = walkCentre(j * N + i); if (cx >= x0 && cx <= x1 && cz >= z0 && cz <= z1) f(j * N + i); } };
   for (const r of rmRooms()) {
     each(r.x0 + R, r.x1 - R, r.z0 + R, r.z1 - R, c => { cost[c] = WALK.PLATFORM; });
-    const d = r.door, hw = d.w / 2 - R, a = [d.x - d.n[0] * 0.75 + d.t[0] * hw, d.z - d.n[1] * 0.75 + d.t[1] * hw], b = [d.x + d.n[0] * (RM.WALL + R + 0.3) - d.t[0] * hw, d.z + d.n[1] * (RM.WALL + R + 0.3) - d.t[1] * hw];
+    const d = r.door, hw = d.w / 2 - R, ext = Math.min(4, Math.max(0.75, -((d.ox - d.x) * d.n[0] + (d.oz - d.z) * d.n[1]) + 0.3));   // (D32 joined: out to the door node, past a house's porch)
+    const a = [d.x - d.n[0] * ext + d.t[0] * hw, d.z - d.n[1] * ext + d.t[1] * hw], b = [d.x + d.n[0] * (RM.WALL + R + 0.3) - d.t[0] * hw, d.z + d.n[1] * (RM.WALL + R + 0.3) - d.t[1] * hw];
     each(Math.min(a[0], b[0]), Math.max(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[1], b[1]), c => { cost[c] = WALK.PLATFORM; });
     for (const q of r.furn) if (q.solid) walkStampRect({ x: q.x, z: q.z, w: q.w, d: q.d, yaw: 0 }, R, c => { cost[c] = 0; });
   }
@@ -7355,6 +7440,7 @@ function rmPlace(S, b) {
     else if (work && A.kind === 'teacher') roles = ['teach'];
     else if (work && A.kind === 'preacher') roles = ['pulpit'];
     else if (work && A.kind === 'pupil') roles = ['pupil'];
+    else if (work && home && r.kind === 'home') roles = night ? ['bed'] : ['home'];   // (D32 joined: Town's homemakers work at home)
     else if (work) roles = ['worker', 'cust'];
     else if (home && r.kind === 'home') roles = night ? ['bed'] : ['home'];
     else if (home) { take(i, ['keeper', 'stand', 'cust'], { hidden: true, up: true }); continue; }   // lodging upstairs
@@ -18481,7 +18567,7 @@ BLD_LAYOUTS.proto = [
   // The main street's twelve buildings (their fronts on the street), the church, the school, the houses.
   ...TOWN27.buildings.map(b => ({ id: b.id, kind: 'shop', shop: b.shop, x: b.x, z: b.z, yaw: b.yaw, face: b.face, ext: b.ext, h: b.h })),
   ...TOWN27.civic.map(b => ({ id: b.id, kind: b.kind, x: b.x, z: b.z, yaw: 0, ext: b.ext, h: b.h })),
-  ...TOWN27.houses.map(b => ({ id: b.id, kind: 'house27', design: b.design, face: b.face, x: b.x, z: b.z, yaw: 0, ext: b.ext, h: b.h, ...(b.tn ? { tn: b.tn } : {}) })),   // (D32 Town: tn, the bigger town's house kinds)
+  ...TOWN27.houses.map(b => ({ id: b.id, kind: 'house27', design: b.design, face: b.face, x: b.x, z: b.z, yaw: 0, ext: b.ext, h: b.h, ...(b.tn ? { tn: b.tn, tnv: b.tnv } : {}) })),   // (D32 Town: tn, the bigger town's house kinds)
   // Solid props and nature (trunks, boulders): small blocks on the walk grid.
   ...TOWN27.props.filter(q => q.solid).map((q, i) => ({ id: 'prop27_' + i, kind: 'prop27', key: q.k, x: q.x, z: q.z, yaw: 0, ext: [-q.r, q.r, -q.r, q.r], h: q.h })),
   ...TOWN27.nature.filter(q => q.solid).map((q, i) => ({ id: 'nat27_' + i, kind: 'nature', key: q.k, x: q.x, z: q.z, yaw: 0, ext: [-q.r, q.r, -q.r, q.r], h: 3 })),
@@ -25442,7 +25528,10 @@ function onTap(px, py) {
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner === 'rr' && pdTrainTap(hit)) return;   // D25 (U): punch, unload, send off
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner === 'rr') { rrTap(hit); return; }   // D24: the railroad's trains (UI)
   if (pdTap(px, py)) return;                         // D25 (U): the schedule board on platform 1 opens its card
-  if (pixOn() && tnTap(hit)) return;                 // D32 (Town): a townsperson or a home: the Look card (role, home, purse, mood)
+  // D32 joined (Town and Rooms): a tap on a shut building opens it (Rooms) and shows its Look card (Town); a tap on the
+  // open one walks him in (no card); a tap on a townsperson is Town's Look card as before.
+  if (pixOn() && hit && hit.k === 'bld' && rmTap(hit)) { tnTap(hit); return; }
+  if (pixOn() && !(hit && hit.k === 'bld' && RM.ON && rmRoom(hit.id)) && tnTap(hit)) return;   // D32 (Town): a townsperson or a home: the Look card (role, home, purse, mood)
   if (hit && hit.k === 'tr' && S.trains[hit.id] && S.trains[hit.id].owner) {
     // The Overland's set-out cars (and any cut of cars): walk to the car's door and see what is in it. The Overland itself: a message.
     if (S.trains[hit.id].owner === 'interchange' || S.trains[hit.id].owner === 'cut') send({ t: 'useCar', stock: hit.stock });
@@ -27176,7 +27265,7 @@ function pixScene(alpha, Lgiven) {
     const rk = RM.ON ? PIX.rm.fade.get(f.id) || 0 : 0, rmR = rk > 0 ? rmRoom(f.id) : null, taken = rmR ? rmBldItem(out, f, at, ax, az, rmR, rk, night, pick) : null;
     const parts = f.kind === 'shop' ? ['walk', 'shadow', 'body', 'awning', 'sign', 'yard', 'pole/' + pixCycle(2, 2)].map(p => `bld/${f.id}/${face}/${p}`)
       : f.kind === 'church' || f.kind === 'school' ? [`bld/${f.kind}/shadow`, `bld/${f.kind}`]
-      : f.kind === 'house27' ? [tnHouseKey(at)]   // (D32 Town: the bigger town's kinds, bld/house_<tn>, when the art has them)
+      : f.kind === 'house27' ? [tnHouseKey(at)]   // (D32 Town: the bigger town's kinds; D32 joined: the artist's bld/cabin, framehouse, house2 and their _b colours)
       : f.kind === 'storage' ? ['bld/freighthouse/body', 'bld/freighthouse/roof']
       : f.kind === 'station' ? [night && pixX('bld/station_lit') ? 'bld/station_lit' : 'bld/station']
       : f.kind === 'leverframe' ? [`bld/leverframe/${at.frame}`] : [];
@@ -27189,7 +27278,7 @@ function pixScene(alpha, Lgiven) {
       const y0 = flat ? 0 : f.kind === 'storage' ? (roof ? FH.roof + P27.DOCK_Y : P27.DOCK_Y) : fy;
       const it = pixItem(ax + b[0], ax + b[2], az + b[1], az + b[3], y0, Math.max(y0 + 0.1, b[4]), g => {
         // D27 integration (the follow-up art): at night the lit bodies (same size and anchor), so their windows glow.
-        const lk = night && !flat && !roof && /\/body$|^bld\/(church|school|house\/|house_)/.test(key) && pixF(key + '_lit') ? key + '_lit' : key;
+        const lk = night && !flat && !roof && /\/body$|^bld\/(church|school|house\/|house_|cabin|framehouse|house2)/.test(key) && pixF(key + '_lit') && !(sh && rmShut(sh.id)) ? key + '_lit' : key;   // (D32 joined: the new houses' _lit; a shut shop's windows stay dark)
         if (pixSprite(g, lk, ax, fy, az, flat || roof ? null : pick, roof && underFH ? { dither: true } : undefined)) { if (f.kind === 'station') pixBoardOnStation(g, f); return; }
         if (/\/body$|^bld\/(station|church|school|house)/.test(key)) { pixBox(g, ax + (b[0] + b[2]) / 2, az + (b[1] + b[3]) / 2, 0, b[2] - b[0], b[3] - b[1], y0, b[4], C.wall); pixPickRect(it, pick); }
       });
@@ -28085,8 +28174,11 @@ function rmTap(hit) {
   return true;
 }
 // The building key <B> of a layout entry and its whole sprite (today's art).
+// D32 joined: is a shop shut today (Town's economy)? Its windows stay dark at night, inside and out.
+function rmShut(id) { const t = id && typeof tnShop === 'function' ? tnShop(S, id) : null; return !!t && !t.open; }
 function rmKeys(f, at) {
   const face = at.face || 'e';
+  if (f.kind === 'house27' && at.tn) { const k = tnHouseKey(at); return { B: k, src: k, more: [] }; }   // (D32 joined: Town's houses in the artist's cabin, framehouse, house2)
   if (f.kind === 'shop') return { B: `bld/${f.id}/${face}`, src: `bld/${f.id}/${face}/body`, more: face === 'e' ? [`bld/${f.id}/${face}/awning`, `bld/${f.id}/${face}/sign`] : [`bld/${f.id}/${face}/yard`] };   // (the parts on the viewer's side fade with it)
   if (f.kind === 'house27') return { B: `bld/house/${at.design}/${at.face}`, src: `bld/house/${at.design}/${at.face}`, more: [] };
   if (/^(cabin|framehouse|house2)$/.test(f.kind)) return { B: `bld/${f.kind}/${face}`, src: pixKey(`bld/${f.kind}/${face}`, `bld/${f.kind}/${face}/body`) || `bld/${f.kind}/${face}`, more: [] };
@@ -28164,7 +28256,7 @@ function rmCanvases(K, lit, R, ax, az, b) {
 function rmBldItem(out, f, at, ax, az, R, k, night, pick) {
   const K = rmKeys(f, at), X = pixX(K.src) || pixX(K.B + '/front');
   if (!X || !X.box || !pixF(K.src)) return null;
-  const b = X.box, lit = night && pixF(K.src + '_lit') ? '_lit' : '', taken = new Set([K.src, ...K.more]);
+  const b = X.box, lit = night && pixF(K.src + '_lit') && !rmShut(R.shop) ? '_lit' : '', taken = new Set([K.src, ...K.more]);   // (D32 joined: a shut shop stays dark)
   const it = pixItem(ax + b[0], ax + b[2], az + b[1], az + b[3], 0, b[4], g => rmBldDraw(g, it), f.id + '/room');
   it.rm = { R, k, K, lit, ax, az, b, pick: { ...pick, open: true }, inner: [], furn: rmFurnItems(R, f.id), people: [], f };
   PIX.rm.items.set(R.id, it);
@@ -28172,7 +28264,7 @@ function rmBldItem(out, f, at, ax, az, R, k, night, pick) {
   return taken;
 }
 function rmBldDraw(g, it) {
-  const Q = it.rm, R = Q.R, C = rmCanvases(Q.K, Q.lit, R, Q.ax, Q.az, Q.b), p = pixProject(Q.ax, 0, Q.az), bx = Math.round(p.x) - PIX.vx, by = Math.round(p.y) - PIX.vy;
+  const Q = it.rm, R = Q.R, C = rmCanvases(Q.K, Q.lit, R, Q.ax, Q.az, R.body || Q.b), p = pixProject(Q.ax, 0, Q.az), bx = Math.round(p.x) - PIX.vx, by = Math.round(p.y) - PIX.vy;   // (D32 joined: a house's sill from its body, R.body, not its lot)
   // the floor and the far walls (with a soft hole where the player stands behind them, outside)
   let back = C.back.cv;
   const ag = PIX.agentAt, cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2;
@@ -28187,6 +28279,8 @@ function rmBldDraw(g, it) {
   }
   g.drawImage(back, bx + C.back.l, by + C.back.t); PIX.stats.draws++;
   PIX.drawn.push({ si: -1, w: C.floor[2], h: C.floor[3], l: bx + C.floor[0] + PIX.vx, t: by + C.floor[1] + PIX.vy, hit: Q.pick, id: it.id });   // (a tap on the open floor)
+  // D32 joined: at night the far walls' lit windows and lamps glow like a shut building's (pixNight's glow pass)
+  if (Q.lit) { const bk = Q.K.B + '/back' + Q.lit, q = pixF(bk); if (q) PIX.drawn.push({ si: -1, w: 0, h: 0, l: bx - q[5] + PIX.vx, t: by - q[6] + PIX.vy, hit: null, id: it.id, key: bk }); }
   for (const q of Q.inner) { PIX.curId = q.id; q.draw(g); }
   PIX.curId = it.id;
   // the whole building at 1 - fade, then the sill
@@ -28208,10 +28302,29 @@ function rmStockLvl(R, q) {
 }
 // The furniture as sorted items (art furn/<name>[/<level>]/<o>, else a plain stand-in).
 function rmFurnItems(R, bid) {
-  const y = R.y, out = [];
+  const y = R.y, out = [], shut = rmShut(R.shop), sod = rrSod(S.time), night = pixNightF(sod) > 0.3, cold = shut || sod >= 10 * 3600 && sod < 16 * 3600;
   R.furn.forEach((q, i) => {
-    const lvl = q.k === 'shelf' || q.k === 'sacks' ? rmStockLvl(R, q) : null, key = pixKey(lvl !== null ? `furn/${q.k}/${lvl}/${q.ax}` : null, `furn/${q.k}/${q.ax}`, q.horse ? `furn/${q.k}/horse/${q.ax}` : null);
-    const it = pixItem(q.x - q.w / 2, q.x + q.w / 2, q.z - q.d / 2, q.z + q.d / 2, y, y + Math.max(0.05, q.h), g => { if (key && pixSprite(g, key, q.x, y, q.z, null)) return; rmFurnStandIn(g, q, y, lvl, it.used); }, bid + '/f' + i);
+    if (q.k === 'partition') return;   // (the artist's /back draws it)
+    // D32 joined: the art's key (q.ak) at its anchor (q.px, q.pz): shelves, sacks and crates at the stock's level; a bed
+    // made while empty and humped with a sleeper (it.used, set by rmPersonInner), a cot likewise; the stove and the
+    // range lit but in the warm middle of the day (a shut shop's cold), the forge glowing in working hours; a horse in a stall.
+    const lvl = /^(shelf|sacks|crates)$/.test(q.k) ? rmStockLvl(R, q) : null, o = q.ak || q.ax, fire = 1 + pixCycle(3, 2), hot = !shut && sod >= 7 * 3600 && sod < 18 * 3600;
+    const keyOf = used => q.k === 'bed' ? pixKey(`furn/${used ? 'bed' : 'bed_made'}/${o}`) : q.k === 'cot' ? pixKey(`furn/${used ? 'cot_sleeper' : 'cot'}/${o}`)
+      : q.k === 'stove' || q.k === 'range' ? pixKey(!cold ? `furn/${q.k}/${fire}/${o}` : null, `furn/${q.k}/${o}`)
+      : q.k === 'forge' ? pixKey(hot ? `furn/forge/${fire}/${o}` : null, `furn/forge/${o}`)
+      : q.k === 'lamp_table' ? pixKey(night ? `furn/lamp_table_lit/${o}` : null, `furn/lamp_table/${o}`)
+      : pixKey(q.horse ? `furn/${q.k}/horse/${o}` : null, lvl !== null ? `furn/${q.k}/${lvl}/${o}` : null, `furn/${q.k}/${o}`);
+    const ax = q.px !== undefined ? q.px : q.x, az = q.pz !== undefined ? q.pz : q.z, clip = /^(stove|range)$/.test(q.k) && q.h > R.eave - 0.2 ? R.eave - 0.2 : 0;
+    const it = pixItem(q.x - q.w / 2, q.x + q.w / 2, q.z - q.d / 2, q.z + q.d / 2, y, y + Math.max(0.05, q.h), g => {
+      const key = keyOf(it.used);
+      if (key) {
+        if (clip) {   // (the pipe cut at the ceiling: the back walls stop at the eaves)
+          const c = pixProject(ax, y + clip, az); g.save(); g.beginPath(); g.rect(-1e4, Math.round(c.y) - PIX.vy, 2e4, 2e4); g.clip();
+          const ok = pixSprite(g, key, ax, y, az, null); g.restore(); if (ok) return;
+        } else if (pixSprite(g, key, ax, y, az, null)) return;
+      }
+      rmFurnStandIn(g, q, y, lvl, it.used);
+    }, bid + '/f' + i);
     it.furn = q;
     out.push(it);
   });
@@ -28236,6 +28349,8 @@ function rmFurnStandIn(g, q, y, lvl, used) {
     case 'bar': B(x, z, w, d, y, y + h - 0.1, C.dark); B(x, z, w + 0.1, d + 0.1, y + h - 0.1, y + h, C.wood); return;
     case 'counter': B(x, z, w, d, y, y + h - 0.1, C.wood); B(x, z, w + 0.1, d + 0.1, y + h - 0.1, y + h, C.dark); return;
     case 'cell_bars': for (let s = 0; s <= 8; s++) { const o = (s / 8 - 0.5) * (lx ? w : d); B(x + (lx ? o : 0), z + (lx ? 0 : o), 0.08, 0.08, y, y + h, C.iron); } B(x, z, lx ? w : 0.1, lx ? 0.1 : d, y + h - 0.15, y + h, C.iron); return;
+    case 'partition': return;
+    case 'cot': case 'crates': B(x, z, w * 0.9, d * 0.9, y, y + (q.k === 'cot' ? 0.75 : 0.5 * Math.max(1, lvl || 0)), q.k === 'cot' ? C.white : C.wood); return;
     case 'pew': case 'bench': B(x, z, w, d, y + 0.4, y + 0.55, C.wood); if (q.k === 'pew') { const bz = q.ax === 'ne' || q.ax === 'nw' ? 1 : -1, o = bz * (lx ? d : w) / 2.4; B(x + (lx ? 0 : o), z + (lx ? o : 0), lx ? w : 0.1, lx ? 0.1 : d, y, y + h, C.dark); } return;
     case 'chair': case 'barstool': B(x, z, w * 0.8, d * 0.8, y + 0.45, y + 0.6, C.wood); for (const [a, c2] of [[-1, -1], [1, 1]]) B(x + a * w * 0.3, z + c2 * d * 0.3, 0.08, 0.08, y, y + 0.45, C.dark); return;
     case 'barber_chair': B(x, z, w * 0.7, d * 0.7, y, y + 0.6, C.iron); B(x, z, w * 0.8, d * 0.8, y + 0.6, y + 1.0, C.red); return;
@@ -28260,18 +28375,30 @@ function rmPersonInner(it, q, wy) {
   else if (act === 'work') { anim = pixF(`ppl/${who}/work/${dir}/0`) ? 'work' : 'idle'; fr = anim === 'work' ? pixCycle(2, 2) : fr; }
   else if (act === 'sit') anim = pixF(`ppl/${who}/sit/${dir}/0`) ? 'sit' : 'benchSit', fr = 0;
   else if (act === 'lie') {
-    const bed = Q.furn.find(b => b.furn.k === 'bed' && Math.abs(b.furn.x - q.x) < 1.3 && Math.abs(b.furn.z - q.z) < 1.3);
+    // D32 joined: the lie frame over the occupied bed (furn/bed, the quilt humped), at the bed's anchor on the floor ('se' a
+    // bed along x, 'sw' along z), shifted across the bed for a second sleeper; the bed is drawn first.
+    const bed = Q.furn.find(b => /^(bed|cot)$/.test(b.furn.k) && Math.abs(b.furn.x - q.x) < 1.3 && Math.abs(b.furn.z - q.z) < 1.3);
     if (bed) bed.used = true;
-    const lk = pixKey(`ppl/${who}/lie/${dir}/0`, `ppl/${who}/lie/sw/0`);
-    if (!lk) return;   // (no lying frames yet: the bed is drawn with a sleeper's hump)
-    Q.people.push(pixItem(q.x - 0.5, q.x + 0.5, q.z - 0.5, q.z + 0.5, wy + 0.6, wy + 1.0, g => pixSprite(g, lk, q.x, wy + 0.5, q.z, { k: 'tf', id: q.id, who: q.who }), 'rm' + q.id));
+    const B = bed && bed.furn, ld = B ? (B.long === 'x' ? 'se' : 'sw') : dir, lk = pixKey(`ppl/${who}/lie/${ld}/0`);
+    if (!lk) return;   // (no lying frames for him: the bed is drawn with a sleeper's hump)
+    const bx = B ? (B.px !== undefined ? B.px : B.x) + (B.long === 'x' ? 0 : q.x - B.x) : q.x, bz = B ? (B.pz !== undefined ? B.pz : B.z) + (B.long === 'x' ? q.z - B.z : 0) : q.z, fy = Q.R.y;
+    const L = pixItem(bx - 0.5, bx + 0.5, bz - 0.5, bz + 0.5, fy + 0.6, fy + 1.0, g => pixSprite(g, lk, bx, fy, bz, { k: 'tf', id: q.id, who: q.who }), 'rm' + q.id);
+    if (bed) L.after = [bed.id];
+    Q.people.push(L);
     return;
   }
-  const P = pixPersonItem('rm' + q.id, who, q.x, wy, q.z, dir, anim, fr, { k: 'tf', id: q.id, who: q.who }, false);
+  // D32 joined: a sitter on his seat: at a table or a desk the sit frame (forearms on the table), on a pew, a bench, a
+  // stool or the barber's chair the benchSit frame (hands in the lap), lifted by the seat's sit_dy (px); the preacher
+  // on his dais 2 px up.
+  let seat = null, dy = 0;
   if (anim === 'sit' || anim === 'benchSit') {
-    const seat = Q.furn.find(b => /^(chair|pew|barstool|bench|barber_chair)$/.test(b.furn.k) && Math.abs(b.furn.x - q.x) <= b.furn.w / 2 + 0.3 && Math.abs(b.furn.z - q.z) <= b.furn.d / 2 + 0.3);
-    if (seat) { if (dir === 'se' || dir === 'sw') P.after = [seat.id]; else (seat.after = seat.after || []).push(P.id); }
+    seat = Q.furn.find(b => /^(chair|pew|barstool|bench|barber_chair|school_desk)$/.test(b.furn.k) && Math.abs(b.furn.x - q.x) <= b.furn.w / 2 + 0.3 && Math.abs(b.furn.z - q.z) <= b.furn.d / 2 + 0.3);
+    if (seat && /^(pew|barstool|bench|barber_chair)$/.test(seat.furn.k) && pixF(`ppl/${who}/benchSit/${dir}/0`)) anim = 'benchSit';
+    if (seat && seat.furn.dy) dy = seat.furn.dy;
   }
+  if (q.role === 'pulpit') dy = 2;
+  const P = pixPersonItem('rm' + q.id, who, q.x, wy + dy / 8, q.z, dir, anim, fr, { k: 'tf', id: q.id, who: q.who }, false);
+  if (seat) { if (dir === 'se' || dir === 'sw') P.after = [seat.id]; else (seat.after = seat.after || []).push(P.id); }
   Q.people.push(P);
 }
 // After the scene's lists are made: each open building's insides sorted.

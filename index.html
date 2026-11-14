@@ -1877,6 +1877,7 @@ function applyCommand(S, c, ev) {
     case 'pgDeliver': pgDeliverCmd(S, c, ev); break;    // D25: hand the goods for a shop in at its door (section "prototype goods")
     case 'pdStart': case 'pdEndDay': case 'pdNextDay': case 'pdLesson': pdCmd(S, c, ev); break;   // D25: the day's start, end and the next day; D27: the lessons' Show me, Skip and replay (section "prototype day")
     case 'dvSet': case 'dvSkip': dvCmd(S, c, ev); break;   // D32 (Foundation): dev mode's choices (section "the line (D32)")
+    case 'ftJump': ftCmd(S, c, ev); break;   // D32 stage 3 (Rooms): dev mode's jump to just short of the far town (section "rooms (D32)")
     case 'lpRide': case 'lpGo': case 'lpBack': case 'lpWalk': case 'lpJoin': case 'lpLeave': case 'lgDone': lpCmd(S, c, ev); break;   // D32 (Play): on the line
     case 'leaveWindow': paxLeaveCmd(S, ev); break;
     case 'boardCar': rideBoardCmd(S, c, ev); break;     // riding our own train (section "passengers", riding)
@@ -6892,6 +6893,7 @@ const RM_TEST = { RM, RM_KIND, RM_FURN, rooms: () => rmRooms(), rmRoom, rmRoomAt
   view: { snap: v => { PIX.rm.snap = !!v; }, tap: id => { PIX.rm.tap = id; PIX.rm.tapAt = [S.player.x, S.player.z]; }, get open() { return PIX.rm.open; }, get fade() { return [...PIX.rm.fade]; },
     items: () => [...PIX.rm.items.keys()], inner: id => { const it = PIX.rm.items.get(id); return it ? it.rm.inner.map(q => q.id) : null; }, tents: () => rmTents(), tapHit: h => rmTap(h) } };
 
+
 // ==== Section: the line (D32) ====
 // Owner: Foundation (plans/d32-tech.md sections 1, 2, 5, 6 and 11.3). Line building: a second place inside the
 // prototype's one game, the country the new line is built through. Pure simulation: no page, no drawing.
@@ -8989,6 +8991,62 @@ function lpCheckSaveShape(st) {
   if (j !== undefined && (!j || Q.ph !== 'line' || !Number.isInteger(j.k) || j.k < 0 || j.k > 5 || (j.side !== 1 && j.side !== -1) || !Number.isInteger(j.t) || !Number.isInteger(j.last)
     || !Number.isInteger(j.n) || !num(j.q) || !num(j.wu) || !Array.isArray(j.qs) || j.qs.some(v => !Number.isInteger(v)) || (j.lift !== undefined && !Number.isInteger(j.lift)))) bad();
 }
+
+// ==== Section: the far town (D32) ====
+// Owner: Rooms (prefixes ft, FT). Drawn only, nothing simulated, not enterable: north of the track at the end of track
+// (the line's x LINE.LEN, 2,520 m; world x LINE.LEN + D33.LX), in the line's own frame (x along the line, z across):
+// a platform and a depot at the end of track, a water tank, a main street of eight buildings running north, fields
+// with fences and haystacks either side, a dozen townsfolk standing about. The far wall's rows are left out over
+// the town (FT.X0 to FT.X1, south of FT.ZN), its ground drawn instead; the rows north of it and the country east and
+// west of it go on, so no edge of the world is seen there either. When the last spike is in (lnDone) a card cheers the
+// men and, while the work train stands there that day, the townsfolk crowd the platform. ?fartown=0 parks it.
+// Provisional: the town's name, its layout, the buildings chosen.
+const FT = (() => {
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null, X = LINE.LEN, SX = X - 30;
+  const lots = [-38, -52, -66, -80];
+  return {
+    ON: !(q && q.get('fartown') === '0'), NAME: 'Cedar Bluff', X0: X - 150, X1: X + 150, ZN: -125,
+    PLAT: { x0: X - 72, x1: X - 4, z0: -8.4, z1: -2.7, y: 0.375 },
+    DEPOT: { x: SX, z: -13.6 }, TANK: { x: X - 80, z: -11 }, SIGN: { x: X - 6, z: -6.0 },
+    SQUARE: { x0: SX - 18, x1: SX + 18, z0: -28, z1: -18.6 }, STREET: { x0: SX - 7, x1: SX + 7, z0: -92, z1: -28, walk: 2.5 },
+    // the eight street buildings: [the far town's key, today's sprite standing in, its lot side, its lot z]
+    BLDS: [['bld/shop_store/e/body', null, 'W', lots[0]], ['far/hotel2', 'bld/shop_hotel/e/body', 'W', lots[1]], ['bld/shop_bank/e/body', null, 'W', lots[2]], ['far/grainstore', 'bld/shop_feed/e/body', 'W', lots[3]],
+      ['bld/shop_saloon/w/body', null, 'E', lots[0]], ['bld/shop_newspaper/w/body', null, 'E', lots[1]], ['bld/shop_sheriff/w/body', null, 'E', lots[2]], ['bld/shop_barber/w/body', null, 'E', lots[3]]]
+      .map(([key, alt, side, z]) => ({ key, alt, side, x: SX + (side === 'W' ? -15.5 : 15.5), z, walk: key.replace(/\/body$/, '/walk'), shadow: key.replace(/\/body$/, '/shadow') })),
+    FIELDS: [{ x0: X - 140, x1: X - 58, z0: -100, z1: -36 }, { x0: X + 6, x1: X + 140, z0: -110, z1: -26 }],
+    FOLK: ['storekeeper', 'hotelkeeper', 'banker', 'smith', 'barkeep', 'printer', 'woman_bonnet', 'man_top', 'woman_shawl', 'child', 'cowhand', 'man_bowler'],
+    JUMP_M: 40,
+  };
+})();
+// The far town's ground tile at the line's cell (i, j), or null (the country's own).
+function ftTile(i, j) {
+  if (!FT.ON || i < FT.X0 - 2 || i > FT.X1 + 2 || j > -2 || j < FT.ZN - 30) return null;
+  const x = i + 0.5, z = j + 0.5, h = lnHash(7, i, j, 9), v = n => 1 + Math.floor(h * n) % n, Q = FT.SQUARE, T = FT.STREET;
+  if (x >= Q.x0 && x <= Q.x1 && z >= Q.z0 && z <= Q.z1) return 'tile/dirt/' + v(3);
+  if (x >= T.x0 && x <= T.x1 && z >= T.z0 && z <= T.z1) return 'tile/street/' + v(3);
+  if (z >= T.z0 && z <= T.z1 && x >= T.x0 - 22 && x <= T.x1 + 22 && (Math.abs(x - (T.x0 - 22)) < 2 || Math.abs(x - (T.x1 + 22)) < 2)) return 'tile/dirt/' + v(3);   // the back lanes
+  for (const F of FT.FIELDS) if (x >= F.x0 && x <= F.x1 && z >= F.z0 && z <= F.z1) return 'tile/field/' + (1 + (Math.floor((z - F.z0) / 2) & 1));
+  return null;
+}
+// Is the far wall's module (anchor x, row z) left out for the town?
+const ftClear = (x, z) => FT.ON && x + 16 > FT.X0 && x < FT.X1 && z > FT.ZN;
+// Dev mode's jump (command { t: 'ftJump' }): the six fronts moved up to FT.JUMP_M short of the end of track (never back),
+// the dump filled, while the work train is home or at the station, so the far town and the last spike can be seen
+// without two weeks of play.
+function ftCmd(S, c, ev) {
+  const L = S.ln;
+  if (!L) { ev.push({ t: 'dvRefused', why: 'The line is not being built.' }); return; }
+  if (L.done >= 0) { ev.push({ t: 'dvRefused', why: 'The line is finished already.' }); return; }
+  if (/^(sOut|out|stand|back|gap)$/.test(L.tr.ph)) { ev.push({ t: 'dvRefused', why: 'Wait until the work train is back at the station.' }); return; }
+  const E = LINE.LEN_M, G = LINE.GAP, f = [];
+  f[5] = E - FT.JUMP_M; for (let k = 4; k >= 0; k--) f[k] = Math.min(E, f[k + 1] + G[k + 1] + 1);
+  for (let k = 0; k < 6; k++) L.f[k] = Math.max(L.f[k], Math.round(f[k] * 1000) / 1000);
+  for (const k of Object.keys(L.sup)) L.sup[k] = LINE.SUP[k].cap;
+  ev.push({ t: 'ftJump', m: L.f[5] });
+}
+// Are the far town's folk on the platform cheering? The day the last spike went in, while the work train stands there.
+function ftCheering(S) { const L = S && S.ln; return !!L && L.done >= 0 && L.done === L.day && rrSod(S.time) < LINE.T.AWAY && rrSod(S.time) >= LINE.T.ARR; }
+const FT_TEST = { FT, ftTile, ftClear, ftCmd, ftCheering };
 
 // ==== Section: economy ====
 // Owner: M1 package 3 (builder C1). Cash, the Overland market, import orders by telegraph, contracts, the
@@ -20898,6 +20956,7 @@ let toastTimer = 0;
 function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
 function handleEvent(e) {
   if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { toast(e.why); return; }   // D32
+  if (e.t === 'lnDone' || e.t === 'ftJump') { ftEvent(e); return; }   // D32 stage 3 (Rooms): the last spike's cheer, dev mode's jump
   if (pdUiOn() && pdEventFirst(e)) return;   // D25 (U): the prototype's switch and train names
   if (e.t === 'switchThrown') toast(`Switch set to ${e.state === 'N' ? 'straight (green)' : 'turn-off (red)'}`);
   else if (e.t === 'switchLocked') toast(`This switch is locked: ${e.why}.`);
@@ -27745,6 +27804,85 @@ function rmOpenAt(x, z) {
   return null;
 }
 
+// ---- The far town (D32 stage 3, Rooms): drawn in the line's frame (FT, "rooms (D32)") ----
+// Baked into the line's ground chunks (ftBake: the platform, the boardwalks and shadows, the fences, the haystacks;
+// the street, the square, the lanes and the fields are ftTile's tiles); standing things are sorted items (ftItems:
+// the depot, the tank, the eight buildings and their awnings, the town's sign, a dozen townsfolk). Art by key with
+// today's sprites standing in (plans/d32-rooms-art.md section 5).
+function ftBake(g, l, t, N) {
+  if (!FT.ON) return;
+  const u0 = (l - PIX_PROJ.OX) / 8, u1 = (l + N - PIX_PROJ.OX) / 8;   // the chunk's columns in (x - z)
+  if (u1 < FT.X0 - 20 || u0 > FT.X1 - FT.ZN + 20) return;   // (the town lies between x - z of X0 and X1 - ZN)
+  const put = (key, x, y, z) => pixLnPut(g, l, t, N, key, x, y, z), P = FT.PLAT;
+  for (let z = P.z0; z < P.z1 - 0.01; z += 1) for (let x = P.x0; x < P.x1 - 0.01; x += 1) put(`plat/deck/v${Math.floor(pixHash(Math.round(x), Math.round(z) + 70) * 4) % 4}`, Math.min(x, P.x1 - 1), 0, Math.min(z, P.z1 - 1));
+  for (let x = P.x0; x < P.x1 - 0.01; x += 1) put(`plat/edge_s/v${Math.round(x) & 1}`, Math.min(x, P.x1 - 1), 0, P.z1);
+  for (let z = P.z0; z < P.z1 - 0.01; z += 1) put('plat/edge_e', P.x1, 0, Math.min(z, P.z1 - 1));
+  for (const B of FT.BLDS) for (const k of [B.shadow, B.walk]) put(k, B.x, 0, B.z);
+  for (const F of FT.FIELDS) {
+    for (let x = F.x0; x < F.x1 - 4; x += 8) { put('nat/fence_x', x + 4, 0, F.z0); put('nat/fence_x', x + 4, 0, F.z1); }
+    for (let z = F.z0; z < F.z1 - 4; z += 8) { put('nat/fence_z', F.x0, 0, z + 4); put('nat/fence_z', F.x1, 0, z + 4); }
+    for (let k = 0; k < 5; k++) put('nat/haystack', F.x0 + 8 + lnHash(3, k, F.x0 | 0, 1) * (F.x1 - F.x0 - 16), 0, F.z0 + 6 + lnHash(3, k, F.z0 | 0, 2) * (F.z1 - F.z0 - 12));
+  }
+}
+// The far town's standing things within the view (inX: the line's x in view).
+function ftItems(out, inX, sod) {
+  if (!FT.ON) return;
+  const bld = (id, key, x, z, box) => { const b = (pixX(key) || {}).box || box; out.push(pixItem(x + b[0], x + b[2], z + b[1], z + b[3], 0, b[4], g => { pixSprite(g, key, x, 0, z, { k: 'ft', id }); }, 'ft' + id)); };
+  const D = FT.DEPOT, T = FT.TANK;
+  if (inX(D.x)) bld('depot', pixKey('far/depot', 'bld/station') || 'bld/station', D.x, D.z, [-9, -4.5, 9, 5.25, 8]);
+  if (inX(T.x)) bld('tank', pixKey('far/tank', 'bld/watertower') || 'bld/watertower', T.x, T.z, [-1.8, -1.8, 1.8, 1.8, 9]);
+  FT.BLDS.forEach((B, i) => {
+    if (!inX(B.x)) return;
+    bld('b' + i, pixKey(B.key, B.alt) || B.alt || B.key, B.x, B.z, [-6, -6, 6, 6, 9]);
+    for (const p of ['awning', 'sign']) { const k = (B.alt || B.key).replace(/\/body$/, '/' + p); if (pixF(k)) bld('b' + i + p, k, B.x, B.z, [-1, -6, 1, 6, 4]); }
+  });
+  // the town's name board at the end of the platform
+  const G = FT.SIGN;
+  if (inX(G.x)) out.push(pixItem(G.x - 0.4, G.x + 0.4, G.z - 0.2, G.z + 0.2, FT.PLAT.y, FT.PLAT.y + 3, g => {
+    if (pixSprite(g, 'far/sign', G.x, FT.PLAT.y, G.z, { k: 'ft', id: 'sign' })) return;
+    const C = PIX.COL, y = FT.PLAT.y, w = pixTextWidth(FT.NAME.toUpperCase()) + 6;
+    for (const dx of [-0.9, 0.9]) pixBox(g, G.x + dx, G.z, 0, 0.15, 0.15, y, y + 2.4, [C.deckFace, C.deckFace, C.deckSide]);
+    const p = pixProject(G.x, y + 2.6, G.z), x0 = Math.round(p.x) - PIX.vx - (w >> 1), y0 = Math.round(p.y) - PIX.vy - 4;
+    g.fillStyle = C.ink; g.fillRect(x0 - 1, y0 - 1, w + 2, 9); g.fillStyle = C.paper; g.fillRect(x0, y0, w, 7);
+    pixText(g, FT.NAME.toUpperCase(), x0 + 3, y0 + 1, C.ink);
+  }, 'ftsign'));
+  // the townsfolk: about the town, or on the platform cheering the day the last spike goes in
+  const cheer = ftCheering(S), P = FT.PLAT, Q = FT.SQUARE, ST = FT.STREET;
+  FT.FOLK.forEach((who, i) => {
+    let x, z, y = 0, f, act = 'idle';
+    if (cheer) { x = P.x0 + 8 + (i % 6) * 9 + (i > 5 ? 4 : 0); z = i > 5 ? -6.6 : -4.4; y = P.y; f = 'sw'; act = 'talk'; }
+    else if (i < 3) { x = P.x0 + 20 + i * 14; z = -5.6; y = P.y; f = i === 1 ? 'se' : 'sw'; }
+    else if (i < 6) { x = [Q.x0 + 3, Q.x1 - 5, Q.x1 - 3.6][i - 3]; z = (Q.z0 + Q.z1) / 2 + (i & 1); f = i === 4 ? 'se' : 'nw'; act = i === 3 ? 'idle' : 'talk'; }   // (beside the depot, not behind it)
+    else if (i < 9) { const B = FT.BLDS[i - 6]; x = ST.x0 - 1.2; z = B.z + 2; y = 0.3; f = 'se'; }
+    else { x = ST.x0 + 3 + (i - 9) * 3; z = ST.z0 + 18 + (i - 9) * 11; f = i === 10 ? 'ne' : 'sw'; act = i === 10 ? 'talk' : 'idle'; }
+    if (!inX(x)) return;
+    const [anim, fr] = pixActAnim(act, {}, i * 0.37);
+    out.push(pixPersonItem('ftp' + i, who, x, y, z, f, anim, fr, { k: 'ft', id: 'p' + i, who }, false));
+  });
+}
+// The page: the cheer's card (lnDone) and dev mode's jump (a toast).
+const ftUi = { card: null };
+function ftEvent(e) {
+  if (e.t === 'ftJump') { toast(`Dev: the line now reaches ${Math.round(e.m).toLocaleString('en-US')} m, ${FT.JUMP_M} m short of ${FT.NAME}.`); return; }
+  if (!ftUi.card) {
+    const st = document.createElement('style');
+    st.textContent = `#ftCard { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); width: min(92vw, 380px); z-index: 6; background: var(--paper); color: var(--ink); border: 2px solid var(--edge);
+      border-left: 8px solid #c69a2c; border-radius: 10px; padding: 12px; box-sizing: border-box; font-family: Georgia, serif; } #ftCard[hidden] { display: none; }
+      #ftCard h2 { margin: 0 0 6px; font-size: 20px; } #ftCard p { margin: 0 0 10px; font-size: 15px; line-height: 1.35; } #ftCard button { min-height: 44px; width: 100%; }`;
+    document.head.appendChild(st);
+    const c = document.createElement('div'); c.id = 'ftCard'; c.hidden = true; c.setAttribute('role', 'dialog');
+    c.innerHTML = '<h2 id="ftCardTitle"></h2><p id="ftCardText"></p><button id="ftCardOk">Hurrah!</button>';
+    document.body.appendChild(c);
+    c.querySelector('#ftCardOk').addEventListener('click', () => { c.hidden = true; });
+    ftUi.card = c;
+  }
+  const L = S && S.ln, n = L ? L.days : 0;
+  ftUi.card.querySelector('#ftCardTitle').textContent = 'The last spike is in!';
+  ftUi.card.querySelector('#ftCardText').textContent = `The line has reached ${FT.NAME}, ${LINE.LEN_M.toLocaleString('en-US')} m from the junction, after ${n} working day${n === 1 ? '' : 's'}. The whole town has turned out on the platform to cheer the rail crew in.`;
+  ftUi.card.hidden = false;
+}
+if (typeof dvAddRow === 'function') dvAddRow('ftJump', `Lay the line to ${FT.JUMP_M} m short of the far town`, () => { send({ t: 'ftJump' }); dvClose(); }, () => ({ hidden: !S || !S.ln || S.ln.done >= 0 }));
+
 // ---- The line's view (D32) ----
 // Owner: Foundation (plans/d32-tech.md 1.5 and 11.3). The line is drawn by the same projection in its own frame (x
 // along the line, z across), when S.ln.view is 'line' (lnViewOn): pixFrame hands the frame to pixLnFrame.
@@ -27868,7 +28006,7 @@ function pixLnChunkBuild(ci, cj, F) {
   const i0 = Math.floor(sp.w0) - 1, i1 = Math.ceil(sp.w1) + 1, j0 = Math.floor(sp.v0) - 1, j1 = Math.ceil(sp.v1) + 1;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const p = pixProject(i, 0, j), sx = Math.round(p.x) - l, sy = Math.round(p.y) - t;
-    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || (j < jN && wall(i))) continue;
+    if (sx < -9 || sx > N + 9 || sy < -9 || sy > N + 1 || (j < jN && wall(i) && !(FT.ON && i >= FT.X0 - 16 && i < FT.X1 + 16 && j > FT.ZN - 30))) continue;   // (D32 Rooms: the far town's ground under the wall it replaces)
     // D33: the station's own ground is left clear, and over the 8u east of the map's edge the two grounds mix cell by cell
     if (sp.stn && (pixLnInStn(i, j) || (i + LX < EDGE + 8 && j >= PROTO.BOUNDS.z0 && j < PROTO.BOUNDS.z1 && lnHash(seed, i, j, 3) > (i + LX - EDGE + 1) / 9))) continue;   // (the station's own ground, under this chunk already)
     let key = lnTile(seed, i, j), road = false;
@@ -27888,7 +28026,9 @@ function pixLnChunkBuild(ci, cj, F) {
         road = key !== k0;
       }
     }
-    if (!road) { const wk = lnTileWild(seed, i, j); if (wk && pixF(wk)) key = wk; }   // the wilds artists' ground, once it lands
+    const fk = road ? null : ftTile(i, j);   // D32 (Rooms): the far town's street, square, lanes and fields
+    if (fk && pixF(fk)) key = fk;
+    else if (!road) { const wk = lnTileWild(seed, i, j); if (wk && pixF(wk)) key = wk; }   // the wilds artists' ground, once it lands
     const f = pixF(key) || pixF('tile/grass/1');
     if (f) { g.drawImage(sheet(f[0]), f[1], f[2], f[3], f[4], sx - f[5], sy - f[6], f[3], f[4]); PIX.lnPuts++; }
   }
@@ -27928,6 +28068,7 @@ function pixLnChunkBuild(ci, cj, F) {
   // Baked, back to front: the far side's ranks and the landmarks at the wall's foot, the small things in the
   // corridor, the near side's bands and landmarks, the small things beyond them.
   pixLnFarDraw(g, l, t, N);
+  ftBake(g, l, t, N);   // D32 (Rooms): the far town's flat things
   pixLnScatterBake(g, l, t, N, F, false);
   cv.wet = pixLnNearDraw(g, l, t, N, 0);
   pixLnScatterBake(g, l, t, N, F, true);
@@ -28008,6 +28149,7 @@ function pixLnFarDraw(g, l, t, N) {
     for (let n = n0 - 1; n <= n1 + 1; n++) {
       const q = lnWildFar(seed, r, n);
       if (D33.on && q.x + 16 + D33.LX <= D33.EDGE + 0.5 && back >= PROTO.BOUNDS.z0 - 0.6) continue;   // D33: on the station's own ground
+      if (ftClear(q.x, z)) continue;   // D32 (Rooms): the far town stands here
       if (q.wood) wood.push(q); else if (n >= n0 && n <= n1) pixLnPut(g, l, t, N, q.key, q.x, 0, q.z);
     }
     for (const q of wood) pixLnPutWood(g, l, t, N, q, r);   // D33: the wood (two rows deep) over its row's open country, its ends scalloped
@@ -28290,6 +28432,7 @@ function pixLnScene(alpha, bx0, bx1, bz0, bz1) {
   { const yx = D33.on ? D33.GATE - D33.LX : 2; if (inX(yx)) out.push(pixLnProp('lnYard', 'line/yard_limit', yx, -4.5, 2.4, 0.2)); }   // (D33: at the yard limit, east of the last switch and the junction)
   for (let m = 500; m < LINE.LEN_M; m += 500) if (inX(m * M)) out.push(pixLnProp('lnMile' + m, 'line/mile_board', m * M, -5.5, 1.8, 0.2));
   if (inX(LINE.LEN)) out.push(pixLnProp('lnEnd', 'line/end_stake', LINE.LEN + 1, 0, 1.6, 0.2));
+  ftItems(out, inX, sod);   // D32 (Rooms): the far town's buildings and townsfolk
   // The surveyors' stakes ahead of the clearers, every 10 m each side.
   for (let m = Math.ceil(F[0] / 10) * 10; m < Math.min(LINE.LEN_M, F[0] + 120); m += 10) if (inX(m * M)) for (const z of [-LINE.ROW, LINE.ROW]) out.push(pixLnProp('lnStake' + m + (z < 0 ? 'n' : 's'), 'line/stake', m * M, z, 1.2, 0.1));
   // The cut: the low rise across the line until the diggers are through it, the banks they leave either side.

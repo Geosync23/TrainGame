@@ -129,3 +129,37 @@ Not enterable; drawn into the line's ground (baked), north of the track at the e
 The other six street buildings are today's whole shop bodies (`bld/shop_<kind>/e/body` and `.../w/body`) in another
 order; fences `nat/fence_x`, `nat/fence_z`; fields `tile/field/1..2`; haystacks `nat/haystack`; a dozen townsfolk
 from today's people, standing (`idle`, `talk`).
+
+## 6. As joined (2026-11-14): how the code uses the art that landed
+
+Both artists delivered (`plans/d32-art-buildings.md`, `plans/d32-art-rooms.md`); the code now reads their keys as
+follows. Where this differs from the sections above, this section is true.
+
+- **Building parts.** `<B>/floor` and `<B>/back` (or `/back_lit` at night) are drawn as the open building's back, the
+  furniture and people over them, then `<B>/front` and `<B>/roof` (or their `_lit`) fading together. The sill comes
+  from `/front`. At night the `/back_lit` windows glow like a shut building's (pixNight's glow pass). A shut shop
+  (Town's `tnShop(S, id).open` false) uses the day parts at night: its windows stay dark, inside and out.
+- **Houses.** Town's ten houses use `bld/cabin/<f>`, `bld/framehouse/<f>`, `bld/house2/<f>` (cabin, frame, two-room),
+  the second colour `bld/<kind>_b/<f>` on odd house numbers (house9, 11, 13, 15, 17). Their rooms, and the D27 houses'
+  (`bld/house/<n>/<f>`), are the art's real house bodies, not the 8u lot: `RM_HOUSE` in index.html (half sizes x, z,
+  the front door's u, eaves): D27 houses 2.5 x 3.0 (door u -1.125), cabin 2.0 x 2.5 (door 0), frame house 2.5 x 3.0
+  (door -1.175), two-room house 2.5 x 3.75 (door 1.375; the partition at z 0 with its doorway at the back). The
+  sill is cut from the body's box, not `extra.box` (which covers the porch and yard).
+- **Furniture.** `furn/<name>/<o>` with `<o>` as the rooms artist drew it: counters, bars, pews, bank counters and
+  hotel desks by their front (`x` front +z, `z` front +x, `ne` front -z, `nw` front -x); chairs, desks, the pulpit,
+  the barber chair and school desks by the facing of the person at them; other pieces `x` or `z` by their long side,
+  or `x` only. Sizes and the sort box come from each key's `extra.box` (the walk grid's solid furniture too); the
+  sprite is drawn at its anchor. Levels: `shelf/<0..3>`, `sacks/<0..3>`, `crates/<0..3>` from the shop's stock
+  (`tnShop`); `bed_made` while empty, `bed` (the hump) with a sleeper and his `lie` frame over it at the bed's anchor
+  (`se` for a bed along x, `sw` along z; a second sleeper shifted across the bed); `cot` / `cot_sleeper` likewise;
+  `stove/1|2`, `range/1|2` burning except 10:00 to 16:00 and in a shut shop, `forge/1|2` glowing 07:00 to 18:00;
+  `stall/horse/<o>` in the livery (five stalls along the north wall, 2.6 wide and 4.8 deep); the stove's and the
+  range's pipe cut at the eaves.
+- **People indoors.** `work` for keepers, workers and the preacher (lifted 2 px on his dais); `sit` at a table, desk
+  or school desk; `benchSit` on a pew, bench, bar stool or the barber's chair, lifted by the seat's `sit_dy`; `lie`
+  in bed. Town's people wear the new roles (`clerk`, `cook`, `maid`, `stableboy`, `wife_a`, `wife_b`, `farmer`,
+  `girl`, `boy`); the hired station hands `ppl/hired_punch`, `hired_load`, `hired_deliver`.
+- **The far town** uses `far/depot`, `far/tank`, `far/grainstore`, `far/hotel2` and `far/sign`; its name is
+  **Prospect** (provisional, the designer's to choose), as painted on the depot and the sign (`far_d32.TOWN_NAME`)
+  and in the code (`FT.NAME`).
+- Not drawn yet (stand-ins still used): `ui/closed_card` (Town's paper card), `ui/purse`, `ui/face/0..2`.

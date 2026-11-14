@@ -7143,6 +7143,7 @@ function rmShopBase(F, P, W, D, stock, sacks) {
   F('counter', 0, D - 2.4, 't');
   P('keeper', 0, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [0, D - 1.3]]);
   P('worker', -1.6, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [-1.6, D - 1.3]]);   // (D32 joined: a worker spot for Town's clerks, hands and wives)
+  P('worker', 1.6, D - 1.3, 'out', 'work', [[2.8, D - 3.4], [2.8, D - 1.3], [1.6, D - 1.3]]);
   P('cust', -0.9, D - 3.5, 'in', 'idle'); P('cust', 1.1, D - 3.4, 'in', 'idle');
   P('cust', -(W / 2 - 1.4), D / 2 + 0.3, 'l', 'idle');
 }

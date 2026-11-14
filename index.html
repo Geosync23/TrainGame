@@ -21861,9 +21861,17 @@ function send(cmd) { const no = buildIntakeRefusal(cmd); if (no) { handleEvent(n
 // ==== Section: HUD and panels ====
 const $ = id => document.getElementById(id);
 let toastTimer = 0;
-function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600); }
+// (D34: prio, a line the player must read, such as why a gang cannot be joined: a plain message in the same moments,
+// a lever thrown at the station, does not cover it)
+let toastPrioUntil = 0;
+function toast(msg, ms, prio) {
+  const now = performance.now();
+  if (!prio && now < toastPrioUntil) return;
+  if (prio) toastPrioUntil = now + (ms || 2600);
+  const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600);
+}
 function handleEvent(e) {
-  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { toast(e.why); return; }   // D32
+  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { if (e.lg !== undefined) toast(e.why, 4000, true); else toast(e.why); return; }   // D32 (D34: why a gang cannot be joined stays up)
   if (D34.on && (e.t === 'lgWait' || e.t === 'lgRedo' || e.t === 'lgDid')) { lgWEvent(e); return; }   // D34: the task's word in the chip
   if (e.t === 'lnDone' || e.t === 'ftJump') { ftEvent(e); return; }   // D32 stage 3 (Rooms): the last spike's cheer, dev mode's jump
   if (pdUiOn() && pdEventFirst(e)) return;   // D25 (U): the prototype's switch and train names

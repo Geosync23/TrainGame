@@ -21871,7 +21871,7 @@ function toast(msg, ms, prio) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2600);
 }
 function handleEvent(e) {
-  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { if (e.lg !== undefined) toast(e.why, 4000, true); else toast(e.why); return; }   // D32 (D34: why a gang cannot be joined stays up)
+  if (e.t === 'dvRefused' || e.t === 'awRefused' || e.t === 'lpRefused') { if (e.lg !== undefined) { toast(e.why, 4000, true); if (typeof lgW !== 'undefined') lgW.refuse = { msg: e.why, t: performance.now() }; } else toast(e.why); return; }   // D32 (D34: why a gang cannot be joined stays up, and is said under him too)
   if (D34.on && (e.t === 'lgWait' || e.t === 'lgRedo' || e.t === 'lgDid')) { lgWEvent(e); return; }   // D34: the task's word in the chip
   if (e.t === 'lnDone' || e.t === 'ftJump') { ftEvent(e); return; }   // D32 stage 3 (Rooms): the last spike's cheer, dev mode's jump
   if (pdUiOn() && pdEventFirst(e)) return;   // D25 (U): the prototype's switch and train names
@@ -25707,6 +25707,20 @@ function lgFrame() {
   if (D34.on) {   // D34: the games are in the world: no panel
     if (!P.hidden) P.hidden = true;
     if (!j) lgW.left = false;
+    // why a gang cannot be joined (too few of its men at hand), in a line under him for a few seconds: the toast's place
+    // at the top is under the line's bar out there
+    const rf = lgW.refuse && performance.now() - lgW.refuse.t < 4500 && !j && line && !hold ? lgW.refuse : null;
+    if (rf) {
+      const C = lgW.chip, sig = 'refuse|' + rf.msg;
+      if (lgW.sig !== sig) { lgW.sig = sig; $('lgWText').textContent = rf.msg; $('lgWPips').innerHTML = ''; }
+      $('lgWOut').hidden = true;
+      const me = lgWMe(), p = lgWScr(me.x, 0, me.z), cw = C.offsetWidth || 220, x = lgCl(p.x, cw / 2 + 6, innerWidth - cw / 2 - 6), y = lgCl(p.y + 26 + 56, 110, innerHeight - 60);
+      C.style.left = Math.round(x) + 'px'; C.style.top = Math.round(y) + 'px';
+      if (C.hidden) C.hidden = false;
+      lgW.r = null; lgW.k = -1; lgW.beat = null;
+      return;
+    }
+    if ($('lgWOut').hidden) $('lgWOut').hidden = false;
     if (!j || !j.w || !line || lgW.left) { if (!lgW.chip.hidden) lgW.chip.hidden = true; lgW.r = null; lgW.k = -1; lgW.beat = null; return; }
     const frozen = hold || (lgUi.clock === null && speed === 0);
     if (!frozen && lgUi.clock === null) lgUi.gt += dt;

@@ -268,7 +268,11 @@ module.exports = async function checkD34() {
           else {
             await evs();
             await page.tap('#lgJoin'); await tick(1); await frames(2);
+            await frames(2);
             const e = (await evs()).find(q => q.t === 'lpRefused'), toast = await page.evaluate(() => document.getElementById('toast').textContent), s = await st();
+            // (and said in a line under him, on the screen, not only in the toast, whose place out there is under the bar)
+            const line = await page.evaluate(() => { const c = document.getElementById('lgW'), r = c.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { shown: !c.hidden, t: c.textContent, on: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, top: !!top && c.contains(top) }; });
+            if (!line.shown || !line.on || !line.top || !(r.k === 4 ? /rail takes four men/ : /tie takes two men/).test(line.t)) P(`with the ${NAMES[r.k]} short of men the line under him does not say why: ${JSON.stringify(line)}`);
             const want = r.k === 4 ? /rail takes four men/ : /tie takes two men/;
             if (!e || !want.test(e.why) || !want.test(toast)) P(`with the ${NAMES[r.k]} short of men (${r.free} free) the game did not say why: ${JSON.stringify({ e, toast })}`);
             if (s.j) P(`with the ${NAMES[r.k]} short of men he was still given the task`);

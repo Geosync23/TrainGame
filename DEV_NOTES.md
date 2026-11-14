@@ -1962,6 +1962,9 @@ line (a toast), and nothing is done:
 - "Not enough of the rail gang at hand just now (three resting): a rail takes four men. Wait for them, or join another
   gang."
 
+Why a gang cannot be joined is shown as a priority toast (`toast(msg, ms, prio)`): a plain message in the same
+moment (a lever thrown at the station) no longer covers it.
+
 The chip's lines: "With Pat" or "Laying rock, alone"; the round's hint ("Tap on your beat, as the ring closes");
 "Walking to the tie pile, the men with you"; "Tie down: 60 cm more of the ties"; "Waiting on the diggers: nothing ready
 for you yet". The Look cards: a mate's card says "Doing: working with you"; the tie and rail gangs' cards say "A tie
@@ -1973,14 +1976,19 @@ tell the games in the world (the panel's words stay with `?d34=0`).
 The designer saw a stage get work done without the men it needs: a lone tie man or a lone rail man (a "setter") gave
 wu at the front, and two men made a rail gang. Now (D34 on) a tie or rail man gives wu only in a carrying unit of
 `CW.NEED` men; a man short of one waits (drawn standing). The foreman (`cwAssign`) gives the tie men pairs and the rail
-gang fours, or nobody: the men short of a unit come from the gang with the most men for what its front costs a metre;
-the odd ones go to the stage with the most work for its men; a new unit is made up only when there is half an hour's
-work a man for it (`CW.UNIT_MIN` 30), or it is a unit already at work, or the last of the line; a unit at work stays
-while its stretch lasts; a tie or rail gang one whole unit over or under is left alone.
+gang fours, or nobody: the men short of a unit come from the gang with the most men for what its front costs a metre,
+never the last man of a gang the next one is waiting on (else the clearers, cheap a metre, were emptied for the rails
+and every gang behind them stood: a whole afternoon's stall with 20 men, found by check-d34); the odd ones go to the
+stage with the most work for its men; a new unit is made up only when there is half an hour's work a man for it
+(`CW.UNIT_MIN` 30; a crew under ten men 10 minutes, `CW.UNIT_MIN_SMALL`, so its little team stays close), or it is a
+unit already at work, or the last of the line; a unit at work stays while its stretch lasts; a tie or rail gang one
+whole unit over or under is left alone.
 
-**The pace** (`cwSimDays`, seeds 1866 and 7): 30 men 13 and 14 working days (13 to 15: unchanged); 20 men 22 (21
-before), 15 men 30 (30), 10 men 44 (40); **5 men 95 to 98 days, 7.3 to 7.5 times the 30 men's (before: 77, 5.9
-times)**: a crew of five can lay rails only with four of its five at once, so its gangs wait on each other more.
+**The pace** (`cwSimDays`, seeds 1866 and 7): 30 men 13 and 14 working days (13 to 15: unchanged); 20 men 23 (21
+before), 15 men 31 (30), 10 men 44 (40); **5 men 98 days, 7.5 times the 30 men's (before: 77, 5.9 times)**: a crew of
+five can lay rails only with four of its five at once, so its gangs wait on each other more. A crew of five's work site
+is a little longer at its longest (check-d33: the men at work at most 66 to 69u apart through day 1, was 62; that
+check's bound is 70 with D34 on, the reason written there).
 check-crew's 5-man window is 7 to 8 with D34 on (5.5 to 6.5 with `?d34=0`), the reason written there. check-crew also
 counts the men at work on average over the working hours (not at the one moment 15:00, when a reassignment at the
 trestle can catch a dozen at the tool row) and looks at the busiest stretch of the site for its men and piles.
@@ -2016,7 +2024,8 @@ After: no frame without the car, no jump, portrait and landscape (check-d34 runs
 - A touch within about 120 CSS px of the work is the game's; further off walks him away (and leaves).
 - The line's bar is hidden while he works in the world; the chip under him (light, about 270 px wide) has Leave.
 - The diggers nearest him swing on his beat (drawing only).
-- The foreman's unit rule (`CW.UNIT_MIN`, half an hour of work a man before a new unit forms) and the 5-man pace window.
+- The foreman's unit rule (`CW.UNIT_MIN`, half an hour of work a man before a new unit forms; 10 minutes for a crew
+  under ten), the 5-man pace window (7 to 8 times) and the little team's bound (70u).
 - While carrying, he and his mates are not stopped by the work train's box (the men never were); hemmed in between the
   creek and the train on the trestle he may squeeze along the deck past the cars.
 
@@ -2030,8 +2039,10 @@ wu / cost, measured inside the tick); Leave lets the mates go; with a crew of fi
 short, Join says why and nothing is done; a save mid-carry loads into the same moment and the tie is set as one; the
 session's ticks replayed give the same hash; the ride out with the work train drawn whole and still on the screen; no
 console errors. Screenshots `test-output/d34-<game>-<orient>.png` (clear, dig, rock-tip, rock-rake, ties-hup,
-ties-carry, ties-down, rails-count, rails-carry, rails-down, spike, absent-*). Changed: check-crew (the D34 window and
-measures), check-linegames and check-linelessons name `?d34=0` (check-linegames closes the dev panel before a Join in
+ties-carry, ties-down, rails-count, rails-carry, rails-down, spike, absent-*). The waits are honest (a tie needs room behind the
+rock, a spike behind the rails), so the check waits for them, and tries a stage again after the meal when the meal
+came first. Changed: check-crew (the D34 window and measures), check-d32world (the 5-man window), check-d33 (the little
+team's bound), check-linegames and check-linelessons name `?d34=0` (check-linegames closes the dev panel before a Join in
 landscape: see the backlog). Measuring tool: `node tests/worktrain-ride.js [portrait|landscape] [throttle]`.
 
 ## Next

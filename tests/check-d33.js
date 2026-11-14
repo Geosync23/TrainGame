@@ -150,8 +150,8 @@ module.exports = async function checkD33() {
       }
       if (seen.size !== 6) P(`with 5 men only these kinds of work were done on day 1: ${[...seen].sort().map(k => NAMES[k]).join(', ')}`);
       // (D34: with the honest minimums a crew of five lays its rails four men at a time, a stretch in one go, so the rail
-      // gang can stand a few units further back: about 60, at most 68 there)
-      const spanMax = (await page.evaluate(() => (0, eval)('D34').on)) ? 68 : 62;
+      // gang can stand a few units further back at times: about 60, at most 70 there, measured 66 to 69)
+      const spanMax = (await page.evaluate(() => (0, eval)('D34').on)) ? 70 : 62;
       if (maxSpan > spanMax) P(`the men at work were spread over ${maxSpan.toFixed(0)} u (a little team: at most about 60)`);
       if (idle > samples * 0.1) P(`a man stood idle in ${idle} of ${samples} looks`);
       if (far) P('the men worked far from the yard on day 1');

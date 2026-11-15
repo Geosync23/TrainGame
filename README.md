@@ -13,8 +13,8 @@ this repository, what did not, how to set up, and what to read in what order.
 
 ## Where the work is
 
-All of the work is on the branch **`ccr-59cb4c1f-rnscv9`**. The `main` branch holds only the first, empty
-commit. Until the two are brought together (see `docs/TRANSFER.md`, "The branch"), look at the work branch.
+Everything is on `main`. (Until 2026-11-14 the work lived on the branch `ccr-59cb4c1f-rnscv9`, which many notes
+name; it is kept and matches `main` as of the transfer.)
 
 State on 2026-11-14: version 13. The station day, the town, the buildings you can enter, the line and the six
 join-in games played in the world are all built and tested (81 checks). Two bugs reported by the designer are

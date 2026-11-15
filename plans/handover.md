@@ -4,13 +4,13 @@ The project is being moved to a new account. Read `docs/TRANSFER.md` first if yo
 the reading order and what did not travel. This note is the short current picture.
 
 ## Where things stand
-- Version 13 is built, tested and pushed on the branch `ccr-59cb4c1f-rnscv9` (`main` holds only the first
-  commit; see `docs/TRANSFER.md`, "The branch").
+- Version 13 is built, tested and pushed. `main` holds everything (brought up to date on 2026-11-14 at the
+  designer's request); the old work branch `ccr-59cb4c1f-rnscv9` matches it.
 - Built and playing by default: the station day (switches, tickets, freight, the evening cart to the shops),
   the town of 41 people with an economy and buildings you can enter, the line east of the yard built by the crew,
   the work train, the six join-in games played in the world, and the far town at the end of the line.
-- The last full test: 80 of 81 checks passed; check-clarity failed once on a tap under load and passed three
-  times alone (backlog).
+- The last full test (2026-11-14, on the transfer commit): all 81 checks passed. The run before it had one
+  failure, check-clarity on a tap under load, which passed alone (backlog).
 - The designer has played version 13 and reported two bugs (top of `backlog.md`). They have not yet reviewed
   the bigger town or the join-in games in the world in a survey.
 - Playable link: none on the new account yet. Publish `index.html` and write the link here.

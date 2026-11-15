@@ -34,19 +34,15 @@ conversations.
 
 ## 3. The branch
 
-All 580-odd commits are on the branch `ccr-59cb4c1f-rnscv9`. `main` holds only the first commit. The old session
-was allowed to push to that one branch only, so it could not bring them together.
+The whole project is on `main`. On 2026-11-14 the designer asked the old lead to bring `main` up to date, and
+it now holds every commit (about 600, from 2026-10-31).
 
-A new Claude session is usually given its own new branch name, and starts from the repository's default branch.
-If the default is still the empty `main`, the session will start with nothing. So do one of these first:
+Until then all the work lived on a branch called `ccr-59cb4c1f-rnscv9`, the one branch the old session was
+allowed to push to. It is kept and is identical to `main` as of the transfer. Many notes name it; read that
+name as "the work branch of the old account". It can be deleted once the new account is settled.
 
-- **Simplest (designer, on github.com):** open the repository, Settings, then "Default branch", and choose
-  `ccr-59cb4c1f-rnscv9`. Nothing is copied or lost; new sessions simply start from the work.
-- **Tidier (ask the Claude session to do it, with your say-so):** copy the work branch onto `main` so `main` is
-  the real project from now on. `main` has one commit that the work branch already contains, so this is a plain
-  fast-forward with no conflicts.
-
-Either way, tell the new session: "the work is on `ccr-59cb4c1f-rnscv9`".
+A new Claude session is usually given its own new branch to work on, starting from `main`. That is fine: work
+there, test, and ask the designer before putting anything onto `main`.
 
 To hand the repository itself to a new GitHub account: on github.com, Settings, then either "Collaborators"
 (add the new account and keep the repository where it is) or "Transfer ownership" at the bottom of the page.
@@ -57,7 +53,6 @@ Then, on the new Claude account, connect GitHub and allow Claude to reach this r
 In a Claude cloud session, with the repository attached:
 
 ```
-git checkout ccr-59cb4c1f-rnscv9     # unless the session already started from it
 npm install                          # fetches three.js r128 for the tests
 node tests/run-one.js check-boot     # one quick check that the game opens
 npm test                             # every check, before every push
@@ -142,8 +137,7 @@ start what the limits are and how they want models used.
 
 The designer can paste this to start:
 
-> This is Railhead, a phone train game, taken over from another account. The work is on the branch
-> `ccr-59cb4c1f-rnscv9`. Read `docs/TRANSFER.md` and follow its reading order, run `npm install` and the boot
+> This is Railhead, a phone train game, taken over from another account. Everything is on `main`. Read `docs/TRANSFER.md` and follow its reading order, run `npm install` and the boot
 > check, then tell me in a few plain lines where the project stands and what you suggest doing first. Do not
 > build anything yet.
 
